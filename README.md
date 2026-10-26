@@ -123,6 +123,30 @@ The release certificate's SHA-256:
 
 Android 12 or later.
 
+## From the makers of ink
+
+<p align="center">
+  <img src=".github/ink/rodman.png" width="24%" alt="ink's home screen: the time, your apps as words, and the song playing" />
+  <img src=".github/ink/games-n64-ink.png" width="24%" alt="ink's games: box art and shelves for your emulators" />
+  <img src=".github/ink/given-12m.png" width="24%" alt="+12m: the time ink gave back from instagram" />
+</p>
+
+ink music is the music player from **[ink](https://inkhome.app)**, a typographic home screen for
+Android phones and TVs, in the same look. Your apps as big words, the song playing along the
+bottom from any player, and your time back from the feed:
+
+- **Five seconds first.** Open instagram and ink waits: its name, how many times today, a line
+  filling slowly. Then open it, or not now. Daily limits and focus when you want them.
+- **Your phone as a console.** Point it at your games folder: box art, shelves, time played, each
+  system opened in its emulator.
+- **Your house as words.** With Home Assistant, every light a little pixel lamp; your scenes,
+  cameras and doorbell.
+- **ink tv.** The same ink on your TV, and from your phone it turns off the TV's ads and tracking
+  over your wifi. "Put it back" undoes exactly what changed.
+
+No accounts, no ads, no analytics. ink is in a free test on Google Play now, everything open:
+**[join the test](https://inkhome.app/test/)** · [inkhome.app](https://inkhome.app)
+
 ## Building
 
 JDK 21 and the Android SDK (API 37).
@@ -170,4 +194,4 @@ Navidrome or any radio station. Trademarks belong to their owners.
 
 [GPL-3.0](LICENSE). Free, always: no paywall, ever.
 
-<p align="center"><sub>From the makers of <b>ink</b>, the launcher for people who listen.</sub></p>
+<p align="center"><sub>From the makers of <a href="https://inkhome.app"><b>ink</b></a>, a home screen for Android phones and TVs.</sub></p>
