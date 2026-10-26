@@ -393,12 +393,17 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub) {
 
 /**
  * The iPod's clickwheel, with the cover as its hub (ink's): circle a thumb round it to scrub,
- * clockwise forward, a tick every 15 degrees moving the song 5 s; letting go seeks there. A tap
- * is the centre button: play / pause.
+ * clockwise forward, a tick every 15 degrees moving the song 5 s; letting go seeks there. It turns
+ * only once the thumb is really circling (its own way bending a sixth of a turn, round the centre),
+ * so a straight swipe never scrubs, wherever it crosses the cover: a flick sideways is the next song (to the left) or the
+ * one before (to the right), as the push goes. A tap is the centre button: play / pause.
  */
 private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = composed {
     val view = LocalView.current
-    val hub = with(LocalDensity.current) { 18.dp.toPx() }   // too near the centre, the angle jumps
+    val density = LocalDensity.current
+    val hub = with(density) { 18.dp.toPx() }      // too near the centre, the angle jumps
+    val flick = with(density) { 56.dp.toPx() }    // how far sideways a flick goes
+    val stride = with(density) { 6.dp.toPx() }    // the thumb's way, read every 6 dp (finer is jitter)
     pointerInput(Unit) {
         awaitEachGesture {
             val down = awaitFirstDown()
@@ -409,41 +414,64 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = compos
             val from = t.positionNow()
             var last: Float? = null
             var turned = 0f
+            var engaged: Float? = null   // how far it had turned when it began to scrub
             var ticks = 0
             var travel = 0f
+            var at = down.position
+            var mark = down.position     // where the thumb's way was last read
+            var way: Float? = null
+            var bent = 0f                // how far its way has turned (a straight swipe's stays near 0)
             while (true) {
                 val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
                 change.consume()
+                at = change.position
                 travel += (change.position - change.previousPosition).getDistance()
                 if (!wheel) continue
+                val step = change.position - mark
+                if (step.getDistance() >= stride) {
+                    val w = atan2(step.y, step.x)
+                    way?.let { bent += wrap(w - it) }
+                    way = w; mark = change.position
+                }
                 val v = change.position - centre
                 if (v.getDistance() < hub) { last = null; continue }
                 val a = atan2(v.y, v.x)   // screen y runs down, so clockwise is positive
-                last?.let {
-                    var d = a - it
-                    if (d > PI) d -= (2 * PI).toFloat()
-                    if (d < -PI) d += (2 * PI).toFloat()
-                    turned += d
-                }
+                last?.let { turned += wrap(a - it) }
                 last = a
-                val k = (turned / WHEEL_STEP).toInt()
+                // circling: its way bending, round the centre the same way it goes
+                if (engaged == null && kotlin.math.abs(bent) >= WHEEL_ENGAGE && bent * turned > 0) engaged = turned
+                val base = engaged ?: continue
+                val k = ((turned - base) / WHEEL_STEP).toInt()
                 if (k != ticks) {
                     ticks = k
                     scrub.at = (from + k * WHEEL_SEEK).coerceIn(0L, t.duration)
                     view.performHapticFeedback(TICK)
                 }
             }
+            val moved = at - down.position
             when {
                 scrub.at != null -> { scrub.at?.let(Playback::seek); scrub.at = null }
+                engaged == null && kotlin.math.abs(moved.x) > flick && kotlin.math.abs(moved.x) > kotlin.math.abs(moved.y) * 1.5f -> {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    if (moved.x < 0) Playback.next() else Playback.previous()
+                }
                 travel < viewConfiguration.touchSlop -> Playback.toggle()
             }
         }
     }
 }
 
+/** An angle's change, the short way round (-π to π). */
+private fun wrap(d: Float): Float = when {
+    d > PI -> d - (2 * PI).toFloat()
+    d < -PI -> d + (2 * PI).toFloat()
+    else -> d
+}
+
 private val WHEEL_STEP = (PI / 12).toFloat()   // 15 degrees: 24 ticks a turn
 private const val WHEEL_SEEK = 5_000L          // so a turn is two minutes
+private val WHEEL_ENGAGE = (PI / 3).toFloat()  // a sixth of a turn before it scrubs
 private val TICK = if (Build.VERSION.SDK_INT >= 34) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
 else HapticFeedbackConstants.CLOCK_TICK
 

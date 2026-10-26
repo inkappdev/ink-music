@@ -72,7 +72,7 @@ lately. Even with nothing on the phone.
 
 **The player**
 - Whole-screen over the cover, in five looks: blur, fluted glass, pixels, dither, plain.
-- Circle a thumb round the cover to scrub, as on an iPod.
+- Circle a thumb round the cover to scrub, as on an iPod; flick it sideways for the next song.
 - Synced lyrics from [lrclib](https://lrclib.net), with the cover small beside them.
 - **Even volume** (ReplayGain) from the files' own tags or the server's. A record played through keeps its own quiet and loud.
 
