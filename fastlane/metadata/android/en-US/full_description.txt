@@ -32,3 +32,5 @@
 <p>Free and open source (GPL-3.0). From the makers of ink, the launcher for people who listen.</p>
 
 <p>ink music is not affiliated with, funded, authorized or endorsed by YouTube, Google LLC, Spotify or Navidrome. Trademarks belong to their owners.</p>
+
+<p>From the makers of ink, a typographic home screen for Android phones and TVs in the same look: inkhome.app</p>
