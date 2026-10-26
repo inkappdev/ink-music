@@ -22,11 +22,11 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Your YouTube Music, signed in (the full build only): your playlists (liked music first, as
- * YouTube lists it), the records in your library, and what you played there lately. Signed in on
- * YouTube's own page in a WebView; its cookies are kept on the phone, sealed by a key in Android's
- * keystore, and go only to music.youtube.com. Read, never written: nothing here tells YouTube
- * anything (no likes, no history). Signing out forgets the cookies and the WebView's data.
+ * Your YouTube Music, signed in (the full build only): your playlists, the records and artists in
+ * your library, what you played there lately, and your liked songs, which are the heart's: loving a
+ * YouTube song likes it there. Signed in on YouTube's own page in a WebView; its cookies are kept on
+ * the phone, sealed by a key in Android's keystore, and go only to music.youtube.com. The like is
+ * the one thing told to YouTube (no history). Signing out forgets the cookies and the WebView's data.
  */
 object YouTubeAccount {
     const val available = true
@@ -35,6 +35,9 @@ object YouTubeAccount {
     val playlists = MutableStateFlow<List<TubeList>>(emptyList())
     val records = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val history = MutableStateFlow<List<Song>>(emptyList())
+    /** Your liked songs (liked music), newest first: loved here too. */
+    val liked = MutableStateFlow<List<Song>>(emptyList())
+    val artists = MutableStateFlow<List<TubeArtist>>(emptyList())
     val reading = MutableStateFlow(false)
     private var tube: InnerTube? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -68,6 +71,7 @@ object YouTubeAccount {
         prefs(c).edit().clear().apply()
         tube = null; _who.value = null
         playlists.value = emptyList(); records.value = emptyList(); history.value = emptyList()
+        liked.value = emptyList(); artists.value = emptyList()
         forgetWeb()
     }
 
@@ -87,7 +91,8 @@ object YouTubeAccount {
                     // songs only (not "episodes for later", a podcast list), each saying what isn't already said:
                     // not "YouTube Music" (the row says it), nor your own name
                     val owners = setOf("YouTube Music", _who.value?.name.orEmpty())
-                    playlists.value = found.filter { it.id.startsWith("VL") && it.id != "VLSE" }.map {
+                    // liked music is loved, so it's there (and on the heart), not a playlist
+                    playlists.value = found.filter { it.id.startsWith("VL") && it.id != "VLSE" && it.id != "VLLM" }.map {
                         TubeList(it.id.removePrefix("VL"), it.title, it.subtitle.split(" • ", " · ").filter { w -> w.isNotBlank() && w !in owners }.joinToString("   "), it.art)
                     }
                 }.onFailure { android.util.Log.d("ink-youtube", "playlists: $it") }
@@ -102,10 +107,45 @@ object YouTubeAccount {
                 runCatching { t.tracks("FEmusic_history", max = 100) }.onSuccess { found -> history.value = found.map(::song) }
                     .onFailure { android.util.Log.d("ink-youtube", "history: $it") }
             }
-            lists.join(); recs.join(); heard.join()
-            android.util.Log.d("ink-youtube", "read ${playlists.value.size} playlists, ${records.value.size} records, ${history.value.size} heard")
+            val likes = launch {
+                runCatching { t.tracks("VLLM") }.onSuccess { found -> liked.value = found.map(::song) }
+                    .onFailure { android.util.Log.d("ink-youtube", "liked: $it") }
+            }
+            // the artists you follow, else the ones your library's songs are by
+            val people = launch {
+                runCatching {
+                    fun of(id: String) = t.items(id).filter { it.kind == InnerTube.Kind.ARTIST && it.id.startsWith("UC") }
+                    of("FEmusic_library_corpus_artists").ifEmpty { of("FEmusic_library_corpus_track_artists") }
+                }.onSuccess { found -> artists.value = found.map { TubeArtist(it.title, it.art, it.id) } }
+                    .onFailure { android.util.Log.d("ink-youtube", "artists: $it") }
+            }
+            lists.join(); recs.join(); heard.join(); likes.join(); people.join()
+            android.util.Log.d("ink-youtube", "read ${playlists.value.size} playlists, ${records.value.size} records, " +
+                "${history.value.size} heard, ${liked.value.size} liked, ${artists.value.size} artists")
             reading.value = false
         }
+    }
+
+    /** A song liked on YouTube Music, or not (the heart): shown at once, put back if YouTube refuses. */
+    fun like(s: Song, on: Boolean) {
+        val t = tube ?: return
+        val before = liked.value
+        liked.value = if (on) listOf(s) + before.filter { it.id != s.id } else before.filter { it.id != s.id }
+        scope.launch {
+            if (!t.like(s.id.removePrefix("y"), on)) {
+                android.util.Log.d("ink-youtube", "like ${s.id} $on refused")
+                liked.value = before
+            }
+        }
+    }
+
+    /** An artist's page on YouTube Music: their best-known songs, and their records newest first. */
+    suspend fun artist(a: TubeArtist): Pair<List<Song>, List<TubeAlbum>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val (name, tracks, items) = (tube ?: InnerTube()).artist(a.id)
+            val who = name.ifEmpty { a.name }
+            tracks.map(::song) to items.map { TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art) }
+        }.onFailure { android.util.Log.d("ink-youtube", "artist ${a.id}: $it") }.getOrDefault(emptyList<Song>() to emptyList())
     }
 
     /** One of your playlists' songs, in its order ("LM" is liked music). */

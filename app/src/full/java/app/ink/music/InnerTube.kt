@@ -63,6 +63,21 @@ class InnerTube(
         return out.distinctBy { it.id }.take(max)
     }
 
+    /** An artist's page, one read: their name, best-known songs, and records (singles too). */
+    fun artist(browseId: String): Triple<String, List<Track>, List<Item>> {
+        val page = post("browse", JSONObject().put("browseId", browseId))
+        val name = all(page, "musicImmersiveHeaderRenderer").plus(all(page, "musicVisualHeaderRenderer"))
+            .firstNotNullOfOrNull { text(it.optJSONObject("title")).ifEmpty { null } }.orEmpty()
+        return Triple(name, all(page, "musicResponsiveListItemRenderer").mapNotNull(::track).distinctBy { it.videoId },
+            all(page, "musicTwoRowItemRenderer").mapNotNull(::tile).filter { it.kind == Kind.RECORD }.distinctBy { it.id })
+    }
+
+    /** A song liked on YouTube Music, or not any more (signed in): did it take? */
+    fun like(videoId: String, on: Boolean): Boolean = runCatching {
+        post(if (on) "like/like" else "like/removelike", JSONObject().put("target", JSONObject().put("videoId", videoId)))
+        true
+    }.getOrDefault(false)
+
     /** A record's own playlist ("OLAK5uy_..."), which NewPipe opens, from its browse id ("MPREb_..."). */
     fun albumPlaylist(browseId: String): String? = runCatching {
         Regex("OLAK5uy_[A-Za-z0-9_-]+").find(post("browse", JSONObject().put("browseId", browseId)).toString())?.value
