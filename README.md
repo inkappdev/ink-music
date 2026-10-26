@@ -131,6 +131,9 @@ Android 12 or later.
   <img src=".github/ink/games-n64-ink.png" width="24%" alt="ink's games: box art and shelves for your emulators" />
   <img src=".github/ink/given-12m.png" width="24%" alt="+12m: the time ink gave back from instagram" />
 </p>
+<p align="center">
+  <img src=".github/ink/tv-twin-peaks.png" width="97%" alt="ink tv: your apps as big words, and Twin Peaks waiting where you left it" />
+</p>
 
 ink music is the music player from **[ink](https://inkhome.app)**, a typographic home screen for
 Android phones and TVs, in the same look. Your apps as big words, the song playing along the
