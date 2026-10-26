@@ -11,6 +11,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -275,7 +284,8 @@ private fun App() {
 /**
  * The library: listen first (something to play whatever the phone holds), then records as covers
  * (the only colour), artists or every song as words, and lists; "find" at the row's end. With
- * nothing on the phone or a server, only listen and lists.
+ * nothing on the phone or a server, only listen and lists. A swipe across the page goes to the tab
+ * beside (a song row's own swipe, and a row of covers scrolling, keep theirs).
  */
 @Composable
 private fun LibraryPage(pages: Pages) {
@@ -283,9 +293,17 @@ private fun LibraryPage(pages: Pages) {
     val songs by Library.songs.collectAsState()
     val read by Library.read.collectAsState()
     var tab by rememberSaveable { mutableStateOf("listen") }
+    // nothing on the phone or a server: no records, artists or songs to show
+    val tabs = if (songs.isEmpty()) listOf("listen", "lists") else listOf("listen", "albums", "artists", "songs", "lists")
+    val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
+    // the tab row follows a swipe; a tab tapped goes there on ink's curve
+    LaunchedEffect(pager, tabs) { snapshotFlow { pager.currentPage }.collect { tab = tabs.getOrElse(it) { "listen" } } }
+    LaunchedEffect(tabs) { pager.scrollToPage(tabs.indexOf(tab).coerceAtLeast(0)) }
+    val scope = rememberCoroutineScope()
     val listenList = rememberLazyListState()
     val grid = rememberLazyGridState()
     val artistList = rememberLazyListState()
+    val listsList = rememberLazyListState()
     val songList = rememberLazyListState()
     val shuffled by Order.shuffled.collectAsState()
     val seed by Order.seed.collectAsState()
@@ -303,19 +321,25 @@ private fun LibraryPage(pages: Pages) {
     val pad = PaddingValues(start = 20.dp, end = 20.dp, top = (head - BAND).coerceAtLeast(0.dp) + 6.dp, bottom = foot + 24.dp)
     Box(Modifier.fillMaxSize()) {
     Box(Modifier.fillMaxSize().hazeSource(tabsFrost).windowInsetsPadding(sides)) {
-        when {
-            tab == "listen" || (songs.isEmpty() && tab != "lists") -> ListenPage(pages, pad, listenList)
-            tab == "albums" -> LazyVerticalGrid(
+      HorizontalPager(
+        pager, Modifier.fillMaxSize(), key = { tabs[it] },
+        flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo)),
+      ) { page ->
+       // what scrolls sideways inside a page (a row of covers) keeps its scroll: run to its end, it doesn't turn the page
+       Box(Modifier.fillMaxSize().nestedScroll(keepSideways)) {
+        when (tabs[page]) {
+            "listen" -> ListenPage(pages, pad, listenList)
+            "albums" -> LazyVerticalGrid(
                 GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
                 items(records, key = { it.id }) { a -> RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
             }
-            tab == "artists" -> LazyColumn(state = artistList, contentPadding = pad) {
+            "artists" -> LazyColumn(state = artistList, contentPadding = pad) {
                 items(artists, key = { it.name }) { a -> ArtistRow(a) { pages.open(Page.Artist(a.name)) } }
             }
             // lists: the songs you love, your year, then your playlists (and "new >" for one more)
-            tab == "lists" -> {
+            "lists" -> {
                 val lists by Server.playlists.collectAsState()
                 val lovedIds by Loved.ids.collectAsState()
                 val account by Server.account.collectAsState()
@@ -323,7 +347,7 @@ private fun LibraryPage(pages: Pages) {
                 val minutes by androidx.compose.runtime.produceState<Long?>(null) {
                     value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Year.of(History.read(ctx)).minutes }
                 }
-                LazyColumn(state = artistList, contentPadding = pad) {
+                LazyColumn(state = listsList, contentPadding = pad) {
                     item {
                         if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}") { pages.open(Page.Loved) }
                         ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
@@ -343,6 +367,8 @@ private fun LibraryPage(pages: Pages) {
                 itemsIndexed(everySong, key = { _, s -> s.id }) { i, s -> SongRow(s, onClick = { Playback.play(everySong, i) }) }
             }
         }
+       }
+      }
     }
     // the tab row on black; what scrolls up toward it softens just under it
     Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
@@ -353,10 +379,10 @@ private fun LibraryPage(pages: Pages) {
             val slide = rememberHazeState()
             Box(Modifier.weight(1f)) {
                 Row(Modifier.hazeSource(slide).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    // nothing on the phone or a server: no records, artists or songs to show
-                    (if (songs.isEmpty()) listOf("listen", "lists") else listOf("listen", "albums", "artists", "songs", "lists")).forEach { t ->
-                        val on = t == tab || (t == "listen" && songs.isEmpty() && tab != "lists")
-                        Word(t, pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 12.dp), touch = 8.dp) { tab = t }
+                    tabs.forEachIndexed { i, t ->
+                        Word(t, pixel(14.sp, if (t == tab) Ink.ink else Ink.dim), Modifier.padding(end = 12.dp), touch = 8.dp) {
+                            scope.launch { pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
+                        }
                     }
                 }
                 Box(Modifier.matchParentSize().wrapContentWidth(Alignment.End).width(BAND).softEdgeEnd(slide))
@@ -369,6 +395,12 @@ private fun LibraryPage(pages: Pages) {
       Box(Modifier.fillMaxWidth().height(BAND).softEdge(tabsFrost, towardBottom = false))
     }
     }
+}
+
+/** Takes what a page's sideways scrollers leave over, so running one to its end never turns the library's page. */
+private val keepSideways = object : NestedScrollConnection {
+    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource) = Offset(available.x, 0f)
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity) = Velocity(available.x, 0f)
 }
 
 /** An artist as the library lists them: their name, how many records and songs. */
