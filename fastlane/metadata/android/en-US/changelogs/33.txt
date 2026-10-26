@@ -1,0 +1,5 @@
+- Sign in to YouTube Music (the GitHub and IzzyOnDroid build): your playlists, liked songs, records, artists and recent plays
+- The heart is the like: loving a YouTube song likes it there, and your liked songs are in loved
+- Your YouTube Music artists, each a page of their songs and records
+- The player's controls sit on black, readable over every look; its small words are larger and brighter
+- A stop button: the song back to its start, and the notification goes

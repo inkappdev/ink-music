@@ -162,6 +162,8 @@ class PlayerService : MediaLibraryService() {
         // screens' process may run another: two processes sharing one data folder crash)
         runCatching { android.webkit.WebView.setDataDirectorySuffix("player") }
         YouTubeMusic.attach(this)
+        // stopped (the player's "stop"), the notification goes; Media3 kept it after a stop by default
+        setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
         Stations.curated(this)   // ink radio's stations, known by id (the car, the queue kept)
         // a YouTube Music song plays from "ytm://<id>": its stream found as it starts (the full build only)
         val sources = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
