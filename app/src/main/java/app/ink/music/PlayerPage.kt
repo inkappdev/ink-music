@@ -1,0 +1,519 @@
+package app.ink.music
+
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.atan2
+
+/** A scrub in progress (`at`, the finger's), shared by the line and the clickwheel. */
+private class Scrub { var at by mutableStateOf<Long?>(null) }
+
+/**
+ * The player, the whole screen, over the cover in its look (ink's desk clock looks: blur, fluted
+ * glass, pixels, dither, or plain). The times over the line, the line ruled along the cover's top
+ * edge filling in its colour (drag or tap it, or circle a thumb round the cover, to scrub), the
+ * song, back / pause / next / lyrics, and the artist as the giant marquee along the foot. With
+ * lyrics on and a song that has synced lines, they take the cover's place and the cover sits
+ * small beside the song, still under the line. A new song is the iPod's push. Pull down to close.
+ */
+@Composable
+fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
+    val ctx = LocalContext.current
+    val now by Playback.now.collectAsState()
+    val n = now
+    var dir by remember { mutableIntStateOf(1) }   // the push's way: next in from the right, back from the left
+    var queueUp by remember { mutableStateOf(false) }
+    var playOnUp by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(playOnUp) { playOnUp = false }
+    val close by rememberUpdatedState(onClose)
+    val scrub = remember { Scrub() }
+    androidx.activity.compose.BackHandler(queueUp) { queueUp = false }
+    Box(
+        Modifier.fillMaxSize().background(Ink.black)
+            .clickable(remember { MutableInteractionSource() }, indication = null) {}   // nothing under it takes a tap
+            .pointerInput(Unit) {
+                var pulled = 0f
+                detectVerticalDragGestures(onDragStart = { pulled = 0f }, onDragEnd = { if (pulled > 120.dp.toPx()) close() }) { c, dy ->
+                    pulled += dy; c.consume()
+                }
+            },
+    ) {
+        if (n == null) {
+            Column(Modifier.windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).padding(20.dp)) {
+                BasicText("NOTHING PLAYING", style = headline(32.sp))
+            }
+            return@Box
+        }
+        val cover = rememberCover(n.song)
+        val accent by animateColorAsState(cover?.accent ?: Ink.ink, tween(Motion.ENTER), label = "accent")
+        Backdrop(cover)
+        val sing by Lyrics.on.collectAsState()
+        val lyric = rememberLyric(n, sing)
+        val look by Looks.on.collectAsState()
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val share = { scope.launch { ShareCard.share(ctx, n, look) }; Unit }
+        Column(
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).navigationBarsPadding(),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                // where in the queue; a tap opens it
+                Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(11.sp, Ink.mid), touch = 10.dp) { queueUp = true }
+                Spacer(Modifier.weight(1f))
+                // where it plays: the phone, or a speaker (lit while it's one)
+                Word(if (n.device.isNotEmpty()) "on ${n.device.lowercase()}" else "play on",
+                    pixel(11.sp, if (n.device.isNotEmpty()) Ink.ink else Ink.mid), touch = 10.dp) { playOnUp = true }
+                Word(look.word, pixel(11.sp, Ink.mid), touch = 10.dp) { Looks.next(ctx) }
+                Word("close", pixel(11.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+            }
+            val words = lyric != null
+            AnimatedContent(
+                targetState = words, modifier = Modifier.weight(1f),
+                transitionSpec = { fadeIn(tween(Motion.ENTER, easing = Motion.expo)) togetherWith fadeOut(tween(Motion.EXIT, easing = Motion.expo)) },
+                label = "lyrics",
+            ) { withLyrics ->
+                Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+                    if (withLyrics && lyric != null) {
+                        LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
+                        Scrubber(n, accent, scrub)
+                        Song(n, dir, small = true, scrub, onOpen, share)
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                        Scrubber(n, accent, scrub)
+                        Song(n, dir, small = false, scrub, onOpen, share)
+                        Spacer(Modifier.weight(.4f))
+                    }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(30.dp)) {
+                Word("back", pixel(16.sp), touch = 10.dp) { dir = -1; Playback.previous() }
+                Word(if (n.playing) "pause" else "play", pixel(16.sp), touch = 10.dp) { Playback.toggle() }
+                Word("next", pixel(16.sp), touch = 10.dp) { dir = 1; Playback.next() }
+                Spacer(Modifier.weight(1f))
+                // selection is brightness: lit is on
+                Word("lyrics", pixel(16.sp, if (sing) Ink.ink else Ink.dim), touch = 10.dp) { Lyrics.toggle() }
+            }
+            Spacer(Modifier.height(14.dp))
+            Modes(n) { queueUp = true }
+            Spacer(Modifier.height(12.dp))
+            Marquee(n.artist, n.moving, Modifier.fillMaxWidth().bleedPastCutout(), size = 120.sp)
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            queueUp,
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { QueuePage(onClose = { queueUp = false }) }
+        androidx.compose.animation.AnimatedVisibility(
+            playOnUp,
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { PlayOnPage(onClose = { playOnUp = false }) }
+    }
+}
+
+/**
+ * The player's second row, smaller: shuffle and repeat (lit is on; repeat steps off, all, one),
+ * up next, and sleep (15m, 30m, 1h, the song's end, off; while set, the time left).
+ */
+@Composable
+private fun Modes(n: Now, onQueue: () -> Unit) {
+    val style = 12.sp
+    // where sleep's steps are; back to the start once the timer has run out
+    var step by remember { mutableIntStateOf(0) }
+    LaunchedEffect(n.sleepAt) { if (n.sleepAt == 0L) step = 0 }
+    val left by produceState(0L, n.sleepAt) {
+        while (n.sleepAt > 0) { value = n.sleepAt - System.currentTimeMillis(); delay(15_000) }
+        value = 0L
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Word("shuffle", pixel(style, if (n.shuffle) Ink.ink else Ink.dim), touch = 10.dp) { Playback.shuffle() }
+        Word(if (n.repeat == androidx.media3.common.Player.REPEAT_MODE_ONE) "repeat one" else "repeat",
+            pixel(style, if (n.repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) Ink.ink else Ink.dim), touch = 10.dp) { Playback.repeat() }
+        Word("up next", pixel(style, Ink.mid), touch = 10.dp, onClick = onQueue)
+        Spacer(Modifier.weight(1f))
+        val said = when {
+            n.sleepAt == PlayerService.SLEEP_END_OF_SONG -> "sleep  end"
+            n.sleepAt > 0 -> "sleep ${((left + 59_999) / 60_000).coerceAtLeast(1)}m"
+            else -> "sleep"
+        }
+        Word(said, pixel(style, if (n.sleepAt != 0L) Ink.ink else Ink.dim), touch = 10.dp) {
+            step = (step + 1) % SLEEPS.size
+            Playback.sleep(SLEEPS[step])
+        }
+    }
+}
+
+/** Sleep's steps: off, 15m, 30m, 1h, the song's end. */
+private val SLEEPS = listOf(0L, 15 * 60_000L, 30 * 60_000L, 60 * 60_000L, PlayerService.SLEEP_END_OF_SONG)
+
+/**
+ * The song under the line: the cover (its clickwheel: circle a thumb round it to scrub, tap to
+ * play / pause) and its words. Big, the cover across the width and the words under it; small (the
+ * lyrics up), the cover at 72 dp (the mini player's size) with the words beside it. A new song pushes in.
+ */
+@Composable
+private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit) {
+    AnimatedContent(
+        targetState = n,
+        // a station's new song pushes in too
+        contentKey = { it.song?.takeUnless { s -> s.station }?.id ?: (it.song?.id.orEmpty() + it.title + it.artist) },
+        transitionSpec = {
+            ContentTransform(
+                slideInHorizontally(tween(Motion.ENTER, easing = Motion.expo)) { it / 3 * dir } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                slideOutHorizontally(tween(Motion.EXIT, easing = Motion.expo)) { -it / 3 * dir } + fadeOut(tween(Motion.EXIT)),
+            )
+        },
+        label = "push",
+    ) { t ->
+        val live by rememberUpdatedState(t)
+        if (small) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Sleeve(t, 72.dp, Modifier.clickwheel({ live }, scrub))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
+                    FadeText(t.title.uppercase(), headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Heart(t.song, 2.dp)
+                }
+                Spacer(Modifier.height(4.dp))
+                Row {
+                    FadeText(t.artist.lowercase(), pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Word("share", pixel(12.sp, Ink.mid), Modifier.padding(start = 12.dp), onClick = onShare)
+                }
+            }
+        } else Column {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val side = minOf(maxWidth, 420.dp)
+                Sleeve(t, side, Modifier.clickwheel({ live }, scrub))
+            }
+            Spacer(Modifier.height(20.dp))
+            // the title, and beside it the desktop's heart
+            Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
+                FadeText(t.title.uppercase(), headline(32.sp), maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Heart(t.song, 3.dp, Modifier.padding(start = 8.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            // on a speaker: what reaches it ("flac 24/96 on dining room speaker")
+            if (t.device.isNotEmpty()) {
+                BasicText(listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" "),
+                    style = pixel(11.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+            }
+            // the artist and the record, each a way to its page
+            Row(Modifier.fillMaxWidth()) {
+              Row(Modifier.weight(1f)) {
+                val song = t.song
+                FadeText(t.artist.lowercase(), pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Artist(it.albumArtist)) } }))
+                if (t.album.isNotBlank()) {
+                    Spacer(Modifier.width(14.dp))
+                    FadeText(t.album.lowercase(), pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
+                            onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Record(it.albumId)) } }))
+                }
+              }
+                // the song as a poster, for a story or a message
+                Word("share", pixel(12.sp, Ink.mid), Modifier.padding(start = 12.dp), onClick = onShare)
+            }
+        }
+    }
+}
+
+@Composable
+private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
+    val c = rememberCover(t.song)
+    Box(modifier.size(side)) {
+        if (c != null) Image(c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else if (t.song?.station == true) StationCover(t.song, Modifier.fillMaxSize(), moving = t.moving)
+        else NameCover(t.album.ifEmpty { t.title }, side)
+    }
+}
+
+/**
+ * The cover in its look across the whole page, drawn off the main thread once a cover and look;
+ * the one up stays until the next is ready, then fades in. The grain over it (not dither's).
+ */
+@Composable
+private fun Backdrop(cover: Cover?) {
+    val look by Looks.on.collectAsState()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = LocalDensity.current.density
+        // the square cover cropped to fill the page: shown at the page's longer side
+        val shown = maxOf(maxWidth, maxHeight).value * density
+        val drawn by produceState<Pair<ImageBitmap, Look>?>(null, cover, look, shown) {
+            if (cover == null || look == Look.PLAIN) { value = null; return@produceState }
+            withContext(Dispatchers.Default) { Looks.draw(cover.image.asAndroidBitmap(), look, cover.accent, shown, density) }
+                ?.let { value = it.asImageBitmap() to look }
+        }
+        drawn?.let { (img, shape) ->
+            val fade = remember(img) { Animatable(0f) }
+            LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
+            Image(
+                img, null, Modifier.fillMaxSize().graphicsLayer { alpha = fade.value },
+                contentScale = ContentScale.Crop,
+                filterQuality = if (shape.crisp) FilterQuality.None else FilterQuality.Low,
+            )
+            if (shape != Look.DITHER) Grain()
+        }
+    }
+}
+
+/** ink's fine grain over the art, so the blur reads as a colour field, not a picture. */
+@Composable
+private fun Grain() {
+    val img = ImageBitmap.imageResource(R.drawable.grain)
+    val brush = remember(img) { ShaderBrush(ImageShader(img, TileMode.Repeated, TileMode.Repeated)) }
+    Canvas(Modifier.fillMaxSize()) { drawRect(brush, alpha = .18f, blendMode = BlendMode.Overlay) }
+}
+
+/**
+ * The times, then the 1 px line filling with the song in the cover's colour, ruled straight onto
+ * the cover's top edge. Drag along it, or tap, to scrub: the times light while the finger is
+ * down, the song jumps there on letting go.
+ */
+@Composable
+private fun Scrubber(n: Now, accent: Color, scrub: Scrub) {
+    var pos by remember { mutableLongStateOf(n.positionNow()) }
+    LaunchedEffect(n) {
+        while (true) { pos = n.positionNow(); if (!n.moving) break; delay(250) }
+    }
+    val shown = scrub.at ?: pos
+    val frac = if (n.duration > 0) (shown.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
+    val times by animateColorAsState(if (scrub.at != null) Ink.ink else Ink.dim, tween(Motion.FADE), label = "times")
+    val duration by rememberUpdatedState(n.duration)
+    fun where(x: Float, width: Int) = ((x / width).coerceIn(0f, 1f) * duration).toLong()
+    Column(
+        Modifier
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = { o ->
+                    if (duration <= 0) return@detectTapGestures
+                    scrub.at = where(o.x, size.width)
+                    if (tryAwaitRelease()) scrub.at?.let(Playback::seek)
+                    scrub.at = null
+                })
+            }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { o -> if (duration > 0) scrub.at = where(o.x, size.width) },
+                    onDragEnd = { scrub.at?.let(Playback::seek); scrub.at = null },
+                    onDragCancel = { scrub.at = null },
+                ) { c, _ -> c.consume(); if (duration > 0) scrub.at = where(c.position.x, size.width) }
+            },
+    ) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            BasicText(clock(shown), style = pixel(11.sp, times))
+            BasicText(if (n.duration > 0) "-" + clock(n.duration - shown) else "", style = pixel(11.sp, times))
+        }
+        // the line sits on the cover's top edge: nothing between them
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
+            Box(Modifier.fillMaxWidth(frac).height(1.dp).background(accent))
+        }
+    }
+}
+
+/**
+ * The iPod's clickwheel, with the cover as its hub (ink's): circle a thumb round it to scrub,
+ * clockwise forward, a tick every 15 degrees moving the song 5 s; letting go seeks there. A tap
+ * is the centre button: play / pause.
+ */
+private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = composed {
+    val view = LocalView.current
+    val hub = with(LocalDensity.current) { 18.dp.toPx() }   // too near the centre, the angle jumps
+    pointerInput(Unit) {
+        awaitEachGesture {
+            val down = awaitFirstDown()
+            down.consume()
+            val t = now()
+            val wheel = t.duration > 0
+            val centre = Offset(size.width / 2f, size.height / 2f)
+            val from = t.positionNow()
+            var last: Float? = null
+            var turned = 0f
+            var ticks = 0
+            var travel = 0f
+            while (true) {
+                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed) break
+                change.consume()
+                travel += (change.position - change.previousPosition).getDistance()
+                if (!wheel) continue
+                val v = change.position - centre
+                if (v.getDistance() < hub) { last = null; continue }
+                val a = atan2(v.y, v.x)   // screen y runs down, so clockwise is positive
+                last?.let {
+                    var d = a - it
+                    if (d > PI) d -= (2 * PI).toFloat()
+                    if (d < -PI) d += (2 * PI).toFloat()
+                    turned += d
+                }
+                last = a
+                val k = (turned / WHEEL_STEP).toInt()
+                if (k != ticks) {
+                    ticks = k
+                    scrub.at = (from + k * WHEEL_SEEK).coerceIn(0L, t.duration)
+                    view.performHapticFeedback(TICK)
+                }
+            }
+            when {
+                scrub.at != null -> { scrub.at?.let(Playback::seek); scrub.at = null }
+                travel < viewConfiguration.touchSlop -> Playback.toggle()
+            }
+        }
+    }
+}
+
+private val WHEEL_STEP = (PI / 12).toFloat()   // 15 degrees: 24 ticks a turn
+private const val WHEEL_SEEK = 5_000L          // so a turn is two minutes
+private val TICK = if (Build.VERSION.SDK_INT >= 34) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
+else HapticFeedbackConstants.CLOCK_TICK
+
+/** A song's synced lines and where it is in them (-1 before the first; a blank one is a gap). */
+data class Lyric(val lines: List<Line>, val index: Int)
+
+/** Where the song is in its synced lines, while lyrics are on; null for a song without them (or not yet found), or off. */
+@Composable
+fun rememberLyric(n: Now?, on: Boolean): Lyric? {
+    val lines by produceState<List<Line>?>(null, n?.artist, n?.title, on) {
+        value = null
+        // a station's song: live, its place unknown, so no lines to follow
+        if (n == null || !on || n.song?.station == true) return@produceState
+        while (true) {
+            value = try { Lyrics.of(n) } catch (e: java.io.IOException) { null }
+            if (value != null) break
+            delay(60_000)   // lrclib couldn't be reached: ask again in a minute
+        }
+    }
+    val track by rememberUpdatedState(n)
+    val pos by produceState(n?.positionNow() ?: 0L, n) {
+        while (true) {
+            value = track?.positionNow() ?: 0L
+            if (track?.moving != true) break
+            delay(100)
+        }
+    }
+    val all = lines
+    if (all.isNullOrEmpty() || n == null) return null
+    return Lyric(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD })
+}
+
+/**
+ * The lines, as on ink's home: the one being sung big, its words lighting dim to ink one after
+ * another; the one before small and dim above, the next ones dim below. A new line lifts the
+ * block a drift and fades it in (never sideways, nothing scrolls).
+ */
+@Composable
+private fun LyricsBlock(l: Lyric, modifier: Modifier) {
+    val drift = with(LocalDensity.current) { Motion.drift.roundToPx() }
+    // the lines to come run out of room at the foot: feathered, never cut
+    BoxWithConstraints(modifier.clipToBounds().feather({ 0f }, { 1f })) {
+        // by the room both ways: tall alone grew the sung line past the width (cut off mid-word)
+        val k = minOf(maxHeight / 330.dp, maxWidth / 380.dp).coerceIn(.6f, 1.15f)
+        AnimatedContent(
+            targetState = l.index,
+            transitionSpec = {
+                (slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { drift } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
+                    (slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { -drift } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)))
+            },
+            label = "line",
+        ) { i ->
+            val lines = l.lines
+            val sung = lines.getOrNull(i)?.takeIf { it.words.isNotBlank() }
+            val before = (i - 1 downTo 0).asSequence().map { lines[it] }.firstOrNull { it.words.isNotBlank() }?.takeIf { sung != null }
+            val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(3).toList()
+            Column(Modifier.fillMaxWidth()) {
+                before?.let {
+                    BasicText(it.words.uppercase(), style = headline(20.sp * k, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(16.dp * k))
+                }
+                sung?.let {
+                    FadeText(it.words.uppercase(), headline(44.sp * k), maxLines = 4, overflow = TextOverflow.Ellipsis, from = Ink.dim)
+                    Spacer(Modifier.height(18.dp * k))
+                }
+                after.forEach {
+                    BasicText(it.words.uppercase(), style = headline(24.sp * k, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(12.dp * k))
+                }
+            }
+        }
+    }
+}

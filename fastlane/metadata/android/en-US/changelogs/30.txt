@@ -1,0 +1,8 @@
+The first release.
+
+- Your phone's files, Navidrome / Subsonic and YouTube Music as one library
+- The player over the cover in five looks, the clickwheel, synced lyrics
+- Even volume (ReplayGain), radio when the queue runs out, your server's playlists
+- Your year; posters of a song or the year
+- Play on Chromecast, speaker groups and DLNA; Android Auto; a home-screen widget
+- A listen page: your artists' mixes, the week on indie radio, ink radio (stations chosen by hand, saying what they play)

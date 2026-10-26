@@ -1,0 +1,31 @@
+name: Something's wrong
+description: A bug, a crash, or something that doesn't play
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Version and build
+      description: Settings shows it. Full or play?
+      placeholder: 1.0, full
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Phone and Android version
+      placeholder: Pixel 9, Android 16
+  - type: dropdown
+    attributes:
+      label: Where the music came from
+      multiple: true
+      options: [The phone's files, Navidrome / Subsonic, YouTube Music, ink radio, A station by genre]
+  - type: textarea
+    attributes:
+      label: Logs
+      description: If you can, `adb logcat | grep ink-` while it happens.
+      render: text

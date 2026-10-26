@@ -1,0 +1,10 @@
+name: An idea
+description: Something ink music could do
+labels: [idea]
+body:
+  - type: textarea
+    attributes:
+      label: The idea
+      description: What you'd like, and what it would let you do.
+    validations:
+      required: true
