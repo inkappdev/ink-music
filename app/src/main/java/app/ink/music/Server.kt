@@ -42,6 +42,8 @@ object Server {
     /** Songs on the server, last read; and whether a read is under way. */
     val count = MutableStateFlow(0)
     val syncing = MutableStateFlow(false)
+    /** Whether the server finds paths by how songs sound (OpenSubsonic's `sonicSimilarity`: Navidrome with AudioMuse-AI). */
+    val sonic = MutableStateFlow(false)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var app: Context? = null
@@ -103,6 +105,7 @@ object Server {
         songsFile(c).delete()
         _account.value = null
         count.value = 0
+        sonic.value = false
         Loved.putServer(emptySet())
         Library.putServer(emptyList())
     }
@@ -115,6 +118,10 @@ object Server {
         syncing.value = true
         scope.launch {
             try {
+                sonic.value = runCatching {
+                    val ext = call(a, "getOpenSubsonicExtensions")?.optJSONArray("openSubsonicExtensions")
+                    ext != null && (0 until ext.length()).any { ext.optJSONObject(it)?.optString("name") == "sonicSimilarity" }
+                }.getOrDefault(sonic.value)
                 // whose each record is (a song says only who sings it)
                 val recordArtist = HashMap<String, String>()
                 var offset = 0
@@ -242,9 +249,9 @@ object Server {
     /** The id a song goes into a playlist by: the server's, or a phone song's twin there; null when the server hasn't it. */
     fun idOf(s: Song): String? = (if (s.server) s.id else Library.twin(s.id))?.removePrefix("n")
 
-    /** A new playlist (with `song` in it, if given); false when the server said no. */
-    suspend fun makePlaylist(name: String, song: Song?): Boolean = change {
-        val params = listOfNotNull("name" to name, song?.let(::idOf)?.let { "songId" to it })
+    /** A new playlist with `songs` in it, in order (none is fine); false when the server said no. */
+    suspend fun makePlaylist(name: String, songs: List<Song>): Boolean = change {
+        val params = listOf("name" to name) + songs.mapNotNull(::idOf).map { id -> "songId" to id }
         call(it, "createPlaylist", *params.toTypedArray())
     }
 
@@ -322,6 +329,23 @@ object Server {
                 ?: return emptyList()
             (0 until list.length()).mapNotNull { list.optJSONObject(it) }.map { song(a, it, emptyMap()) }.filter { it.id != "n$sid" }
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * A path from one song to another, each a small step from the last by how they sound (the
+     * server's `findSonicPath`), `from` first and `to` last; the phone's copy of a song where there's
+     * one. Empty when the server found none, or doesn't find paths.
+     */
+    suspend fun path(from: Song, to: Song, count: Int = 20): List<Song> = withContext(Dispatchers.IO) {
+        val a = _account.value ?: return@withContext emptyList()
+        val start = idOf(from) ?: return@withContext emptyList()
+        val end = idOf(to) ?: return@withContext emptyList()
+        val found = runCatching { call(a, "findSonicPath", "startSongId" to start, "endSongId" to end, "count" to count)?.optJSONArray("sonicMatch") }
+            .getOrNull() ?: return@withContext emptyList()
+        (0 until found.length()).mapNotNull { found.optJSONObject(it)?.optJSONObject("entry") }.map { o ->
+            val sid = "n" + o.optString("id")
+            Library.mine(sid)?.let(Library::song) ?: Library.song(sid) ?: song(a, o, emptyMap())
+        }
     }
 
     fun scrobble(c: Context, songId: String, done: Boolean) {

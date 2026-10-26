@@ -185,6 +185,7 @@ sealed interface Page {
     data class Playlist(val id: String, val name: String) : Page
     data class Tube(val album: TubeAlbum) : Page
     data class AddTo(val song: Song) : Page
+    data class Path(val song: Song) : Page
     data object Loved : Page
     data object Year : Page
     data object Pick : Page
@@ -251,6 +252,7 @@ private fun App() {
                         is Page.Playlist -> PlaylistPage(p.id, p.name, pages)
                         is Page.Tube -> TubeAlbumPage(p.album, pages)
                         is Page.AddTo -> AddToPage(p.song, pages)
+                        is Page.Path -> PathPage(p.song, pages)
                         Page.Loved -> LovedPage(pages)
                         Page.Year -> YearPage(pages)
                         Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
@@ -408,7 +410,8 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
 
 /**
  * A song as words. A tap plays (from there, in its list); held, its options open under it:
- * play next, add to queue, radio (it, then songs like it), love, add to a playlist (a song the server has), its record, its artist;
+ * play next, add to queue, radio (it, then songs like it), love, add to a playlist (a song the server has), a path from it to
+ * another (a server that finds them), its record, its artist;
  * in a playlist of yours, remove. Swiped right it plays next, left it goes to
  * the queue's end: the word shows under it as it slides, lit (and ticked) once far enough to count.
  */
@@ -477,6 +480,9 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
             val account by Server.account.collectAsState()
             if (pages != null && account != null && Server.idOf(s) != null)
                 Word("add to playlist", pixel(13.sp), touch = 8.dp) { open = false; pages.open(Page.AddTo(s)) }
+            val sonic by Server.sonic.collectAsState()
+            if (pages != null && sonic && account != null && Server.idOf(s) != null)
+                Word("path to", pixel(13.sp), touch = 8.dp) { open = false; pages.open(Page.Path(s)) }
             onRemove?.let { Word("remove", pixel(13.sp), touch = 8.dp) { open = false; it() } }
             if (pages != null && number == null && s.album.isNotEmpty() && !s.tube) Word("record", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Record(s.albumId)) }
             if (pages != null) Word("artist", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Artist(s.albumArtist)) }
@@ -810,6 +816,101 @@ private fun AddToPage(s: Song, pages: Pages) {
     } }
 }
 
+/**
+ * A path from a song to another, by how they sound (the server's sonic paths: Navidrome with
+ * AudioMuse-AI): "to >" finds the song to end on among the server's; then the way there, a step a
+ * song, to play from any of them, or keep as a playlist ("<from> to <to>"); "another" picks again.
+ */
+@Composable
+private fun PathPage(from: Song, pages: Pages) {
+    val songs by Library.songs.collectAsState()
+    var query by rememberSaveable { mutableStateOf("") }
+    var to by remember { mutableStateOf<Song?>(null) }
+    var path by remember { mutableStateOf<List<Song>?>(null) }
+    var kept by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(to) { path = null; kept = null; to?.let { path = Server.path(from, it) } }
+    val q = query.trim().lowercase()
+    val found = remember(q, songs) {
+        if (q.isEmpty()) emptyList() else songs.asSequence()
+            .filter { it.id != from.id && Server.idOf(it) != null && (it.title.lowercase().contains(q) || it.artist.lowercase().contains(q)) }
+            .sortedBy { if (it.title.lowercase().startsWith(q)) 0 else 1 }.take(40).toList()
+    }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val scope = rememberCoroutineScope()
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BasicText("A PATH", style = headline(44.sp))
+            Spacer(Modifier.height(8.dp))
+            BasicText("from one song to another, a step at a time, by how they sound", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(18.dp))
+            BasicText("from", style = pixel(11.sp, Ink.mid))
+            BasicText(from.title.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            BasicText(from.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(16.dp))
+        }
+        val end = to
+        if (end == null) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BasicText("to > ", style = pixel(14.sp, Ink.dim))
+                    BasicTextField(
+                        query, { query = it }, singleLine = true,
+                        textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
+                        modifier = Modifier.weight(1f).focusRequester(focus),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                if (q.isNotEmpty() && found.isEmpty()) BasicText("nothing on your server called that", style = pixel(12.sp, Ink.mid))
+            }
+            items(found, key = { "to" + it.id }) { s ->
+                Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
+                    onClick = felt { keyboard?.hide(); to = s }).padding(vertical = 9.dp)) {
+                    BasicText(s.title.uppercase(), style = headline(19.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    BasicText(s.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        } else {
+            item {
+                BasicText("to", style = pixel(11.sp, Ink.mid))
+                BasicText(end.title.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                BasicText(end.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(16.dp))
+                val way = path
+                BasicText(
+                    when {
+                        way == null -> "finding the way"
+                        way.isEmpty() -> "the server found no way there"
+                        else -> listOfNotNull("${way.size} songs", way.sumOf { it.duration }.takeIf { it > 0 }?.let { "${it / 60_000} min" }).joinToString("   ")
+                    },
+                    style = pixel(12.sp, Ink.mid),
+                )
+                Spacer(Modifier.height(14.dp))
+                Row {
+                    if (!way.isNullOrEmpty()) {
+                        Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(way, 0) }
+                        Word(when (kept) { true -> "kept"; false -> "the server didn't take it"; null -> "keep" }, pixel(14.sp, Ink.mid),
+                            Modifier.padding(end = 26.dp), touch = 8.dp) {
+                            if (kept == null) scope.launch { kept = Server.makePlaylist("${from.title} to ${end.title}", way) }
+                        }
+                    }
+                    Word("another", pixel(14.sp, Ink.mid), touch = 8.dp) { to = null }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+            val way = path.orEmpty()
+            // no keys: a path could pass one song twice
+            itemsIndexed(way) { i, s -> SongRow(s, number = "${i + 1}", pages = pages) { Playback.play(way, i) } }
+        }
+    } }
+}
+
 /** "new >" and a name: go makes the playlist on the server (with `song` in it, if there's one). */
 @Composable
 private fun NewPlaylist(song: Song?, focused: Boolean = false, onMade: (Boolean) -> Unit) {
@@ -822,7 +923,7 @@ private fun NewPlaylist(song: Song?, focused: Boolean = false, onMade: (Boolean)
         val n = name.trim()
         if (n.isEmpty()) return
         scope.launch {
-            val ok = Server.makePlaylist(n, song)
+            val ok = Server.makePlaylist(n, listOfNotNull(song))
             if (ok) { name = ""; keyboard?.hide() }
             onMade(ok)
         }
