@@ -126,7 +126,8 @@ Android 12 or later.
 ## From the makers of ink
 
 <p align="center">
-  <img src=".github/ink/rodman.png" width="24%" alt="ink's home screen: the time, your apps as words, and the song playing" />
+  <img src=".github/ink/endless.png" width="24%" alt="ink's home screen: the time, your apps as words, and Deep Cuts playing" />
+  <img src=".github/ink/house-on.png" width="24%" alt="ink's house: every light a little pixel lamp, glowing when it's on" />
   <img src=".github/ink/games-n64-ink.png" width="24%" alt="ink's games: box art and shelves for your emulators" />
   <img src=".github/ink/given-12m.png" width="24%" alt="+12m: the time ink gave back from instagram" />
 </p>
