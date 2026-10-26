@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 17: asked before an app may reach devices on the wifi (a server at home) -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
+    <application
+        android:label="ink music"
+        android:icon="@mipmap/icon"
+        android:roundIcon="@mipmap/icon"
+        android:theme="@style/Ink"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
+        <!-- cleartext: a server at home is usually plain http on the wifi (or a tailnet) -->
+
+        <activity
+            android:name=".Main"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- the player in its own process: the screens can be rebuilt (or crash) without a
+             skip in the music -->
+        <service
+            android:name=".PlayerService"
+            android:process=":player"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <!-- covers for the car, the notification and the lock screen (Auto reads them from here);
+             in the player's process, where the library is read for the car -->
+        <provider
+            android:name=".CoverProvider"
+            android:authorities="${applicationId}.covers"
+            android:process=":player"
+            android:exported="true" />
+
+        <!-- the widget, in the player's process (which tells it what's playing) -->
+        <receiver
+            android:name=".Widget"
+            android:process=":player"
+            android:label="ink music"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />
+        </receiver>
+
+        <!-- Android Auto: ink music is a media app there -->
+        <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
+
+        <!-- a share card handed to another app (a story, a message) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.shared"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/shared" />
+        </provider>
+    </application>
+</manifest>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ink music's icon: INK with MUSIC under it, on black (tools/make-icon.py); the words alone are the monochrome for themed icons -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@android:color/black" />
+    <foreground android:drawable="@drawable/icon_word" />
+    <monochrome android:drawable="@drawable/icon_word" />
+</adaptive-icon>

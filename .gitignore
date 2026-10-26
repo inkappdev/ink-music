@@ -1,0 +1,8 @@
+.gradle/
+build/
+local.properties
+keystore.properties
+*.iml
+.idea/
+.kotlin/
+CLAUDE.md

@@ -1,0 +1,949 @@
+package app.ink.music
+
+import android.Manifest
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.layout
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.unit.Dp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
+import dev.chrisbanes.haze.HazeState
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+
+class Main : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        Lyrics.start(this)
+        Looks.start(this)
+        Loved.start(this)
+        YouTubeMusic.attach(this)
+        Server.start(this)
+        Order.start(this)
+        Seeds.start(this)
+        Stations.curated(this)
+        setContent { App() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Playback.connect(this)
+        Order.opened()
+    }
+
+    override fun onStop() {
+        Playback.release()
+        Order.left()
+        super.onStop()
+    }
+}
+
+/**
+ * The library's order: a to z, or shuffled (a setting). Shuffled, it's new each time the app is
+ * opened (fresh, or back after 10 minutes away; not back from a moment in another app), and holds
+ * still until then: each record, artist and song has its place by the run's seed, so one added
+ * meanwhile slots in without moving the rest.
+ */
+object Order {
+    private val _shuffled = MutableStateFlow(false)
+    val shuffled: StateFlow<Boolean> = _shuffled
+    private val _seed = MutableStateFlow(java.util.Random().nextLong())
+    val seed: StateFlow<Long> = _seed
+    private var away = 0L
+    private var prefs: android.content.SharedPreferences? = null
+
+    fun start(c: android.content.Context) {
+        prefs = c.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+        _shuffled.value = prefs!!.getBoolean("shuffled", false)
+    }
+
+    fun set(on: Boolean) {
+        prefs?.edit()?.putBoolean("shuffled", on)?.apply()
+        _shuffled.value = on
+        if (on) _seed.value = java.util.Random().nextLong()
+    }
+
+    fun left() { away = android.os.SystemClock.elapsedRealtime() }
+    fun opened() {
+        if (away != 0L && android.os.SystemClock.elapsedRealtime() - away > 10 * 60_000L) _seed.value = java.util.Random().nextLong()
+        away = 0L
+    }
+
+    /** `list` in the run's order: each by its own key's place (splitmix64 of the key and the seed). */
+    fun <T> of(list: List<T>, seed: Long, key: (T) -> String): List<T> = list.sortedBy { item ->
+        var z = key(item).hashCode().toLong() xor seed
+        z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
+        z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
+        z xor (z ushr 31)
+    }
+}
+
+/** Clear of the status bar and every cutout, upright or sideways (ink's rule 6). */
+val bars @Composable get() = WindowInsets.statusBars.union(WindowInsets.displayCutout)
+
+/** A page over the library. */
+sealed interface Page {
+    data class Record(val id: String) : Page
+    data class Artist(val name: String) : Page
+    data object Find : Page
+    data object Settings : Page
+    data class Playlist(val id: String, val name: String) : Page
+    data class Tube(val album: TubeAlbum) : Page
+    data class AddTo(val song: Song) : Page
+    data object Loved : Page
+    data object Year : Page
+    data object Pick : Page
+    data object InkRadio : Page
+}
+
+/** Where the library's pages go: pushed in from the right, back out to the right (the iPod's). */
+class Pages {
+    val stack = mutableStateListOf<Page>()
+    var forward by mutableStateOf(true)
+    fun open(p: Page) { forward = true; stack.add(p) }
+    fun back() { forward = false; stack.removeLastOrNull() }
+}
+
+@Composable
+private fun App() {
+    val ctx = LocalContext.current
+    var allowed by remember { mutableStateOf(Library.allowed(ctx)) }
+    val welcomed by Seeds.welcomed.collectAsState()
+    LaunchedEffect(allowed) { if (allowed) Library.start(ctx) }
+    // what plays found in the library once it's read (its cover, its record)
+    val library by Library.songs.collectAsState()
+    LaunchedEffect(library) { Playback.refresh() }
+
+    val pages = remember { Pages() }
+    var playerUp by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    BackHandler(playerUp) { playerUp = false }
+    BackHandler(pages.stack.isNotEmpty() && !playerUp) { pages.back() }
+
+    Box(Modifier.fillMaxSize().background(Ink.black)) {
+        // the first open: ink music before anything is asked
+        if (!welcomed) {
+            Welcome(onAllowed = { allowed = true }, onDone = {})
+            return@Box
+        }
+        // everything scrolls on under the mini player, which shows it frosted
+        val frost = rememberHazeState()
+        var foot by remember { mutableStateOf(0.dp) }
+        val density = LocalDensity.current
+        CompositionLocalProvider(LocalFoot provides foot) {
+            Box(Modifier.fillMaxSize().hazeSource(frost)) {
+                // the library stays built under the pages (never thrown away to show one)
+                LibraryPage(pages)
+                AnimatedContent(
+                    targetState = pages.stack.lastOrNull(),
+                    transitionSpec = {
+                        val f = pages.forward
+                        ContentTransform(
+                            slideInHorizontally(tween(Motion.ENTER, easing = Motion.expo)) { if (f) (it * .2f).toInt() else -(it * .1f).toInt() } +
+                                fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                            slideOutHorizontally(tween(Motion.EXIT, easing = Motion.expo)) { if (f) -(it * .1f).toInt() else (it * .1f).toInt() } +
+                                fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+                        )
+                    },
+                    label = "pages",
+                ) { p ->
+                    when (p) {
+                        null -> Box(Modifier.fillMaxSize())
+                        is Page.Record -> RecordPage(p.id, pages)
+                        is Page.Artist -> ArtistPage(p.name, pages)
+                        Page.Find -> FindPage(query, { query = it }, pages)
+                        Page.Settings -> SettingsPage(pages)
+                        is Page.Playlist -> PlaylistPage(p.id, p.name, pages)
+                        is Page.Tube -> TubeAlbumPage(p.album, pages)
+                        is Page.AddTo -> AddToPage(p.song, pages)
+                        Page.Loved -> LovedPage(pages)
+                        Page.Year -> YearPage(pages)
+                        Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
+                        Page.InkRadio -> InkRadioPage(pages)
+                    }
+                }
+            }
+        }
+        Box(Modifier.align(Alignment.BottomCenter).onSizeChanged { foot = with(density) { it.height.toDp() } }) {
+            MiniPlayer(frost, onOpen = { playerUp = true })
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            playerUp,
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { PlayerPage(onClose = { playerUp = false }, onOpen = { playerUp = false; pages.open(it) }) }
+    }
+}
+
+/**
+ * The library: listen first (something to play whatever the phone holds), then records as covers
+ * (the only colour), artists or every song as words, and lists; "find" at the row's end. With
+ * nothing on the phone or a server, only listen and lists.
+ */
+@Composable
+private fun LibraryPage(pages: Pages) {
+    val albums by Library.albums.collectAsState()
+    val songs by Library.songs.collectAsState()
+    val read by Library.read.collectAsState()
+    var tab by rememberSaveable { mutableStateOf("listen") }
+    val listenList = rememberLazyListState()
+    val grid = rememberLazyGridState()
+    val artistList = rememberLazyListState()
+    val songList = rememberLazyListState()
+    val shuffled by Order.shuffled.collectAsState()
+    val seed by Order.seed.collectAsState()
+    // the library in the run's order, when shuffled; a new order starts at the top
+    val artists = remember(albums, songs, shuffled, seed) { artistsOf(albums, songs).let { if (shuffled) Order.of(it, seed) { a -> a.name } else it } }
+    val records = remember(albums, shuffled, seed) { if (shuffled) Order.of(albums, seed) { it.id } else albums }
+    val everySong = remember(songs, shuffled, seed) { if (shuffled) Order.of(songs, seed) { it.id } else songs }
+    LaunchedEffect(shuffled, seed) { grid.scrollToItem(0); artistList.scrollToItem(0); songList.scrollToItem(0) }
+    val tabsFrost = rememberHazeState()
+    var head by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+    val foot = LocalFoot.current
+    val sides = bars.only(WindowInsetsSides.Horizontal)
+    // the lists start under the tab row (not under its band) and leave room to scroll under the mini player
+    val pad = PaddingValues(start = 20.dp, end = 20.dp, top = (head - BAND).coerceAtLeast(0.dp) + 6.dp, bottom = foot + 24.dp)
+    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().hazeSource(tabsFrost).windowInsetsPadding(sides)) {
+        when {
+            tab == "listen" || (songs.isEmpty() && tab != "lists") -> ListenPage(pages, pad, listenList)
+            tab == "albums" -> LazyVerticalGrid(
+                GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
+                horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
+            ) {
+                items(records, key = { it.id }) { a -> RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
+            }
+            tab == "artists" -> LazyColumn(state = artistList, contentPadding = pad) {
+                items(artists, key = { it.name }) { a -> ArtistRow(a) { pages.open(Page.Artist(a.name)) } }
+            }
+            // lists: the songs you love, your year, then your playlists (and "new >" for one more)
+            tab == "lists" -> {
+                val lists by Server.playlists.collectAsState()
+                val lovedIds by Loved.ids.collectAsState()
+                val account by Server.account.collectAsState()
+                val ctx = LocalContext.current
+                val minutes by androidx.compose.runtime.produceState<Long?>(null) {
+                    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Year.of(History.read(ctx)).minutes }
+                }
+                LazyColumn(state = artistList, contentPadding = pad) {
+                    item {
+                        if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}") { pages.open(Page.Loved) }
+                        ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
+                        Spacer(Modifier.height(10.dp))
+                        if (account != null) { NewPlaylist(null) {}; Spacer(Modifier.height(10.dp)) }
+                    }
+                    items(lists, key = { it.id }) { pl ->
+                        Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
+                            onClick = felt { pages.open(Page.Playlist(pl.id, pl.name)) }).padding(vertical = 9.dp)) {
+                            BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(10.sp, Ink.mid))
+                        }
+                    }
+                }
+            }
+            else -> LazyColumn(state = songList, contentPadding = pad) {
+                itemsIndexed(everySong, key = { _, s -> s.id }) { i, s -> SongRow(s, onClick = { Playback.play(everySong, i) }) }
+            }
+        }
+    }
+    // the tab row on black; what scrolls up toward it softens just under it
+    Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
+      Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(bars)) {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            // the tabs slide sideways when they're more than the row holds; find and the cog stay put
+            // (softening as they near them)
+            val slide = rememberHazeState()
+            Box(Modifier.weight(1f)) {
+                Row(Modifier.hazeSource(slide).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    // nothing on the phone or a server: no records, artists or songs to show
+                    (if (songs.isEmpty()) listOf("listen", "lists") else listOf("listen", "albums", "artists", "songs", "lists")).forEach { t ->
+                        val on = t == tab || (t == "listen" && songs.isEmpty() && tab != "lists")
+                        Word(t, pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 12.dp), touch = 8.dp) { tab = t }
+                    }
+                }
+                Box(Modifier.matchParentSize().wrapContentWidth(Alignment.End).width(BAND).softEdgeEnd(slide))
+            }
+            Spacer(Modifier.width(12.dp))
+            // the cog is on the listen page, by its greeting
+            Word("find", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.Find) }
+        }
+      }
+      Box(Modifier.fillMaxWidth().height(BAND).softEdge(tabsFrost, towardBottom = false))
+    }
+    }
+}
+
+/** An artist as the library lists them: their name, how many records and songs. */
+data class ArtistEntry(val name: String, val records: Int, val songs: Int)
+
+/** Every artist: whose records they are, and who sings (each of "a, b" counts). */
+fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry> {
+    val records = albums.groupingBy { it.artist }.eachCount()
+    // their songs: the ones they sing, and those on their records (a label filed as the album
+    // artist sings none, and read "0 songs")
+    val theirs = HashMap<String, MutableSet<String>>()
+    songs.forEach { s -> (s.artist.split(", ") + s.albumArtist).forEach { theirs.getOrPut(it) { HashSet() } += s.id } }
+    return (records.keys + theirs.keys).filter { it != "unknown" }.distinct()
+        .map { ArtistEntry(it, records[it] ?: 0, theirs[it]?.size ?: 0) }
+        .sortedBy { Library.sortName(it.name) }
+}
+
+@Composable
+private fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
+        BasicText(a.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        BasicText(
+            listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
+            style = pixel(10.sp, Ink.mid),
+        )
+    }
+}
+
+@Composable
+fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
+    Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        CoverOf(a.songs.first(), a.title, Modifier.fillMaxWidth().aspectRatio(1f))
+        Spacer(Modifier.height(8.dp))
+        BasicText(a.title.uppercase(), style = headline(15.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(3.dp))
+        BasicText(a.artist.lowercase(), style = pixel(10.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * A song as words. A tap plays (from there, in its list); held, its options open under it:
+ * play next, add to queue, radio (it, then songs like it), love, add to a playlist (a song the server has), its record, its artist;
+ * in a playlist of yours, remove. Swiped right it plays next, left it goes to
+ * the queue's end: the word shows under it as it slides, lit (and ticked) once far enough to count.
+ */
+@Composable
+private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, onClick: () -> Unit) {
+    val now by Playback.now.collectAsState()
+    val on = now?.song?.id == s.id
+    var open by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    val tap = felt(then = onClick)
+    val scope = rememberCoroutineScope()
+    val slid = remember { Animatable(0f) }
+    var armed by remember { mutableIntStateOf(0) }    // 1: play next, -1: to the queue's end
+    var done by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(done) { if (done != null) { delay(1_400); done = null } }
+    val reach = with(LocalDensity.current) { SWIPE.toPx() }
+    Box(Modifier.fillMaxWidth()) {
+        if (slid.value != 0f) Row(Modifier.matchParentSize(), verticalAlignment = Alignment.CenterVertically) {
+            if (slid.value > 0) BasicText("play next", style = pixel(13.sp, if (armed == 1) Ink.ink else Ink.dim))
+            Spacer(Modifier.weight(1f))
+            if (slid.value < 0) BasicText("add to queue", style = pixel(13.sp, if (armed == -1) Ink.ink else Ink.dim))
+        }
+    Column(
+        Modifier.fillMaxWidth().offset { IntOffset(slid.value.roundToInt(), 0) }.background(Ink.black).pointerInput(s.id) {
+            detectTapGestures(
+                onTap = { if (open) open = false else tap() },
+                onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); open = !open },
+            )
+        }.pointerInput(s.id) {
+            var pulled = 0f
+            fun letGo(act: Boolean) {
+                if (act) when (armed) {
+                    1 -> { Playback.playNext(s); done = "next" }
+                    -1 -> { Playback.add(s); done = "queued" }
+                }
+                armed = 0; pulled = 0f
+                scope.launch { slid.animateTo(0f, tween(Motion.EXIT, easing = Motion.expo)) }
+            }
+            detectHorizontalDragGestures(onDragEnd = { letGo(true) }, onDragCancel = { letGo(false) }) { change, dx ->
+                change.consume()
+                pulled += dx
+                // past the reach it slows, as if held
+                val past = (kotlin.math.abs(pulled) - reach).coerceAtLeast(0f)
+                scope.launch { slid.snapTo(kotlin.math.sign(pulled) * (kotlin.math.abs(pulled) - past * .7f)) }
+                val at = when { pulled > reach -> 1; pulled < -reach -> -1; else -> 0 }
+                if (at != armed) { armed = at; if (at != 0) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+            }
+        }.padding(vertical = 9.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            number?.let { BasicText(it, style = pixel(11.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(30.dp).padding(bottom = 3.dp)) }
+            Column(Modifier.weight(1f)) {
+                BasicText(s.title.uppercase(), style = headline(19.sp, if (on || now == null) Ink.ink else Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (number == null) BasicText(s.artist.lowercase(), style = pixel(10.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            // a swipe's word stays a moment where the length was: it's done
+            done?.let { BasicText(it, style = pixel(11.sp), modifier = Modifier.padding(start = 12.dp, bottom = 3.dp)) }
+                ?: if (s.duration > 0) BasicText(clock(s.duration), style = pixel(11.sp, Ink.mid), modifier = Modifier.padding(start = 12.dp, bottom = 3.dp)) else Unit
+        }
+        if (open) FlowRow(Modifier.padding(start = if (number != null) 30.dp else 0.dp, top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            Word("play next", pixel(13.sp), touch = 8.dp) { open = false; Playback.playNext(s) }
+            Word("add to queue", pixel(13.sp), touch = 8.dp) { open = false; Playback.add(s) }
+            Word("radio", pixel(13.sp), touch = 8.dp) { open = false; Playback.startRadio(s) }
+            val lovedIds by Loved.ids.collectAsState()
+            Word(if (s.id in lovedIds) "unlove" else "love", pixel(13.sp), touch = 8.dp) { open = false; Loved.toggle(s) }
+            val account by Server.account.collectAsState()
+            if (pages != null && account != null && Server.idOf(s) != null)
+                Word("add to playlist", pixel(13.sp), touch = 8.dp) { open = false; pages.open(Page.AddTo(s)) }
+            onRemove?.let { Word("remove", pixel(13.sp), touch = 8.dp) { open = false; it() } }
+            if (pages != null && number == null && s.album.isNotEmpty() && !s.tube) Word("record", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Record(s.albumId)) }
+            if (pages != null) Word("artist", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Artist(s.albumArtist)) }
+        }
+    }}
+}
+
+/** A record's page: its cover, its name, its songs as words; a tap plays from there. */
+@Composable
+private fun RecordPage(id: String, pages: Pages) {
+    val albums by Library.albums.collectAsState()
+    val a = albums.firstOrNull { it.id == id } ?: return
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
+                CoverOf(a.songs.first(), a.title, Modifier.size(minOf(maxWidth, 560.dp)))
+            }
+            Spacer(Modifier.height(18.dp))
+            BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(8.dp))
+            Word(a.artist.lowercase(), pixel(13.sp, Ink.mid), touch = 6.dp) { pages.open(Page.Artist(a.artist)) }
+            Spacer(Modifier.height(4.dp))
+            BasicText(
+                listOfNotNull(a.year.takeIf { it > 0 }?.toString(), "${a.songs.size} ${if (a.songs.size == 1) "song" else "songs"}",
+                    a.length.takeIf { it > 0 }?.let { "${(it / 60_000).coerceAtLeast(1)} min" }).joinToString("   "),
+                style = pixel(11.sp, Ink.mid),
+            )
+            Spacer(Modifier.height(16.dp))
+            Row {
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(a.songs, 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(a.songs.shuffled(), 0) }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s ->
+            SongRow(s, number = s.track.takeIf { it > 0 }?.toString() ?: "${i + 1}", pages = pages) { Playback.play(a.songs, i) }
+        }
+    } }
+}
+
+/** A row in "lists": its name big, a word on it small. */
+@Composable
+private fun ListRow(name: String, said: String, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
+        BasicText(name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (said.isNotEmpty()) BasicText(said, style = pixel(10.sp, Ink.mid))
+    }
+}
+
+/** The songs you love: play and shuffle, them a to z. */
+@Composable
+private fun LovedPage(pages: Pages) {
+    val songs by Library.songs.collectAsState()
+    val lovedIds by Loved.ids.collectAsState()
+    val tube by Loved.tube.collectAsState()
+    val theirs = remember(songs, lovedIds, tube) { (songs.filter { it.id in lovedIds } + tube).sortedBy { Library.sortName(it.title) } }
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BasicText("LOVED", style = headline(44.sp))
+            Spacer(Modifier.height(8.dp))
+            BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(11.sp, Ink.mid))
+            Spacer(Modifier.height(16.dp))
+            if (theirs.isNotEmpty()) Row {
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs, 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(theirs.shuffled(), 0) }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        itemsIndexed(theirs, key = { _, s -> s.id }) { i, s -> SongRow(s, pages = pages) { Playback.play(theirs, i) } }
+    } }
+}
+
+/** A playlist's page: its name big, play and shuffle, its songs in its order. */
+@Composable
+private fun PlaylistPage(id: String, name: String, pages: Pages) {
+    val edited by Server.edited.collectAsState()
+    var songs by remember { mutableStateOf<List<Song>?>(null) }
+    LaunchedEffect(id, edited) { songs = Server.playlist(id) }
+    val lists by Server.playlists.collectAsState()
+    val mine = lists.firstOrNull { it.id == id }?.mine == true
+    val scope = rememberCoroutineScope()
+    var sure by remember { mutableStateOf(false) }
+    LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BasicText(name.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(8.dp))
+            val all = songs
+            BasicText(
+                if (all == null) "reading it" else listOfNotNull("${all.size} ${if (all.size == 1) "song" else "songs"}",
+                    all.sumOf { it.duration }.takeIf { it > 0 }?.let { "${it / 60_000} min" }).joinToString("   "),
+                style = pixel(11.sp, Ink.mid),
+            )
+            Spacer(Modifier.height(16.dp))
+            if (!all.isNullOrEmpty()) Row {
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+            }
+            // deleting asks once more: the word says so, lit, for a moment
+            if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
+                if (!sure) sure = true else scope.launch { if (Server.deletePlaylist(id)) pages.back() }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        val all = songs.orEmpty()
+        // no keys: a playlist can hold one song twice
+        itemsIndexed(all) { i, s ->
+            SongRow(s, pages = pages, onRemove = if (mine) ({
+                songs = all.filterIndexed { j, _ -> j != i }    // gone at once; the server's answer reads it again
+                scope.launch { Server.removeFrom(id, i) }
+            }) else null) { Playback.play(all, i) }
+        }
+    } }
+}
+
+/** An artist's page: the name big, their records as covers, every song they're on. */
+@Composable
+private fun ArtistPage(name: String, pages: Pages) {
+    val albums by Library.albums.collectAsState()
+    val songs by Library.songs.collectAsState()
+    val records = remember(albums, name) { albums.filter { it.artist == name } }
+    val theirs = remember(songs, name) { songs.filter { name in it.artist.split(", ") || it.albumArtist == name } }
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                BasicText(name.uppercase(), style = headline(52.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                BasicText(
+                    listOfNotNull(records.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${theirs.size} ${if (theirs.size == 1) "song" else "songs"}").joinToString("   "),
+                    style = pixel(11.sp, Ink.mid),
+                )
+                Spacer(Modifier.height(16.dp))
+                Row {
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs, 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(theirs.shuffled(), 0) }
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+        if (records.isNotEmpty()) item {
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(150.dp)) { pages.open(Page.Record(a.id)) } }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+        itemsIndexed(theirs, key = { _, s -> s.id }) { i, s ->
+            Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(theirs, i) } }
+        }
+    } }
+}
+
+/**
+ * Find, as ink's run menu: "find >" and what's typed; records, artists and songs whose names
+ * hold it, the ones that start with it first. Go plays the first song found.
+ */
+@Composable
+private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
+    val albums by Library.albums.collectAsState()
+    val songs by Library.songs.collectAsState()
+    // YouTube Music too (the full build), once the typing rests
+    val tube by androidx.compose.runtime.produceState(TubeFound(), query) {
+        val typed = query.trim()
+        if (!YouTubeMusic.available || typed.length < 2) { value = TubeFound(); return@produceState }
+        kotlinx.coroutines.delay(450)
+        value = YouTubeMusic.search(typed)
+    }
+    val artists = remember(albums, songs) { artistsOf(albums, songs) }
+    val q = query.trim().lowercase()
+    fun rank(s: String): Int? { val l = s.lowercase(); return when { l.startsWith(q) -> 0; l.contains(" $q") -> 1; l.contains(q) -> 2; else -> null } }
+    val foundArtists = remember(q, artists) { if (q.isEmpty()) emptyList() else artists.mapNotNull { a -> rank(a.name)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(8) }
+    val foundRecords = remember(q, albums) { if (q.isEmpty()) emptyList() else albums.mapNotNull { a -> listOfNotNull(rank(a.title), rank(a.artist)?.plus(1)).minOrNull()?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(12) }
+    val foundSongs = remember(q, songs) { if (q.isEmpty()) emptyList() else songs.mapNotNull { s -> listOfNotNull(rank(s.title), rank(s.artist)?.plus(1), rank(s.album)?.plus(2)).minOrNull()?.let { it to s } }.sortedBy { it.first }.map { it.second }.take(50) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val list = rememberLazyListState()
+    FrostedPage { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText("find > ", style = pixel(14.sp, Ink.dim))
+                BasicTextField(
+                    query, onQuery, singleLine = true,
+                    textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { foundSongs.firstOrNull()?.let { Playback.play(foundSongs, 0) } }),
+                    modifier = Modifier.weight(1f).focusRequester(focus),
+                )
+                Word("close", pixel(11.sp, Ink.mid), touch = 10.dp) { pages.back() }
+            }
+            Spacer(Modifier.height(18.dp))
+            // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
+            if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() &&
+                tube.songs.isEmpty() && tube.albums.isEmpty())
+                BasicText("nothing called that", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp))
+        }
+        if (foundArtists.isNotEmpty()) {
+            item { Label("artists") }
+            items(foundArtists, key = { "a" + it.name }) { a -> Box(Modifier.padding(horizontal = 20.dp)) { ArtistRow(a) { pages.open(Page.Artist(a.name)) } } }
+        }
+        if (foundRecords.isNotEmpty()) item {
+            Label("records")
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(foundRecords, key = { it.id }) { a -> RecordTile(a, Modifier.width(130.dp)) { pages.open(Page.Record(a.id)) } }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        if (foundSongs.isNotEmpty()) {
+            item { Label("songs") }
+            itemsIndexed(foundSongs, key = { _, s -> "s" + s.id }) { i, s ->
+                Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(foundSongs, i) } }
+            }
+        }
+        // what YouTube Music has: its records, then its songs
+        if (tube.albums.isNotEmpty() || tube.songs.isNotEmpty()) item { Label("on youtube music") }
+        if (tube.albums.isNotEmpty()) item {
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(tube.albums, key = { "ta" + it.url }) { a -> TubeTile(a, Modifier.width(130.dp)) { pages.open(Page.Tube(a)) } }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        itemsIndexed(tube.songs, key = { _, s -> "t" + s.id }) { i, s ->
+            Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s) { Playback.play(tube.songs, i) } }
+        }
+    } }
+}
+
+/** A YouTube Music record as a tile: its cover (from its link), name and artist. */
+@Composable
+fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
+    val face = remember(a.url) { tubeFace(a) }
+    Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        CoverOf(face, a.title, Modifier.fillMaxWidth().aspectRatio(1f))
+        Spacer(Modifier.height(8.dp))
+        BasicText(a.title.uppercase(), style = headline(15.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(3.dp))
+        BasicText(a.artist.lowercase(), style = pixel(10.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** A record's face for its cover: a song-shaped stand-in carrying the record's picture. */
+fun tubeFace(a: TubeAlbum) = Song(
+    id = "y" + a.url.hashCode(), uri = android.net.Uri.EMPTY, title = a.title, artist = a.artist, album = a.title,
+    albumId = "ya" + a.url.hashCode(), albumArtist = a.artist, duration = 0, disc = 1, track = 0, year = 0, art = a.art,
+)
+
+/** A YouTube Music record's page: its cover, name, play and shuffle, its songs. */
+@Composable
+private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
+    val songs by androidx.compose.runtime.produceState<List<Song>?>(null, a.url) { value = YouTubeMusic.album(a) }
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
+                CoverOf(remember(a.url) { tubeFace(a) }, a.title, Modifier.size(minOf(maxWidth, 560.dp)))
+            }
+            Spacer(Modifier.height(18.dp))
+            BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(8.dp))
+            BasicText(a.artist.lowercase(), style = pixel(13.sp, Ink.mid))
+            Spacer(Modifier.height(4.dp))
+            val all = songs
+            BasicText(if (all == null) "reading it from youtube music" else "${all.size} songs   youtube music", style = pixel(11.sp, Ink.mid))
+            Spacer(Modifier.height(16.dp))
+            if (!all.isNullOrEmpty()) Row {
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        val all = songs.orEmpty()
+        itemsIndexed(all) { i, s -> SongRow(s, number = "${i + 1}") { Playback.play(all, i) } }
+    } }
+}
+
+/** Where a held song goes into a playlist: a new one ("new >", named there), or one of yours. */
+@Composable
+private fun AddToPage(s: Song, pages: Pages) {
+    val lists by Server.playlists.collectAsState()
+    val mine = remember(lists) { lists.filter { it.mine } }
+    val scope = rememberCoroutineScope()
+    var failed by remember { mutableStateOf(false) }
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BasicText("ADD TO A PLAYLIST", style = headline(36.sp), maxLines = 2)
+            Spacer(Modifier.height(8.dp))
+            BasicText(s.title.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(18.dp))
+            NewPlaylist(s, focused = mine.isEmpty()) { ok -> if (ok) pages.back() else failed = true }
+            if (failed) BasicText("the server didn't take it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp))
+            Spacer(Modifier.height(14.dp))
+        }
+        items(mine, key = { it.id }) { pl ->
+            Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
+                onClick = felt { scope.launch { if (Server.addTo(pl.id, s)) pages.back() else failed = true } }).padding(vertical = 9.dp)) {
+                BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
+            }
+        }
+    } }
+}
+
+/** "new >" and a name: go makes the playlist on the server (with `song` in it, if there's one). */
+@Composable
+private fun NewPlaylist(song: Song?, focused: Boolean = false, onMade: (Boolean) -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    val focus = remember { FocusRequester() }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    if (focused) LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    fun make() {
+        val n = name.trim()
+        if (n.isEmpty()) return
+        scope.launch {
+            val ok = Server.makePlaylist(n, song)
+            if (ok) { name = ""; keyboard?.hide() }
+            onMade(ok)
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BasicText("new > ", style = pixel(14.sp, Ink.dim))
+        BasicTextField(
+            name, { name = it }, singleLine = true,
+            textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { make() }),
+            modifier = Modifier.weight(1f).focusRequester(focus),
+        )
+        if (name.isNotBlank()) Word("make", pixel(14.sp), touch = 8.dp) { make() }
+    }
+}
+
+@Composable
+fun Label(text: String) {
+    BasicText(text, style = pixel(11.sp, Ink.mid), modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
+}
+
+/** How tall the soft edge beside a bar is: sharp at its far side, slightly out of focus at the bar. */
+val BAND = 16.dp
+
+/**
+ * A page that scrolls on under the status bar, frosted there (its band below it). `content` gets
+ * the frost its list is the source of, and how far down to start: below the status bar, and
+ * below "close" when the page has one (kept at the top, on black, however far it's scrolled).
+ */
+@Composable
+fun FrostedPage(onClose: (() -> Unit)? = null, content: @Composable (HazeState, Dp) -> Unit) {
+    val frost = rememberHazeState()
+    val bar = bars.asPaddingValues().calculateTopPadding()
+    val top = bar + if (onClose != null) CLOSE_ROW else 0.dp
+    Box(Modifier.fillMaxSize().background(Ink.black)) {
+        content(frost, top)
+        Column(Modifier.fillMaxWidth()) {
+            Box(Modifier.fillMaxWidth().height(bar).background(Ink.black))
+            if (onClose != null) Row(
+                Modifier.fillMaxWidth().height(CLOSE_ROW).background(Ink.black).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal))
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.weight(1f))
+                Word("close", pixel(11.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+            }
+            Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = false))
+        }
+    }
+}
+
+/** How far a song row is swiped before it counts. */
+private val SWIPE = 96.dp
+
+/**
+ * Full width, past the list's side margins (`by` each side): a cover edge to edge. Its height
+ * says nothing of the margins, so what's under it lines up as usual.
+ */
+private fun Modifier.bleed(by: Dp) = layout { m, c ->
+    val px = by.roundToPx()
+    val w = c.maxWidth + 2 * px
+    val p = m.measure(c.copy(minWidth = w, maxWidth = w))
+    layout(c.maxWidth, p.height) { p.place(-px, 0) }
+}
+
+/** The row "close" sits in, at a page's top. */
+private val CLOSE_ROW = 40.dp
+
+/** A record's cover, or ink's own sleeve with its name when the files carry none (a station's, with its rings). */
+@Composable
+fun CoverOf(song: Song?, name: String, modifier: Modifier) {
+    val cover = rememberCover(song)
+    BoxWithConstraints(modifier) {
+        if (cover != null) Image(cover.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else if (song?.station == true) StationCover(song, Modifier.fillMaxSize())
+        else NameCover(name, maxWidth)
+    }
+}
+
+/**
+ * What's playing, along the foot of the library: the line along the cover's top edge filling
+ * with the song in its colour, the cover, the song, play / pause. A tap opens the player.
+ */
+@Composable
+private fun MiniPlayer(frost: HazeState, onOpen: () -> Unit) {
+    val now by Playback.now.collectAsState()
+    val n = now ?: return
+    val cover = rememberCover(n.song)
+    // black; what's about to go behind it softens just above it
+    Column(Modifier.fillMaxWidth()) {
+    Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = true))
+    Column(Modifier.fillMaxWidth().background(Ink.black).navigationBarsPadding().padding(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 12.dp)) {
+        Line(n, cover?.accent ?: Ink.ink)
+        Row(
+            Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onOpen)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // the same size as the player's, lyrics up: one block, wherever it's seen
+            CoverOf(n.song, n.album.ifEmpty { n.title }, Modifier.size(72.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                BasicText(n.title.uppercase(), style = headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                BasicText(n.artist.lowercase() + if (n.device.isNotEmpty()) "  on ${n.device.lowercase()}" else "",
+                    style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Word(if (n.playing) "pause" else "play", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 12.dp) { Playback.toggle() }
+        }
+    }
+    }
+}
+
+/** The 1 px line filling with the song in the cover's colour (no times: the player has them). */
+@Composable
+private fun Line(n: Now, accent: androidx.compose.ui.graphics.Color) {
+    val pos by androidx.compose.runtime.produceState(n.positionNow(), n) {
+        while (true) { value = n.positionNow(); if (!n.moving) break; kotlinx.coroutines.delay(500) }
+    }
+    val frac = if (n.duration > 0) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
+    Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
+        Box(Modifier.fillMaxWidth(frac).height(1.dp).background(accent))
+    }
+}
