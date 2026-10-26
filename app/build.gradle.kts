@@ -20,8 +20,8 @@ android {
         minSdk = 31
         targetSdk = 37
         // each release: both up (the code by one), and a changelog in fastlane/.../changelogs/<code>.txt
-        versionCode = 30   // above the commit count the early builds used (25 on the S26), so it installs over them
-        versionName = "1.0"
+        versionCode = 31
+        versionName = "1.1"
     }
 
     signingConfigs {
