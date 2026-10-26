@@ -129,8 +129,15 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val heard by androidx.compose.runtime.produceState<List<History.Heard>>(emptyList()) {
         value = withContext(Dispatchers.IO) { History.read(ctx) }
     }
-    // what you played lately: a record each (newest first), as songs to play from
+    // what you played lately: a record each (newest first), as songs to play from; then, signed in
+    // to youtube music, what you played there (the ones this phone hasn't just said)
     val recent = remember(heard) { heard.asReversed().distinctBy { it.album.ifEmpty { it.id } }.take(10) }
+    val tubeHeard by YouTubeAccount.history.collectAsState()
+    val tubeRecent = remember(tubeHeard, recent) {
+        val said = recent.map { it.id }.toSet()
+        tubeHeard.filter { it.id !in said }.distinctBy { it.album.ifEmpty { it.id } }.take((16 - recent.size).coerceAtLeast(6))
+    }
+    val tubeRecords by YouTubeAccount.records.collectAsState()
     val newest = remember(newestIds, albums) { newestIds.mapNotNull { id -> albums.firstOrNull { it.id == id } } }
     val yours = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(12) }
     val mixes = seeds.filter { it.hit != null }
@@ -146,15 +153,20 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 Cog { pages.open(Page.Settings) }
             }
         }
-        if (recent.isNotEmpty()) item {
+        if (recent.isNotEmpty() || tubeRecent.isNotEmpty()) item {
             Label("jump back in")
-            Shelf(recent) { h ->
-                val s = Library.song(h.id) ?: return@Shelf
-                Tile(s, s.album.ifEmpty { s.title }, s.artist) {
-                    val record = albums.firstOrNull { it.id == s.albumId }
-                    if (record != null) pages.open(Page.Record(record.id)) else Playback.play(listOf(s), 0)
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(recent) { h ->
+                    val s = Library.song(h.id) ?: return@items
+                    Tile(s, s.album.ifEmpty { s.title }, s.artist) {
+                        val record = albums.firstOrNull { it.id == s.albumId }
+                        if (record != null) pages.open(Page.Record(record.id)) else Playback.play(listOf(s), 0)
+                    }
                 }
+                // youtube music's: played from there on, back through what you played before it
+                itemsIndexed(tubeRecent) { i, s -> Tile(s, s.title, s.artist) { Playback.play(tubeRecent, i) } }
             }
+            Spacer(Modifier.height(10.dp))
         }
         if (mixes.isNotEmpty()) item {
             Label("mixes for you")
@@ -184,6 +196,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             val songs = remember(indie) { indie.mapNotNull { it.song } }
             Label("the week on indie radio")
             ShelfIndexed(indie) { i, e -> Tile(e.song, e.title, e.artist, number = i + 1) { Playback.play(songs, i) } }
+        }
+        if (tubeRecords.isNotEmpty()) item {
+            Label("your records on youtube music")
+            Shelf(tubeRecords) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
         }
         if (records.isNotEmpty()) item {
             Label("from artists you love")

@@ -117,12 +117,16 @@ import dev.chrisbanes.haze.rememberHazeState
 class Main : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // opened again (the home screen, the notification) over ink music's own screens: those stay
+        // as they were (the YouTube sign-in, mid-way), not a second library over them
+        if (!isTaskRoot) { finish(); return }
         enableEdgeToEdge()
         Lyrics.start(this)
         Looks.start(this)
         Loved.start(this)
         YouTubeMusic.attach(this)
         Server.start(this)
+        YouTubeAccount.start(this)
         Order.start(this)
         Seeds.start(this)
         Stations.curated(this)
@@ -199,6 +203,7 @@ sealed interface Page {
     data object Year : Page
     data object Pick : Page
     data object InkRadio : Page
+    data class TubeList(val list: app.ink.music.TubeList) : Page
 }
 
 /** Where the library's pages go: pushed in from the right, back out to the right (the iPod's). */
@@ -266,6 +271,7 @@ private fun App() {
                         Page.Year -> YearPage(pages)
                         Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
                         Page.InkRadio -> InkRadioPage(pages)
+                        is Page.TubeList -> TubeListPage(p.list, pages)
                     }
                 }
             }
@@ -342,6 +348,7 @@ private fun LibraryPage(pages: Pages) {
             // lists: the songs you love, your year, then your playlists (and "new >" for one more)
             "lists" -> {
                 val lists by Server.playlists.collectAsState()
+                val tubeLists by YouTubeAccount.playlists.collectAsState()
                 val lovedIds by Loved.ids.collectAsState()
                 val account by Server.account.collectAsState()
                 val ctx = LocalContext.current
@@ -360,6 +367,12 @@ private fun LibraryPage(pages: Pages) {
                             onClick = felt { pages.open(Page.Playlist(pl.id, pl.name)) }).padding(vertical = 9.dp)) {
                             BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                             BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(10.sp, Ink.mid))
+                        }
+                    }
+                    // your youtube music: its playlists, liked music first as YouTube lists them (read only)
+                    items(tubeLists, key = { "y" + it.id }) { pl ->
+                        ListRow(pl.name, listOf("youtube music", pl.said.lowercase()).filter { it.isNotEmpty() }.joinToString("   ")) {
+                            pages.open(Page.TubeList(pl))
                         }
                     }
                 }
@@ -815,6 +828,38 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
         }
         val all = songs.orEmpty()
         itemsIndexed(all) { i, s -> SongRow(s, number = "${i + 1}") { Playback.play(all, i) } }
+    } }
+}
+
+/** One of your playlists on YouTube Music: its name big, play and shuffle, its songs (read only: change it there). */
+@Composable
+private fun TubeListPage(pl: TubeList, pages: Pages) {
+    val songs by androidx.compose.runtime.produceState<List<Song>?>(null, pl.id) { value = YouTubeAccount.playlist(pl.id) }
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BasicText(pl.name.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(8.dp))
+            val all = songs
+            BasicText(
+                if (all == null) "reading it from youtube music" else listOfNotNull("${all.size} ${if (all.size == 1) "song" else "songs"}",
+                    all.sumOf { it.duration }.takeIf { it > 0 }?.let { "${it / 60_000} min" }, "youtube music").joinToString("   "),
+                style = pixel(11.sp, Ink.mid),
+            )
+            Spacer(Modifier.height(16.dp))
+            if (!all.isNullOrEmpty()) Row {
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        val all = songs.orEmpty()
+        // no keys: a playlist can hold one song twice
+        itemsIndexed(all) { i, s -> SongRow(s) { Playback.play(all, i) } }
     } }
 }
 

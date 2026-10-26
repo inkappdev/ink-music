@@ -123,6 +123,41 @@ fun SettingsPage(pages: Pages) {
             }
             Spacer(Modifier.height(40.dp))
 
+            // your youtube music (the full build): signed in on youtube's own page, read only
+            if (YouTubeAccount.available) {
+                val who by YouTubeAccount.who.collectAsState()
+                val reading by YouTubeAccount.reading.collectAsState()
+                val tubeLists by YouTubeAccount.playlists.collectAsState()
+                val tubeRecords by YouTubeAccount.records.collectAsState()
+                BasicText("YOUTUBE MUSIC", style = headline(24.sp))
+                Spacer(Modifier.height(6.dp))
+                val w = who
+                if (w == null) {
+                    BasicText("your playlists, liked songs, records and what you played lately, from your own account. " +
+                        "ink music isn't youtube's own app, and google could, rarely, mind one being used. " +
+                        "your sign-in stays on this phone and goes only to youtube", style = pixel(11.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    Word("SIGN IN", headline(40.sp), touch = 10.dp) { YouTubeAccount.openSignIn(ctx) }
+                } else {
+                    Column(Modifier.pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { YouTubeAccount.sync() },
+                            onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); YouTubeAccount.signOut(ctx) },
+                        )
+                    }) {
+                        BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
+                        BasicText(
+                            if (reading) "reading your library" else "${tubeLists.size} ${if (tubeLists.size == 1) "playlist" else "playlists"}   " +
+                                "${tubeRecords.size} ${if (tubeRecords.size == 1) "record" else "records"}",
+                            style = pixel(11.sp, Ink.mid),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        BasicText("tap reads it again   hold signs out", style = pixel(10.sp, Ink.mid))
+                    }
+                }
+                Spacer(Modifier.height(40.dp))
+            }
+
             // the artists the listen page grows from (YouTube Music's mixes and records: the full build)
             if (YouTubeMusic.available) {
                 val seeds by Seeds.artists.collectAsState()
@@ -164,8 +199,8 @@ fun SettingsPage(pages: Pages) {
             Spacer(Modifier.height(6.dp))
             BasicText(
                 "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics; " +
-                    (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music; " else "") +
-                    "the radio list comes from radio-browser.info, the indie chart and what a station is playing from the stations' own playlists. no accounts, no tracking, no ads.",
+                    (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library); " else "") +
+                    "the radio list comes from radio-browser.info, the indie chart and what a station is playing from the stations' own playlists. no accounts of ours, no tracking, no ads.",
                 style = pixel(11.sp, Ink.mid),
             )
             Spacer(Modifier.height(26.dp))
