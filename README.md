@@ -78,6 +78,7 @@ lately. Even with nothing on the phone.
 
 **Listening**
 - **Radio**: when the queue runs out, more like it. Your server's similar songs first, then YouTube Music's mix.
+- **A path** from one song to another, a step at a time by how they sound, on Navidrome with [AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI). Keep it as a playlist.
 - **Playlists** made and changed here, kept on your server.
 - A sleep timer that eases the music out, shuffle and repeat, and an up next you can reorder.
 - The library shuffled anew each time you open it, if you like.
