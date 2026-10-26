@@ -1,0 +1,4 @@
+- Swipe between the library's tabs: listen, albums, artists, songs, lists
+- The clickwheel only scrubs when you circle it; a sideways flick on the cover plays the next song (left) or the one before (right)
+- On the songs tab, hold a song to play it next or add it to the queue
+- A path from one song to another, a step at a time by how they sound (Navidrome with AudioMuse-AI); keep it as a playlist
