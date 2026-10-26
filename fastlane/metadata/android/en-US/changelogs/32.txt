@@ -1,0 +1,4 @@
+- Radio by genre plays again: 8 of the 12 genres did nothing when tapped
+- Genres start with ink radio's own stations, and the rest are tidier: no more chart stations in reggae and soul
+- Indie is all hand-picked now, with five new stations in ink radio: ByteFM, egoFM, FM4, BAGeL Radio, KXLU
+- Genre names fit their tiles
