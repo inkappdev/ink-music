@@ -50,7 +50,7 @@
 
 <img src=".github/radio.gif" width="240" align="right" alt="WFMU playing, its name sending out rings in 1-bit dither" />
 
-Fifty-seven independent, listener-powered and community stations, chosen by hand: KEXP in
+Sixty-two independent, listener-powered and community stations, chosen by hand: KEXP in
 Seattle, NTS in London, dublab in Los Angeles, WFMU in Jersey City, Radio alHara in Bethlehem,
 and on round the world.
 

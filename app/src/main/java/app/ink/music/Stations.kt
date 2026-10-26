@@ -52,23 +52,56 @@ object Stations {
         }
     }.getOrDefault(emptyList()).also { curated = it }
 
-    /** The stations most played for `tag` (direct streams, 96 kbps or better; HLS left out, the player has no HLS). */
-    suspend fun top(tag: String, n: Int = 20): List<Song> = byTag[tag] ?: withContext(Dispatchers.IO) {
-        val url = "https://all.api.radio-browser.info/json/stations/search?tag=" + URLEncoder.encode(tag, "UTF-8") +
-            "&order=clickcount&reverse=true&hidebroken=true&hls=false&limit=60"
-        val list = runCatching {
-            val c = URL(url).openConnection() as HttpURLConnection
-            c.connectTimeout = 10_000; c.readTimeout = 15_000
-            c.setRequestProperty("User-Agent", "ink music/" + BuildConfig.VERSION_NAME)   // as the list asks
-            try { JSONArray(c.inputStream.bufferedReader().use { it.readText() }) } finally { c.disconnect() }
-        }.getOrNull() ?: return@withContext emptyList()
+    /**
+     * What else a genre goes by: radio-browser's tags for it (matched exactly), and the words ink
+     * radio's own stations are filed under for it.
+     */
+    private val tags = mapOf("lofi" to listOf("lofi", "lo-fi"), "hip hop" to listOf("hip hop", "hip-hop", "hiphop"),
+        "house" to listOf("house", "deep house"), "reggae" to listOf("reggae", "roots reggae"))
+    private val filed = mapOf("hip hop" to listOf("hip-hop"), "house" to listOf("club"), "electronic" to listOf("electronic", "club"),
+        "folk" to listOf("americana"))
+    /** Genres ink radio holds enough of to be the whole list (radio-browser's are a mixed bag for these). */
+    private val ours = setOf("indie", "electronic")
+
+    /** The stations last found for a genre, if any (what the tiles light by). */
+    fun found(tag: String): List<Song>? = byTag[tag]
+
+    /**
+     * A genre's stations: ink radio's own filed under it first (the stars first), then the ones
+     * played most on radio-browser for it, once tidied: tagged it exactly, not a station that tags
+     * itself everything to be found (more than 12), direct streams of 96 kbps or better (no HLS: the
+     * list answers it though asked not to, and one in a list and none of it plays), none of
+     * SomaFM's (its terms refuse apps like this), and none ink radio already has.
+     */
+    suspend fun top(c: android.content.Context, tag: String, n: Int = 20): List<Song> = byTag[tag] ?: withContext(Dispatchers.IO) {
+        val words = filed[tag] ?: listOf(tag)
+        val mine = curated(c).filter { s -> s.genre.split(",").map { it.trim() }.any { it in words } }
+            .sortedByDescending { it.star }.map { it.song }
+        if (tag in ours && mine.isNotEmpty()) return@withContext mine.also { byTag[tag] = it }
+        val theirs = (tags[tag] ?: listOf(tag)).flatMap { t ->
+            val url = "https://all.api.radio-browser.info/json/stations/search?tag=" + URLEncoder.encode(t, "UTF-8") +
+                "&tagExact=true&order=clickcount&reverse=true&hidebroken=true&hls=false&limit=80"
+            val list = runCatching {
+                val h = URL(url).openConnection() as HttpURLConnection
+                h.connectTimeout = 10_000; h.readTimeout = 15_000
+                h.setRequestProperty("User-Agent", "ink music/" + BuildConfig.VERSION_NAME)   // as the list asks
+                try { JSONArray(h.inputStream.bufferedReader().use { it.readText() }) } finally { h.disconnect() }
+            }.getOrNull() ?: return@flatMap emptyList()
+            (0 until list.length()).mapNotNull { list.optJSONObject(it) }
+        }.sortedByDescending { it.optInt("clickcount") }
+        val names = curated(c).map { it.song.title.lowercase() }.filter { it.length >= 4 }   // "fip" would drop FIP Reggae, not ours
         val seen = HashSet<String>()
-        (0 until list.length()).mapNotNull { list.optJSONObject(it) }
-            // the list answers HLS too, asked not to (`hls=false` is let by): one in a list and none of it plays
-            .filter { it.optInt("bitrate") >= 96 && it.optString("url_resolved").startsWith("http") && it.optInt("hls") == 0 &&
-                ".m3u8" !in it.optString("url_resolved").lowercase() }
+        val more = theirs.asSequence()
+            .filter { o ->
+                val stream = o.optString("url_resolved")
+                val name = o.optString("name").trim().lowercase()
+                o.optInt("bitrate") >= 96 && stream.startsWith("http") && o.optInt("hls") == 0 && ".m3u8" !in stream.lowercase() &&
+                    o.optString("tags").split(",").count { it.isNotBlank() } <= 12 &&
+                    "somafm" !in name && "somafm" !in stream && o.optString("countrycode") != "KP" &&
+                    names.none { it in name }
+            }
             .filter { seen.add(it.optString("name").trim().lowercase()) }   // one of each (stations are often listed twice)
-            .take(n)
+            .take((n - mine.size).coerceAtLeast(0))
             .map { o ->
                 val id = "s" + o.optString("stationuuid")
                 Song(
@@ -77,7 +110,7 @@ object Stations {
                     duration = 0, disc = 1, track = 0, year = 0, format = "radio",
                     mime = when (o.optString("codec").uppercase()) { "AAC", "AAC+" -> "audio/aac"; "OGG" -> "audio/ogg"; else -> "audio/mpeg" },
                 ).also { known[id] = it }
-            }
-            .also { if (it.isNotEmpty()) byTag[tag] = it }
+            }.toList()
+        (mine + more).also { if (it.isNotEmpty()) byTag[tag] = it }
     }
 }

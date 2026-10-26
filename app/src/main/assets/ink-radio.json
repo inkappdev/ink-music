@@ -741,6 +741,71 @@
 "genre": "indie, punk",
 "star": false,
 "pool": "backup"
+},
+{
+"id": "bytefm",
+"name": "ByteFM",
+"url": "https://bytefm.cast.addradio.de/bytefm/main/high/stream",
+"codec": "mp3",
+"bitrate": 192,
+"city": "hamburg",
+"country": "de",
+"line": "hamburg's radio for good music, paid for by its listeners",
+"genre": "indie, eclectic",
+"star": false,
+"pool": "backup"
+},
+{
+"id": "egofm",
+"name": "egoFM",
+"url": "https://cast.egofm.de/egofm.mp3",
+"codec": "mp3",
+"bitrate": 128,
+"city": "munich",
+"country": "de",
+"line": "munich's independent station for new indie and electronic",
+"genre": "indie, alternative",
+"star": false,
+"pool": "backup"
+},
+{
+"id": "fm4",
+"name": "FM4",
+"url": "https://orf-live.ors-shoutcast.at/fm4-q2a",
+"codec": "mp3",
+"bitrate": 192,
+"city": "vienna",
+"country": "at",
+"line": "austria's public alternative station, the soundpark's home",
+"genre": "indie, alternative",
+"star": false,
+"pool": "backup"
+},
+{
+"id": "bagel",
+"name": "BAGeL Radio",
+"url": "https://ais-sa3.cdnstream1.com/2606_128.mp3",
+"codec": "mp3",
+"bitrate": 128,
+"city": "san francisco",
+"country": "us",
+"line": "listener-supported indie from san francisco since 2003",
+"genre": "indie, alternative",
+"star": false,
+"pool": "backup"
+},
+{
+"id": "kxlu",
+"name": "KXLU",
+"url": "http://kxlu.streamguys1.com/kxlu-hi",
+"codec": "mp3",
+"bitrate": 320,
+"city": "los angeles",
+"country": "us",
+"line": "loyola marymount's college station, la's underground",
+"genre": "indie, college",
+"star": false,
+"pool": "backup"
 }
 ]
 }
