@@ -133,7 +133,8 @@ class OnAir(private val player: Player, private val main: Handler, private val n
         fun parse(raw: String, station: String): Said? {
             val s = raw.trim().removeSuffix(".mp3").trim()
             val up = s.uppercase()
-            if (s.isEmpty() || "THIS STATION WILL" in up || "NOW PLAYING INFO" in up || up.endsWith("OFFLINE")) return null
+            // dublab's "-" between shows, and the like: nothing said
+            if (s.none { it.isLetterOrDigit() } || "THIS STATION WILL" in up || "NOW PLAYING INFO" in up || up.endsWith("OFFLINE")) return null
             Regex("^\"(.+)\" by (.+?)(?: on .+)?$").find(s)?.let { return Said(it.groupValues[1], it.groupValues[2]) }
             val dash = s.indexOf(" - ")
             if (dash < 0) return Said(s, null)

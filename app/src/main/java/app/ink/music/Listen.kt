@@ -84,7 +84,7 @@ object Listen {
         radio.value = Stations.genres.sortedBy { (word, _) -> if (word in liked) 0 else 1 }
         scope.launch {
             val shown = liked.ifEmpty { if (YouTubeMusic.available) emptyList() else listOf("lofi", "jazz") }.take(3)
-            stations.value = shown.mapNotNull { word -> Stations.genres.firstOrNull { it.first == word }?.let { (w, tag) -> w to Stations.top(tag) } }
+            stations.value = shown.mapNotNull { word -> Stations.genres.firstOrNull { it.first == word }?.let { (w, tag) -> w to Stations.top(c, tag) } }
                 .filter { it.second.isNotEmpty() }
         }
         scope.launch {
@@ -212,10 +212,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             Label("radio")
             val now by Playback.now.collectAsState()
             Shelf(radio) { (word, tag) ->
-                val on = now?.song?.let { it.station && it.artist == "$tag radio" } == true
+                val on = now?.song?.let { s -> s.station && Stations.found(tag)?.any { it.id == s.id } == true } == true
                 // tapped, its stations play (next is the next station)
                 RadioTile(word, on, now?.playing == true) {
-                    scope.launch { Stations.top(tag).takeIf { it.isNotEmpty() }?.let { Playback.play(it, 0) } }
+                    scope.launch { Stations.top(ctx, tag).takeIf { it.isNotEmpty() }?.let { Playback.play(it, 0) } }
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -231,7 +231,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
 private fun RadioTile(word: String, on: Boolean, moving: Boolean, said: String? = null, onClick: () -> Unit) {
     Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black).border(1.dp, if (on) Ink.mid else Ink.line)) {
-            BasicText(word, style = pixel(if (word.length > 10) 16.sp else 26.sp, if (on) Ink.ink else Ink.mid), maxLines = 4,
+            BasicText(word, style = pixel(fit(word), if (on) Ink.ink else Ink.mid), maxLines = 4,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.TopStart).padding(14.dp))
             Bars(on && moving, if (on) Ink.ink else Ink.dim, Modifier.align(Alignment.BottomStart).padding(14.dp))
         }
@@ -240,6 +240,12 @@ private fun RadioTile(word: String, on: Boolean, moving: Boolean, said: String? 
         BasicText(if (on) "on now" else said ?: "stations", style = pixel(12.sp, Ink.mid), maxLines = 1)
     }
 }
+
+/**
+ * A tile's word as big as fits its 112 dp across (a Silkscreen letter is about 0.55 of its size
+ * wide), 26 sp at most: "classical" and "electronic" broke mid-word at 26. A station's long name wraps.
+ */
+private fun fit(word: String) = (112f / (word.substringBefore(' ').length * .55f)).coerceIn(16f, 26f).sp
 
 /** Seven bars of pixels, still at rest, rising and falling while the radio plays. */
 @Composable
