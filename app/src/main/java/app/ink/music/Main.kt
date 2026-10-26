@@ -285,7 +285,8 @@ private fun App() {
  * The library: listen first (something to play whatever the phone holds), then records as covers
  * (the only colour), artists or every song as words, and lists; "find" at the row's end. With
  * nothing on the phone or a server, only listen and lists. A swipe across the page goes to the tab
- * beside (a song row's own swipe, and a row of covers scrolling, keep theirs).
+ * beside, the songs' too (there a song's play next and add to queue are held, not swiped); a row of
+ * covers scrolling keeps its own.
  */
 @Composable
 private fun LibraryPage(pages: Pages) {
@@ -364,7 +365,7 @@ private fun LibraryPage(pages: Pages) {
                 }
             }
             else -> LazyColumn(state = songList, contentPadding = pad) {
-                itemsIndexed(everySong, key = { _, s -> s.id }) { i, s -> SongRow(s, onClick = { Playback.play(everySong, i) }) }
+                itemsIndexed(everySong, key = { _, s -> s.id }) { i, s -> SongRow(s, swipe = false, onClick = { Playback.play(everySong, i) }) }
             }
         }
        }
@@ -446,9 +447,10 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
  * another (a server that finds them), its record, its artist;
  * in a playlist of yours, remove. Swiped right it plays next, left it goes to
  * the queue's end: the word shows under it as it slides, lit (and ticked) once far enough to count.
+ * Not where a swipe turns the page (the library's songs): there, held is the way.
  */
 @Composable
-private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, onClick: () -> Unit) {
+private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, swipe: Boolean = true, onClick: () -> Unit) {
     val now by Playback.now.collectAsState()
     val on = now?.song?.id == s.id
     var open by remember { mutableStateOf(false) }
@@ -472,7 +474,7 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
                 onTap = { if (open) open = false else tap() },
                 onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); open = !open },
             )
-        }.pointerInput(s.id) {
+        }.then(if (!swipe) Modifier else Modifier.pointerInput(s.id) {
             var pulled = 0f
             fun letGo(act: Boolean) {
                 if (act) when (armed) {
@@ -491,7 +493,7 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
                 val at = when { pulled > reach -> 1; pulled < -reach -> -1; else -> 0 }
                 if (at != armed) { armed = at; if (at != 0) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick) }
             }
-        }.padding(vertical = 9.dp),
+        }).padding(vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
             number?.let { BasicText(it, style = pixel(11.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(30.dp).padding(bottom = 3.dp)) }
