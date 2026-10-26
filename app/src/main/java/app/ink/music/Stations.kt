@@ -64,7 +64,9 @@ object Stations {
         }.getOrNull() ?: return@withContext emptyList()
         val seen = HashSet<String>()
         (0 until list.length()).mapNotNull { list.optJSONObject(it) }
-            .filter { it.optInt("bitrate") >= 96 && it.optString("url_resolved").startsWith("http") }
+            // the list answers HLS too, asked not to (`hls=false` is let by): one in a list and none of it plays
+            .filter { it.optInt("bitrate") >= 96 && it.optString("url_resolved").startsWith("http") && it.optInt("hls") == 0 &&
+                ".m3u8" !in it.optString("url_resolved").lowercase() }
             .filter { seen.add(it.optString("name").trim().lowercase()) }   // one of each (stations are often listed twice)
             .take(n)
             .map { o ->
