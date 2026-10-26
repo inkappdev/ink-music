@@ -23,12 +23,16 @@
 </p>
 
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="16%" alt="The player" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="16%" alt="Records" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="16%" alt="A record" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="16%" alt="Synced lyrics" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="16%" alt="The dither look" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="16%" alt="Find" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="24%" alt="Listen: mixes from your artists, ink radio, the week on indie radio" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%" alt="The player in the dither look" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="24%" alt="ink radio: WFMU saying what it plays" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="24%" alt="Synced lyrics" />
+</p>
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="24%" alt="A record" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="24%" alt="Pick a few artists you love" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7.png" width="24%" alt="Find: your server and YouTube Music" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/8.png" width="24%" alt="Play on speakers, TVs, groups and receivers" />
 </p>
 
 ---
@@ -40,7 +44,23 @@
 | **The phone's files** | Everything in its music folder, filed by record and artist, with the covers your files carry. |
 | **Your own server** | Navidrome or any Subsonic server: your whole library streamed from home. Loves are the server's stars and playlists are its playlists, so every app you use agrees. |
 | **YouTube Music** | Search songs and records and play them, through [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor). No account. `full` build only. |
-| **ink radio** | Independent, listener-powered stations chosen by hand (KEXP, NTS, dublab, WFMU, FIP, Radio alHara and more), each saying what it's playing. Thousands more by genre from [radio-browser.info](https://www.radio-browser.info). |
+| **ink radio** | Independent, listener-powered stations chosen by hand, each saying what it's playing ([below](#ink-radio)). |
+
+## ink radio
+
+<img src=".github/radio.gif" width="240" align="right" alt="WFMU playing, its name sending out rings in 1-bit dither" />
+
+Fifty-seven independent, listener-powered and community stations, chosen by hand: KEXP in
+Seattle, NTS in London, dublab in Los Angeles, WFMU in Jersey City, Radio alHara in Bethlehem,
+and on round the world.
+
+Each says what it's playing, from its stream or its own playlist, on the player, the lock screen,
+the widget and the car. Where a station gives the record's cover, you see it; where it doesn't,
+its name sends out rings in 1-bit dither, moving while it plays.
+
+Thousands more by genre from [radio-browser.info](https://www.radio-browser.info).
+
+<br clear="right" />
 
 ## Something to play the moment it opens
 
