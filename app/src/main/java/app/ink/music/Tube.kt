@@ -6,8 +6,8 @@ data class TubeAlbum(val url: String, val title: String, val artist: String, val
 /** What a YouTube Music search found: songs and records. */
 data class TubeFound(val songs: List<Song> = emptyList(), val albums: List<TubeAlbum> = emptyList())
 
-/** An artist on YouTube Music: their name and photo (the onboarding's faces). */
-data class TubeArtist(val name: String, val face: String?)
+/** An artist on YouTube Music: their name and photo (the onboarding's faces), and their page ("UC...") when known. */
+data class TubeArtist(val name: String, val face: String?, val id: String = "")
 
 /** Who's signed in to YouTube Music: their name, and their handle or email. */
 data class TubeWho(val name: String, val handle: String)

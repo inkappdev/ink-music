@@ -38,7 +38,8 @@ import org.json.JSONArray
 /**
  * The songs you love: a server song's love is its star on the server (so the web player and every
  * other app agree, and a star made elsewhere shows here), and so is a phone's song the server has
- * too; a file's own is kept on the phone, and a YouTube song's, with its words (it's in no library).
+ * too; a YouTube song's is its like there when you're signed in ([YouTubeAccount.liked]), else kept
+ * on the phone with its words (it's in no library); a file's own is kept on the phone.
  */
 object Loved {
     private val _ids = MutableStateFlow<Set<String>>(emptySet())
@@ -63,6 +64,7 @@ object Loved {
         }.getOrDefault(emptyList())
         _tube.value.forEach(YouTubeMusic::remember)
         publish()
+        scope.launch { YouTubeAccount.liked.collect { publish() } }
     }
 
     /** The server's stars, as it last said (a sync). */
@@ -72,7 +74,7 @@ object Loved {
     fun relink() = publish()
 
     @Synchronized private fun publish() {
-        _ids.value = local + server + _tube.value.map { it.id } + Library.songs.value.filter { Library.twin(it.id) in server }.map { it.id }
+        _ids.value = local + server + _tube.value.map { it.id } + YouTubeAccount.liked.value.map { it.id } + Library.songs.value.filter { Library.twin(it.id) in server }.map { it.id }
     }
 
     fun toggle(s: Song) {
@@ -82,6 +84,9 @@ object Loved {
             server = if (on) server + star else server - star
             scope.launch { Server.star(star, on) }
             if (!on) local = local - s.id   // loved here before the server had it
+        } else if (s.tube && YouTubeAccount.who.value != null) {
+            YouTubeAccount.like(s, on)
+            _tube.value = _tube.value.filter { it.id != s.id }   // loved here before signing in: YouTube's now
         } else if (s.tube) {
             _tube.value = if (on) _tube.value + s else _tube.value.filter { it.id != s.id }
         } else {

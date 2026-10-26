@@ -26,5 +26,11 @@ class InnerTubeTest {
         assertTrue(list != null)
     }
 
+    @Test fun artistPage() {
+        val (name, songs, records) = yt.artist("UCk0rl7syWi43334DctQNKZQ")   // MJ Lenderman
+        println("artist $name: ${songs.size} songs, ${records.size} records"); songs.take(3).forEach(::println); records.take(3).forEach(::println)
+        assertTrue(name.isNotEmpty() && songs.isNotEmpty() && records.isNotEmpty())
+    }
+
     @Test fun sign() { assertTrue(InnerTube.sign("abc", 1).startsWith("SAPISIDHASH 1_")) }
 }

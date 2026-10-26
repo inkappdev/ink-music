@@ -204,6 +204,7 @@ sealed interface Page {
     data object Pick : Page
     data object InkRadio : Page
     data class TubeList(val list: app.ink.music.TubeList) : Page
+    data class TubeArtist(val artist: app.ink.music.TubeArtist) : Page
 }
 
 /** Where the library's pages go: pushed in from the right, back out to the right (the iPod's). */
@@ -272,6 +273,7 @@ private fun App() {
                         Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
                         Page.InkRadio -> InkRadioPage(pages)
                         is Page.TubeList -> TubeListPage(p.list, pages)
+                        is Page.TubeArtist -> TubeArtistPage(p.artist, pages)
                     }
                 }
             }
@@ -590,7 +592,10 @@ private fun LovedPage(pages: Pages) {
     val songs by Library.songs.collectAsState()
     val lovedIds by Loved.ids.collectAsState()
     val tube by Loved.tube.collectAsState()
-    val theirs = remember(songs, lovedIds, tube) { (songs.filter { it.id in lovedIds } + tube).sortedBy { Library.sortName(it.title) } }
+    val liked by YouTubeAccount.liked.collectAsState()
+    val theirs = remember(songs, lovedIds, tube, liked) {
+        (songs.filter { it.id in lovedIds } + tube + liked).distinctBy { it.id }.sortedBy { Library.sortName(it.title) }
+    }
     val list = rememberLazyListState()
     FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
         state = list,
@@ -860,6 +865,47 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
         val all = songs.orEmpty()
         // no keys: a playlist can hold one song twice
         itemsIndexed(all) { i, s -> SongRow(s) { Playback.play(all, i) } }
+    } }
+}
+
+/** An artist on YouTube Music: the name big, their best-known songs (play, shuffle), their records as covers. */
+@Composable
+private fun TubeArtistPage(a: TubeArtist, pages: Pages) {
+    val page by androidx.compose.runtime.produceState<Pair<List<Song>, List<TubeAlbum>>?>(null, a.id) { value = YouTubeAccount.artist(a) }
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        val songs = page?.first.orEmpty()
+        val records = page?.second.orEmpty()
+        item {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                BasicText(a.name.uppercase(), style = headline(52.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                BasicText(
+                    if (page == null) "reading it from youtube music"
+                    else listOfNotNull(records.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "youtube music").joinToString("   "),
+                    style = pixel(11.sp, Ink.mid),
+                )
+                Spacer(Modifier.height(16.dp))
+                if (songs.isNotEmpty()) Row {
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs, 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+        if (records.isNotEmpty()) item {
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(records, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { pages.open(Page.Tube(r)) } }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
+            Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s) { Playback.play(songs, i) } }
+        }
     } }
 }
 

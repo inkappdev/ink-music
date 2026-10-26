@@ -10,10 +10,14 @@ object YouTubeAccount {
     val playlists = MutableStateFlow<List<TubeList>>(emptyList())
     val records = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val history = MutableStateFlow<List<Song>>(emptyList())
+    val liked = MutableStateFlow<List<Song>>(emptyList())
+    val artists = MutableStateFlow<List<TubeArtist>>(emptyList())
     val reading = MutableStateFlow(false)
     fun start(c: android.content.Context) {}
     fun signOut(c: android.content.Context) {}
     fun sync() {}
     suspend fun playlist(id: String): List<Song> = emptyList()
+    fun like(s: Song, on: Boolean) {}
+    suspend fun artist(a: TubeArtist): Pair<List<Song>, List<TubeAlbum>> = emptyList<Song>() to emptyList()
     fun openSignIn(c: android.content.Context) {}
 }

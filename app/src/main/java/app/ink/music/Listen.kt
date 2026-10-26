@@ -138,6 +138,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         tubeHeard.filter { it.id !in said }.distinctBy { it.album.ifEmpty { it.id } }.take((16 - recent.size).coerceAtLeast(6))
     }
     val tubeRecords by YouTubeAccount.records.collectAsState()
+    val tubeArtists by YouTubeAccount.artists.collectAsState()
     val newest = remember(newestIds, albums) { newestIds.mapNotNull { id -> albums.firstOrNull { it.id == id } } }
     val yours = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(12) }
     val mixes = seeds.filter { it.hit != null }
@@ -196,6 +197,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             val songs = remember(indie) { indie.mapNotNull { it.song } }
             Label("the week on indie radio")
             ShelfIndexed(indie) { i, e -> Tile(e.song, e.title, e.artist, number = i + 1) { Playback.play(songs, i) } }
+        }
+        if (tubeArtists.isNotEmpty()) item {
+            Label("your artists on youtube music")
+            Shelf(tubeArtists) { a -> Tile(null, a.name, "artist", face = a.face) { pages.open(Page.TubeArtist(a)) } }
         }
         if (tubeRecords.isNotEmpty()) item {
             Label("your records on youtube music")
