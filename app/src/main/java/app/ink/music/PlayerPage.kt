@@ -82,8 +82,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import dev.chrisbanes.haze.hazeSource
 import kotlin.math.PI
 import kotlin.math.atan2
+
+/**
+ * The player's small words, a size up from the library's and brighter (Bronson, 2026-10-26, after a
+ * tester couldn't read them): they're read over the cover's look, not black. Said things (the artist,
+ * the times, the top row) at 75%, not 55%; what's off (shuffle, repeat, sleep, lyrics) at 32%, not 17%.
+ */
+private val SMALL = 13.sp
+private val SAID = Ink.ink.copy(alpha = .75f)
+private val OFF = Ink.ink.copy(alpha = .32f)
 
 /** A scrub in progress (`at`, the finger's), shared by the line and the clickwheel. */
 private class Scrub { var at by mutableStateOf<Long?>(null) }
@@ -126,24 +136,28 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
         }
         val cover = rememberCover(n.song)
         val accent by animateColorAsState(cover?.accent ?: Ink.ink, tween(Motion.ENTER), label = "accent")
-        Backdrop(cover)
+        // the cover in its look behind it all; what nears the controls' black bar softens (ink's bars)
+        val frost = dev.chrisbanes.haze.rememberHazeState()
+        // black inside the source: the look and its grain are drawn over black there as on the screen (over
+        // nothing, the grain's overlay blend came out lighter, a light strip over the bar)
+        Box(Modifier.fillMaxSize().hazeSource(frost).background(Ink.black)) { Backdrop(cover) }
         val sing by Lyrics.on.collectAsState()
         val lyric = rememberLyric(n, sing)
         val look by Looks.on.collectAsState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val share = { scope.launch { ShareCard.share(ctx, n, look) }; Unit }
         Column(
-            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).navigationBarsPadding(),
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)),
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                 // where in the queue; a tap opens it
-                Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(11.sp, Ink.mid), touch = 10.dp) { queueUp = true }
+                Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true }
                 Spacer(Modifier.weight(1f))
                 // where it plays: the phone, or a speaker (lit while it's one)
                 Word(if (n.device.isNotEmpty()) "on ${n.device.lowercase()}" else "play on",
-                    pixel(11.sp, if (n.device.isNotEmpty()) Ink.ink else Ink.mid), touch = 10.dp) { playOnUp = true }
-                Word(look.word, pixel(11.sp, Ink.mid), touch = 10.dp) { Looks.next(ctx) }
-                Word("close", pixel(11.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+                    pixel(SMALL, if (n.device.isNotEmpty()) Ink.ink else SAID), touch = 10.dp) { playOnUp = true }
+                Word(look.word, pixel(SMALL, SAID), touch = 10.dp) { Looks.next(ctx) }
+                Word("close", pixel(SMALL, SAID), touch = 10.dp, onClick = onClose)
             }
             val words = lyric != null
             AnimatedContent(
@@ -164,19 +178,24 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                     }
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(30.dp)) {
+            // the controls on black, so their small words read over any look (a tester couldn't read
+            // shuffle, repeat, up next and sleep over dither); the art softens into the bar, never fades
+            Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = true))
+            Column(Modifier.fillMaxWidth().background(Ink.black).navigationBarsPadding().padding(top = 6.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                 Word("back", pixel(16.sp), touch = 10.dp) { dir = -1; Playback.previous() }
                 Word(if (n.playing) "pause" else "play", pixel(16.sp), touch = 10.dp) { Playback.toggle() }
                 Word("next", pixel(16.sp), touch = 10.dp) { dir = 1; Playback.next() }
+                Word("stop", pixel(16.sp, if (n.playing) Ink.ink else OFF), touch = 10.dp) { Playback.stop() }
                 Spacer(Modifier.weight(1f))
                 // selection is brightness: lit is on
-                Word("lyrics", pixel(16.sp, if (sing) Ink.ink else Ink.dim), touch = 10.dp) { Lyrics.toggle() }
+                Word("lyrics", pixel(16.sp, if (sing) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
             }
             Spacer(Modifier.height(14.dp))
             Modes(n) { queueUp = true }
             Spacer(Modifier.height(12.dp))
             Marquee(n.artist, n.moving, Modifier.fillMaxWidth().bleedPastCutout(), size = 120.sp)
+            }
         }
         androidx.compose.animation.AnimatedVisibility(
             queueUp,
@@ -197,7 +216,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
  */
 @Composable
 private fun Modes(n: Now, onQueue: () -> Unit) {
-    val style = 12.sp
+    val style = 14.sp
     // where sleep's steps are; back to the start once the timer has run out
     var step by remember { mutableIntStateOf(0) }
     LaunchedEffect(n.sleepAt) { if (n.sleepAt == 0L) step = 0 }
@@ -206,17 +225,17 @@ private fun Modes(n: Now, onQueue: () -> Unit) {
         value = 0L
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        Word("shuffle", pixel(style, if (n.shuffle) Ink.ink else Ink.dim), touch = 10.dp) { Playback.shuffle() }
+        Word("shuffle", pixel(style, if (n.shuffle) Ink.ink else OFF), touch = 10.dp) { Playback.shuffle() }
         Word(if (n.repeat == androidx.media3.common.Player.REPEAT_MODE_ONE) "repeat one" else "repeat",
-            pixel(style, if (n.repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) Ink.ink else Ink.dim), touch = 10.dp) { Playback.repeat() }
-        Word("up next", pixel(style, Ink.mid), touch = 10.dp, onClick = onQueue)
+            pixel(style, if (n.repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) Ink.ink else OFF), touch = 10.dp) { Playback.repeat() }
+        Word("up next", pixel(style, SAID), touch = 10.dp, onClick = onQueue)
         Spacer(Modifier.weight(1f))
         val said = when {
             n.sleepAt == PlayerService.SLEEP_END_OF_SONG -> "sleep  end"
             n.sleepAt > 0 -> "sleep ${((left + 59_999) / 60_000).coerceAtLeast(1)}m"
             else -> "sleep"
         }
-        Word(said, pixel(style, if (n.sleepAt != 0L) Ink.ink else Ink.dim), touch = 10.dp) {
+        Word(said, pixel(style, if (n.sleepAt != 0L) Ink.ink else OFF), touch = 10.dp) {
             step = (step + 1) % SLEEPS.size
             Playback.sleep(SLEEPS[step])
         }
@@ -256,8 +275,8 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 }
                 Spacer(Modifier.height(4.dp))
                 Row {
-                    FadeText(t.artist.lowercase(), pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Word("share", pixel(12.sp, Ink.mid), Modifier.padding(start = 12.dp), onClick = onShare)
+                    FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Word("share", pixel(SMALL, SAID), Modifier.padding(start = 12.dp), onClick = onShare)
                 }
             }
         } else Column {
@@ -275,25 +294,25 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
             // on a speaker: what reaches it ("flac 24/96 on dining room speaker")
             if (t.device.isNotEmpty()) {
                 BasicText(listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" "),
-                    style = pixel(11.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    style = pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(4.dp))
             }
             // the artist and the record, each a way to its page
             Row(Modifier.fillMaxWidth()) {
               Row(Modifier.weight(1f)) {
                 val song = t.song
-                FadeText(t.artist.lowercase(), pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
                         onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Artist(it.albumArtist)) } }))
                 if (t.album.isNotBlank()) {
                     Spacer(Modifier.width(14.dp))
-                    FadeText(t.album.lowercase(), pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
                             onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Record(it.albumId)) } }))
                 }
               }
                 // the song as a poster, for a story or a message
-                Word("share", pixel(12.sp, Ink.mid), Modifier.padding(start = 12.dp), onClick = onShare)
+                Word("share", pixel(SMALL, SAID), Modifier.padding(start = 12.dp), onClick = onShare)
             }
         }
     }
@@ -359,7 +378,7 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub) {
     }
     val shown = scrub.at ?: pos
     val frac = if (n.duration > 0) (shown.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
-    val times by animateColorAsState(if (scrub.at != null) Ink.ink else Ink.dim, tween(Motion.FADE), label = "times")
+    val times by animateColorAsState(if (scrub.at != null) Ink.ink else SAID, tween(Motion.FADE), label = "times")
     val duration by rememberUpdatedState(n.duration)
     fun where(x: Float, width: Int) = ((x / width).coerceIn(0f, 1f) * duration).toLong()
     Column(
@@ -381,8 +400,8 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub) {
             },
     ) {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            BasicText(clock(shown), style = pixel(11.sp, times))
-            BasicText(if (n.duration > 0) "-" + clock(n.duration - shown) else "", style = pixel(11.sp, times))
+            BasicText(clock(shown), style = pixel(SMALL, times))
+            BasicText(if (n.duration > 0) "-" + clock(n.duration - shown) else "", style = pixel(SMALL, times))
         }
         // the line sits on the cover's top edge: nothing between them
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {

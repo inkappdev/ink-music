@@ -173,6 +173,14 @@ object Playback {
 
     fun toggle() { if (casting) return Casting.toggle(); controller?.run { if (playWhenReady) pause() else { if (playbackState == Player.STATE_IDLE) prepare(); play() } } }
     fun next() { if (casting) return Casting.next(); controller?.seekToNextMediaItem() }
+    /**
+     * Stop: the song back to its start and the player let go (its notification goes with it); the
+     * queue stays, and play starts it again. On a speaker, a pause (the speaker holds its own queue).
+     */
+    fun stop() {
+        if (casting) { if (now.value?.playing == true) Casting.toggle(); return }
+        controller?.run { pause(); seekTo(0); stop() }
+    }
     /** Back: to the song's start, or the song before when it's only just begun (as every player). */
     fun previous() { if (casting) return Casting.previous(); controller?.seekToPrevious() }
     fun seek(ms: Long) { if (casting) return Casting.seek(ms); controller?.seekTo(ms) }
