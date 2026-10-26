@@ -68,8 +68,13 @@ object YouTubeMusic {
     }
 
     /** A record's songs, in order. */
-    suspend fun album(a: TubeAlbum): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun album(record: TubeAlbum): List<Song> = withContext(Dispatchers.IO) {
         init()
+        // one from your library comes as its page ("/browse/MPREb_..."): its own playlist, which NewPipe opens
+        val a = if ("/browse/" !in record.url) record else record.copy(
+            url = InnerTube().albumPlaylist(record.url.substringAfterLast('/'))?.let { "https://music.youtube.com/playlist?list=$it" }
+                ?: return@withContext emptyList(),
+        )
         val info = runCatching { PlaylistInfo.getInfo(yt, a.url) }.getOrNull() ?: return@withContext emptyList()
         val list = Regex("[?&]list=([^&]+)").find(a.url)?.groupValues?.get(1) ?: a.url.hashCode().toString()
         // a record ("OLAK5uy_..."): its songs are one record, one cover; a playlist's (a chart's) are each their own

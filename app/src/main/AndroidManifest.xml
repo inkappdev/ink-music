@@ -18,10 +18,13 @@
         android:usesCleartextTraffic="true">
         <!-- cleartext: a server at home is usually plain http on the wifi (or a tailnet) -->
 
+        <!-- singleTop, not singleTask: opened again from the home screen, the task comes back as it
+             was (singleTask threw away the YouTube sign-in when Google's own prompt sent you home);
+             a Main opened over it closes itself (Main.onCreate) -->
         <activity
             android:name=".Main"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
