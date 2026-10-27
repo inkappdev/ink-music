@@ -1,0 +1,4 @@
+- Covers as sharp as your screen: the player's at full width, and YouTube mixes and radio get the record's real cover
+- Signed in to YouTube Music: your mixes there (Supermix, Discover, Replay), new from your artists, forgotten favorites, on repeat and your playlists on listen
+- Sign in to YouTube Music from the welcome, if you like
+- The welcome comes in as one
