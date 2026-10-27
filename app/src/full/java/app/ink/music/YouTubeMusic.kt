@@ -87,19 +87,28 @@ object YouTubeMusic {
      * A song's audio stream (blocking: the player's loader, or a speaker's thread): its link and
      * type. For a speaker the m4a (every speaker plays AAC), else the best there is.
      */
-    fun stream(id: String, forSpeaker: Boolean): Pair<String, String>? {
-        val key = id + if (forSpeaker) ":s" else ""
+    fun stream(id: String, forSpeaker: Boolean, small: Boolean = false): Pair<String, String>? {
+        val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.third > System.currentTimeMillis() }?.let { return it.first to it.second }
         init()
         val info = runCatching { StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=" + id.removePrefix("y")) }.getOrNull() ?: return null
         keepRelated(id, info)
         val direct = info.audioStreams.filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
+        // the best there is, or (data saver, Quality) the smallest
         val pick = (if (forSpeaker) direct.filter { it.format == MediaFormat.M4A }.ifEmpty { direct } else direct)
-            .maxByOrNull { it.averageBitrate.takeIf { b -> b > 0 } ?: it.bitrate } ?: return null
+            .let { all -> val rate = { a: org.schabi.newpipe.extractor.stream.AudioStream -> a.averageBitrate.takeIf { b -> b > 0 } ?: a.bitrate }
+                if (small) all.minByOrNull(rate) else all.maxByOrNull(rate) } ?: return null
         val mime = pick.format?.mimeType ?: "audio/mp4"
+        // its bitrate, for the player to say (NewPipe gives kbps or bps, by the stream)
+        (pick.averageBitrate.takeIf { it > 0 } ?: pick.bitrate).let { b -> rates[key] = if (b > 10_000) b / 1000 else b }
         streams[key] = Triple(pick.content, mime, System.currentTimeMillis() + 4 * 3_600_000L)
         return pick.content to mime
     }
+
+    private val rates = ConcurrentHashMap<String, Int>()
+
+    /** The bitrate (kbps) of the stream last picked for a song, 0 if none. */
+    fun kbps(id: String, small: Boolean): Int = rates[id + if (small) ":small" else ""] ?: 0
 
     private fun keepRelated(id: String, info: StreamInfo) {
         // songs only (a "- Topic" upload is a song; the rest is video recommendations), not mixes or live streams

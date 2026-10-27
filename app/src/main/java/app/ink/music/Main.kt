@@ -124,6 +124,7 @@ class Main : ComponentActivity() {
         if (!isTaskRoot) { finish(); return }
         enableEdgeToEdge()
         Lyrics.start(this)
+        Moments.start(this)
         Looks.start(this)
         Loved.start(this)
         YouTubeMusic.attach(this)

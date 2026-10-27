@@ -182,6 +182,39 @@ fun SettingsPage(pages: Pages) {
             }
             Spacer(Modifier.height(40.dp))
 
+            // how good a stream is: on wifi, and on mobile data (Quality)
+            BasicText("QUALITY", style = headline(24.sp))
+            Spacer(Modifier.height(6.dp))
+            BasicText("songs from your server and youtube music. original is the file as it is; high, mp3 at 320; data saver, the smallest. the phone's own files always play as they are", style = pixel(11.sp, Ink.mid))
+            var quality by remember { mutableStateOf(Quality.read(ctx)) }
+            for ((where, onData) in listOf("on wifi" to false, "on mobile data" to true)) {
+                Spacer(Modifier.height(12.dp))
+                BasicText(where, style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(6.dp))
+                Row {
+                    Quality.words.forEachIndexed { q, word ->
+                        val lit = (if (onData) quality.second else quality.first) == q
+                        Word(word, pixel(14.sp, if (lit) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) {
+                            quality = if (onData) quality.first to q else q to quality.second
+                            Quality.set(ctx, quality.first, quality.second)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(40.dp))
+
+            // the hi-res moment: a lossless song's format typed across the cover as it starts
+            BasicText("HI-RES MOMENT", style = headline(24.sp))
+            Spacer(Modifier.height(6.dp))
+            BasicText("a lossless song says so across its cover as it starts. off, it's only the small word over the cover", style = pixel(11.sp, Ink.mid))
+            Spacer(Modifier.height(10.dp))
+            val moment by Moments.on.collectAsState()
+            Row {
+                Word("on", pixel(14.sp, if (moment) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { Moments.set(ctx, true) }
+                Word("off", pixel(14.sp, if (!moment) Ink.ink else Ink.dim), touch = 8.dp) { Moments.set(ctx, false) }
+            }
+            Spacer(Modifier.height(40.dp))
+
             // volume levelling: on, or off (each song as it was mastered)
             BasicText("EVEN VOLUME", style = headline(24.sp))
             Spacer(Modifier.height(6.dp))
