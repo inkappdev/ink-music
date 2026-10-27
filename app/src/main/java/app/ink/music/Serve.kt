@@ -40,7 +40,10 @@ object Serve {
     }
 
     /** Where a speaker fetches `s`: the server's stream, or the phone's file from here. */
-    fun url(s: Song, lossless: Boolean): String? = if (s.station) s.uri.toString() else if (s.tube) YouTubeMusic.stream(s.id, true)?.first else if (s.server) {
+    fun url(s: Song, lossless: Boolean): String? = if (s.station) s.uri.toString() else if (s.tube) {
+        // from here: its stream found only when the speaker asks for it (finding a hundred first took over a minute)
+        base?.let { "$it/y/${s.id.removePrefix("y")}" }
+    } else if (s.server) {
         // the original where the speaker can take it; else mp3 at 320, which every speaker plays
         Server.account.value?.let { a ->
             if (lossless) Server.url(a, "stream", "id" to s.id.removePrefix("n"), "format" to "raw")
@@ -55,7 +58,7 @@ object Serve {
 
     fun type(s: Song, lossless: Boolean): String = when {
         s.station -> s.mime
-        s.tube -> YouTubeMusic.stream(s.id, true)?.second ?: "audio/mp4"
+        s.tube -> "audio/mp4"   // a speaker's is always the m4a (YouTubeMusic.stream)
         s.server && lossless -> s.mime.ifEmpty { "audio/flac" }
         s.server -> "audio/mpeg"
         else -> runCatching { app?.contentResolver?.getType(s.uri) }.getOrNull() ?: "audio/flac"
@@ -93,6 +96,8 @@ object Serve {
             val path = parts.getOrNull(1).orEmpty().split('/').filter { it.isNotEmpty() }
             val out = sock.getOutputStream()
             if (path.size != 3 || path[0] != token) return@use status(out, 404)
+            // a YouTube song: its stream found now, and the speaker sent there
+            if (path[1] == "y") return@use tube(out, path[2])
             val id = path[2].toLongOrNull() ?: return@use status(out, 404)
             when (path[1]) {
                 "f" -> file(out, id, range, head)
@@ -100,6 +105,15 @@ object Serve {
                 else -> status(out, 404)
             }
         }
+    }
+
+    /** A YouTube song's stream, found as the speaker asks for it: a redirect there (a speaker follows one). */
+    private fun tube(out: OutputStream, video: String) {
+        if (!video.all { it.isLetterOrDigit() || it == '-' || it == '_' }) return status(out, 404)
+        val link = YouTubeMusic.stream("y$video", true)?.first ?: return status(out, 404)
+        android.util.Log.d("ink-cast", "serve: $video sent on")
+        out.write("HTTP/1.1 302 Found\r\nLocation: $link\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+        out.flush()
     }
 
     private fun file(out: OutputStream, id: Long, range: String?, head: Boolean) {

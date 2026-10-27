@@ -253,7 +253,7 @@ object Casting {
         }
 
         private fun run() {
-            try { talk() } catch (e: Exception) {}
+            try { talk() } catch (e: Exception) { android.util.Log.d("ink-cast", "${to.name}: $e") }
             // the connection gone (the speaker off the wifi, or another phone took it over)
             if (open) main.post { if (link === this) end() }
         }
@@ -261,6 +261,7 @@ object Casting {
         private fun talk() {
             val s = tls.socketFactory.createSocket() as SSLSocket
             socket = s
+            android.util.Log.d("ink-cast", "${to.name}: connecting to ${to.address}")
             s.connect(to.address, 5_000)
             s.soTimeout = 6_000
             val input = DataInputStream(s.inputStream.buffered())
@@ -270,7 +271,7 @@ object Casting {
             var quiet = 0
             while (open) {
                 val (ns, body) = try { read(input) } catch (e: SocketTimeoutException) {
-                    if (++quiet > 2) return
+                    if (++quiet > 2) { android.util.Log.d("ink-cast", "${to.name}: silent, let go"); return }
                     send("receiver-0", BEAT, JSONObject().put("type", "PING"))
                     continue
                 }
@@ -280,8 +281,9 @@ object Casting {
                     "PING" -> send("receiver-0", BEAT, JSONObject().put("type", "PONG"))
                     "RECEIVER_STATUS" -> receiver(m.optJSONObject("status"))
                     "MEDIA_STATUS" -> if (ns == MEDIA) media(m.optJSONArray("status")?.optJSONObject(0))
-                    "LOAD_FAILED", "LOAD_CANCELLED" -> if (!loaded) return
-                    "CLOSE" -> if (m.optString("sourceId") == transport) return
+                    "LOAD_FAILED", "LOAD_CANCELLED" -> { android.util.Log.d("ink-cast", "${to.name}: ${m.optString("type")} ${body.take(300)}"); if (!loaded) return }
+                    "LAUNCH_ERROR", "INVALID_REQUEST" -> android.util.Log.d("ink-cast", "${to.name}: ${body.take(300)}")
+                    "CLOSE" -> if (m.optString("sourceId") == transport) { android.util.Log.d("ink-cast", "${to.name}: closed"); return }
                 }
             }
         }
@@ -290,6 +292,7 @@ object Casting {
         private fun receiver(status: JSONObject?) {
             val apps = status?.optJSONArray("applications") ?: JSONArray()
             val ours = (0 until apps.length()).map { apps.getJSONObject(it) }.firstOrNull { it.optString("appId") == APP }
+            android.util.Log.d("ink-cast", "${to.name}: receiver ${(0 until apps.length()).joinToString { apps.getJSONObject(it).optString("displayName") }} (ours ${ours != null}, loaded $loaded)")
             if (ours == null) {
                 if (loaded) { open = false; main.post { if (link === this) end() } }
                 return
@@ -306,21 +309,56 @@ object Casting {
             }
         }
 
-        /** Hands the speaker `songs` to play, from `from` ms into the first. */
+        /**
+         * Hands the speaker `songs` to play, from `from` ms into the first: as many as fit one message (a Cast message
+         * is 64 KB at most: a hundred songs' links overran it, and the speaker hung up), the rest added as it nears
+         * the end of them ([more]).
+         */
         private fun load(t: String, songs: List<Song>, from: Long) {
-                val items = JSONArray()
-                songs.forEach { s ->
-                    val url = Serve.url(s, lossless) ?: return@forEach
+            pending = songs
+            handedOver = queue.size - songs.size   // songs is the queue from some song on (all, or from one refused)
+            val first = chunk()
+            android.util.Log.d("ink-cast", "${to.name}: queue of ${first.length()} of ${songs.size}, the first ${first.optJSONObject(0)?.optJSONObject("media")?.let { it.optString("contentType") + " " + it.optString("contentId").substringBefore('?').take(80) }}")
+            send(t, MEDIA, JSONObject().put("type", "QUEUE_LOAD").put("requestId", ++requests).put("items", first)
+                .put("startIndex", 0).put("currentTime", from / 1000.0).put("repeatMode", "REPEAT_OFF"))
+        }
+
+        /** Songs not yet handed over, and how many have been. */
+        private var pending: List<Song> = emptyList()
+        private var handedOver = 0
+
+        /** The next songs as Cast items, as many as fit in about 40 KB (taken from [pending]). */
+        private fun chunk(): JSONArray {
+            val items = JSONArray()
+            var size = 0
+            while (pending.isNotEmpty()) {
+                val s = pending.first()
+                val url = Serve.url(s, lossless)
+                if (url != null) {
                     val meta = JSONObject().put("metadataType", 3).put("title", s.title).put("artist", s.artist)
                         .put("albumName", s.album).put("albumArtist", s.albumArtist)
                     Serve.art(s)?.let { meta.put("images", JSONArray().put(JSONObject().put("url", it))) }
-                    items.put(JSONObject().put("autoplay", true).put("preloadTime", 8).put("media", JSONObject()
-                        .put("contentId", url).put("contentUrl", url).put("streamType", "BUFFERED")
+                    val item = JSONObject().put("autoplay", true).put("preloadTime", 8).put("media", JSONObject()
+                        .put("contentId", url).put("streamType", "BUFFERED")
                         .put("contentType", Serve.type(s, lossless)).put("metadata", meta)
-                        .put("customData", JSONObject().put("id", s.id))))
+                        .put("customData", JSONObject().put("id", s.id)))
+                    val n = item.toString().length
+                    if (items.length() > 0 && size + n > 40_000) break
+                    items.put(item); size += n
                 }
-                send(t, MEDIA, JSONObject().put("type", "QUEUE_LOAD").put("requestId", ++requests).put("items", items)
-                    .put("startIndex", 0).put("currentTime", from / 1000.0).put("repeatMode", "REPEAT_OFF"))
+                pending = pending.drop(1); handedOver++
+            }
+            return items
+        }
+
+        /** The speaker nearing the end of what it has: the next songs added to its queue. */
+        private fun more() {
+            val t = transport ?: return
+            if (pending.isEmpty()) return
+            val items = chunk()
+            if (items.length() == 0) return
+            android.util.Log.d("ink-cast", "${to.name}: ${items.length()} more added, ${pending.size} still to come")
+            send(t, MEDIA, JSONObject().put("type", "QUEUE_INSERT").put("requestId", ++requests).put("mediaSessionId", session).put("items", items))
         }
 
         private fun media(st: JSONObject?) {
@@ -330,7 +368,10 @@ object Casting {
                 m.optJSONObject("customData")?.optString("id")?.let { id -> queue.firstOrNull { it.id == id }?.let { current = it } }
                 duration = (m.optDouble("duration", 0.0) * 1000).toLong()
             }
+            // a few songs from the end of what the speaker has: the next ones handed over
+            current?.let { c -> if (pending.isNotEmpty() && queue.indexOf(c) >= handedOver - 3) more() }
             val state = st.optString("playerState")
+            android.util.Log.d("ink-cast", "${to.name}: $state ${st.optString("idleReason")}")
             val s0 = current
             // a song the speaker couldn't play as the original: it gets mp3 from here on, from that song
             if (state == "IDLE" && st.optString("idleReason") == "ERROR" && lossless && s0 != null && s0.server) {

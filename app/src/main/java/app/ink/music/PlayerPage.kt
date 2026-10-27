@@ -157,15 +157,18 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)),
         ) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                // where in the queue; a tap opens it
-                Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true }
-                Spacer(Modifier.weight(1f))
-                // where it plays: the phone, or a speaker (lit while it's one)
-                Word(if (n.device.isNotEmpty()) "on ${n.device.lowercase()}" else "play on",
-                    pixel(SMALL, if (n.device.isNotEmpty()) Ink.ink else SAID), touch = 10.dp) { playOnUp = true }
-                Word(look.word, pixel(SMALL, SAID), touch = 10.dp) { Looks.next(ctx) }
-                Word("close", pixel(SMALL, SAID), touch = 10.dp, onClick = onClose)
+            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)) {
+                Row(Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.Center), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                    // where in the queue; a tap opens it
+                    Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true }
+                    Spacer(Modifier.weight(1f))
+                    Word(look.word, pixel(SMALL, SAID), touch = 10.dp) { Looks.next(ctx) }
+                    Word("close", pixel(SMALL, SAID), touch = 10.dp, onClick = onClose)
+                }
+                // where it plays: a pixel speaker (as the heart is drawn) in the middle of the row, lit while it's a
+                // speaker, dim on the phone; a tap opens every speaker. the speaker's name is under the title ("flac
+                // on bedroom speaker"): a long one here pushed close off the row
+                PlayOnSpeaker(n.device.isNotEmpty(), Modifier.align(androidx.compose.ui.Alignment.Center)) { playOnUp = true }
             }
             val words = lyric != null
             AnimatedContent(
@@ -516,6 +519,32 @@ private const val WHEEL_SEEK = 5_000L          // so a turn is two minutes
 private val WHEEL_ENGAGE = (PI / 3).toFloat()  // a sixth of a turn before it scrubs
 private val TICK = if (Build.VERSION.SDK_INT >= 34) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
 else HapticFeedbackConstants.CLOCK_TICK
+
+/** The pixel speaker: a cabinet, its tweeter over its woofer. */
+private val SPEAKER = listOf(
+    "##########",
+    "#........#",
+    "#...##...#",
+    "#...##...#",
+    "#........#",
+    "#..####..#",
+    "#.#....#.#",
+    "#.#.##.#.#",
+    "#.#.##.#.#",
+    "#.#....#.#",
+    "#..####..#",
+    "#........#",
+    "##########",
+)
+
+/** "play on" as a pixel speaker: lit in ink while a speaker plays, at the row's words' dimness on the phone. */
+@Composable
+private fun PlayOnSpeaker(casting: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val colour by androidx.compose.animation.animateColorAsState(if (casting) Ink.ink else SAID, tween(Motion.ENTER, easing = Motion.expo), label = "speaker")
+    Box(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(10.dp)) {
+        Sprite(SPEAKER, colour, 2.dp)
+    }
+}
 
 /** A song's synced lines and where it is in them (-1 before the first; a blank one is a gap). */
 data class Lyric(val lines: List<Line>, val index: Int)

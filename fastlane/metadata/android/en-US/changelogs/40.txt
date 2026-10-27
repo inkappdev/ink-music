@@ -1,0 +1,5 @@
+- Casting to Chromecast and Nest speakers works again with long queues: songs are handed over in pieces as they play
+- YouTube Music songs reach a speaker at once (each found as the speaker asks for it)
+- Where it plays is a pixel speaker in the middle of the player's top row, lit while casting; a long speaker name no longer pushes close off the screen
+- Casting bugs caught, unfortunately no fish.
+- Do something nice for someone today. Play their favourite song in the next room
