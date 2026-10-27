@@ -348,10 +348,7 @@ private fun Tile(song: Song?, name: String, said: String, face: String? = null, 
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Top) {
             number?.let { BasicText("$it", style = pixel(12.sp, Ink.mid), modifier = Modifier.width(26.dp).padding(top = 2.dp)) }
-            Column {
-                BasicText(name.uppercase(), style = headline(15.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                BasicText(said.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            UnderCover(name, said, pixel(12.sp, Ink.mid))
         }
     }
 }
