@@ -211,6 +211,7 @@ sealed interface Page {
     data object InkRadio : Page
     data class TubeList(val list: app.ink.music.TubeList) : Page
     data class TubeArtist(val artist: app.ink.music.TubeArtist) : Page
+    data class Weekly(val week: Int) : Page
 }
 
 /** Where the library's pages go: pushed in from the right, back out to the right (the iPod's). */
@@ -281,6 +282,7 @@ private fun App() {
                         Page.InkRadio -> InkRadioPage(pages)
                         is Page.TubeList -> TubeListPage(p.list, pages)
                         is Page.TubeArtist -> ArtistPage(p.artist.name, pages, p.artist.id)
+                        is Page.Weekly -> WeeklyPage(p.week, pages)
                     }
                 }
             }
@@ -844,6 +846,80 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                             Spacer(Modifier.height(8.dp))
                             UnderCover(a.name, "artist", pixel(12.sp, Ink.mid))
                         }
+                    }
+                }
+            }
+        }
+    } }
+}
+
+/** Four of a week's covers in the dither, two by two, edge to edge: ink weekly's own cover. */
+@Composable
+fun Mosaic(songs: List<Song>, modifier: Modifier) {
+    BoxWithConstraints(modifier.background(Ink.black)) {
+        val cell = maxWidth / 2
+        val px = with(LocalDensity.current) { cell.roundToPx() }
+        val four = songs.distinctBy { it.art ?: it.albumId }.take(4)
+        Column {
+            for (r in 0..1) Row {
+                for (c in 0..1) four.getOrNull(r * 2 + c)?.let { Dithered(it, Modifier.size(cell), px = px) } ?: Spacer(Modifier.size(cell))
+            }
+        }
+    }
+}
+
+/** A week of ink weekly: its mosaic across the page, its name and note, its songs as a chart, the weeks before. */
+@Composable
+private fun WeeklyPage(number: Int, pages: Pages) {
+    val weeks by Weekly.weeks.collectAsState()
+    val w = weeks.firstOrNull { it.week == number } ?: weeks.firstOrNull() ?: return
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(top = top, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
+            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
+                Mosaic(w.songs, Modifier.size(minOf(maxWidth, 560.dp)).align(Alignment.Center))
+                BasicText(w.title.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.background(Ink.black).padding(start = 20.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
+            }
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                Spacer(Modifier.height(14.dp))
+                BasicText(listOf("ink weekly", Weekly.day(w.date)).filter { it.isNotEmpty() }.joinToString("   "), style = pixel(12.sp, Ink.mid))
+                if (w.note.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    BasicText(w.note, style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 22.sp))
+                }
+                Spacer(Modifier.height(12.dp))
+                BasicText("${w.songs.size} songs   ${w.songs.sumOf { it.duration } / 60_000} min", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(16.dp))
+                Row {
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+        }
+        // the songs as a chart: the place big beside each (no keys: a song could be picked twice)
+        itemsIndexed(w.songs) { n, s ->
+            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText("${n + 1}", style = headline(30.sp), modifier = Modifier.width(52.dp))
+                Box(Modifier.weight(1f)) { SongRow(s, pages = pages) { Playback.play(w.songs, n) } }
+            }
+        }
+        val before = weeks.filter { it.week != w.week }
+        if (before.isNotEmpty()) {
+            item { Spacer(Modifier.height(18.dp)); Label("the weeks before") }
+            items(before, key = { it.week }) { b ->
+                Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Weekly(b.week)) })
+                    .padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText("${b.week}", style = headline(22.sp, Ink.mid), modifier = Modifier.width(52.dp))
+                    Column(Modifier.weight(1f)) {
+                        BasicText(b.title.uppercase(), style = headline(18.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        BasicText(listOf(Weekly.day(b.date), "${b.songs.size} songs").filter { it.isNotEmpty() }.joinToString("   "), style = pixel(12.sp, Ink.mid))
                     }
                 }
             }

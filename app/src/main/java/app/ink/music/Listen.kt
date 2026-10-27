@@ -151,7 +151,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val albums by Library.albums.collectAsState()
     val seed by Order.seed.collectAsState()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(seeds.map { it.name }) { Listen.load(ctx) }
+    LaunchedEffect(seeds.map { it.name }) { Listen.load(ctx); Weekly.load(ctx) }
+    val weekly by Weekly.weeks.collectAsState()
     val heard by androidx.compose.runtime.produceState<List<History.Heard>>(emptyList()) {
         value = withContext(Dispatchers.IO) { History.read(ctx) }
     }
@@ -204,6 +205,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 }
                 Cog { pages.open(Page.Settings) }
             }
+        }
+        // ink weekly: this week's songs, picked by hand (a new week Friday nights)
+        weekly.firstOrNull()?.let { w ->
+            item { WeeklyBlock(w) { pages.open(Page.Weekly(w.week)) } }
         }
         if (recent.isNotEmpty() || tubeRecent.isNotEmpty()) item {
             Label("jump back in")
@@ -410,6 +415,35 @@ private fun <T> ShelfIndexed(items: List<T>, tile: @Composable (Int, T) -> Unit)
         itemsIndexed(items) { i, it -> tile(i, it) }
     }
     Spacer(Modifier.height(10.dp))
+}
+
+/** This week's ink weekly on listen: its mosaic, its name big, its note, play, shuffle; a tap opens the week. */
+@Composable
+private fun WeeklyBlock(w: Weekly.Week, onOpen: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onOpen))
+        .padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 22.dp)) {
+        BasicText(listOf("ink weekly", Weekly.day(w.date)).filter { it.isNotEmpty() }.joinToString("   "), style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
+            Box(Modifier.size(140.dp), contentAlignment = Alignment.BottomStart) {
+                Mosaic(w.songs, Modifier.fillMaxSize())
+                BasicText(w.title.uppercase(), style = headline(24.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.background(Ink.black).padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 2.dp))
+            }
+            if (w.note.isNotEmpty()) {
+                Spacer(Modifier.width(16.dp))
+                BasicText(w.note, style = pixel(12.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 19.sp), maxLines = 5,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row {
+            Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
+            Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
+            Word("${w.songs.size} songs", pixel(14.sp, Ink.mid), touch = 8.dp, onClick = onOpen)
+        }
+    }
 }
 
 /** A tile: a cover (or an artist's photo), a name big, a word small; numbered on a chart. */
