@@ -20,8 +20,8 @@ android {
         minSdk = 31
         targetSdk = 37
         // each release: both up (the code by one), and a changelog in fastlane/.../changelogs/<code>.txt
-        versionCode = 33
-        versionName = "1.2"
+        versionCode = 34
+        versionName = "1.3"
     }
 
     signingConfigs {
