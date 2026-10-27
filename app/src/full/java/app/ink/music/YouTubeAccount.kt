@@ -51,6 +51,10 @@ object YouTubeAccount {
     /** Your artists' records from this year (and last, early in the year), newest first. */
     val fresh = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val reading = MutableStateFlow(false)
+    /** The songs you've uploaded to YouTube Music yourself (they play only signed in), newest first. */
+    val uploads = MutableStateFlow<List<Song>>(emptyList())
+    /** The artists you follow there, by their page's id ("UC..."): an artist's page says so. */
+    val followed = MutableStateFlow<Set<String>>(emptySet())
     private var tube: InnerTube? = null
     @Volatile private var app: Context? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -64,14 +68,22 @@ object YouTubeAccount {
     fun played(c: Context, songId: String) {
         if (!tells(c)) return
         InnerTube.trace = { android.util.Log.d("ink-youtube", it) }
-        // read fresh: this process's prefs would miss a sign-in or sign-out made in the screens'
-        @Suppress("DEPRECATION") val p = c.getSharedPreferences("youtube", Context.MODE_MULTI_PROCESS)
-        val auth = p.getString("auth", null)?.let { runCatching { JSONObject(open(it)) }.getOrNull() } ?: return
-        val t = InnerTube(auth.optString("cookie"), auth.optString("visitor").ifEmpty { null },
-            auth.optString("sync").ifEmpty { null }, auth.optString("version").ifEmpty { InnerTube.VERSION })
+        val t = signed(c) ?: return
         // youtube now and then calls a song unplayable for a moment (no tracking link): asked once more
         val told = t.played(songId.removePrefix("y")) || run { Thread.sleep(3_000); t.played(songId.removePrefix("y")) }
         android.util.Log.d("ink-youtube", "played $songId: told $told")
+    }
+
+    /**
+     * YouTube Music as you, in either process (the player's never signs in itself): the sign-in read fresh each
+     * time, so a sign-in or sign-out made in the other process counts at once (its prefs would be cached). Null
+     * when no one's signed in.
+     */
+    fun signed(c: Context): InnerTube? {
+        @Suppress("DEPRECATION") val p = c.getSharedPreferences("youtube", Context.MODE_MULTI_PROCESS)
+        val auth = p.getString("auth", null)?.let { runCatching { JSONObject(open(it)) }.getOrNull() } ?: return null
+        return InnerTube(auth.optString("cookie"), auth.optString("visitor").ifEmpty { null },
+            auth.optString("sync").ifEmpty { null }, auth.optString("version").ifEmpty { InnerTube.VERSION })
     }
 
     // told or not, kept as a file (both processes read it): there, YouTube isn't told
@@ -111,7 +123,8 @@ object YouTubeAccount {
         prefs(c).edit().clear().apply()
         tube = null; _who.value = null
         playlists.value = emptyList(); records.value = emptyList(); history.value = emptyList()
-        liked.value = emptyList(); artists.value = emptyList(); mixes.value = emptyList(); fresh.value = emptyList()
+        liked.value = emptyList(); artists.value = emptyList(); mixes.value = emptyList(); fresh.value = emptyList(); followed.value = emptySet()
+        uploads.value = emptyList()
         lists.clear(); dir?.deleteRecursively()
         forgetWeb()
     }
@@ -148,6 +161,10 @@ object YouTubeAccount {
                 runCatching { t.tracks("FEmusic_history", max = 100) }.onSuccess { found -> history.value = found.map(::song) }
                     .onFailure { android.util.Log.d("ink-youtube", "history: $it") }
             }
+            val mine = launch {
+                runCatching { t.tracks("FEmusic_library_privately_owned_tracks", max = 2_000) }.onSuccess { found -> uploads.value = found.map(::song) }
+                    .onFailure { android.util.Log.d("ink-youtube", "uploads: $it") }
+            }
             val likes = launch {
                 runCatching { t.tracks("VLLM") }.onSuccess { found -> liked.value = found.map(::song) }
                     .onFailure { android.util.Log.d("ink-youtube", "liked: $it") }
@@ -156,7 +173,8 @@ object YouTubeAccount {
             val people = launch {
                 runCatching {
                     fun of(id: String) = t.items(id).filter { it.kind == InnerTube.Kind.ARTIST && it.id.startsWith("UC") }
-                    of("FEmusic_library_corpus_artists").ifEmpty { of("FEmusic_library_corpus_track_artists") }
+                    of("FEmusic_library_corpus_artists").also { f -> followed.value = f.map { it.id }.toSet() }
+                        .ifEmpty { of("FEmusic_library_corpus_track_artists") }
                 }.onSuccess { found -> artists.value = found.map { TubeArtist(it.title, it.art, it.id) } }
                     .onFailure { android.util.Log.d("ink-youtube", "artists: $it") }
             }
@@ -170,7 +188,7 @@ object YouTubeAccount {
                         .map { TubeList(it.id.removePrefix("VL"), it.title, it.subtitle.split(" • ", " · ").firstOrNull { w -> w.isNotBlank() }.orEmpty(), it.art) }
                 }.onFailure { android.util.Log.d("ink-youtube", "home: $it") }
             }
-            lists0.join(); recs.join(); heard.join(); likes.join(); people.join(); home.join()
+            lists0.join(); recs.join(); heard.join(); likes.join(); people.join(); home.join(); mine.join()
             keepRaw("library", libraryJson())   // kept now, and again once your artists' new records are in
             // your mixes and playlists read ahead, beside what follows
             app?.let { c -> launch { warm(c, t) } }
@@ -180,6 +198,75 @@ object YouTubeAccount {
             android.util.Log.d("ink-youtube", "read ${playlists.value.size} playlists, ${records.value.size} records, " +
                 "${history.value.size} heard, ${liked.value.size} liked, ${artists.value.size} artists")
             reading.value = false
+        }
+    }
+
+    // your library written, each shown at once and put back if YouTube refuses
+
+    /** Whether a record is in your library there. */
+    fun saved(a: TubeAlbum): Boolean = records.value.any { it.url == a.url || (it.title.equals(a.title, true) && it.artist.equals(a.artist, true)) }
+
+    /** A record saved to your library there, or not: by its own playlist ("OLAK5uy_...", found from its page if need be). */
+    suspend fun save(a: TubeAlbum, on: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val t = tube ?: return@withContext false
+        val list = Regex("[?&]list=([^&]+)").find(a.url)?.groupValues?.get(1)
+            ?: runCatching { t.album(a.url.substringAfterLast('/')).first }.getOrNull() ?: return@withContext false
+        val before = records.value
+        val same = { r: TubeAlbum -> r.url == a.url || (r.title.equals(a.title, true) && r.artist.equals(a.artist, true)) }
+        records.value = if (on) listOf(a) + before.filterNot(same) else before.filterNot(same)
+        t.save(list, on).also { if (!it) records.value = before }
+    }
+
+    /** An artist followed there, or not. */
+    suspend fun follow(a: TubeArtist, on: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val t = tube ?: return@withContext false
+        if (a.id.isEmpty()) return@withContext false
+        val before = followed.value to artists.value
+        followed.value = if (on) followed.value + a.id else followed.value - a.id
+        if (on && artists.value.none { it.id == a.id }) artists.value = listOf(a) + artists.value
+        if (!on) artists.value = artists.value.filterNot { it.id == a.id }
+        t.follow(a.id, on).also { if (!it) { followed.value = before.first; artists.value = before.second } }
+    }
+
+    /** A song added to one of your playlists there: a song from elsewhere found there by its words first. */
+    suspend fun addTo(list: TubeList, s: Song): Boolean = withContext(Dispatchers.IO) {
+        val t = tube ?: return@withContext false
+        val vid = (if (s.tube) s.id else YouTubeMusic.find(s.title, s.artist)?.id)?.removePrefix("y") ?: return@withContext false
+        t.addTo(list.id, vid).also { if (it) { lists.remove(list.id); dir?.let { d -> java.io.File(d, "${list.id}.json").delete() } } }
+    }
+
+    /** A new playlist of yours there (private), these songs in it, in order (each from elsewhere found there first): it, and how many went in; null if refused. */
+    suspend fun makePlaylistOf(name: String, songs: List<Song>): Pair<TubeList, Int>? = withContext(Dispatchers.IO) {
+        val t = tube ?: return@withContext null
+        val ids = songs.mapNotNull { s -> (if (s.tube) s.id else YouTubeMusic.find(s.title, s.artist)?.id)?.removePrefix("y") }.distinct()
+        val id = t.makePlaylist(name, ids) ?: return@withContext null
+        val made = TubeList(id, name, "", songs.firstOrNull()?.art)
+        playlists.value = listOf(made) + playlists.value
+        made to ids.size
+    }
+
+    /** A new playlist of yours there (private), with this song in it. */
+    suspend fun makePlaylist(name: String, s: Song?): Boolean = withContext(Dispatchers.IO) {
+        val t = tube ?: return@withContext false
+        val vid = s?.let { (if (it.tube) it.id else YouTubeMusic.find(it.title, it.artist)?.id)?.removePrefix("y") }
+        val id = t.makePlaylist(name, listOfNotNull(vid)) ?: return@withContext false
+        playlists.value = listOf(TubeList(id, name, "", s?.art)) + playlists.value
+        true
+    }
+
+    /** Whether a playlist is yours there (so it can be deleted here): a mix never is. */
+    suspend fun mine(id: String): Boolean = withContext(Dispatchers.IO) {
+        val t = tube ?: return@withContext false
+        !id.startsWith("RD") && t.mine(id)
+    }
+
+    /** One of your playlists deleted there: gone from the list at once, back if YouTube refuses. */
+    suspend fun deletePlaylist(id: String): Boolean = withContext(Dispatchers.IO) {
+        val t = tube ?: return@withContext false
+        val before = playlists.value
+        playlists.value = before.filterNot { it.id == id }
+        t.deletePlaylist(id).also {
+            if (it) { lists.remove(id); dir?.let { d -> java.io.File(d, "$id.json").delete() } } else playlists.value = before
         }
     }
 
@@ -225,8 +312,9 @@ object YouTubeAccount {
         fun songs(l: List<Song>) = org.json.JSONArray(l.map { it.json() })
         return JSONObject().put("playlists", lists(playlists.value)).put("mixes", lists(mixes.value))
             .put("records", records(records.value)).put("fresh", records(fresh.value))
-            .put("history", songs(history.value)).put("liked", songs(liked.value))
+            .put("history", songs(history.value)).put("liked", songs(liked.value)).put("uploads", songs(uploads.value))
             .put("artists", org.json.JSONArray(artists.value.map { JSONObject().put("name", it.name).put("face", it.face.orEmpty()).put("id", it.id) }))
+            .put("followed", org.json.JSONArray(followed.value.toList()))
             .toString()
     }
 
@@ -238,8 +326,9 @@ object YouTubeAccount {
         fun songs(k: String) = each(k).map { songOf(it).also(YouTubeMusic::remember) }
         playlists.value = lists("playlists"); mixes.value = lists("mixes")
         records.value = records("records"); fresh.value = records("fresh")
-        history.value = songs("history"); liked.value = songs("liked")
+        history.value = songs("history"); liked.value = songs("liked"); uploads.value = songs("uploads")
         artists.value = each("artists").map { TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) }
+        followed.value = o.optJSONArray("followed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
     }.onFailure { android.util.Log.d("ink-youtube", "kept library: $it") }
 
     private fun json(a: ArtistInfo): String = JSONObject().put("id", a.id).put("name", a.name).put("photo", a.photo.orEmpty())

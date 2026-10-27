@@ -99,10 +99,10 @@ fun YearPage(pages: Pages) {
     val pager = rememberPagerState { count }
     Column(Modifier.fillMaxSize().background(Ink.black).windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-            BasicText("${pager.currentPage + 1} of $count", style = pixel(11.sp, Ink.mid), modifier = Modifier.padding(vertical = 10.dp))
+            BasicText("${pager.currentPage + 1} of $count", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(vertical = 10.dp))
             Spacer(Modifier.weight(1f))
-            if (some) Word("share", pixel(11.sp, Ink.mid), touch = 10.dp) { scope.launch { ShareCard.shareYear(ctx, y!!) } }
-            Word("close", pixel(11.sp, Ink.mid), touch = 10.dp) { pages.back() }
+            if (some) Word("share", pixel(12.sp, Ink.mid), touch = 10.dp) { scope.launch { ShareCard.shareYear(ctx, y!!) } }
+            Word("close", pixel(12.sp, Ink.mid), touch = 10.dp) { pages.back() }
         }
         if (y == null) return@Column
         VerticalPager(pager, Modifier.weight(1f).fillMaxWidth()) { i ->

@@ -56,6 +56,10 @@
             android:exported="true" />
 
         <!-- the widget, in the player's process (which tells it what's playing) -->
+        <!-- a song kept for offline, fetched: Offline reads what's whole -->
+        <receiver android:name=".Offline$Done" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.DOWNLOAD_COMPLETE" /></intent-filter>
+        </receiver>
         <receiver
             android:name=".Widget"
             android:process=":player"

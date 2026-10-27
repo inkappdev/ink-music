@@ -45,7 +45,10 @@ object YouTubeMusic {
     }
 
     /** Before any stream: YouTube's poToken minted on this phone (NewPipe's way: [PoTokens]). */
+    @Volatile private var app: android.content.Context? = null
+
     fun attach(c: android.content.Context) {
+        app = c.applicationContext
         PoTokens.attach(c)
         org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor.setPoTokenProvider(PoTokens)
     }
@@ -117,6 +120,16 @@ object YouTubeMusic {
         val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.third > System.currentTimeMillis() }?.let { return it.first to it.second }
         init()
+        // signed in: the stream YouTube Music's web player gets as you (Premium: its 256k AAC; your uploads),
+        // else, or if that fails, the one NewPipe finds signed out. A speaker always gets NewPipe's (it fetches the
+        // link itself, from its own address)
+        if (SIGNED && !forSpeaker) app?.let { YouTubeAccount.signed(it) }?.let { t ->
+            signedStream(t, id, small)?.let { (url, mime, kbps) ->
+                rates[key] = kbps
+                streams[key] = Triple(url, mime, System.currentTimeMillis() + 4 * 3_600_000L)
+                return url to mime
+            }
+        }
         val t0 = System.currentTimeMillis()
         // without the videos YouTube sets beside it (a half-megabyte, two thirds of the wait): the stream only
         Fetch.lean.set(true)
@@ -135,7 +148,74 @@ object YouTubeMusic {
         return pick.content to mime
     }
 
+    /**
+     * Whether songs are asked for signed in: YouTube's web player scrambles each stream's signature and speed-limit
+     * parameter, and NewPipe (0.26.5, and its dev branch) can no longer work them out of today's player code, so
+     * yt-dlp's solver does ([Solver]).
+     */
+    private const val SIGNED = true
+
     private val rates = ConcurrentHashMap<String, Int>()
+    // the signed-in account's id and its page's player (asked once a run), and that player's code and date
+    @Volatile private var account: String? = null
+    @Volatile private var playerUrl: String? = null
+    @Volatile private var playerSts: Int? = null
+
+    /** A player's code and date: kept on the phone a version (a few megabytes, asked once, not each start). */
+    private fun keptPlayer(c: android.content.Context, url: String, t: InnerTube): Pair<String, Int?>? {
+        val f = java.io.File(java.io.File(c.cacheDir, "player"), url.hashCode().toUInt().toString() + ".js")
+        runCatching { f.readText() }.getOrNull()?.takeIf { it.length > 100_000 }?.let { code ->
+            return code to Regex("(?:signatureTimestamp|sts):(\\d{5})").find(code)?.groupValues?.get(1)?.toIntOrNull()
+        }
+        return t.playerCode(url)?.also { (code, _) ->
+            runCatching { f.parentFile?.listFiles()?.forEach { it.delete() }; f.parentFile?.mkdirs(); f.writeText(code) }   // only the one in use kept
+        }
+    }
+
+    /**
+     * A song's audio as YouTube Music's web player gets it signed in (blocking): the player asked as you, with the
+     * song's poToken and the player's date; the best audio it offers (or the smallest); its signature and its
+     * speed-limit parameter worked out from YouTube's own player by yt-dlp's solver ([Solver]); the streaming
+     * poToken on the end. Its link, type and kbps; null if anything's missing (then it's NewPipe's, signed out).
+     */
+    private fun signedStream(t: InnerTube, id: String, small: Boolean): Triple<String, String, Int>? = runCatching {
+        val c = app ?: return null
+        val vid = id.removePrefix("y")
+        val t0 = System.currentTimeMillis()
+        if (account == null || playerUrl == null) {
+            val (sync, js) = t.page()
+            account = sync; playerUrl = js
+            if (js != null) keptPlayer(c, js, t)?.let { (code, sts) -> Solver.keep(js, code); playerSts = sts }
+        }
+        val sync = account ?: return null.also { android.util.Log.d("ink-youtube", "signed $vid: no account id") }
+        val js = playerUrl ?: return null.also { android.util.Log.d("ink-youtube", "signed $vid: no player") }
+        val tokens = PoTokens.signed(vid, sync)
+        val answer = t.player(vid, playerSts, tokens?.first)
+        val status = answer.optJSONObject("playabilityStatus")
+        if (status?.optString("status") != "OK") {
+            android.util.Log.d("ink-youtube", "signed $vid: ${status?.optString("status")} ${status?.optString("reason")}"); return null
+        }
+        val formats = answer.optJSONObject("streamingData")?.optJSONArray("adaptiveFormats") ?: return null
+        val audio = (0 until formats.length()).map { formats.getJSONObject(it) }.filter { it.optString("mimeType").startsWith("audio/") }
+        val rate = { f: org.json.JSONObject -> f.optInt("averageBitrate").takeIf { it > 0 } ?: f.optInt("bitrate") }
+        val pick = (if (small) audio.minByOrNull(rate) else audio.maxByOrNull(rate)) ?: return null
+        // the link, its scrambled signature (if it came as a cipher) and its scrambled n
+        val cipher = pick.optString("signatureCipher").takeIf { it.isNotEmpty() }?.split('&')?.associate { kv ->
+            kv.substringBefore('=') to java.net.URLDecoder.decode(kv.substringAfter('='), "UTF-8")
+        }
+        var url = cipher?.get("url") ?: pick.optString("url").ifEmpty { return null }
+        val n = Regex("[?&]n=([^&]+)").find(url)?.groupValues?.get(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+        val (sig, nAnswer) = Solver.solve(c, js, cipher?.get("s"), n)
+            ?: return null.also { android.util.Log.d("ink-youtube", "signed $vid: the solver couldn't") }
+        if (cipher != null) url += "&" + (cipher["sp"] ?: "signature") + "=" + java.net.URLEncoder.encode(sig ?: return null, "UTF-8")
+        if (n != null && nAnswer != null) url = url.replace("n=" + java.net.URLEncoder.encode(n, "UTF-8"), "n=" + java.net.URLEncoder.encode(nAnswer, "UTF-8"))
+            .let { if (it == url) url.replace("n=$n", "n=$nAnswer") else it }
+        tokens?.second?.let { url += "&pot=" + java.net.URLEncoder.encode(it, "UTF-8") }
+        val kbps = rate(pick) / 1000
+        android.util.Log.d("ink-youtube", "signed $vid: itag ${pick.optInt("itag")} ${pick.optString("mimeType").substringBefore(';')} $kbps kbps " +
+            "(${if (tokens != null) "with" else "no"} poToken, ${if (cipher != null) "cipher" else "plain"}, n ${if (nAnswer != null) "solved" else "none"}) in ${System.currentTimeMillis() - t0} ms")
+        Triple(url, pick.optString("mimeType").substringBefore(';'), kbps)
+    }.onFailure { android.util.Log.d("ink-youtube", "signed $id: $it") }.getOrNull()
 
     /** The bitrate (kbps) of the stream last picked for a song, 0 if none. */
     fun kbps(id: String, small: Boolean): Int = rates[id + if (small) ":small" else ""] ?: 0
@@ -147,13 +227,19 @@ object YouTubeMusic {
     }
 
     /**
-     * Songs like this one (blocking): YouTube Music's radio for it (its mix, "RDAMVM<id>"), else
-     * the songs among those YouTube sets beside it. Read once.
+     * Songs like this one (blocking): YouTube Music's radio for it (its mix, "RDAMVM<id>"; signed in, the one it
+     * makes for you), else the songs among those YouTube sets beside it. Read once.
      */
     fun related(id: String): List<Song> {
         mixes[id]?.let { return it }
         init()
         val vid = id.removePrefix("y")
+        // signed in: the radio YouTube makes for you from this song (what you listen to shapes it)
+        app?.let { YouTubeAccount.signed(it) }?.let { t ->
+            runCatching { t.queue("RDAMVM$vid", videoId = vid).filter { it.videoId != vid && (it.seconds == 0 || it.seconds in 60..900) }.map { trackSong(it) } }
+                .onFailure { android.util.Log.d("ink-radio", "your radio for $id: $it") }.getOrNull()
+                ?.takeIf { it.isNotEmpty() }?.let { android.util.Log.d("ink-radio", "your radio for $id: ${it.size}"); return it.also { s -> mixes[id] = s } }
+        }
         val mix = runCatching {
             PlaylistInfo.getInfo(yt, "https://music.youtube.com/watch?v=$vid&list=RDAMVM$vid").relatedItems
                 .filter { it.duration in 60..900 }.map { song(it) }.filter { it.id != id }
@@ -196,6 +282,16 @@ object YouTubeMusic {
             .filterIsInstance<PlaylistInfoItem>().filter { it.uploaderName.orEmpty().contains(name, ignoreCase = true) }
             .map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), best(it.thumbnails)) }
     }.getOrDefault(emptyList())
+
+    /**
+     * A song's timed lyrics from YouTube Music (blocking): a YouTube song's own, else the song found by its words.
+     * Empty for none; null when YouTube couldn't be asked.
+     */
+    fun lyrics(id: String, title: String, artist: String): List<Line>? = runCatching {
+        val vid = if (id.startsWith("y") && !id.startsWith("yface")) id.removePrefix("y") else find(title, artist)?.id?.removePrefix("y") ?: return emptyList()
+        // "♪" is YouTube's mark for music without words: a gap, as lrclib's blank line
+        InnerTube().lyrics(vid).map { (at, words) -> Line(at, if (words.trim() == "♪") "" else words) }
+    }.onFailure { android.util.Log.d("ink-youtube", "lyrics $title: $it") }.getOrNull()
 
     /** YouTube Music's song by these words, if it has one (blocking). */
     fun find(title: String, artist: String): Song? {

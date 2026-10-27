@@ -15,6 +15,16 @@ object YouTubeAccount {
     val mixes = MutableStateFlow<List<TubeList>>(emptyList())
     val fresh = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val reading = MutableStateFlow(false)
+    val followed = MutableStateFlow<Set<String>>(emptySet())
+    val uploads = MutableStateFlow<List<Song>>(emptyList())
+    fun saved(a: TubeAlbum) = false
+    suspend fun save(a: TubeAlbum, on: Boolean) = false
+    suspend fun follow(a: TubeArtist, on: Boolean) = false
+    suspend fun addTo(list: TubeList, s: Song) = false
+    suspend fun makePlaylist(name: String, s: Song?) = false
+    suspend fun mine(id: String) = false
+    suspend fun deletePlaylist(id: String) = false
+    suspend fun makePlaylistOf(name: String, songs: List<Song>): Pair<TubeList, Int>? = null
     fun start(c: android.content.Context) {}
     fun signOut(c: android.content.Context) {}
     fun sync() {}

@@ -76,8 +76,9 @@ private val COG = listOf(
  * where it's from, what leaves the phone, the licence, and ink.
  */
 @Composable
-fun SettingsPage(pages: Pages) {
+fun SettingsPage(pages: Pages, part: String? = null) {
     val ctx = LocalContext.current
+    val title = when (part) { "music" -> "YOUR MUSIC"; "sound" -> "SOUND"; "listening" -> "LISTENING"; "about" -> "ABOUT"; else -> "INK MUSIC" }
     val account by Server.account.collectAsState()
     val count by Server.count.collectAsState()
     val syncing by Server.syncing.collectAsState()
@@ -91,189 +92,363 @@ fun SettingsPage(pages: Pages) {
     ) {
         item {
             Row(Modifier.fillMaxWidth()) {
-                BasicText("INK MUSIC", style = headline(52.sp), modifier = Modifier.weight(1f))
-                Word("close", pixel(11.sp, Ink.mid), touch = 10.dp) { pages.back() }
+                BasicText(title, style = headline(52.sp), modifier = Modifier.weight(1f).then(if (part != null) Modifier.carried("settings-$part") else Modifier))
+                Word("close", pixel(12.sp, Ink.mid), touch = 10.dp) { pages.back() }
             }
-            BasicText("version ${BuildConfig.VERSION_NAME}", style = pixel(11.sp, Ink.mid))
-            Spacer(Modifier.height(34.dp))
+            if (part == null) {
+                BasicText("version ${BuildConfig.VERSION_NAME}", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(34.dp))
+                SettingsIndex(pages)
+            } else Spacer(Modifier.height(30.dp))
 
-            BasicText("YOUR SERVER", style = headline(24.sp))
-            Spacer(Modifier.height(6.dp))
-            val a = account
-            if (a == null) {
-                BasicText("navidrome, or any subsonic server: your whole library, streamed from home", style = pixel(11.sp, Ink.mid))
-                Spacer(Modifier.height(18.dp))
-                SignIn()
-            } else {
-                // signed in: what it holds; a tap reads it again, a hold signs out
-                Column(Modifier.pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { Server.sync() },
-                        onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); Server.signOut(ctx) },
-                    )
-                }) {
-                    BasicText("${a.name} at ${a.base.substringAfter("://")}", style = pixel(13.sp))
-                    BasicText(
-                        "${a.user}   " + if (syncing) "reading your library" else "$count songs",
-                        style = pixel(11.sp, Ink.mid),
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    BasicText("tap reads it again   hold signs out", style = pixel(10.sp, Ink.mid))
-                }
-            }
-            Spacer(Modifier.height(40.dp))
-
-            // your youtube music (the full build): signed in on youtube's own page, read only
-            if (YouTubeAccount.available) {
-                val who by YouTubeAccount.who.collectAsState()
-                val reading by YouTubeAccount.reading.collectAsState()
-                val tubeLists by YouTubeAccount.playlists.collectAsState()
-                val tubeRecords by YouTubeAccount.records.collectAsState()
-                BasicText("YOUTUBE MUSIC", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                val w = who
-                if (w == null) {
-                    BasicText("your playlists, liked songs, records and what you played lately, from your own account. " +
-                        "ink music isn't youtube's own app, and google could, rarely, mind one being used. " +
-                        "your sign-in stays on this phone and goes only to youtube", style = pixel(11.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    Word("SIGN IN", headline(40.sp), touch = 10.dp) { YouTubeAccount.openSignIn(ctx) }
-                } else {
-                    Column(Modifier.pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { YouTubeAccount.sync() },
-                            onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); YouTubeAccount.signOut(ctx) },
-                        )
-                    }) {
-                        BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
-                        BasicText(
-                            if (reading) "reading your library" else "${tubeLists.size} ${if (tubeLists.size == 1) "playlist" else "playlists"}   " +
-                                "${tubeRecords.size} ${if (tubeRecords.size == 1) "record" else "records"}",
-                            style = pixel(11.sp, Ink.mid),
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        BasicText("tap reads it again   hold signs out", style = pixel(10.sp, Ink.mid))
-                    }
-                    // what you play here, in your history there (and what youtube's mixes learn from)
-                    Spacer(Modifier.height(18.dp))
-                    BasicText("youtube songs you play here go in your history there, as in its own app, and its mixes learn from them",
-                        style = pixel(11.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    var tells by remember { mutableStateOf(YouTubeAccount.tells(ctx)) }
-                    Row {
-                        Word("tell youtube", pixel(14.sp, if (tells) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { tells = true; YouTubeAccount.tell(ctx, true) }
-                        Word("don't", pixel(14.sp, if (!tells) Ink.ink else Ink.dim), touch = 8.dp) { tells = false; YouTubeAccount.tell(ctx, false) }
-                    }
-                }
-                Spacer(Modifier.height(40.dp))
-            }
-
-            // listenbrainz: what you play, told there (the player's process sends it)
-            ListenBrainzSetting()
-            Spacer(Modifier.height(40.dp))
-
-            // the artists the listen page grows from (YouTube Music's mixes and records: the full build)
-            if (YouTubeMusic.available) {
-                val seeds by Seeds.artists.collectAsState()
-                BasicText("YOUR ARTISTS", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                BasicText(if (seeds.isEmpty()) "none picked yet: pick a few and the listen page makes mixes of them"
-                    else seeds.joinToString(", ") { it.name.lowercase() }, style = pixel(11.sp, Ink.mid))
-                Spacer(Modifier.height(10.dp))
-                Word(if (seeds.isEmpty()) "pick" else "change", pixel(14.sp), touch = 8.dp) { pages.open(Page.Pick) }
-                Spacer(Modifier.height(40.dp))
-            }
-
-            // the library's order: a to z, or shuffled anew each time it's opened
-            BasicText("ORDER", style = headline(24.sp))
-            Spacer(Modifier.height(6.dp))
-            BasicText("records, artists and songs a to z, or shuffled: a new order every time you open ink music", style = pixel(11.sp, Ink.mid))
-            Spacer(Modifier.height(10.dp))
-            val shuffled by Order.shuffled.collectAsState()
-            Row {
-                Word("a to z", pixel(14.sp, if (!shuffled) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { Order.set(false) }
-                Word("shuffled", pixel(14.sp, if (shuffled) Ink.ink else Ink.dim), touch = 8.dp) { Order.set(true) }
-            }
-            Spacer(Modifier.height(40.dp))
-
-            // how good a stream is: on wifi, and on mobile data (Quality)
-            BasicText("QUALITY", style = headline(24.sp))
-            Spacer(Modifier.height(6.dp))
-            BasicText("songs from your server and youtube music. original is the file as it is; high, mp3 at 320; data saver, the smallest. the phone's own files always play as they are", style = pixel(11.sp, Ink.mid))
-            var quality by remember { mutableStateOf(Quality.read(ctx)) }
-            for ((where, onData) in listOf("on wifi" to false, "on mobile data" to true)) {
-                Spacer(Modifier.height(12.dp))
-                BasicText(where, style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.height(6.dp))
-                Row {
-                    Quality.words.forEachIndexed { q, word ->
-                        val lit = (if (onData) quality.second else quality.first) == q
-                        Word(word, pixel(14.sp, if (lit) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) {
-                            quality = if (onData) quality.first to q else q to quality.second
-                            Quality.set(ctx, quality.first, quality.second)
+            if (part == "music") {
+                Column(Modifier.cascade(1)) {
+                    BasicText("YOUR SERVER", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    val a = account
+                    if (a == null) {
+                        BasicText("navidrome, or any subsonic server: your whole library, streamed from home", style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(18.dp))
+                        SignIn()
+                    } else {
+                        // signed in: what it holds; a tap reads it again, a hold signs out
+                        Column(Modifier.pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { Server.sync() },
+                                onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); Server.signOut(ctx) },
+                            )
+                        }) {
+                            BasicText("${a.name} at ${a.base.substringAfter("://")}", style = pixel(13.sp))
+                            BasicText(
+                                "${a.user}   " + if (syncing) "reading your library" else "$count songs",
+                                style = pixel(12.sp, Ink.mid),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            BasicText("tap reads it again   hold signs out", style = pixel(12.sp, Ink.mid))
                         }
                     }
+                    Spacer(Modifier.height(40.dp))
                 }
-            }
-            Spacer(Modifier.height(40.dp))
 
-            // the hi-res moment: a lossless song's format typed across the cover as it starts
-            BasicText("HI-RES MOMENT", style = headline(24.sp))
-            Spacer(Modifier.height(6.dp))
-            BasicText("a lossless song says so across its cover as it starts. off, it's only the small word over the cover", style = pixel(11.sp, Ink.mid))
-            Spacer(Modifier.height(10.dp))
-            val moment by Moments.on.collectAsState()
-            Row {
-                Word("on", pixel(14.sp, if (moment) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { Moments.set(ctx, true) }
-                Word("off", pixel(14.sp, if (!moment) Ink.ink else Ink.dim), touch = 8.dp) { Moments.set(ctx, false) }
-            }
-            Spacer(Modifier.height(40.dp))
-
-            // volume levelling: on, or off (each song as it was mastered)
-            BasicText("EVEN VOLUME", style = headline(24.sp))
-            Spacer(Modifier.height(6.dp))
-            BasicText("every song as loud as the next, by its replaygain. a record played through keeps its own quiet and loud", style = pixel(11.sp, Ink.mid))
-            Spacer(Modifier.height(10.dp))
-            var level by remember { mutableStateOf(Playback.levelling(ctx)) }
-            Row {
-                Word("on", pixel(14.sp, if (level) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { level = true; Playback.level(true) }
-                Word("off", pixel(14.sp, if (!level) Ink.ink else Ink.dim), touch = 8.dp) { level = false; Playback.level(false) }
-            }
-            Spacer(Modifier.height(40.dp))
-
-            // the liner notes
-            BasicText("WHAT LEAVES THE PHONE", style = headline(20.sp))
-            Spacer(Modifier.height(6.dp))
-            BasicText(
-                "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics; " +
-                    (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library, and the youtube songs you play, for your history there); " else "") +
-                    "with listenbrainz connected, what you play goes there. " +
-                    "the radio list comes from radio-browser.info, the indie chart and what a station is playing from the stations' own playlists. no accounts of ours, no tracking, no ads.",
-                style = pixel(11.sp, Ink.mid),
-            )
-            Spacer(Modifier.height(26.dp))
-            BasicText("FREE, AND OPEN", style = headline(20.sp))
-            Spacer(Modifier.height(6.dp))
-            BasicText("gpl-3.0. the fonts are archivo black and silkscreen (sil open font license). lyrics from lrclib.net.", style = pixel(11.sp, Ink.mid))
-            Spacer(Modifier.height(26.dp))
-            // the funnel: said once, plainly, never a nag
-            BasicText("FROM THE MAKERS OF INK", style = headline(20.sp))
-            Spacer(Modifier.height(6.dp))
-            BasicText("ink is a launcher for people who listen: your phone as words, your music on your home screen.", style = pixel(11.sp, Ink.mid))
-            Spacer(Modifier.height(8.dp))
-            Word("ink on google play", pixel(13.sp), touch = 8.dp) {
-                runCatching {
-                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=app.ink.launcher")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                Column(Modifier.cascade(2)) {
+                    // your youtube music (the full build): signed in on youtube's own page, read only
+                    if (YouTubeAccount.available) {
+                        val who by YouTubeAccount.who.collectAsState()
+                        val reading by YouTubeAccount.reading.collectAsState()
+                        val tubeLists by YouTubeAccount.playlists.collectAsState()
+                        val tubeRecords by YouTubeAccount.records.collectAsState()
+                        BasicText("YOUTUBE MUSIC", style = headline(24.sp))
+                        Spacer(Modifier.height(6.dp))
+                        val w = who
+                        if (w == null) {
+                            BasicText("your playlists, liked songs, records and what you played lately, from your own account. " +
+                                "ink music isn't youtube's own app, and google could, rarely, mind one being used. " +
+                                "your sign-in stays on this phone and goes only to youtube", style = pixel(12.sp, Ink.mid))
+                            Spacer(Modifier.height(10.dp))
+                            Word("SIGN IN", headline(40.sp), touch = 10.dp) { YouTubeAccount.openSignIn(ctx) }
+                        } else {
+                            Column(Modifier.pointerInput(Unit) {
+                                detectTapGestures(
+                                    onTap = { YouTubeAccount.sync() },
+                                    onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); YouTubeAccount.signOut(ctx) },
+                                )
+                            }) {
+                                BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
+                                BasicText(
+                                    if (reading) "reading your library" else "${tubeLists.size} ${if (tubeLists.size == 1) "playlist" else "playlists"}   " +
+                                        "${tubeRecords.size} ${if (tubeRecords.size == 1) "record" else "records"}",
+                                    style = pixel(12.sp, Ink.mid),
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                BasicText("tap reads it again   hold signs out", style = pixel(12.sp, Ink.mid))
+                            }
+                            // what you play here, in your history there (and what youtube's mixes learn from)
+                            Spacer(Modifier.height(18.dp))
+                            BasicText("youtube songs you play here go in your history there, as in its own app, and its mixes learn from them",
+                                style = pixel(12.sp, Ink.mid))
+                            Spacer(Modifier.height(10.dp))
+                            var tells by remember { mutableStateOf(YouTubeAccount.tells(ctx)) }
+                            Row {
+                                Word("tell youtube", pixel(14.sp, if (tells) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { tells = true; YouTubeAccount.tell(ctx, true) }
+                                Word("don't", pixel(14.sp, if (!tells) Ink.ink else Ink.dim), touch = 8.dp) { tells = false; YouTubeAccount.tell(ctx, false) }
+                            }
+                        }
+                        Spacer(Modifier.height(40.dp))
+                    }
                 }
+
+                Column(Modifier.cascade(3)) {
+                    // bringing playlists in from spotify, by a file (its own API is closed to small apps)
+                    BasicText("FROM SPOTIFY", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("bring a playlist in: exported from exportify.app, or from spotify's own download of your data", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    Word("bring one in", pixel(14.sp), touch = 8.dp) { pages.open(Page.Import) }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+
             }
-            Spacer(Modifier.height(4.dp))
-            Word("inkhome.app", pixel(13.sp, Ink.mid), touch = 8.dp) {
-                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://inkhome.app")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            if (part == "sound") {
+                Column(Modifier.cascade(1)) {
+                    // how good a stream is: on wifi, and on mobile data (Quality)
+                    BasicText("QUALITY", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("songs from your server and youtube music. original is the file as it is; high, mp3 at 320; data saver, the smallest. the phone's own files always play as they are", style = pixel(12.sp, Ink.mid))
+                    var quality by remember { mutableStateOf(Quality.read(ctx)) }
+                    for ((where, onData) in listOf("on wifi" to false, "on mobile data" to true)) {
+                        Spacer(Modifier.height(12.dp))
+                        BasicText(where, style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(6.dp))
+                        Row {
+                            Quality.words.forEachIndexed { q, word ->
+                                val lit = (if (onData) quality.second else quality.first) == q
+                                Word(word, pixel(14.sp, if (lit) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) {
+                                    quality = if (onData) quality.first to q else q to quality.second
+                                    Quality.set(ctx, quality.first, quality.second)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+                Column(Modifier.cascade(2)) {
+                    // your server's songs kept on the phone: how many, how much, in what, and all let go
+                    if (account != null) {
+                        val kept by Offline.kept.collectAsState()
+                        BasicText("OFFLINE", style = headline(24.sp))
+                        Spacer(Modifier.height(6.dp))
+                        val mb = remember(kept) { Offline.bytes(ctx) / 1_048_576 }
+                        BasicText(if (kept.isEmpty()) "keep a record or a playlist from your server on the phone (keep offline, on its page) to play it with no signal"
+                            else "${kept.size} ${if (kept.size == 1) "song" else "songs"} on this phone, $mb mb", style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(12.dp))
+                        BasicText("kept as", style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(6.dp))
+                        var small by remember { mutableStateOf(Offline.mp3(ctx)) }
+                        Row {
+                            Word("original", pixel(14.sp, if (!small) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { small = false; Offline.mp3(ctx, false) }
+                            Word("mp3 320", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { small = true; Offline.mp3(ctx, true) }
+                        }
+                        if (kept.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            var sure by remember { mutableStateOf(false) }
+                            androidx.compose.runtime.LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
+                            Word(if (sure) "remove them all" else "remove all", pixel(14.sp, if (sure) Ink.ink else Ink.mid), touch = 8.dp) {
+                                if (!sure) sure = true else { sure = false; Offline.removeAll(ctx) }
+                            }
+                        }
+                        Spacer(Modifier.height(40.dp))
+                    }
+                }
+
+                Column(Modifier.cascade(3)) {
+                    // the phone's own equalizer, for ink music's sound
+                    BasicText("EQUALIZER", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    val eqOn = remember { Eq.read(ctx).on }
+                    BasicText("ink music's own: the phone's bands, and a few shapes to start from" + if (eqOn) "   on" else "", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    Word("open it", pixel(14.sp), touch = 8.dp) { pages.open(Page.Equalizer) }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+                Column(Modifier.cascade(4)) {
+                    // volume levelling: on, or off (each song as it was mastered)
+                    BasicText("EVEN VOLUME", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("every song as loud as the next, by its replaygain. a record played through keeps its own quiet and loud", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    var level by remember { mutableStateOf(Playback.levelling(ctx)) }
+                    Row {
+                        Word("on", pixel(14.sp, if (level) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { level = true; Playback.level(true) }
+                        Word("off", pixel(14.sp, if (!level) Ink.ink else Ink.dim), touch = 8.dp) { level = false; Playback.level(false) }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+                Column(Modifier.cascade(5)) {
+                    // pause and play eased: the sound fades out and back in (the player reads a file: off if it's there)
+                    BasicText("SOFT PAUSE", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("pausing fades the music out, playing fades it back in, a breath each way", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    var soft by remember { mutableStateOf(!java.io.File(ctx.filesDir, "soft-off").exists()) }
+                    Row {
+                        Word("on", pixel(14.sp, if (soft) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) {
+                            soft = true; java.io.File(ctx.filesDir, "soft-off").delete()
+                        }
+                        Word("off", pixel(14.sp, if (!soft) Ink.ink else Ink.dim), touch = 8.dp) {
+                            soft = false; runCatching { java.io.File(ctx.filesDir, "soft-off").createNewFile() }
+                        }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+                Column(Modifier.cascade(6)) {
+                    // the hi-res moment: a lossless song's format typed across the cover as it starts
+                    BasicText("HI-RES MOMENT", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("a lossless song says so across its cover as it starts. off, it's only the small word over the cover", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    val moment by Moments.on.collectAsState()
+                    Row {
+                        Word("on", pixel(14.sp, if (moment) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { Moments.set(ctx, true) }
+                        Word("off", pixel(14.sp, if (!moment) Ink.ink else Ink.dim), touch = 8.dp) { Moments.set(ctx, false) }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+
+            }
+            if (part == "listening") {
+                Column(Modifier.cascade(1)) {
+                    // the artists the listen page grows from (YouTube Music's mixes and records: the full build)
+                    if (YouTubeMusic.available) {
+                        val seeds by Seeds.artists.collectAsState()
+                        BasicText("YOUR ARTISTS", style = headline(24.sp))
+                        Spacer(Modifier.height(6.dp))
+                        BasicText(if (seeds.isEmpty()) "none picked yet: pick a few and the listen page makes mixes of them"
+                            else seeds.joinToString(", ") { it.name.lowercase() }, style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(10.dp))
+                        Word(if (seeds.isEmpty()) "pick" else "change", pixel(14.sp), touch = 8.dp) { pages.open(Page.Pick) }
+                        Spacer(Modifier.height(40.dp))
+                    }
+                }
+
+                Column(Modifier.cascade(2)) {
+                    // the library's order: a to z, or shuffled anew each time it's opened
+                    BasicText("ORDER", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("records, artists and songs a to z, or shuffled: a new order every time you open ink music", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    val shuffled by Order.shuffled.collectAsState()
+                    Row {
+                        Word("a to z", pixel(14.sp, if (!shuffled) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { Order.set(false) }
+                        Word("shuffled", pixel(14.sp, if (shuffled) Ink.ink else Ink.dim), touch = 8.dp) { Order.set(true) }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+                Column(Modifier.cascade(3)) {
+                    // listenbrainz: what you play, told there (the player's process sends it)
+                    ListenBrainzSetting()
+                    Spacer(Modifier.height(40.dp))
+                }
+
+
+                // last.fm: scrobbled there too, connected by your name and password once
+                if (LastFm.available) Column(Modifier.cascade(4)) {
+                    LastFmSetting()
+                    Spacer(Modifier.height(40.dp))
+                }
+
+                // how much moves: full, less, or as the phone says (Moves)
+                Column(Modifier.cascade(4)) {
+                    BasicText("MOTION", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("pages arriving word by word, covers developing, the blur by the bars. less is easier on a slower phone" +
+                        if (Moves.phoneSaysLess(ctx)) "; this phone says less" else "", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    val chosen by Moves.chosen.collectAsState()
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(22.dp)) {
+                        listOf(Moves.AUTO, Moves.FULL, Moves.LESS).forEach { m ->
+                            Word(m, pixel(14.sp, if (chosen == m) Ink.ink else Ink.dim), touch = 8.dp) { Moves.set(ctx, m) }
+                        }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+            }
+            if (part == "about") {
+                Column(Modifier.cascade(1)) {
+                    // the liner notes
+                    BasicText("WHAT LEAVES THE PHONE", style = headline(20.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText(
+                        "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics" + (if (YouTubeMusic.available) " (and to youtube music when lrclib has none)" else "") + "; " +
+                            (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library, and the youtube songs you play, for your history there); " else "") +
+                            "with listenbrainz or last.fm connected, what you play goes there. " +
+                            "the radio list comes from radio-browser.info, the indie chart and what a station is playing from the stations' own playlists; headphone tunings from autoeq (github), when you look for yours. no accounts of ours, no tracking, no ads.",
+                        style = pixel(12.sp, Ink.mid),
+                    )
+                    Spacer(Modifier.height(26.dp))
+                    BasicText("FREE, AND OPEN", style = headline(20.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("gpl-3.0. the fonts are archivo black and silkscreen (sil open font license). lyrics from lrclib.net.", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(26.dp))
+                }
+
+                Column(Modifier.cascade(2)) {
+                    // the funnel: said once, plainly, never a nag
+                    BasicText("FROM THE MAKERS OF INK", style = headline(20.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("ink is a launcher for people who listen: your phone as words, your music on your home screen.", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(8.dp))
+                    Word("ink on google play", pixel(13.sp), touch = 8.dp) {
+                        runCatching {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=app.ink.launcher")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Word("inkhome.app", pixel(13.sp, Ink.mid), touch = 8.dp) {
+                        runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://inkhome.app")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }
+                }
+
+
             }
         }
     } }
 }
 
+
+/**
+ * Settings, as four words, each opening its page, how things stand said dim under it: your music (where it comes
+ * from), sound (how it reaches you), listening (how it learns you), about (what it is, what leaves the phone).
+ */
+@Composable
+private fun SettingsIndex(pages: Pages) {
+    val ctx = LocalContext.current
+    val account by Server.account.collectAsState()
+    val who by YouTubeAccount.who.collectAsState()
+    val lb by ListenBrainz.account.collectAsState()
+    val lastfm by LastFm.account.collectAsState()
+    val seeds by Seeds.artists.collectAsState()
+    val shuffled by Order.shuffled.collectAsState()
+    val kept by Offline.kept.collectAsState()
+    val quality = remember { Quality.read(ctx) }
+    val eq = remember { Eq.read(ctx) }
+    val soft = remember { !java.io.File(ctx.filesDir, "soft-off").exists() }
+    @Composable
+    fun Entry(word: String, said: String, part: String, order: Int) {
+        Column(Modifier.fillMaxWidth().cascade(order).pointerInput(part) { detectTapGestures { pages.open(Page.SettingsPart(part)) } }.padding(vertical = 12.dp)) {
+            // the word itself carries on into its page, as its title
+            BasicText(word, style = headline(40.sp), modifier = Modifier.carried("settings-$part"))
+            Spacer(Modifier.height(4.dp))
+            BasicText(said, style = pixel(12.sp, Ink.mid), maxLines = 2)
+        }
+    }
+    Entry("YOUR MUSIC", listOfNotNull(
+        account?.let { it.name.lowercase() },
+        if (YouTubeMusic.available) (if (who != null) "youtube music, signed in" else "youtube music") else null,
+        "from spotify",
+    ).joinToString(" · "), "music", 1)
+    Entry("SOUND", listOfNotNull(
+        Quality.words.getOrNull(quality.first)?.let { "$it on wifi" },
+        if (eq.on) "equalizer on" else "equalizer off",
+        if (soft) "soft pause" else null,
+        kept.size.takeIf { it > 0 }?.let { "$it kept offline" },
+    ).joinToString(" · "), "sound", 2)
+    Entry("LISTENING", listOfNotNull(
+        seeds.size.takeIf { it > 0 }?.let { "$it artists" },
+        if (shuffled) "shuffled" else "a to z",
+        if (lb != null) "listenbrainz on" else null,
+        if (lastfm != null) "last.fm on" else null,
+        if (Moves.less.value) "moving less" else null,
+    ).joinToString(" · "), "listening", 3)
+    Entry("ABOUT", "version ${BuildConfig.VERSION_NAME} · what leaves the phone · free and open", "about", 4)
+}
 
 /** Signing in to your server: its address, your name and password; what went wrong, said plainly. */
 @Composable
@@ -310,7 +485,7 @@ fun SignIn() {
         Field("name", user, { user = it }, "", KeyboardType.Text)
         Field("password", password, { password = it }, "", KeyboardType.Password, secret = true)
         Spacer(Modifier.height(10.dp))
-        said?.let { BasicText(it, style = pixel(11.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
+        said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
         Word(if (trying) "SIGNING IN" else "SIGN IN", headline(40.sp, if (trying) Ink.mid else Ink.ink), touch = 10.dp) {
             if (trying || address.isBlank() || user.isBlank()) return@Word
             val perm = Server.local
@@ -334,14 +509,14 @@ private fun ListenBrainzSetting() {
         var trying by remember { mutableStateOf(false) }
         var said by remember { mutableStateOf<String?>(null) }
         BasicText("what you play, kept as your listening history on listenbrainz.org: open, and yours. " +
-            "your user token is on its settings page", style = pixel(11.sp, Ink.mid))
+            "your user token is on its settings page", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(8.dp))
         Word("listenbrainz.org/settings", pixel(13.sp, Ink.mid), touch = 8.dp) {
             runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://listenbrainz.org/settings/")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
         Spacer(Modifier.height(14.dp))
         Field("user token", token, { token = it }, "", KeyboardType.Password, secret = true)
-        said?.let { BasicText(it, style = pixel(11.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
+        said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
         Word(if (trying) "CONNECTING" else "CONNECT", headline(40.sp, if (trying) Ink.mid else Ink.ink), touch = 10.dp) {
             if (trying || token.isBlank()) return@Word
             trying = true; said = null
@@ -359,9 +534,53 @@ private fun ListenBrainzSetting() {
             detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ListenBrainz.disconnect(ctx) })
         }) {
             BasicText(a.user.lowercase(), style = pixel(13.sp))
-            BasicText("every song you play, but radio", style = pixel(11.sp, Ink.mid))
+            BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(4.dp))
-            BasicText("hold forgets it", style = pixel(10.sp, Ink.mid))
+            BasicText("hold forgets it", style = pixel(12.sp, Ink.mid))
+        }
+    }
+}
+
+/** Last.fm: your name and password, swapped for a session (the password not kept); then whose it is (a hold forgets it). */
+@Composable
+private fun LastFmSetting() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val account by LastFm.account.collectAsState()
+    BasicText("LAST.FM", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    val a = account
+    if (a == null) {
+        var name by remember { mutableStateOf("") }
+        var password by remember { mutableStateOf("") }
+        var trying by remember { mutableStateOf(false) }
+        var said by remember { mutableStateOf<String?>(null) }
+        BasicText("scrobble what you play to last.fm. your password goes to last.fm once, and isn't kept here", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(14.dp))
+        Field("name", name, { name = it }, "", KeyboardType.Text)
+        Field("password", password, { password = it }, "", KeyboardType.Password, secret = true)
+        said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
+        Word(if (trying) "CONNECTING" else "CONNECT", headline(40.sp, if (trying) Ink.mid else Ink.ink), touch = 10.dp) {
+            if (trying || name.isBlank() || password.isEmpty()) return@Word
+            trying = true; said = null
+            scope.launch {
+                said = when (LastFm.connect(ctx, name, password)) {
+                    LastFm.Connect.OK -> { password = ""; null }
+                    LastFm.Connect.WRONG -> "last.fm didn't take that name and password"
+                    LastFm.Connect.UNREACHABLE -> "couldn't reach last.fm. try again in a moment"
+                }
+                trying = false
+            }
+        }
+    } else {
+        Column(Modifier.pointerInput(Unit) {
+            detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); LastFm.disconnect(ctx) })
+        }) {
+            BasicText(a.name.lowercase(), style = pixel(13.sp))
+            BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(4.dp))
+            BasicText("hold forgets it", style = pixel(12.sp, Ink.mid))
         }
     }
 }
@@ -370,7 +589,7 @@ private fun ListenBrainzSetting() {
 @Composable
 private fun Field(name: String, value: String, onValue: (String) -> Unit, hint: String, type: KeyboardType, secret: Boolean = false) {
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-        BasicText(name, style = pixel(10.sp, Ink.mid))
+        BasicText(name, style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(6.dp))
         Box {
             if (value.isEmpty() && hint.isNotEmpty()) BasicText(hint, style = headline(18.sp, Ink.dim))

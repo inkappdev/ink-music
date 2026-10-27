@@ -69,9 +69,9 @@ fun PlayOnPage(onClose: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 BasicText("PLAY ON", style = headline(40.sp))
                 Spacer(Modifier.height(6.dp))
-                BasicText("the music moves there from where it is", style = pixel(11.sp, Ink.mid))
+                BasicText("the music moves there from where it is", style = pixel(12.sp, Ink.mid))
             }
-            Word("close", pixel(11.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+            Word("close", pixel(12.sp, Ink.mid), touch = 10.dp, onClick = onClose)
         }
         Spacer(Modifier.height(26.dp))
         LazyColumn(Modifier.weight(1f)) {
@@ -93,7 +93,7 @@ fun PlayOnPage(onClose: () -> Unit) {
             item {
                 if (speakers.isEmpty()) BasicText(
                     if (allowed) "looking on your wifi" else "ink music needs to reach devices on your wifi to find speakers",
-                    style = pixel(11.sp, Ink.mid), modifier = Modifier.padding(vertical = 10.dp),
+                    style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(vertical = 10.dp),
                 )
             }
         }
@@ -110,7 +110,7 @@ fun PlayOnPage(onClose: () -> Unit) {
 private fun Place(name: String, under: String, lit: Boolean, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 10.dp)) {
         BasicText(name.uppercase(), style = headline(28.sp, if (lit) Ink.ink else Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (under.isNotEmpty()) BasicText(under, style = pixel(11.sp, if (lit) Ink.mid else Ink.dim))
+        if (under.isNotEmpty()) BasicText(under, style = pixel(12.sp, if (lit) Ink.mid else Ink.dim))
     }
 }
 
