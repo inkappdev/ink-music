@@ -1,0 +1,7 @@
+- Quality, on wifi and on mobile data: original, high or data saver
+- The player says what you hear over the cover (flac 24/96, opus 160); tap it for all of it
+- A hi-res moment across the cover as a lossless song starts (a setting)
+- Loved, latest first or a to z
+- Stop takes the mini player away
+- Flicking a row of covers no longer turns the tab, and rows hold still
+- "no lyrics" when a song has none
