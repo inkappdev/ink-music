@@ -625,15 +625,22 @@ private fun ListRow(name: String, said: String, onClick: () -> Unit) {
     }
 }
 
-/** The songs you love: play and shuffle, them a to z. */
+/**
+ * The songs you love: play and shuffle; the latest loved first (a tester's ask, 2026-10-26), or a to z.
+ * Latest is by when each was loved where that's known (here, or a star's date on the server); the rest
+ * after, YouTube's likes in YouTube's own order (its newest first).
+ */
 @Composable
 private fun LovedPage(pages: Pages) {
     val songs by Library.songs.collectAsState()
     val lovedIds by Loved.ids.collectAsState()
     val tube by Loved.tube.collectAsState()
     val liked by YouTubeAccount.liked.collectAsState()
-    val theirs = remember(songs, lovedIds, tube, liked) {
-        (songs.filter { it.id in lovedIds } + tube + liked).distinctBy { it.id }.sortedBy { Library.sortName(it.title) }
+    val recent by Loved.recent.collectAsState()
+    val theirs = remember(songs, lovedIds, tube, liked, recent) {
+        val all = (liked + tube + songs.filter { it.id in lovedIds }).distinctBy { it.id }
+        if (recent) all.sortedByDescending { Loved.lovedAt(it) ?: Long.MIN_VALUE }   // stable: the undated keep their order
+        else all.sortedBy { Library.sortName(it.title) }
     }
     val list = rememberLazyListState()
     FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
@@ -649,6 +656,10 @@ private fun LovedPage(pages: Pages) {
             if (theirs.isNotEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(theirs.shuffled(), 0) }
+                Spacer(Modifier.weight(1f))
+                // the order: the one chosen lit
+                Word("latest", pixel(14.sp, if (recent) Ink.ink else Ink.dim), Modifier.padding(end = 20.dp), touch = 8.dp) { Loved.order(true) }
+                Word("a to z", pixel(14.sp, if (recent) Ink.dim else Ink.ink), touch = 8.dp) { Loved.order(false) }
             }
             Spacer(Modifier.height(14.dp))
         }
@@ -1169,11 +1180,24 @@ fun CoverOf(song: Song?, name: String, modifier: Modifier) {
 /**
  * What's playing, along the foot of the library: the line along the cover's top edge filling
  * with the song in its colour, the cover, the song, play / pause. A tap opens the player.
+ * Stopped, it goes (a tester's ask, 2026-10-26), and comes back when something plays.
  */
 @Composable
 private fun MiniPlayer(frost: HazeState, onOpen: () -> Unit) {
     val now by Playback.now.collectAsState()
-    val n = now ?: return
+    val showing = now?.takeIf { !it.stopped }
+    // the last song shown stays drawn while it goes
+    var last by remember { mutableStateOf(showing) }
+    if (showing != null) last = showing
+    androidx.compose.animation.AnimatedVisibility(
+        showing != null,
+        enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 3 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+        exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 3 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+    ) { last?.let { MiniPlayerOf(it, frost, onOpen) } }
+}
+
+@Composable
+private fun MiniPlayerOf(n: Now, frost: HazeState, onOpen: () -> Unit) {
     val cover = rememberCover(n.song)
     // black; what's about to go behind it softens just above it
     Column(Modifier.fillMaxWidth()) {
