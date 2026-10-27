@@ -120,11 +120,11 @@ What you've played is kept on the phone only.
 
 Signed APKs are attached to every [GitHub release](https://github.com/inkappdev/ink-music/releases),
 with their SHA-256 sums. [Obtainium](https://github.com/ImranR98/Obtainium) keeps it up to date.
-IzzyOnDroid is next. The `full` apks from releases have Last.fm; a build from source needs its own key.
+F-Droid is next. The `full` apks from releases have Last.fm; a build from source needs its own key.
 
 | Build | Sources | Where |
 |---|---|---|
-| `ink-music-<version>.apk` (`full`) | Files, your server, YouTube Music, radio | GitHub releases, Obtainium, IzzyOnDroid |
+| `ink-music-<version>.apk` (`full`) | Files, your server, YouTube Music, radio | GitHub releases, Obtainium |
 | `ink-music-<version>-play.apk` (`play`) | Files, your server, radio. No NewPipe code at all | The only build that may go to Google Play |
 
 The release certificate's SHA-256:
@@ -182,6 +182,13 @@ The icon and store graphics are drawn from the bundled fonts: `python3 tools/mak
 Built with Kotlin and Jetpack Compose, [Media3](https://github.com/androidx/media) (ExoPlayer and a
 MediaLibrarySession in its own process) and [Haze](https://github.com/chrisbanes/haze).
 
+## How it's made
+
+Built by Bronson with Claude (Anthropic's AI) as a coding partner: the design, the decisions and the
+testing are mine. Every feature is tried on a real phone before it ships, testers' notes come back as
+fixes within days, and ink weekly is picked by hand. It's all here to read, under the GPL, and every
+piece of someone else's work it stands on is named below, with its licence.
+
 ## Contributing
 
 Issues and pull requests are welcome. ink music has a strong look (black, two typefaces, no icons
@@ -194,10 +201,15 @@ talk it through.
   provider from [NewPipe](https://github.com/TeamNewPipe/NewPipe) (GPL-3.0), ported.
 - [Metrolist](https://github.com/mostafaalagamy/Metrolist) (GPL-3.0), for showing how YouTube Music
   can be done well on Android.
+- [yt-dlp's challenge solver](https://github.com/yt-dlp/ejs) (Unlicense, with meriyah and astring), which
+  works out a signed-in stream's link from YouTube's own player.
+- [AutoEq](https://github.com/jaakkopasanen/AutoEq) (MIT), for the headphone tunings, from measurements by
+  oratory1990, crinacle, Rtings and others.
 - [Media3](https://github.com/androidx/media) and [Haze](https://github.com/chrisbanes/haze) (Apache-2.0).
 - Archivo Black and Silkscreen, both under the SIL Open Font License.
-- Lyrics from [lrclib.net](https://lrclib.net); stations from
-  [radio-browser.info](https://www.radio-browser.info) and the stations themselves.
+- Lyrics from [lrclib.net](https://lrclib.net) and YouTube Music; stations from
+  [radio-browser.info](https://www.radio-browser.info) and the stations themselves; scrobbling to
+  [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm).
 
 ## Not affiliated
 
