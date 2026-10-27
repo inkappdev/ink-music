@@ -12,6 +12,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.security.KeyStore
@@ -38,6 +41,10 @@ object YouTubeAccount {
     /** Your liked songs (liked music), newest first: loved here too. */
     val liked = MutableStateFlow<List<Song>>(emptyList())
     val artists = MutableStateFlow<List<TubeArtist>>(emptyList())
+    /** YouTube Music's own mixes for you (My Supermix, Discover Mix, New Release Mix, Replay Mix...), from your home there. */
+    val mixes = MutableStateFlow<List<TubeList>>(emptyList())
+    /** Your artists' records from this year (and last, early in the year), newest first. */
+    val fresh = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val reading = MutableStateFlow(false)
     private var tube: InnerTube? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -71,7 +78,7 @@ object YouTubeAccount {
         prefs(c).edit().clear().apply()
         tube = null; _who.value = null
         playlists.value = emptyList(); records.value = emptyList(); history.value = emptyList()
-        liked.value = emptyList(); artists.value = emptyList()
+        liked.value = emptyList(); artists.value = emptyList(); mixes.value = emptyList(); fresh.value = emptyList()
         forgetWeb()
     }
 
@@ -119,7 +126,19 @@ object YouTubeAccount {
                 }.onSuccess { found -> artists.value = found.map { TubeArtist(it.title, it.art, it.id) } }
                     .onFailure { android.util.Log.d("ink-youtube", "artists: $it") }
             }
-            lists.join(); recs.join(); heard.join(); likes.join(); people.join()
+            // your mixes: the home page's personal mixes ("RDTMAK" playlists; a shelf called a mix as well)
+            val home = launch {
+                runCatching { t.home() }.onSuccess { shelves ->
+                    android.util.Log.d("ink-youtube", "home: " + shelves.joinToString { "${it.title} (${it.items.size})" })
+                    mixes.value = shelves.flatMap { s -> s.items.filter { it.kind == InnerTube.Kind.PLAYLIST &&
+                        (it.id.startsWith("VLRDTMAK") || (s.title.contains("mix", ignoreCase = true) && it.id.startsWith("VLRD"))) } }
+                        .distinctBy { it.id }
+                        .map { TubeList(it.id.removePrefix("VL"), it.title, it.subtitle.split(" • ", " · ").firstOrNull { w -> w.isNotBlank() }.orEmpty(), it.art) }
+                }.onFailure { android.util.Log.d("ink-youtube", "home: $it") }
+            }
+            lists.join(); recs.join(); heard.join(); likes.join(); people.join(); home.join()
+            // then what your artists put out lately (their pages, once they're known)
+            runCatching { fresh.value = freshFrom(t, artists.value) }.onFailure { android.util.Log.d("ink-youtube", "fresh: $it") }
             android.util.Log.d("ink-youtube", "read ${playlists.value.size} playlists, ${records.value.size} records, " +
                 "${history.value.size} heard, ${liked.value.size} liked, ${artists.value.size} artists")
             reading.value = false
@@ -148,10 +167,30 @@ object YouTubeAccount {
         }.onFailure { android.util.Log.d("ink-youtube", "artist ${a.id}: $it") }.getOrDefault(emptyList<Song>() to emptyList())
     }
 
-    /** One of your playlists' songs, in its order ("LM" is liked music). */
+    /** One of your playlists' songs, in its order ("LM" is liked music); a mix's, as its queue when it has no page. */
     suspend fun playlist(id: String): List<Song> = withContext(Dispatchers.IO) {
         val t = tube ?: return@withContext emptyList()
-        runCatching { t.tracks("VL$id").map(::song) }.onFailure { android.util.Log.d("ink-youtube", "playlist $id: $it") }.getOrDefault(emptyList())
+        runCatching { t.tracks("VL$id").ifEmpty { if (id.startsWith("RD")) t.queue(id) else emptyList() }.map(::song) }
+            .onFailure { android.util.Log.d("ink-youtube", "playlist $id: $it") }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Your artists' records out this year (last year's too in January and February), newest first, a few an
+     * artist: their pages read side by side, at most 20 artists, each time the library is read.
+     */
+    private suspend fun freshFrom(t: InnerTube, people: List<TubeArtist>): List<TubeAlbum> = coroutineScope {
+        val cal = java.util.Calendar.getInstance()
+        val year = cal.get(java.util.Calendar.YEAR)
+        val since = if (cal.get(java.util.Calendar.MONTH) <= java.util.Calendar.FEBRUARY) year - 1 else year
+        val yearOf = Regex("\\b(19|20)\\d{2}\\b")
+        people.take(20).map { a ->
+            async {
+                runCatching { t.records(a.id) }.getOrDefault(emptyList()).mapNotNull { r ->
+                    val y = yearOf.find(r.subtitle)?.value?.toInt() ?: return@mapNotNull null
+                    if (y < since) null else Triple(y, a.name, TubeAlbum("${InnerTube.BASE}/browse/${r.id}", r.title, a.name, r.art))
+                }.take(3)
+            }
+        }.awaitAll().flatten().sortedByDescending { it.first }.map { it.third }.distinctBy { it.url }.take(20)
     }
 
     /** A record's artist from its subtitle ("Album • Phoebe Bridgers • 2020"): what isn't the kind or the year. */

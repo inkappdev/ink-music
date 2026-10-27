@@ -110,8 +110,9 @@ object Listen {
 /**
  * The listen page, the library's first: something to play the moment ink music opens, whatever
  * the phone holds. The greeting and the cog; then, each once it has something: jump back in (what
- * you played lately), mixes for you, ink radio, the week on indie radio,
- * from artists you love, new on your server, from your records, and radio.
+ * you played lately), your mixes on youtube music, mixes for you, on repeat, new from your artists,
+ * ink radio, the week on indie radio, forgotten favorites, your playlists, your artists and records
+ * on youtube music, from artists you love, new on your server, from your records, and radio.
  */
 @Composable
 fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
@@ -139,6 +140,31 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     }
     val tubeRecords by YouTubeAccount.records.collectAsState()
     val tubeArtists by YouTubeAccount.artists.collectAsState()
+    val tubeMixes by YouTubeAccount.mixes.collectAsState()
+    val fresh by YouTubeAccount.fresh.collectAsState()
+    val tubeLists by YouTubeAccount.playlists.collectAsState()
+    val liked by YouTubeAccount.liked.collectAsState()
+    val lovedIds by Loved.ids.collectAsState()
+    val lovedTube by Loved.tube.collectAsState()
+    val songs by Library.songs.collectAsState()
+    // a played song as one to play again: the library's, else a YouTube song this run knows (liked, heard there, loved)
+    val known = remember(liked, tubeHeard, lovedTube) { (liked + tubeHeard + lovedTube).associateBy { it.id } }
+    fun songOf(id: String) = Library.song(id) ?: known[id] ?: YouTubeMusic.known(id)
+    // on repeat: what this phone played most these 30 days, twice or more
+    val onRepeat = remember(heard, known, songs) {
+        val since = System.currentTimeMillis() - 30L * 86_400_000
+        heard.filter { it.at > since }.groupingBy { it.id }.eachCount().filter { it.value >= 2 }
+            .entries.sortedByDescending { it.value }.mapNotNull { songOf(it.key) }.take(12)
+    }
+    // forgotten favorites: songs you love or liked, not heard these three months (here or on youtube music),
+    // nor loved this last month; a different handful each day
+    val forgotten = remember(heard, tubeHeard, liked, lovedIds, lovedTube, songs) {
+        val now = System.currentTimeMillis()
+        val lately = heard.filter { it.at > now - 90L * 86_400_000 }.map { it.id }.toSet() + tubeHeard.map { it.id }
+        (liked + lovedTube + songs.filter { it.id in lovedIds }).distinctBy { it.id }
+            .filter { it.id !in lately && (Loved.lovedAt(it) ?: 0L) < now - 30L * 86_400_000 }
+            .shuffled(kotlin.random.Random(now / 86_400_000)).take(15)
+    }
     val newest = remember(newestIds, albums) { newestIds.mapNotNull { id -> albums.firstOrNull { it.id == id } } }
     val yours = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(12) }
     val mixes = seeds.filter { it.hit != null }
@@ -169,11 +195,25 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             }
             Spacer(Modifier.height(10.dp))
         }
+        // youtube music's own mixes for you (signed in): supermix, discover, new release, replay
+        if (tubeMixes.isNotEmpty()) item {
+            Label("your mixes on youtube music")
+            Shelf(tubeMixes) { l -> Tile(null, l.name, l.said.ifEmpty { "mix" }.lowercase(), face = l.art) { pages.open(Page.TubeList(l)) } }
+        }
         if (mixes.isNotEmpty()) item {
             Label("mixes for you")
             Shelf(mixes) { a ->
                 Tile(a.hit, a.name, "mix", face = a.face) { scope.launch { Playback.play(Listen.mix(a.hit!!), 0) } }
             }
+        }
+        if (onRepeat.size >= 3) item {
+            Label("on repeat")
+            ShelfIndexed(onRepeat) { i, s -> Tile(s, s.title, s.artist) { Playback.play(onRepeat, i) } }
+        }
+        // what your youtube music artists put out this year, newest first (none, no row)
+        if (fresh.isNotEmpty()) item {
+            Label("new from your artists")
+            Shelf(fresh) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
         }
         // ink radio: the stations chosen by hand, the stars first
         item {
@@ -197,6 +237,14 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             val songs = remember(indie) { indie.mapNotNull { it.song } }
             Label("the week on indie radio")
             ShelfIndexed(indie) { i, e -> Tile(e.song, e.title, e.artist, number = i + 1) { Playback.play(songs, i) } }
+        }
+        if (forgotten.size >= 4) item {
+            Label("forgotten favorites")
+            ShelfIndexed(forgotten) { i, s -> Tile(s, s.title, s.artist) { Playback.play(forgotten, i) } }
+        }
+        if (tubeLists.isNotEmpty()) item {
+            Label("your playlists")
+            Shelf(tubeLists) { l -> Tile(null, l.name, "playlist", face = l.art) { pages.open(Page.TubeList(l)) } }
         }
         if (tubeArtists.isNotEmpty()) item {
             Label("your artists on youtube music")
