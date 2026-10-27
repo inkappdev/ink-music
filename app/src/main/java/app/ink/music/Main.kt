@@ -217,7 +217,9 @@ sealed interface Page {
 class Pages {
     val stack = mutableStateListOf<Page>()
     var forward by mutableStateOf(true)
-    fun open(p: Page) { forward = true; stack.add(p) }
+    /** What's typed in find: opened afresh it's empty; come back to it from a result and it's as you left it. */
+    var query by mutableStateOf("")
+    fun open(p: Page) { forward = true; if (p == Page.Find) query = ""; stack.add(p) }
     fun back() { forward = false; stack.removeLastOrNull() }
 }
 
@@ -233,7 +235,6 @@ private fun App() {
 
     val pages = remember { Pages() }
     var playerUp by rememberSaveable { mutableStateOf(false) }
-    var query by rememberSaveable { mutableStateOf("") }
     BackHandler(playerUp) { playerUp = false }
     BackHandler(pages.stack.isNotEmpty() && !playerUp) { pages.back() }
 
@@ -268,7 +269,7 @@ private fun App() {
                         null -> Box(Modifier.fillMaxSize())
                         is Page.Record -> RecordPage(p.id, pages)
                         is Page.Artist -> ArtistPage(p.name, pages)
-                        Page.Find -> FindPage(query, { query = it }, pages)
+                        Page.Find -> FindPage(pages.query, { pages.query = it }, pages)
                         Page.Settings -> SettingsPage(pages)
                         is Page.Playlist -> PlaylistPage(p.id, p.name, pages)
                         is Page.Tube -> TubeAlbumPage(p.album, pages)
@@ -931,8 +932,10 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         item {
             Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 BasicText("find > ", style = pixel(14.sp, Ink.dim))
+                // back from a result, what was typed is there, the cursor at its end (it came back at the start)
+                var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(query, androidx.compose.ui.text.TextRange(query.length))) }
                 BasicTextField(
-                    query, onQuery, singleLine = true,
+                    field, { field = it; if (it.text != query) onQuery(it.text) }, singleLine = true,
                     textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { foundSongs.firstOrNull()?.let { Playback.play(foundSongs, 0) } }),

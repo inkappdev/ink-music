@@ -1,0 +1,5 @@
+- The soft edge where things slide under the bars is softer still: you'll barely notice it, which is the point
+- Find opens fresh each time; come back from a result and your search is still there, cursor at the end
+- New screenshots, all of them
+- Our designer squinted at a 1.5 dp blur for twenty minutes and called it perfect
+- Do something nice for someone today. Hold a door, or a playlist
