@@ -93,7 +93,7 @@ class PlayerService : MediaLibraryService() {
             // and to ListenBrainz, if you've said to (every song but a station's), as it started
             val said = said(item, length)
             val at = startedAt.takeIf { it > 0 } ?: (System.currentTimeMillis() - p.currentPosition)   // a queue put back: no start seen
-            net.execute { ListenBrainz.listened(this, said, at) }
+            net.execute { ListenBrainz.listened(this, said, at); LastFm.listened(this, said, at) }
         }
     }
 
@@ -113,7 +113,7 @@ class PlayerService : MediaLibraryService() {
 
     private fun setSleep(p: Player, ms: Long) {
         main.removeCallbacks(sleep)
-        (p as? ExoPlayer)?.pauseAtEndOfMediaItems = ms == SLEEP_END_OF_SONG
+        exo?.pauseAtEndOfMediaItems = ms == SLEEP_END_OF_SONG
         sleepAt = when {
             ms == SLEEP_END_OF_SONG -> SLEEP_END_OF_SONG
             ms > 0 -> System.currentTimeMillis() + ms
@@ -124,9 +124,69 @@ class PlayerService : MediaLibraryService() {
     }
 
     /** What the screens are told through the session's extras: sleep's end, radio, and what's heard. */
+    /** ink music's own equalizer on the player's sound ([Eq]): ten bands through DynamicsProcessing, made again for a new audio session. */
+    private var eq: android.media.audiofx.DynamicsProcessing? = null
+    private var eqSession = 0
+    private val bands = Eq.Bands(Eq.TEN, -Eq.RANGE, Eq.RANGE)
+
+    /** The equalizer as set (the file the screens write): on with its levels, the whole turned down by its biggest boost (no clipping), or off. */
+    private fun equalize() {
+        val id = exo?.audioSessionId ?: return
+        if (id == 0) return
+        if (eq == null || eqSession != id) {
+            runCatching { eq?.release() }
+            eq = runCatching {
+                val config = android.media.audiofx.DynamicsProcessing.Config.Builder(
+                    android.media.audiofx.DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
+                    true, Eq.TEN.size, false, 0, false, 0, false,
+                ).build()
+                android.media.audiofx.DynamicsProcessing(0, id, config)
+            }.onFailure { android.util.Log.d("ink-eq", "none: $it") }.getOrNull()
+            eqSession = id
+        }
+        val e = eq ?: return
+        val st = Eq.read(this)
+        runCatching {
+            if (st.on) {
+                val levels = Eq.TEN.indices.map { st.levels.getOrElse(it) { 0 }.coerceIn(-Eq.RANGE, Eq.RANGE) }
+                for (ch in 0 until 2) {
+                    val pre = e.getPreEqByChannelIndex(ch)
+                    Eq.TEN.forEachIndexed { i, hz ->
+                        // each band reaches up to halfway (on a log scale) to the next one's centre
+                        val top = Eq.TEN.getOrNull(i + 1)?.let { kotlin.math.sqrt(hz.toDouble() * it).toFloat() } ?: 20_000f
+                        pre.getBand(i).apply { isEnabled = true; cutoffFrequency = top; gain = levels[i] / 100f }
+                    }
+                    pre.isEnabled = true
+                    e.setPreEqByChannelIndex(ch, pre)
+                }
+                e.setInputGainAllChannelsTo(-(levels.maxOrNull() ?: 0).coerceAtLeast(0) / 100f)
+            }
+            e.enabled = st.on
+        }.onFailure { android.util.Log.d("ink-eq", "apply: $it") }
+    }
+
+    /** The audio session opened to the phone's effects (its equalizer, an equalizer app), or closed. */
+    private var effectsOpen = 0
+    private fun effects(open: Boolean) {
+        val id = exo?.audioSessionId ?: return
+        if (effectsOpen != 0 && (effectsOpen != id || !open)) sendBroadcast(Intent(android.media.audiofx.AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, effectsOpen).putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, packageName))
+        effectsOpen = 0
+        if (open && id != 0) {
+            sendBroadcast(Intent(android.media.audiofx.AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
+                .putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, id).putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC))
+            effectsOpen = id
+        }
+    }
+
     private fun tell() {
         val heard = nowHeard()?.json().orEmpty()
-        session?.setSessionExtras(Bundle().apply { putLong(SLEEP_AT, sleepAt); putBoolean(RADIO, radio); putString(HEARD, heard) })
+        val audio = exo?.audioSessionId ?: 0
+        session?.setSessionExtras(Bundle().apply {
+            putLong(SLEEP_AT, sleepAt); putBoolean(RADIO, radio); putString(HEARD, heard); putInt(AUDIO, audio)
+            putString(EQ, Eq.bandsJson(bands))
+        })
     }
 
     /** The song playing as it reaches your ears: its format once the player has read it, how it came, its gain. */
@@ -199,6 +259,57 @@ class PlayerService : MediaLibraryService() {
     }
 
     /** Sleep's end: the music eases out over 6 s, pauses, and its volume is put back for next time. */
+    /** The player itself (the session talks to it through [Soft]). */
+    private var exo: ExoPlayer? = null
+
+    /**
+     * Pause, play and stop, eased (a setting, on by default; off, a file says so: both processes read it): the sound
+     * down to nothing over a quarter second before a pause or a stop, and up from nothing over a third after a play,
+     * from wherever they're asked (the app, the notification, a headset, the car). Even volume's level is where it
+     * rises to and falls from.
+     */
+    private inner class Soft(p: ExoPlayer) : androidx.media3.common.ForwardingPlayer(p) {
+        private var fading = 0   // the fade in hand; a newer one ends it
+
+        private fun on() = !java.io.File(filesDir, "soft-off").exists()
+
+        private fun fade(from: Float, to: Float, ms: Long, then: () -> Unit = {}) {
+            val mine = ++fading
+            val start = android.os.SystemClock.uptimeMillis()
+            main.post(object : Runnable {
+                override fun run() {
+                    if (mine != fading) return
+                    val t = ((android.os.SystemClock.uptimeMillis() - start) / ms.toFloat()).coerceIn(0f, 1f)
+                    // an equal-power curve: no dip or bump in loudness on the way
+                    val k = kotlin.math.sin(t * Math.PI / 2).toFloat()
+                    volume = from + (to - from) * k
+                    if (t < 1f) main.postDelayed(this, 16) else then()
+                }
+            })
+        }
+
+        private fun level() = levelling?.level ?: 1f
+
+        override fun pause() {
+            if (!on() || !isPlaying) { fading++; return super.pause() }
+            fade(volume, 0f, 250) { super.pause(); volume = level() }
+        }
+
+        override fun stop() {
+            if (!on() || !isPlaying) { fading++; return super.stop() }
+            fade(volume, 0f, 250) { super.stop(); volume = level() }
+        }
+
+        override fun play() {
+            if (!on()) return super.play()
+            // still fading out to a pause: that pause called off, the sound brought back
+            if (isPlaying) { fade(volume, level(), 200); return }
+            volume = 0f
+            super.play()
+            fade(0f, level(), 350)
+        }
+    }
+
     private fun fadeOut(p: Player) {
         val steps = 30
         var i = 0
@@ -245,7 +356,10 @@ class PlayerService : MediaLibraryService() {
                     spec.uri.scheme == "ytm" -> spec.withUri(Uri.parse(
                         YouTubeMusic.stream("y" + spec.uri.host, false, small = quality() == Quality.SAVER)?.first
                             ?: throw java.io.IOException("no stream")))
-                    spec.uri.path?.endsWith("/rest/stream") == true -> spec.withUri(Quality.server(spec.uri, quality()))
+                    // a server song kept on the phone plays from there, no signal needed (Offline)
+                    spec.uri.path?.endsWith("/rest/stream") == true -> spec.uri.getQueryParameter("id")?.let { Offline.file(this, "n$it") }
+                        ?.let { android.util.Log.d("ink-offline", "kept: ${it.name}"); spec.withUri(Uri.fromFile(it)) }
+                        ?: spec.withUri(Quality.server(spec.uri, quality()))
                     else -> spec
                 }
             },
@@ -301,7 +415,7 @@ class PlayerService : MediaLibraryService() {
                 if (p.isPlaying) p.currentMediaItem?.takeIf { !it.mediaId.startsWith("s") && it.mediaId != nowSaid }?.let { item ->
                     nowSaid = item.mediaId
                     val said = said(item, p.duration.coerceAtLeast(0))
-                    net.execute { ListenBrainz.playingNow(this@PlayerService, said) }
+                    net.execute { ListenBrainz.playingNow(this@PlayerService, said); LastFm.playingNow(this@PlayerService, said) }
                 }
                 if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) { place(p); clock?.playing(p.isPlaying) }
                 // the widget: what plays, and whether
@@ -314,6 +428,8 @@ class PlayerService : MediaLibraryService() {
                 // a new song, its tags read, the songs round it changed (a record in order or not)
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TRACKS_CHANGED, Player.EVENT_TIMELINE_CHANGED,
                         Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED, Player.EVENT_AUDIO_SESSION_ID)) levelling?.apply()
+                // the phone's equalizer (and equalizer apps) told of ink music's sound, as a music app should
+                if (events.contains(Player.EVENT_AUDIO_SESSION_ID)) { effects(true); equalize(); tell() }
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TIMELINE_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED,
                         Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)) topUp(p)
                 if (events.containsAny(Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED))
@@ -327,11 +443,13 @@ class PlayerService : MediaLibraryService() {
             }
         })
         main.post(keepPlace)
+        main.post { effects(true); equalize(); tell() }   // the session's there once onCreate is done
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, Main::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        session = MediaLibrarySession.Builder(this, player, object : MediaLibrarySession.Callback {
+        exo = player
+        session = MediaLibrarySession.Builder(this, Soft(player), object : MediaLibrarySession.Callback {
                 // Android Auto's library: records, artists, lists ([Auto])
                 override fun onGetLibraryRoot(
                     session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?,
@@ -389,7 +507,7 @@ class PlayerService : MediaLibraryService() {
                         .setAvailableSessionCommands(
                             MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(SessionCommand(SLEEP, Bundle.EMPTY))
                                 .add(SessionCommand(LEVEL, Bundle.EMPTY)).add(SessionCommand(RADIO, Bundle.EMPTY))
-                                .add(SessionCommand(WARM, Bundle.EMPTY)).build(),
+                                .add(SessionCommand(WARM, Bundle.EMPTY)).add(SessionCommand(EQ, Bundle.EMPTY)).build(),
                         )
                         .build()
 
@@ -397,6 +515,8 @@ class PlayerService : MediaLibraryService() {
                     session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle,
                 ): ListenableFuture<SessionResult> {
                     if (customCommand.customAction == SLEEP) setSleep(session.player, args.getLong(SLEEP_MS))
+                    // the equalizer changed on the screens: read again and applied
+                    if (customCommand.customAction == EQ) { equalize(); tell() }
                     // a YouTube song about to be played (its page is up): its stream found now, so play starts at once
                     if (customCommand.customAction == WARM) args.getString(WARM)?.takeIf { it.startsWith("y") }?.let { id ->
                         ahead.execute { YouTubeMusic.stream(id, false, small = Quality.now(this@PlayerService) == Quality.SAVER) }
@@ -444,6 +564,8 @@ class PlayerService : MediaLibraryService() {
         const val RADIO = "app.ink.music.RADIO"
         const val WARM = "app.ink.music.WARM"
         const val HEARD = "heard"
+        const val AUDIO = "audioSession"
+        const val EQ = "app.ink.music.EQ"
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -497,6 +619,8 @@ class PlayerService : MediaLibraryService() {
     }.getOrNull()
 
     override fun onDestroy() {
+        effects(false)
+        runCatching { eq?.release() }
         main.removeCallbacksAndMessages(null)
         net.shutdown()
         session?.player?.let(::place)

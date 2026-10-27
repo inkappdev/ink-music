@@ -8,6 +8,7 @@ object YouTubeMusic {
     fun remember(s: Song) {}
     suspend fun search(q: String) = TubeFound()
     suspend fun album(a: TubeAlbum): List<Song> = emptyList()
+    fun lyrics(id: String, title: String, artist: String): List<Line>? = emptyList()
     fun stream(id: String, forSpeaker: Boolean, small: Boolean = false): Pair<String, String>? = null
     fun kbps(id: String, small: Boolean): Int = 0
     fun related(id: String): List<Song> = emptyList()

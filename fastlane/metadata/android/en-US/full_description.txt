@@ -3,18 +3,23 @@
 <p><b>Your music, from wherever it lives</b></p>
 <ul>
 <li><b>The phone's files</b>, filed by record and artist, with the covers they carry.</li>
-<li><b>Your own server</b>: Navidrome or any Subsonic server, your whole library streamed from home. Loves are its stars, playlists are its playlists, so every app agrees.</li>
-<li><b>YouTube Music</b>: search its songs and records and play them, through NewPipe Extractor. No account needed.</li>
+<li><b>Your own server</b>: Navidrome or any Subsonic server, your whole library streamed from home, or kept on the phone to play with no signal. Loves are its stars, playlists are its playlists, so every app agrees.</li>
+<li><b>YouTube Music</b>: search and play without an account, through NewPipe Extractor. Signed in: your playlists, likes, mixes, artists and uploads, both ways, and Premium's 256 kbps if you have it.</li>
+<li><b>Spotify playlists</b>, brought in from a file (Exportify, or Spotify's own data download).</li>
 <li><b>ink radio</b>: independent, listener-powered stations chosen by hand, from KEXP in Seattle to NTS in London and Radio alHara in Bethlehem. And thousands more by genre.</li>
 </ul>
 
 <p><b>Something to play the moment it opens</b></p>
-<p>Pick a few artists you love and the listen page fills with their mixes and records, the songs indie radio played most this week (KEXP, KCRW, WXPN), ink radio (with what each station is playing), and what you played lately. Even with nothing on the phone.</p>
+<p>Pick a few artists you love and the listen page fills with their mixes and records, the songs indie radio played most this week (KEXP, KCRW, WXPN), ink radio (with what each station is playing), and what you played lately. Even with nothing on the phone. And every Friday night, ink weekly: what we're listening to at ink, picked by real people.</p>
 
 <p><b>What it does</b></p>
 <ul>
 <li>The player whole-screen over the cover, in one of five looks (blur, fluted glass, pixels, dither, plain), with an iPod clickwheel on the cover to scrub.</li>
-<li>Synced lyrics from lrclib, the cover small beside them.</li>
+<li>Synced lyrics from lrclib, or YouTube Music's where lrclib has none.</li>
+<li>An equalizer of its own, ten bands, with tunings for thousands of headphones (AutoEq).</li>
+<li>Soft pause: the music eases out and back in.</li>
+<li>Artist pages: their photo in dither, top songs, records, their story, who fans also like.</li>
+<li>Scrobbling to ListenBrainz and Last.fm.</li>
 <li>Even volume (ReplayGain): every song as loud as the next; a record played through keeps its own quiet and loud.</li>
 <li>Radio: when the queue runs out, more like it, from your server first.</li>
 <li>Your playlists, made and changed here, kept on your server.</li>
@@ -27,7 +32,7 @@
 </ul>
 
 <p><b>Free, and yours</b></p>
-<p>No ads, no accounts, no tracking. Nothing of yours leaves the phone except to your own server; a song's artist and title go to lrclib.net for its lyrics, what you search for and the artists you pick go to YouTube Music, the radio list comes from radio-browser.info, and the indie chart and what a station is playing from the stations' own playlists. What you've played is kept on the phone only.</p>
+<p>No ads, no accounts, no tracking. Nothing of yours leaves the phone except to your own server; a song's artist and title go to lrclib.net for its lyrics, what you search for and the artists you pick go to YouTube Music (and, signed in, the songs you play, for your history there), the radio list comes from radio-browser.info, and the indie chart and what a station is playing from the stations' own playlists. What you've played is kept on the phone only.</p>
 
 <p>Free and open source (GPL-3.0). From the makers of ink, the launcher for people who listen.</p>
 

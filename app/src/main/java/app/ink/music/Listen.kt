@@ -62,6 +62,8 @@ import java.util.Calendar
  * server's newest records, and radio. Each shelf shows once it has something.
  */
 object Listen {
+    /** When the listen page was first shown this run (its shelves cascade only then). */
+    var shownAt = 0L
     val indie = MutableStateFlow<List<IndieChart.Entry>>(emptyList())
     val records = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val newest = MutableStateFlow<List<String>>(emptyList())
@@ -153,6 +155,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(seeds.map { it.name }) { Listen.load(ctx); Weekly.load(ctx) }
     val weekly by Weekly.weeks.collectAsState()
+    // your server's records kept on the phone: with no signal they come first, "no data? no problem"
+    val kept by Offline.kept.collectAsState()
+    val keptRecords = remember(kept, albums) { albums.filter { a -> a.songs.any { it.id in kept } } }
+    val online = remember(kept) { Quality.online(ctx) }
     val heard by androidx.compose.runtime.produceState<List<History.Heard>>(emptyList()) {
         value = withContext(Dispatchers.IO) { History.read(ctx) }
     }
@@ -169,10 +175,12 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val tubeMixes by YouTubeAccount.mixes.collectAsState()
     val fresh by YouTubeAccount.fresh.collectAsState()
     val tubeLists by YouTubeAccount.playlists.collectAsState()
+    val uploads by YouTubeAccount.uploads.collectAsState()
     val liked by YouTubeAccount.liked.collectAsState()
     val lovedIds by Loved.ids.collectAsState()
     val lovedTube by Loved.tube.collectAsState()
     val songs by Library.songs.collectAsState()
+    val recentSongs = remember(recent, songs) { recent.mapNotNull { Library.song(it.id) } }
     // a played song as one to play again: the library's, else a YouTube song this run knows (liked, heard there, loved)
     val known = remember(liked, tubeHeard, lovedTube) { (liked + tubeHeard + lovedTube).associateBy { it.id } }
     fun songOf(id: String) = Library.song(id) ?: known[id] ?: YouTubeMusic.known(id)
@@ -195,8 +203,11 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val yours = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(12) }
     val mixes = seeds.filter { it.hit != null }
 
+    // the shelves arrive in turn once, as ink music opens (a tab, not a page: its own time, kept for the run)
+    if (Listen.shownAt == 0L) Listen.shownAt = android.os.SystemClock.uptimeMillis()
+    androidx.compose.runtime.CompositionLocalProvider(LocalOpened provides Listen.shownAt) {
     LazyColumn(state = state, contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding())) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             Row(Modifier.padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 10.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
                     BasicText(Listen.greeting(), style = headline(40.sp), maxLines = 2)
@@ -205,16 +216,17 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 }
                 Cog { pages.open(Page.Settings) }
             }
-        }
+        }}
+        if (!online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(1)) { KeptShelf(keptRecords, "no data? no problem", pages) }}
         // ink weekly: this week's songs, picked by hand (a new week Friday nights)
         weekly.firstOrNull()?.let { w ->
-            item { WeeklyBlock(w) { pages.open(Page.Weekly(w.week)) } }
+            item { Column(Modifier.cascade(2)) { WeeklyBlock(w) { pages.open(Page.Weekly(w.week)) } }}
         }
-        if (recent.isNotEmpty() || tubeRecent.isNotEmpty()) item {
+        if (recentSongs.isNotEmpty() || tubeRecent.isNotEmpty()) item { Column(Modifier.cascade(3)) {
             Label("jump back in")
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(recent) { h ->
-                    val s = Library.song(h.id) ?: return@items
+                // the library's songs only, found first: one skipped inside the row left its gap, pushing the row right
+                items(recentSongs) { s ->
                     Tile(s, s.album.ifEmpty { s.title }, s.artist) {
                         val record = albums.firstOrNull { it.id == s.albumId }
                         if (record != null) pages.open(Page.Record(record.id)) else Playback.play(listOf(s), 0)
@@ -224,29 +236,30 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 itemsIndexed(tubeRecent) { i, s -> Tile(s, s.title, s.artist) { Playback.play(tubeRecent, i) } }
             }
             Spacer(Modifier.height(10.dp))
-        }
+        }}
+        if (online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(4)) { KeptShelf(keptRecords, "kept on this phone", pages) }}
         // youtube music's own mixes for you (signed in): supermix, discover, new release, replay
-        if (tubeMixes.isNotEmpty()) item {
+        if (tubeMixes.isNotEmpty()) item { Column(Modifier.cascade(5)) {
             Label("your mixes on youtube music")
             Shelf(tubeMixes) { l -> Tile(null, l.name, l.said.ifEmpty { "mix" }.lowercase(), face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
-        }
-        if (mixes.isNotEmpty()) item {
+        }}
+        if (mixes.isNotEmpty()) item { Column(Modifier.cascade(6)) {
             Label("mixes for you")
             Shelf(mixes) { a ->
                 Tile(a.hit, a.name, "mix", face = a.face, dither = true) { scope.launch { Listen.mix(a.hit!!) } }
             }
-        }
-        if (onRepeat.size >= 3) item {
+        }}
+        if (onRepeat.size >= 3) item { Column(Modifier.cascade(7)) {
             Label("on repeat")
             ShelfIndexed(onRepeat) { i, s -> Tile(s, s.title, s.artist) { Playback.play(onRepeat, i) } }
-        }
+        }}
         // what your youtube music artists put out this year, newest first (none, no row)
-        if (fresh.isNotEmpty()) item {
+        if (fresh.isNotEmpty()) item { Column(Modifier.cascade(8)) {
             Label("new from your artists")
             Shelf(fresh) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
-        }
+        }}
         // ink radio: the stations chosen by hand, the stars first
-        item {
+        item { Column(Modifier.cascade(9)) {
             val now by Playback.now.collectAsState()
             val ink = remember { Stations.curated(ctx) }
             Row(verticalAlignment = Alignment.Bottom) {
@@ -261,53 +274,58 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                     Playback.play(starred.map { it.song }, i)
                 }
             }
-        }
+        }}
         // the week on indie radio: what KEXP, KCRW and WXPN played most
-        if (indie.isNotEmpty()) item {
+        if (indie.isNotEmpty()) item { Column(Modifier.cascade(10)) {
             val songs = remember(indie) { indie.mapNotNull { it.song } }
             Label("the week on indie radio")
             ShelfIndexed(indie) { i, e -> Tile(e.song, e.title, e.artist, number = i + 1) { Playback.play(songs, i) } }
-        }
-        if (forgotten.size >= 4) item {
+        }}
+        if (forgotten.size >= 4) item { Column(Modifier.cascade(11)) {
             Label("forgotten favorites")
             ShelfIndexed(forgotten) { i, s -> Tile(s, s.title, s.artist) { Playback.play(forgotten, i) } }
-        }
-        if (tubeLists.isNotEmpty()) item {
+        }}
+        // the songs you've uploaded to youtube music yourself (they play signed in)
+        if (uploads.isNotEmpty()) item { Column(Modifier.cascade(12)) {
+            Label("your uploads on youtube music")
+            ShelfIndexed(uploads) { i, s -> Tile(s, s.title, s.artist) { Playback.play(uploads, i) } }
+        }}
+        if (tubeLists.isNotEmpty()) item { Column(Modifier.cascade(13)) {
             Label("your playlists")
             Shelf(tubeLists) { l -> Tile(null, l.name, "playlist", face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
-        }
-        if (tubeArtists.isNotEmpty()) item {
+        }}
+        if (tubeArtists.isNotEmpty()) item { Column(Modifier.cascade(14)) {
             Label("your artists on youtube music")
             Shelf(tubeArtists) { a -> Tile(null, a.name, "artist", face = a.face) { pages.open(Page.TubeArtist(a)) } }
-        }
-        if (tubeRecords.isNotEmpty()) item {
+        }}
+        if (tubeRecords.isNotEmpty()) item { Column(Modifier.cascade(15)) {
             Label("your records on youtube music")
             Shelf(tubeRecords) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
-        }
-        if (records.isNotEmpty()) item {
+        }}
+        if (records.isNotEmpty()) item { Column(Modifier.cascade(16)) {
             Label("from artists you love")
             Shelf(records) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
-        }
-        if (newest.isNotEmpty()) item {
+        }}
+        if (newest.isNotEmpty()) item { Column(Modifier.cascade(17)) {
             Label("new on your server")
             Shelf(newest) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
-        }
-        if (yours.isNotEmpty()) item {
+        }}
+        if (yours.isNotEmpty()) item { Column(Modifier.cascade(18)) {
             Label("from your records")
             Shelf(yours) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
-        }
+        }}
         // the genres you like, their stations each
         stations.forEach { (word, list) ->
-            item {
+            item { Column(Modifier.cascade(19)) {
                 val now by Playback.now.collectAsState()
                 Label("$word radio")
                 ShelfIndexed(list.take(12)) { i, s ->
                     val on = now?.song?.id == s.id
                     RadioTile(s.title.lowercase(), on, now?.playing == true, said = if (on) "on now" else word) { Playback.play(list, i) }
                 }
-            }
+            }}
         }
-        if (radio.isNotEmpty()) item {
+        if (radio.isNotEmpty()) item { Column(Modifier.cascade(20)) {
             Label("radio")
             val now by Playback.now.collectAsState()
             Shelf(radio) { (word, tag) ->
@@ -318,7 +336,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-        }
+        }}
+    }
     }
 }
 
@@ -413,6 +432,16 @@ private fun <T> Shelf(items: List<T>, tile: @Composable (T) -> Unit) {
 private fun <T> ShelfIndexed(items: List<T>, tile: @Composable (Int, T) -> Unit) {
     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         itemsIndexed(items) { i, it -> tile(i, it) }
+    }
+    Spacer(Modifier.height(10.dp))
+}
+
+/** Your server's records kept on the phone, as covers: each opens its page (and plays from the phone). */
+@Composable
+private fun KeptShelf(records: List<Album>, label: String, pages: Pages) {
+    Label(label)
+    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
     }
     Spacer(Modifier.height(10.dp))
 }

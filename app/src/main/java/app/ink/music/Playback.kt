@@ -2,6 +2,7 @@ package app.ink.music
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
@@ -82,7 +83,8 @@ object Playback {
                 // the sleep timer, as the player says it
                 override fun onExtrasChanged(controller: MediaController, extras: android.os.Bundle) {
                     sleepAt = extras.getLong(PlayerService.SLEEP_AT); radio = extras.getBoolean(PlayerService.RADIO, true)
-                    heard = Heard.of(extras.getString(PlayerService.HEARD)); update()
+                    heard = Heard.of(extras.getString(PlayerService.HEARD)); audioSession = extras.getInt(PlayerService.AUDIO)
+                Eq.bandsOf(extras.getString(PlayerService.EQ))?.let { bands.value = it }; update()
                 }
             })
             .buildAsync()
@@ -93,6 +95,8 @@ object Playback {
                 sleepAt = it.sessionExtras.getLong(PlayerService.SLEEP_AT)
                 radio = it.sessionExtras.getBoolean(PlayerService.RADIO, true)
                 heard = Heard.of(it.sessionExtras.getString(PlayerService.HEARD))
+                audioSession = it.sessionExtras.getInt(PlayerService.AUDIO)
+                Eq.bandsOf(it.sessionExtras.getString(PlayerService.EQ))?.let { b -> bands.value = b }
                 level(levelling(ctx))   // the player's copy brought in line with the setting
             }
             readQueue()
@@ -212,6 +216,29 @@ object Playback {
             android.os.Bundle().apply { putLong(PlayerService.SLEEP_MS, ms) },
         )
     }
+    /** The phone's equalizer bands, as the player found them (null till it's said). */
+    val bands = kotlinx.coroutines.flow.MutableStateFlow<Eq.Bands?>(null)
+
+    /** The equalizer as set here (written to its file): the player told to apply it. */
+    fun equalize(c: Context, s: Eq.State) {
+        Eq.write(c, s)
+        controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.EQ, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
+    }
+
+    /** The player's audio session (in its own process), for the phone's equalizer. */
+    @Volatile var audioSession = 0
+        private set
+
+    /** The phone's own equalizer for ink music's sound (Samsung's, Android's, an equalizer app's): false if it has none. */
+    fun equalizer(c: Context): Boolean = runCatching {
+        c.startActivity(Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, audioSession)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, c.packageName)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    }.getOrDefault(false)
+
     /** A YouTube song likely to be played next (the first on a page just opened): the player finds its stream now. */
     fun warm(s: Song?) {
         if (s == null || !s.tube || casting) return

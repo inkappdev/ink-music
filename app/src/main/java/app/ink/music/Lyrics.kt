@@ -23,7 +23,8 @@ data class Line(val at: Long, val words: String)
 
 /**
  * Synced lyrics from lrclib, as ink has them (copied from ink's Lyrics.kt): synced lines only, a song lrclib has
- * only plain (untimed) words for shows none. Answers are cached on disk; lrclib being unreachable
+ * only plain (untimed) words for shows none. Where lrclib has none, YouTube Music's (the full build, ink music's
+ * own: timed by Musixmatch for song uploads). Answers are cached on disk; lrclib being unreachable
  * is not an answer, so that song is asked again after a minute.
  */
 object Lyrics {
@@ -55,7 +56,12 @@ object Lyrics {
         val key = "$artist|${t.title}"
         val base = File(dir, sha1(key))
         val lrc = File("${base.path}.lrc")
-        if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { return@withContext parse(it) }
+        val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
+        if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
+            // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
+            if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.let { return@withContext it }
+            return@withContext parse(text)
+        }
         if ((retry[key] ?: 0L) > SystemClock.elapsedRealtime()) return@withContext null
         val got = ask(artist, t.title, t.album, t.duration / 1000)
         if (got == null) {
@@ -68,7 +74,23 @@ object Lyrics {
             lrc.writeText(got.first)
             File("${base.path}.txt").writeText(got.second)
         }
+        // none synced on lrclib: YouTube Music's (the full build), timed by Musixmatch
+        if (got.first.isBlank() && YouTubeMusic.available) tube(t, lrc, asked)?.let { return@withContext it }
         parse(got.first)
+    }
+
+    /** YouTube Music's timed lines for the song, kept as lrclib's are (null: YouTube couldn't be asked, so again next time). */
+    private fun tube(t: Now, lrc: File, asked: File): List<Line>? {
+        val lines = YouTubeMusic.lyrics(t.song?.id.orEmpty(), t.title, t.artist.split(',').first().trim()) ?: return null
+        runCatching {
+            dir.mkdirs()
+            if (lines.isNotEmpty()) lrc.writeText(lines.joinToString("\n") {
+                "[%02d:%05.2f]%s".format(java.util.Locale.US, it.at / 60_000, (it.at % 60_000) / 1000.0, it.words)
+            })
+            asked.writeText("")
+        }
+        android.util.Log.d("ink-lyrics", "${t.artist} - ${t.title}: ${lines.size} lines from youtube music")
+        return lines
     }
 
     /** (synced, plain) from lrclib: "" for none. null: lrclib never answered. */

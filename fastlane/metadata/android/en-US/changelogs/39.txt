@@ -1,0 +1,8 @@
+- YouTube Music Premium plays at 256 kbps; your uploads play too
+- An equalizer of its own, with tunings for thousands of headphones
+- Keep your server's records on the phone, for no signal
+- Last.fm, Spotify playlists brought in, save and follow on YouTube
+- Lyrics from YouTube where lrclib has none; soft pause
+- New settings, livelier pages, text you can read in the sun
+- We tested the equalizer on headphones we don't own
+- Do something nice for someone today. Lend them your good headphones

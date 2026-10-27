@@ -20,11 +20,14 @@ android {
         minSdk = 31
         targetSdk = 37
         // each release: both up (the code by one), and a changelog in fastlane/.../changelogs/<code>.txt
-        versionCode = 38
-        versionName = "1.4.3"
+        versionCode = 39
+        versionName = "1.4.4"
         // ink weekly's weeks (tools/weekly.py writes them); -PweeklyUrl=... to try a week before it's pushed
         val weekly = (project.findProperty("weeklyUrl") as String?) ?: "https://raw.githubusercontent.com/inkappdev/ink-music/main/weekly.json"
         buildConfigField("String", "WEEKLY", "\"$weekly\"")
+        // Last.fm's key and secret for ink music, kept out of git with the release key (a build without them has no Last.fm)
+        buildConfigField("String", "LASTFM_KEY", "\"${release?.getProperty("lastfmKey").orEmpty()}\"")
+        buildConfigField("String", "LASTFM_SECRET", "\"${release?.getProperty("lastfmSecret").orEmpty()}\"")
     }
 
     signingConfigs {

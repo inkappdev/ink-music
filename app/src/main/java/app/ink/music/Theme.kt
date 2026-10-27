@@ -8,6 +8,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableFloatStateOf
@@ -47,8 +49,11 @@ import kotlinx.coroutines.flow.collectLatest
 object Ink {
     val black = Color.Black
     val ink = Color(0xFFF1F0EC)
-    val mid = ink.copy(alpha = .55f)   // hover / secondary
-    val dim = ink.copy(alpha = .17f)   // unselected
+    /** Bright light (the light sensor: sunlight): the dim words a step brighter, so they read outdoors. */
+    var sun by androidx.compose.runtime.mutableStateOf(false)
+    // 55% and 17% till 2026-10-27: the off words couldn't be read outside
+    val mid get() = ink.copy(alpha = if (sun) .85f else .70f)   // hover / secondary
+    val dim get() = ink.copy(alpha = if (sun) .55f else .35f)   // unselected
     val line = ink.copy(alpha = .12f)  // hairlines
     val plate = Color(0xFF141414)
 }

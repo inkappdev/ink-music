@@ -85,16 +85,16 @@ fun QueuePage(onClose: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 BasicText(
                     if (queue.isEmpty()) "nothing queued" else "${queue.size} songs   hold one to move it",
-                    style = pixel(11.sp, Ink.mid),
+                    style = pixel(12.sp, Ink.mid),
                 )
                 // radio: lit, the queue's end brings more like it
                 val on = now?.radio != false
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Word("radio", pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Playback.radio(!on) }
-                    BasicText(if (on) "  then more like these" else "  stops at the end", style = pixel(11.sp, Ink.mid))
+                    BasicText(if (on) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
                 }
             }
-            Word("close", pixel(11.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+            Word("close", pixel(12.sp, Ink.mid), touch = 10.dp, onClick = onClose)
         }
         Spacer(Modifier.height(14.dp))
         // the list softens just under the heading as it goes behind it
@@ -142,14 +142,14 @@ fun QueuePage(onClose: () -> Unit) {
                 ) {
                     Column(Modifier.weight(1f)) {
                         BasicText(q.title.uppercase(), style = headline(18.sp, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        BasicText(q.artist.lowercase(), style = pixel(10.sp, if (tone == Ink.ink) Ink.mid else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        BasicText(q.artist.lowercase(), style = pixel(12.sp, if (tone == Ink.ink) Ink.mid else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (options == i) {
                         Spacer(Modifier.width(12.dp))
                         Word("remove", pixel(13.sp), touch = 10.dp) { options = null; Playback.remove(i) }
                     } else if (i == playing) {
                         Spacer(Modifier.width(12.dp))
-                        BasicText("playing", style = pixel(10.sp, Ink.mid))
+                        BasicText("playing", style = pixel(12.sp, Ink.mid))
                     }
                 }
             }

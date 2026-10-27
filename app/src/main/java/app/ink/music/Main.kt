@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.EnterTransition
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
@@ -27,6 +28,10 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.background
@@ -121,6 +126,8 @@ import dev.chrisbanes.haze.rememberHazeState
 class Main : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycle.addObserver(Sun(this))   // the dim words brighter in sunlight
+        Moves.start(this)
         // opened again (the home screen, the notification) over ink music's own screens: those stay
         // as they were (the YouTube sign-in, mid-way), not a second library over them
         if (!isTaskRoot) { finish(); return }
@@ -133,6 +140,8 @@ class Main : ComponentActivity() {
         Server.start(this)
         YouTubeAccount.start(this)
         ListenBrainz.start(this)
+        LastFm.start(this)
+        Offline.start(this)
         Order.start(this)
         Seeds.start(this)
         Stations.curated(this)
@@ -212,6 +221,9 @@ sealed interface Page {
     data class TubeList(val list: app.ink.music.TubeList) : Page
     data class TubeArtist(val artist: app.ink.music.TubeArtist) : Page
     data class Weekly(val week: Int) : Page
+    data object Import : Page
+    data object Equalizer : Page
+    data class SettingsPart(val part: String) : Page
 }
 
 /** Where the library's pages go: pushed in from the right, back out to the right (the iPod's). */
@@ -253,19 +265,42 @@ private fun App() {
             Box(Modifier.fillMaxSize().hazeSource(frost)) {
                 // the library stays built under the pages (never thrown away to show one)
                 LibraryPage(pages)
+                androidx.compose.animation.SharedTransitionLayout { val shared = this
                 AnimatedContent(
                     targetState = pages.stack.lastOrNull(),
                     transitionSpec = {
                         val f = pages.forward
-                        ContentTransform(
-                            slideInHorizontally(tween(Motion.ENTER, easing = Motion.expo)) { if (f) (it * .2f).toInt() else -(it * .1f).toInt() } +
-                                fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
-                            slideOutHorizontally(tween(Motion.EXIT, easing = Motion.expo)) { if (f) -(it * .1f).toInt() else (it * .1f).toInt() } +
-                                fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-                        )
+                        val pageToPage = initialState != null && targetState != null
+                        when {
+                            // moving less: a page just fades in, and out
+                            Moves.less.value -> ContentTransform(fadeIn(tween(Motion.FADE)), fadeOut(tween(Motion.EXIT)))
+                            // forward, page over page: the new one comes in on top (its rows then cascade), the old one
+                            // stays whole under it till it's covered (both fading showed the library through them)
+                            f && pageToPage -> ContentTransform(
+                                // solid almost at once (a slower fade crossed its words with the old page's)
+                                slideInHorizontally(tween(Motion.ENTER, easing = Motion.expo)) { (it * .12f).toInt() } + fadeIn(tween(90)),
+                                fadeOut(tween(1, delayMillis = Motion.ENTER)),
+                                targetContentZIndex = 1f,
+                            )
+                            // back, page from page: the one under is simply there, the one leaving slides off over it
+                            !f && pageToPage -> ContentTransform(
+                                EnterTransition.None,
+                                slideOutHorizontally(tween(Motion.EXIT, easing = Motion.expo)) { (it * .12f).toInt() } + fadeOut(tween(Motion.EXIT)),
+                                targetContentZIndex = -1f,
+                            )
+                            // to or from the library: as before, pushed in from the right and back to the right
+                            else -> ContentTransform(
+                                slideInHorizontally(tween(Motion.ENTER, easing = Motion.expo)) { if (f) (it * .2f).toInt() else -(it * .1f).toInt() } +
+                                    fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                                slideOutHorizontally(tween(Motion.EXIT, easing = Motion.expo)) { if (f) -(it * .1f).toInt() else (it * .1f).toInt() } +
+                                    fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+                            )
+                        }
                     },
                     label = "pages",
                 ) { p ->
+                    val opened = remember(p) { if (pages.forward) android.os.SystemClock.uptimeMillis() else 0L }
+                    CompositionLocalProvider(LocalOpened provides opened, LocalShared provides shared, LocalPageScope provides this) {
                     when (p) {
                         null -> Box(Modifier.fillMaxSize())
                         is Page.Record -> RecordPage(p.id, pages)
@@ -283,7 +318,12 @@ private fun App() {
                         is Page.TubeList -> TubeListPage(p.list, pages)
                         is Page.TubeArtist -> ArtistPage(p.artist.name, pages, p.artist.id)
                         is Page.Weekly -> WeeklyPage(p.week, pages)
+                        Page.Import -> ImportPage(pages)
+                        Page.Equalizer -> EqualizerPage(pages)
+                        is Page.SettingsPart -> SettingsPage(pages, p.part)
                     }
+                    }
+                }
                 }
             }
         }
@@ -377,7 +417,7 @@ private fun LibraryPage(pages: Pages) {
                         Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
                             onClick = felt { pages.open(Page.Playlist(pl.id, pl.name)) }).padding(vertical = 9.dp)) {
                             BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(10.sp, Ink.mid))
+                            BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
                         }
                     }
                     // your youtube music: its playlists, liked music first as YouTube lists them (read only)
@@ -467,7 +507,7 @@ private fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
         BasicText(a.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         BasicText(
             listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
-            style = pixel(10.sp, Ink.mid),
+            style = pixel(12.sp, Ink.mid),
         )
     }
 }
@@ -498,7 +538,7 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         CoverOf(a.songs.first(), a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
-        UnderCover(a.title, a.artist, pixel(10.sp, Ink.mid), gap = 3.dp)
+        UnderCover(a.title, a.artist, pixel(12.sp, Ink.mid), gap = 3.dp)
     }
 }
 
@@ -557,14 +597,14 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
         }).padding(vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
-            number?.let { BasicText(it, style = pixel(11.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(30.dp).padding(bottom = 3.dp)) }
+            number?.let { BasicText(it, style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(30.dp).padding(bottom = 3.dp)) }
             Column(Modifier.weight(1f)) {
                 BasicText(s.title.uppercase(), style = headline(19.sp, if (on || now == null) Ink.ink else Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (number == null) BasicText(s.artist.lowercase(), style = pixel(10.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (number == null) BasicText(s.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // a swipe's word stays a moment where the length was: it's done
-            done?.let { BasicText(it, style = pixel(11.sp), modifier = Modifier.padding(start = 12.dp, bottom = 3.dp)) }
-                ?: if (s.duration > 0) BasicText(clock(s.duration), style = pixel(11.sp, Ink.mid), modifier = Modifier.padding(start = 12.dp, bottom = 3.dp)) else Unit
+            done?.let { BasicText(it, style = pixel(12.sp), modifier = Modifier.padding(start = 12.dp, bottom = 3.dp)) }
+                ?: if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 12.dp, bottom = 3.dp)) else Unit
         }
         if (open) FlowRow(Modifier.padding(start = if (number != null) 30.dp else 0.dp, top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
             Word("play next", pixel(13.sp), touch = 8.dp) { open = false; Playback.playNext(s) }
@@ -573,11 +613,18 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
             val lovedIds by Loved.ids.collectAsState()
             Word(if (s.id in lovedIds) "unlove" else "love", pixel(13.sp), touch = 8.dp) { open = false; Loved.toggle(s) }
             val account by Server.account.collectAsState()
-            if (pages != null && account != null && Server.idOf(s) != null)
+            val tubeWho by YouTubeAccount.who.collectAsState()
+            if (pages != null && ((account != null && Server.idOf(s) != null) || (tubeWho != null && !s.station)))
                 Word("add to playlist", pixel(13.sp), touch = 8.dp) { open = false; pages.open(Page.AddTo(s)) }
             val sonic by Server.sonic.collectAsState()
             if (pages != null && sonic && account != null && Server.idOf(s) != null)
                 Word("path to", pixel(13.sp), touch = 8.dp) { open = false; pages.open(Page.Path(s)) }
+            if (s.server) {
+                val kept by Offline.kept.collectAsState()
+                val ctx2 = LocalContext.current
+                if (s.id in kept) Word("not offline", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; Offline.remove(ctx2, listOf(s.id)) }
+                else Word("keep offline", pixel(13.sp), touch = 8.dp) { open = false; Offline.keep(ctx2, listOf(s)) }
+            }
             onRemove?.let { Word("remove", pixel(13.sp), touch = 8.dp) { open = false; it() } }
             if (pages != null && number == null && s.album.isNotEmpty() && !s.tube) Word("record", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Record(s.albumId)) }
             if (pages != null) Word("artist", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Artist(s.albumArtist)) }
@@ -596,7 +643,7 @@ private fun RecordPage(id: String, pages: Pages) {
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
                 CoverOf(a.songs.first(), a.title, Modifier.size(minOf(maxWidth, 560.dp)))
             }
@@ -608,18 +655,19 @@ private fun RecordPage(id: String, pages: Pages) {
             BasicText(
                 listOfNotNull(a.year.takeIf { it > 0 }?.toString(), "${a.songs.size} ${if (a.songs.size == 1) "song" else "songs"}",
                     a.length.takeIf { it > 0 }?.let { "${(it / 60_000).coerceAtLeast(1)} min" }).joinToString("   "),
-                style = pixel(11.sp, Ink.mid),
+                style = pixel(12.sp, Ink.mid),
             )
             Spacer(Modifier.height(16.dp))
             Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(a.songs, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(a.songs.shuffled(), 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(a.songs.shuffled(), 0) }
+                KeepOffline(a.songs)
             }
             Spacer(Modifier.height(14.dp))
-        }
-        itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s ->
+        }}
+        itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) {
             SongRow(s, number = s.track.takeIf { it > 0 }?.toString() ?: "${i + 1}", pages = pages) { Playback.play(a.songs, i) }
-        }
+        }}
     } }
 }
 
@@ -628,7 +676,7 @@ private fun RecordPage(id: String, pages: Pages) {
 private fun ListRow(name: String, said: String, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
         BasicText(name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (said.isNotEmpty()) BasicText(said, style = pixel(10.sp, Ink.mid))
+        if (said.isNotEmpty()) BasicText(said, style = pixel(12.sp, Ink.mid))
     }
 }
 
@@ -655,10 +703,10 @@ private fun LovedPage(pages: Pages) {
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             BasicText("LOVED", style = headline(44.sp))
             Spacer(Modifier.height(8.dp))
-            BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(11.sp, Ink.mid))
+            BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(16.dp))
             if (theirs.isNotEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs, 0) }
@@ -669,8 +717,8 @@ private fun LovedPage(pages: Pages) {
                 Word("a to z", pixel(14.sp, if (recent) Ink.dim else Ink.ink), touch = 8.dp) { Loved.order(false) }
             }
             Spacer(Modifier.height(14.dp))
-        }
-        itemsIndexed(theirs, key = { _, s -> s.id }) { i, s -> SongRow(s, pages = pages) { Playback.play(theirs, i) } }
+        }}
+        itemsIndexed(theirs, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, pages = pages) { Playback.play(theirs, i) } }}
     } }
 }
 
@@ -691,34 +739,35 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             BasicText(name.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
             val all = songs
             BasicText(
                 if (all == null) "reading it" else listOfNotNull("${all.size} ${if (all.size == 1) "song" else "songs"}",
                     all.sumOf { it.duration }.takeIf { it > 0 }?.let { "${it / 60_000} min" }).joinToString("   "),
-                style = pixel(11.sp, Ink.mid),
+                style = pixel(12.sp, Ink.mid),
             )
             Spacer(Modifier.height(16.dp))
             if (!all.isNullOrEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                KeepOffline(all)
             }
             // deleting asks once more: the word says so, lit, for a moment
             if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
                 if (!sure) sure = true else scope.launch { if (Server.deletePlaylist(id)) pages.back() }
             }
             Spacer(Modifier.height(14.dp))
-        }
+        }}
         val all = songs.orEmpty()
         // no keys: a playlist can hold one song twice
-        itemsIndexed(all) { i, s ->
+        itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) {
             SongRow(s, pages = pages, onRemove = if (mine) ({
                 songs = all.filterIndexed { j, _ -> j != i }    // gone at once; the server's answer reads it again
                 scope.launch { Server.removeFrom(id, i) }
             }) else null) { Playback.play(all, i) }
-        }
+        }}
     } }
 }
 
@@ -749,7 +798,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(top = top0, bottom = LocalFoot.current + 24.dp),
     ) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             // their photo across the page in the dither (the player's), developing as it opens, their name on it
             val photo = i?.photo
             if (photo != null) BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
@@ -774,20 +823,31 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 if (playable.isNotEmpty()) Row {
                     Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(playable, 0) }
                     Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(playable.shuffled(), 0) }
-                    Word("radio", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.startRadio(playable.first()) }
+                    Word("radio", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.startRadio(playable.first()) }
+                    // signed in: followed there (lit), or not
+                    val who by YouTubeAccount.who.collectAsState()
+                    val followed by YouTubeAccount.followed.collectAsState()
+                    val page = i
+                    if (who != null && page != null && page.id.isNotEmpty()) {
+                        val on = page.id in followed
+                        val scope = rememberCoroutineScope()
+                        Word(if (on) "following" else "follow", pixel(14.sp, if (on) Ink.ink else Ink.mid), touch = 8.dp) {
+                            scope.launch { YouTubeAccount.follow(TubeArtist(page.name, page.photo, page.id), !on) }
+                        }
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
             }
-        }
+        }}
         if (top.isNotEmpty()) {
             item { Label("top songs") }
             // a chart: the place big beside each
-            itemsIndexed(top, key = { _, s -> "t" + s.id }) { n, s ->
+            itemsIndexed(top, key = { _, s -> "t" + s.id }) { n, s -> Box(Modifier.cascade(n + 1)) {
                 Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     BasicText("${n + 1}", style = headline(34.sp), modifier = Modifier.width(48.dp))
                     Box(Modifier.weight(1f)) { SongRow(s, pages = pages) { Playback.play(top, n) } }
                 }
-            }
+            }}
             item { Spacer(Modifier.height(10.dp)) }
         }
         if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) item {
@@ -830,9 +890,9 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         // the songs of theirs you have: on the phone, on your server
         if (theirs.isNotEmpty()) {
             item { Label("yours") }
-            itemsIndexed(theirs, key = { _, s -> s.id }) { n, s ->
+            itemsIndexed(theirs, key = { _, s -> s.id }) { n, s -> Box(Modifier.cascade(n + 1)) {
                 Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(theirs, n) } }
-            }
+            }}
             item { Spacer(Modifier.height(18.dp)) }
         }
         i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
@@ -879,7 +939,7 @@ private fun WeeklyPage(number: Int, pages: Pages) {
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(top = top, bottom = LocalFoot.current + 24.dp),
     ) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
             BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
                 Mosaic(w.songs, Modifier.size(minOf(maxWidth, 560.dp)).align(Alignment.Center))
@@ -902,14 +962,14 @@ private fun WeeklyPage(number: Int, pages: Pages) {
                 }
                 Spacer(Modifier.height(14.dp))
             }
-        }
+        }}
         // the songs as a chart: the place big beside each (no keys: a song could be picked twice)
-        itemsIndexed(w.songs) { n, s ->
+        itemsIndexed(w.songs) { n, s -> Box(Modifier.cascade(n + 1)) {
             Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 BasicText("${n + 1}", style = headline(30.sp), modifier = Modifier.width(52.dp))
                 Box(Modifier.weight(1f)) { SongRow(s, pages = pages) { Playback.play(w.songs, n) } }
             }
-        }
+        }}
         val before = weeks.filter { it.week != w.week }
         if (before.isNotEmpty()) {
             item { Spacer(Modifier.height(18.dp)); Label("the weeks before") }
@@ -925,6 +985,181 @@ private fun WeeklyPage(number: Int, pages: Pages) {
             }
         }
     } }
+}
+
+/**
+ * Bringing a Spotify playlist in: a file chosen (Exportify's CSV, or Spotify's own download), a playlist in it
+ * picked if there are several, its songs matched (yours first, else YouTube Music's), then made where you keep
+ * playlists (YouTube Music, your server), or played as it is. What wasn't found is listed, dim.
+ */
+@Composable
+private fun ImportPage(pages: Pages) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var lists by remember { mutableStateOf<List<Import.Listed>?>(null) }
+    var chosen by remember { mutableStateOf<Import.Listed?>(null) }
+    var progress by remember { mutableStateOf(0) }
+    var matched by remember { mutableStateOf<List<Song?>?>(null) }
+    var said by remember { mutableStateOf<String?>(null) }
+    // where it's being made ("youtube", "server"), and once made, the page that opens it (each made once)
+    var making by remember { mutableStateOf<String?>(null) }
+    val made = remember { androidx.compose.runtime.mutableStateMapOf<String, Page?>() }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val read = runCatching { Import.read(ctx, uri) }.getOrDefault(emptyList())
+            lists = read; chosen = read.singleOrNull(); matched = null; made.clear()
+            said = if (read.isEmpty()) "no playlist in that file: an exportify csv, or spotify's Playlist1.json" else null
+        }
+    }
+    LaunchedEffect(chosen) {
+        val c = chosen ?: return@LaunchedEffect
+        progress = 0; matched = null; made.clear(); said = null
+        matched = Import.match(c.songs) { progress = it }
+    }
+    val who by YouTubeAccount.who.collectAsState()
+    val account by Server.account.collectAsState()
+    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        val c = chosen
+        val m = matched
+        item {
+            BasicText((c?.name ?: "FROM SPOTIFY").uppercase(), style = headline(40.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(10.dp))
+            when {
+                c == null -> {
+                    BasicText("a playlist from spotify, as a file: on exportify.app sign in with spotify and export one (a csv), " +
+                        "or use spotify's own download of your data (Playlist1.json, every playlist). each song is found here, " +
+                        "yours first" + (if (YouTubeMusic.available) ", else on youtube music" else "") + ".", style = pixel(12.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 20.sp))
+                    Spacer(Modifier.height(14.dp))
+                    Row {
+                        Word("choose a file", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { pick.launch(arrayOf("text/*", "application/json", "application/octet-stream", "*/*")) }
+                        Word("exportify.app", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                            runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://exportify.app")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }
+                    }
+                    said?.let { Spacer(Modifier.height(12.dp)); BasicText(it, style = pixel(12.sp, Ink.mid)) }
+                }
+                m == null -> {
+                    // a line filling as they're found, as the player's fills with the song
+                    val filled by androidx.compose.animation.core.animateFloatAsState(
+                        if (c.songs.isEmpty()) 0f else progress / c.songs.size.toFloat(), tween(Motion.ENTER, easing = Motion.expo), label = "found")
+                    Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line)) {
+                        Box(Modifier.fillMaxWidth(filled).height(2.dp).background(Ink.ink))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    BasicText("finding ${progress} of ${c.songs.size}", style = pixel(12.sp, Ink.mid))
+                }
+                else -> {
+                    val found = m.filterNotNull()
+                    BasicText("${found.size} of ${c.songs.size} found   ${found.count { !it.tube }} yours", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(16.dp))
+                    Word("play it", pixel(14.sp), touch = 8.dp) { Playback.play(found, 0) }
+                    // where to keep it: each made once (a second tap made a second playlist), then "open it"
+                    @Composable
+                    fun Place(key: String, where: String, make: suspend () -> Pair<Boolean, Page?>) {
+                        Spacer(Modifier.height(10.dp))
+                        when {
+                            made.containsKey(key) -> Row {
+                                BasicText("made on $where", style = pixel(14.sp), modifier = Modifier.padding(end = 26.dp, top = 8.dp))
+                                made[key]?.let { page -> Word("open it", pixel(14.sp), touch = 8.dp) { pages.open(page) } }
+                            }
+                            making == key -> BasicText("making it on $where", style = pixel(14.sp, Ink.dim), modifier = Modifier.padding(top = 8.dp))
+                            else -> Word("make it on $where", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                                if (making != null) return@Word
+                                making = key
+                                scope.launch {
+                                    val (ok, opened) = make()
+                                    if (ok) made[key] = opened
+                                    making = null
+                                }
+                            }
+                        }
+                    }
+                    if (who != null) Place("youtube", "youtube music") {
+                        YouTubeAccount.makePlaylistOf(c.name, found)?.let { (list, n) -> said = "$n songs on youtube music"; true to Page.TubeList(list) }
+                            ?: run { said = "youtube music didn't take it"; false to null }
+                    }
+                    if (account != null) Place("server", "your server") {
+                        val before = Server.playlists.value.filter { it.name == c.name }.map { it.id }.toSet()
+                        val there = found.count { Server.idOf(it) != null }
+                        if (Server.makePlaylist(c.name, found)) {
+                            said = "$there songs on your server (the ones it has)"
+                            true to Server.playlists.value.firstOrNull { it.name == c.name && it.id !in before }?.let { Page.Playlist(it.id, it.name) }
+                        } else { said = "the server didn't take it"; false to null }
+                    }
+                    said?.let { Spacer(Modifier.height(10.dp)); BasicText(it, style = pixel(12.sp, Ink.mid)) }
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
+        }
+        // several playlists in the file: one picked
+        if (c == null) lists?.takeIf { it.size > 1 }?.let { all ->
+            items(all) { l ->
+                Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { chosen = l }).padding(vertical = 9.dp)) {
+                    BasicText(l.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    BasicText("${l.songs.size} songs", style = pixel(12.sp, Ink.mid))
+                }
+            }
+        }
+        // the songs: found ones to play, the rest dim
+        if (c != null && m != null) itemsIndexed(c.songs) { i, s ->
+            val song = m.getOrNull(i)
+            if (song != null) SongRow(song, number = "${i + 1}", pages = pages) { Playback.play(m.filterNotNull(), m.subList(0, i).count { it != null }) }
+            else Row(Modifier.padding(vertical = 8.dp)) {
+                BasicText("${i + 1}", style = pixel(12.sp, Ink.dim), modifier = Modifier.width(30.dp))
+                Column {
+                    BasicText(s.title.uppercase(), style = headline(19.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    BasicText("${s.artist.lowercase()}   not found", style = pixel(12.sp, Ink.dim))
+                }
+            }
+        }
+    } }
+}
+
+/**
+ * Your server's songs here kept on the phone: "keep offline"; while they come, "keeping 4 of 12"; all here,
+ * "offline" lit, and a tap then "remove it" lit a moment (a second tap lets them go). Nothing for songs not the server's.
+ */
+@Composable
+fun KeepOffline(songs: List<Song>) {
+    val ctx = LocalContext.current
+    val server = remember(songs) { songs.filter { it.server } }
+    if (server.isEmpty()) return
+    val kept by Offline.kept.collectAsState()
+    val keeping by Offline.keeping.collectAsState()
+    val here = server.count { it.id in kept }
+    val coming = server.count { it.id in keeping }
+    // while some are on their way: how far, every half second, and what's whole
+    var done by remember { mutableStateOf(0f) }
+    LaunchedEffect(coming > 0) {
+        while (coming > 0) {
+            done = withContext(Dispatchers.IO) { Offline.refresh(ctx); Offline.progress(ctx, server.map { it.id }) }
+            kotlinx.coroutines.delay(500)
+        }
+    }
+    var sure by remember { mutableStateOf(false) }
+    LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
+    when {
+        coming > 0 -> Filling("keeping $here of ${server.size}", done, Modifier.padding(top = 8.dp))
+        here == server.size -> Word(if (sure) "remove it" else "offline", pixel(14.sp), touch = 8.dp) {
+            if (!sure) sure = true else { sure = false; Offline.remove(ctx, server.map { it.id }) }
+        }
+        else -> Word("keep offline", pixel(14.sp, Ink.mid), touch = 8.dp) { Offline.keep(ctx, server) }
+    }
+}
+
+/** Words filling with ink from the left as something comes (the rest dim): progress without a bar. */
+@Composable
+fun Filling(text: String, done: Float, modifier: Modifier = Modifier) {
+    val shown by androidx.compose.animation.core.animateFloatAsState(done.coerceIn(0f, 1f), tween(Motion.ENTER, easing = Motion.expo), label = "filling")
+    Box(modifier) {
+        BasicText(text, style = pixel(14.sp, Ink.dim))
+        BasicText(text, style = pixel(14.sp), modifier = Modifier.drawWithContent {
+            clipRect(right = size.width * shown) { this@drawWithContent.drawContent() }
+        })
+    }
 }
 
 /** A bio's first sentence (if it's one to pull out: not too long), and the rest. */
@@ -951,7 +1186,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
             }
         }
         val shown = remember(frames) { Animatable(0f) }
-        LaunchedEffect(frames) { if (frames != null) shown.animateTo(1f, tween(900, easing = Motion.expo)) }
+        LaunchedEffect(frames) { if (frames != null) { if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, tween(900, easing = Motion.expo)) } }
         frames?.let { f ->
             // the dots drawn as dots: unfiltered, as the player draws them
             Image(f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)], null, Modifier.fillMaxSize(),
@@ -1017,7 +1252,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                     keyboardActions = KeyboardActions(onGo = { foundSongs.firstOrNull()?.let { Playback.play(foundSongs, 0) } }),
                     modifier = Modifier.weight(1f).focusRequester(focus),
                 )
-                Word("close", pixel(11.sp, Ink.mid), touch = 10.dp) { pages.back() }
+                Word("close", pixel(12.sp, Ink.mid), touch = 10.dp) { pages.back() }
             }
             Spacer(Modifier.height(18.dp))
             // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
@@ -1063,7 +1298,7 @@ fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         CoverOf(face, a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
-        UnderCover(a.title, a.artist, pixel(10.sp, Ink.mid), gap = 3.dp)
+        UnderCover(a.title, a.artist, pixel(12.sp, Ink.mid), gap = 3.dp)
     }
 }
 
@@ -1084,7 +1319,7 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
                 CoverOf(remember(a.url) { tubeFace(a) }, a.title, Modifier.size(minOf(maxWidth, 560.dp)))
             }
@@ -1094,16 +1329,24 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             BasicText(a.artist.lowercase(), style = pixel(13.sp, Ink.mid))
             Spacer(Modifier.height(4.dp))
             val all = songs
-            BasicText(if (all == null) "reading it from youtube music" else "${all.size} songs   youtube music", style = pixel(11.sp, Ink.mid))
+            BasicText(if (all == null) "reading it from youtube music" else "${all.size} songs   youtube music", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(16.dp))
             if (!all.isNullOrEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                // signed in: saved to your library there (lit), or not
+                val who by YouTubeAccount.who.collectAsState()
+                val records by YouTubeAccount.records.collectAsState()
+                if (who != null) {
+                    val saved = remember(records, a.url) { YouTubeAccount.saved(a) }
+                    val scope = rememberCoroutineScope()
+                    Word(if (saved) "saved" else "save", pixel(14.sp, if (saved) Ink.ink else Ink.mid), touch = 8.dp) { scope.launch { YouTubeAccount.save(a, !saved) } }
+                }
             }
             Spacer(Modifier.height(14.dp))
-        }
+        }}
         val all = songs.orEmpty()
-        itemsIndexed(all) { i, s -> SongRow(s, number = "${i + 1}") { Playback.play(all, i) } }
+        itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, number = "${i + 1}") { Playback.play(all, i) } }}
     } }
 }
 
@@ -1122,25 +1365,33 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             BasicText(pl.name.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
             val all = songs
             BasicText(
                 if (all == null) "reading it from youtube music" else listOfNotNull("${all.size} ${if (all.size == 1) "song" else "songs"}",
                     all.sumOf { it.duration }.takeIf { it > 0 }?.let { "${it / 60_000} min" }, "youtube music").joinToString("   "),
-                style = pixel(11.sp, Ink.mid),
+                style = pixel(12.sp, Ink.mid),
             )
             Spacer(Modifier.height(16.dp))
             if (!all.isNullOrEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
             }
+            // yours (not a mix, not someone else's): "delete", then "delete it" lit a moment, as a server playlist's
+            val mine by androidx.compose.runtime.produceState(false, pl.id) { value = YouTubeAccount.mine(pl.id) }
+            var sure by remember { mutableStateOf(false) }
+            LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
+            val scope = rememberCoroutineScope()
+            if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
+                if (!sure) sure = true else scope.launch { if (YouTubeAccount.deletePlaylist(pl.id)) pages.back() }
+            }
             Spacer(Modifier.height(14.dp))
-        }
+        }}
         val all = songs.orEmpty()
         // no keys: a playlist can hold one song twice
-        itemsIndexed(all) { i, s -> SongRow(s) { Playback.play(all, i) } }
+        itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s) { Playback.play(all, i) } }}
     } }
 }
 
@@ -1149,7 +1400,11 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
 @Composable
 private fun AddToPage(s: Song, pages: Pages) {
     val lists by Server.playlists.collectAsState()
-    val mine = remember(lists) { lists.filter { it.mine } }
+    val account by Server.account.collectAsState()
+    val server = account != null && Server.idOf(s) != null
+    val mine = remember(lists, server) { if (server) lists.filter { it.mine } else emptyList() }
+    val who by YouTubeAccount.who.collectAsState()
+    val tubeLists by YouTubeAccount.playlists.collectAsState()
     val scope = rememberCoroutineScope()
     var failed by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
@@ -1163,15 +1418,34 @@ private fun AddToPage(s: Song, pages: Pages) {
             Spacer(Modifier.height(8.dp))
             BasicText(s.title.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(18.dp))
-            NewPlaylist(s, focused = mine.isEmpty()) { ok -> if (ok) pages.back() else failed = true }
-            if (failed) BasicText("the server didn't take it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp))
-            Spacer(Modifier.height(14.dp))
+            if (failed) BasicText("that didn't take", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 8.dp))
+            if (server) {
+                if (who != null) Label("on your server")
+                NewPlaylist(s, focused = mine.isEmpty() && who == null) { ok -> if (ok) pages.back() else failed = true }
+                Spacer(Modifier.height(14.dp))
+            }
         }
         items(mine, key = { it.id }) { pl ->
             Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
                 onClick = felt { scope.launch { if (Server.addTo(pl.id, s)) pages.back() else failed = true } }).padding(vertical = 9.dp)) {
                 BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
+            }
+        }
+        // your playlists on YouTube Music (signed in): a song from elsewhere found there by its words
+        if (who != null) {
+            item {
+                Spacer(Modifier.height(10.dp))
+                Label("on youtube music")
+                NewPlaylist(s, focused = !server, make = { YouTubeAccount.makePlaylist(it, s) }) { ok -> if (ok) pages.back() else failed = true }
+                Spacer(Modifier.height(14.dp))
+            }
+            items(tubeLists, key = { "y" + it.id }) { pl ->
+                Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
+                    onClick = felt { scope.launch { if (YouTubeAccount.addTo(pl, s)) pages.back() else failed = true } }).padding(vertical = 9.dp)) {
+                    BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (pl.said.isNotEmpty()) BasicText(pl.said.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1)
+                }
             }
         }
     } }
@@ -1206,16 +1480,16 @@ private fun PathPage(from: Song, pages: Pages) {
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
-        item {
+        item { Column(Modifier.cascade(0)) {
             BasicText("A PATH", style = headline(44.sp))
             Spacer(Modifier.height(8.dp))
             BasicText("from one song to another, a step at a time, by how they sound", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(18.dp))
-            BasicText("from", style = pixel(11.sp, Ink.mid))
+            BasicText("from", style = pixel(12.sp, Ink.mid))
             BasicText(from.title.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
             BasicText(from.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(16.dp))
-        }
+        }}
         val end = to
         if (end == null) {
             item {
@@ -1239,7 +1513,7 @@ private fun PathPage(from: Song, pages: Pages) {
             }
         } else {
             item {
-                BasicText("to", style = pixel(11.sp, Ink.mid))
+                BasicText("to", style = pixel(12.sp, Ink.mid))
                 BasicText(end.title.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 BasicText(end.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(16.dp))
@@ -1267,14 +1541,14 @@ private fun PathPage(from: Song, pages: Pages) {
             }
             val way = path.orEmpty()
             // no keys: a path could pass one song twice
-            itemsIndexed(way) { i, s -> SongRow(s, number = "${i + 1}", pages = pages) { Playback.play(way, i) } }
+            itemsIndexed(way) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, number = "${i + 1}", pages = pages) { Playback.play(way, i) } }}
         }
     } }
 }
 
 /** "new >" and a name: go makes the playlist on the server (with `song` in it, if there's one). */
 @Composable
-private fun NewPlaylist(song: Song?, focused: Boolean = false, onMade: (Boolean) -> Unit) {
+private fun NewPlaylist(song: Song?, focused: Boolean = false, make: suspend (String) -> Boolean = { Server.makePlaylist(it, listOfNotNull(song)) }, onMade: (Boolean) -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
@@ -1284,7 +1558,7 @@ private fun NewPlaylist(song: Song?, focused: Boolean = false, onMade: (Boolean)
         val n = name.trim()
         if (n.isEmpty()) return
         scope.launch {
-            val ok = Server.makePlaylist(n, listOfNotNull(song))
+            val ok = make(n)
             if (ok) { name = ""; keyboard?.hide() }
             onMade(ok)
         }
@@ -1304,7 +1578,7 @@ private fun NewPlaylist(song: Song?, focused: Boolean = false, onMade: (Boolean)
 
 @Composable
 fun Label(text: String) {
-    BasicText(text, style = pixel(11.sp, Ink.mid), modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
+    BasicText(text, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
 }
 
 /** How tall the soft edge beside a bar is: sharp at its far side, slightly out of focus at the bar. */
@@ -1330,10 +1604,44 @@ fun FrostedPage(onClose: (() -> Unit)? = null, content: @Composable (HazeState, 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Spacer(Modifier.weight(1f))
-                Word("close", pixel(11.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+                Word("close", pixel(12.sp, Ink.mid), touch = 10.dp, onClick = onClose)
             }
             Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = false))
         }
+    }
+}
+
+/** When the page on top was opened (uptime ms), going forward; 0 going back, or for the library under them. */
+val LocalOpened = androidx.compose.runtime.compositionLocalOf { 0L }
+/** The shared-element scope round the pages, and the page's own, for a word carried into the next page ([carried]). */
+val LocalShared = androidx.compose.runtime.compositionLocalOf<androidx.compose.animation.SharedTransitionScope?> { null }
+val LocalPageScope = androidx.compose.runtime.compositionLocalOf<androidx.compose.animation.AnimatedVisibilityScope?> { null }
+
+/**
+ * A page's rows arriving in turn as it opens (ink's [arrive]: up 20 px and in, 50 ms apart, the first eight, the
+ * rest with the eighth); rows that come later (scrolled to), and pages gone back to, just there.
+ */
+@Composable
+fun Modifier.cascade(i: Int): Modifier {
+    if (Moves.less.collectAsState().value) return this
+    val opened = LocalOpened.current
+    val now = remember { android.os.SystemClock.uptimeMillis() }
+    if (opened == 0L || now - opened > 600) return this
+    return this.arrive(i.coerceAtMost(8), Unit)
+}
+
+/** A word that becomes the next page's title (it's what was tapped): moved and grown there, not faded and drawn again. */
+@OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+@Composable
+fun Modifier.carried(key: String): Modifier {
+    if (Moves.less.collectAsState().value) return this
+    val shared = LocalShared.current ?: return this
+    val scope = LocalPageScope.current ?: return this
+    return with(shared) {
+        this@carried.sharedBounds(rememberSharedContentState(key), scope,
+            enter = androidx.compose.animation.fadeIn(tween(Motion.FADE)), exit = androidx.compose.animation.fadeOut(tween(Motion.FADE)),
+            boundsTransform = { _, _ -> tween(Motion.ENTER, easing = Motion.expo) },
+            resizeMode = androidx.compose.animation.SharedTransitionScope.ResizeMode.scaleToBounds())
     }
 }
 

@@ -61,6 +61,29 @@ object PoTokens : PoTokenProvider {
     override fun getAndroidClientPoToken(videoId: String): PoTokenResult? = null
     override fun getIosClientPoToken(videoId: String): PoTokenResult? = null
 
+    // signed in: the streaming poToken is bound to the account (its data sync id), not a visitor
+    private var signedFor: String? = null
+    private var signedStreaming: String? = null
+
+    /**
+     * Tokens for a song played signed in (blocking): the player's, bound to the song, and the streaming one,
+     * bound to [account] (its data sync id), made once an account. Null when BotGuard can't run here.
+     */
+    fun signed(videoId: String, account: String): Pair<String, String>? {
+        if (broken || app == null) return null
+        return try {
+            web(videoId, forceRecreate = false)   // a generator ready (made, or made again once expired)
+            val gen = synchronized(lock) { generator!! }
+            val streaming = synchronized(lock) {
+                if (signedFor != account || signedStreaming == null) { signedStreaming = gen.generate(account).get(15, TimeUnit.SECONDS); signedFor = account }
+                signedStreaming!!
+            }
+            gen.generate(videoId).get(15, TimeUnit.SECONDS) to streaming
+        } catch (e: Exception) {
+            android.util.Log.w("ink-potoken", "none signed in for $videoId: $e"); null
+        }
+    }
+
     private fun web(videoId: String, forceRecreate: Boolean): PoTokenResult {
         val c = app ?: throw PoTokenException("no context")
         val (gen, visitor, streaming, recreated) = synchronized(lock) {
@@ -74,6 +97,7 @@ object PoTokens : PoTokenProvider {
                 )
                 generator?.let { old -> Handler(Looper.getMainLooper()).post { old.close() } }
                 generator = PoTokenWebView.create(c).get(30, TimeUnit.SECONDS)
+                signedStreaming = null
                 // the streaming poToken is made exactly once, before any player token
                 streamingPot = generator!!.generate(visitorData!!).get(15, TimeUnit.SECONDS)
             }

@@ -34,6 +34,12 @@ object Quality {
         return cm?.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
     }
 
+    /** Whether the phone can reach the internet now (a network that's been checked to). */
+    fun online(c: Context): Boolean {
+        val cm = c.getSystemService(ConnectivityManager::class.java)
+        return cm?.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    }
+
     /** The one for the network the phone is on now: mobile data's when it's metered. */
     fun now(c: Context): Int = read(c).let { if (metered(c)) it.second else it.first }
 

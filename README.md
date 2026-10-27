@@ -44,8 +44,9 @@
 | | |
 |---|---|
 | **The phone's files** | Everything in its music folder, filed by record and artist, with the covers your files carry. |
-| **Your own server** | Navidrome or any Subsonic server: your whole library streamed from home. Loves are the server's stars and playlists are its playlists, so every app you use agrees. |
-| **YouTube Music** | Search songs and records and play them, through [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor). No account. `full` build only. |
+| **Your own server** | Navidrome or any Subsonic server: your whole library streamed from home, or **kept on the phone** to play with no signal. Loves are the server's stars and playlists are its playlists, so every app you use agrees. |
+| **YouTube Music** | Search and play without an account, through [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor). Signed in: your playlists, likes, mixes and artists, saved and followed both ways, your uploads, and **Premium's 256 kbps** if you have it. `full` build only. |
+| **Spotify playlists** | Brought in from a file ([Exportify](https://exportify.app) or Spotify's own data download), each song found in your music or on YouTube Music, then kept as a playlist. |
 | **ink radio** | Independent, listener-powered stations chosen by hand, each saying what it's playing ([below](#ink-radio)). |
 
 ## ink radio
@@ -57,8 +58,7 @@ Seattle, NTS in London, dublab in Los Angeles, WFMU in Jersey City, Radio alHara
 and on round the world.
 
 Each says what it's playing, from its stream or its own playlist, on the player, the lock screen,
-the widget and the car. Where a station gives the record's cover, you see it; where it doesn't,
-its name sends out rings in 1-bit dither, moving while it plays.
+the widget and the car, its name sending out rings in 1-bit dither all the while.
 
 Thousands more by genre from [radio-browser.info](https://www.radio-browser.info).
 
@@ -68,15 +68,18 @@ Thousands more by genre from [radio-browser.info](https://www.radio-browser.info
 
 Pick a few artists you love and the **listen** page fills with their mixes and records, the songs
 indie radio played most this week (KEXP, KCRW and WXPN, counted), ink radio, and what you played
-lately. Even with nothing on the phone.
+lately. Even with nothing on the phone. And every Friday night, **ink weekly**: what we're
+listening to at ink, picked by real people.
 
 ## Features
 
 **The player**
 - Whole-screen over the cover, in five looks: blur, fluted glass, pixels, dither, plain.
 - Circle a thumb round the cover to scrub, as on an iPod; flick it sideways for the next song.
-- Synced lyrics from [lrclib](https://lrclib.net), with the cover small beside them.
+- Synced lyrics from [lrclib](https://lrclib.net), or YouTube Music's where lrclib has none.
+- **An equalizer** of its own, ten bands, with corrections for thousands of **headphones** from [AutoEq](https://github.com/jaakkopasanen/AutoEq).
 - **Even volume** (ReplayGain) from the files' own tags or the server's. A record played through keeps its own quiet and loud.
+- **Soft pause**: the music eases out and back in. And it says exactly what reaches your ears: codec, bit depth, rate.
 
 **Listening**
 - **Radio**: when the queue runs out, more like it. Your server's similar songs first, then YouTube Music's mix.
@@ -84,6 +87,8 @@ lately. Even with nothing on the phone.
 - **Playlists** made and changed here, kept on your server.
 - A sleep timer that eases the music out, shuffle and repeat, and an up next you can reorder.
 - The library shuffled anew each time you open it, if you like.
+- **Artist pages**: their photo in dither, top songs, records, the story, who fans also like.
+- **Scrobbling** to [ListenBrainz](https://listenbrainz.org) and Last.fm.
 
 **Everywhere else**
 - **Play on** Chromecast speakers and TVs, speaker groups and DLNA receivers (Denon HEOS and others), sending the original hi-res file where the speaker can take it. No Google Play services needed.
@@ -103,7 +108,9 @@ own server, and to the services that answer what you ask for:
 |---|---|---|
 | Your Navidrome / Subsonic server | Sign-in (a salted token, never the password), plays, stars | Your library |
 | [lrclib.net](https://lrclib.net) | A song's artist and title | Lyrics |
-| YouTube Music (`full` build) | Your searches, the artists you pick | Search, mixes, radio |
+| YouTube Music (`full` build) | Your searches, the artists you pick; signed in, your sign-in and the songs you play (your history there, off in settings) | Search, mixes, radio, your library |
+| [ListenBrainz](https://listenbrainz.org) / Last.fm, if you connect them | What you play | Scrobbling |
+| [AutoEq](https://github.com/jaakkopasanen/AutoEq) on GitHub | Nothing personal, when you look up your headphones | Their tuning |
 | [radio-browser.info](https://www.radio-browser.info) | Nothing personal | The station list |
 | The stations' own playlists | Nothing personal | The indie chart, what's on air |
 
@@ -113,7 +120,7 @@ What you've played is kept on the phone only.
 
 Signed APKs are attached to every [GitHub release](https://github.com/inkappdev/ink-music/releases),
 with their SHA-256 sums. [Obtainium](https://github.com/ImranR98/Obtainium) keeps it up to date.
-IzzyOnDroid is next.
+IzzyOnDroid is next. The `full` apks from releases have Last.fm; a build from source needs its own key.
 
 | Build | Sources | Where |
 |---|---|---|

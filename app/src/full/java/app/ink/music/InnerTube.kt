@@ -83,9 +83,13 @@ class InnerTube(
         return out
     }
 
-    /** A mix's songs as its player queue (a mix may have no page of its own to browse). */
-    fun queue(playlistId: String, max: Int = 50): List<Track> = runCatching {
-        all(post("next", JSONObject().put("playlistId", playlistId).put("isAudioOnly", true)), "playlistPanelVideoRenderer").mapNotNull { r ->
+    /**
+     * A mix's songs as its player queue (a mix may have no page of its own to browse); with [videoId], the radio
+     * from that song ("RDAMVM<id>"), as you if signed in (YouTube builds it from what you listen to).
+     */
+    fun queue(playlistId: String, max: Int = 50, videoId: String? = null): List<Track> = runCatching {
+        val body = JSONObject().put("playlistId", playlistId).put("isAudioOnly", true).apply { videoId?.let { put("videoId", it) } }
+        all(post("next", body), "playlistPanelVideoRenderer").mapNotNull { r ->
             val id = r.optString("videoId").ifEmpty { return@mapNotNull null }
             val by = runs(r.optJSONObject("longBylineText"))
             val artists = by.filter { kind(pageType(browse(it))) == Kind.ARTIST }.map { it.optString("text") }
@@ -155,12 +159,109 @@ class InnerTube(
         } finally { c.disconnect() }
     }.onFailure { trace?.invoke("played $videoId: $it") }.getOrDefault(false)
 
+    /**
+     * A song's lyrics, timed (ms it starts, its words): its lyrics page found from its player queue, then read as
+     * YouTube Music's Android app reads it, the one that's given the times (Musixmatch's). A song upload's are
+     * timed; a music video's mostly aren't. Empty for none, or none timed.
+     */
+    fun lyrics(videoId: String): List<Pair<Long, String>> {
+        val id = all(post("next", JSONObject().put("videoId", videoId).put("isAudioOnly", true)), "browseEndpoint")
+            .map { it.optString("browseId") }.firstOrNull { it.startsWith("MPLY") } ?: return emptyList()
+        val client = JSONObject().put("clientName", "ANDROID_MUSIC").put("clientVersion", "7.27.52")
+            .put("androidSdkVersion", 34).put("hl", "en").put("gl", "US")
+        val c = URL("$BASE/youtubei/v1/browse?prettyPrint=false").openConnection() as HttpURLConnection
+        val page = try {
+            c.requestMethod = "POST"; c.connectTimeout = 15_000; c.readTimeout = 20_000; c.doOutput = true
+            c.setRequestProperty("Content-Type", "application/json")
+            c.setRequestProperty("User-Agent", "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14) gzip")
+            c.outputStream.use { it.write(JSONObject().put("browseId", id).put("context", JSONObject().put("client", client)).toString().toByteArray()) }
+            if (c.responseCode >= 400) return emptyList()
+            JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+        } finally { c.disconnect() }
+        val lines = all(page, "lyricsData").firstOrNull()?.optJSONArray("timedLyricsData") ?: return emptyList()
+        return (0 until lines.length()).mapNotNull { i ->
+            val l = lines.optJSONObject(i) ?: return@mapNotNull null
+            val at = l.optJSONObject("cueRange")?.optString("startTimeMilliseconds")?.toLongOrNull() ?: return emptyList()   // untimed: none
+            at to l.optString("lyricLine")
+        }
+    }
+
+    /**
+     * What YouTube Music's own page carries, signed in: your account's id ("<id>||": a signed-in streaming poToken
+     * is bound to it; ytcfg's DATASYNC_ID, in no API answer) and its player's code's address ("/s/player/...").
+     */
+    fun page(): Pair<String?, String?> = runCatching {
+        val c = URL("$BASE/").openConnection() as HttpURLConnection
+        try {
+            headers(c)
+            val page = c.inputStream.bufferedReader().use { it.readText() }
+            Regex("\"DATASYNC_ID\":\"([^\"]+)\"").find(page)?.groupValues?.get(1) to
+                Regex("\"jsUrl\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)?.let { if (it.startsWith("http")) it else BASE + it }
+        } finally { c.disconnect() }
+    }.onFailure { trace?.invoke("page: $it") }.getOrDefault(null to null)
+
+    /** A player's code (a few megabytes of YouTube's own JavaScript), and the date it signs with ("signatureTimestamp"). */
+    fun playerCode(url: String): Pair<String, Int?>? = runCatching {
+        val c = URL(url).openConnection() as HttpURLConnection
+        try {
+            c.setRequestProperty("User-Agent", UA)
+            val code = c.inputStream.bufferedReader().use { it.readText() }
+            code to Regex("(?:signatureTimestamp|sts):(\\d{5})").find(code)?.groupValues?.get(1)?.toIntOrNull()
+        } finally { c.disconnect() }
+    }.onFailure { trace?.invoke("player code: $it") }.getOrNull()
+
+    /**
+     * A song's player answer as YouTube Music's web player gets it, signed in (a Premium account is offered its
+     * 256k AAC; your uploads play): the player's date [sts] (for its signatures) and the song's poToken.
+     */
+    fun player(videoId: String, sts: Int?, poToken: String?): JSONObject {
+        val body = JSONObject().put("videoId", videoId).put("racyCheckOk", true).put("contentCheckOk", true)
+        sts?.let { body.put("playbackContext", JSONObject().put("contentPlaybackContext", JSONObject().put("signatureTimestamp", it))) }
+        poToken?.let { body.put("serviceIntegrityDimensions", JSONObject().put("poToken", it)) }
+        return post("player", body)
+    }
+
     /** A record's page ("MPREb_..."), one read: its own playlist's id ("OLAK5uy_...") and its songs, in order. */
     fun album(browseId: String): Pair<String?, List<Track>> {
         val page = post("browse", JSONObject().put("browseId", browseId))
         return Regex("OLAK5uy_[A-Za-z0-9_-]+").find(page.toString())?.value to
             all(page, "musicResponsiveListItemRenderer").mapNotNull(::track).distinctBy { it.videoId }
     }
+
+    // your library, written (signed in): each a yes if YouTube took it
+
+    /** A record or a playlist saved to your library, or not any more (by its playlist id: a record's is "OLAK5uy_..."). */
+    fun save(playlistId: String, on: Boolean): Boolean = runCatching {
+        post(if (on) "like/like" else "like/removelike", JSONObject().put("target", JSONObject().put("playlistId", playlistId))); true
+    }.getOrDefault(false)
+
+    /** A song added to the end of one of your playlists. */
+    fun addTo(playlistId: String, videoId: String): Boolean = runCatching {
+        val r = post("browse/edit_playlist", JSONObject().put("playlistId", playlistId)
+            .put("actions", JSONArray().put(JSONObject().put("action", "ACTION_ADD_VIDEO").put("addedVideoId", videoId))))
+        r.optString("status").let { it.isEmpty() || it == "STATUS_SUCCEEDED" }
+    }.getOrDefault(false)
+
+    /** A new playlist of yours (private), with these songs: its id. */
+    fun makePlaylist(title: String, videoIds: List<String>): String? = runCatching {
+        post("playlist/create", JSONObject().put("title", title).put("privacyStatus", "PRIVATE").put("videoIds", JSONArray(videoIds)))
+            .optString("playlistId").takeIf { it.isNotEmpty() }
+    }.getOrNull()
+
+    /** Whether a playlist is yours (its page there is one you can edit: someone else's, a mix, isn't). */
+    fun mine(playlistId: String): Boolean = runCatching {
+        all(post("browse", JSONObject().put("browseId", "VL$playlistId")), "musicEditablePlaylistDetailHeaderRenderer").isNotEmpty()
+    }.getOrDefault(false)
+
+    /** One of your playlists deleted. */
+    fun deletePlaylist(playlistId: String): Boolean = runCatching {
+        post("playlist/delete", JSONObject().put("playlistId", playlistId)); true
+    }.getOrDefault(false)
+
+    /** An artist followed (their channel, "UC..."), or not any more. */
+    fun follow(channelId: String, on: Boolean): Boolean = runCatching {
+        post(if (on) "subscription/subscribe" else "subscription/unsubscribe", JSONObject().put("channelIds", JSONArray().put(channelId))); true
+    }.getOrDefault(false)
 
     /** A record's own playlist ("OLAK5uy_..."), which NewPipe opens, from its browse id ("MPREb_..."). */
     fun albumPlaylist(browseId: String): String? = runCatching {
