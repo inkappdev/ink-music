@@ -32,6 +32,7 @@ data class Now(
     val device: String = "",  // the speaker it plays on (Casting), or "" for the phone
     val quality: String = "", // what reaches the speaker: "flac 24/96", "mp3 320"
     val radio: Boolean = true, // the queue's end brings more like it
+    val stopped: Boolean = false, // stop pressed: the queue kept, nothing at the foot till it plays again
 ) {
     fun positionNow(): Long =
         if (!moving) position else (position + SystemClock.elapsedRealtime() - at).coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE)
@@ -136,6 +137,8 @@ object Playback {
             repeat = c.repeatMode,
             sleepAt = sleepAt,
             radio = radio,
+            // idle without an error is a stop (an error leaves it idle too, and says so in the player)
+            stopped = c.playbackState == Player.STATE_IDLE && c.playerError == null,
         )
     }
 

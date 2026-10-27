@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * The songs you love: a server song's love is its star on the server (so the web player and every
@@ -49,6 +50,11 @@ object Loved {
     val tube: StateFlow<List<Song>> = _tube
     private var local: Set<String> = emptySet()
     private var server: Set<String> = emptySet()
+    /** When each was loved (ms), where it's known: loved here, or a star's date on the server. */
+    private var dates: Map<String, Long> = emptyMap()
+    private val _recent = MutableStateFlow(true)
+    /** The loved page's order: the latest loved first, or a to z. */
+    val recent: StateFlow<Boolean> = _recent
     private var app: Context? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -58,6 +64,9 @@ object Loved {
         if (app != null) return
         app = c.applicationContext
         local = prefs(c).getStringSet("ids", emptySet())!!.toSet()
+        dates = runCatching { JSONObject(prefs(c).getString("when", null) ?: "{}").let { o -> o.keys().asSequence().associateWith { o.getLong(it) } } }
+            .getOrDefault(emptyMap())
+        _recent.value = prefs(c).getBoolean("recent", true)
         _tube.value = runCatching {
             val a = JSONArray(prefs(c).getString("tube", null) ?: "[]")
             (0 until a.length()).map { songOf(a.getJSONObject(it)) }
@@ -70,6 +79,21 @@ object Loved {
     /** The server's stars, as it last said (a sync). */
     fun putServer(starred: Set<String>) { server = starred; publish() }
 
+    /** The server's stars' dates (a sync): a star made in another app has its own. */
+    fun putServerDates(at: Map<String, Long>) { dates = dates + at; keepDates() }
+
+    /** When the song was loved, if known: its own date, else its server twin's. */
+    fun lovedAt(s: Song): Long? = dates[s.id] ?: Library.twin(s.id)?.let { dates[it] }
+
+    fun order(recent: Boolean) {
+        _recent.value = recent
+        app?.let { prefs(it).edit().putBoolean("recent", recent).apply() }
+    }
+
+    private fun keepDates() {
+        app?.let { prefs(it).edit().putString("when", JSONObject(dates).toString()).apply() }
+    }
+
     /** The library read again: which phone's songs are the server's too. */
     fun relink() = publish()
 
@@ -80,6 +104,8 @@ object Loved {
     fun toggle(s: Song) {
         val on = s.id !in _ids.value
         val star = if (s.server) s.id else Library.twin(s.id)
+        dates = if (on) dates + (s.id to System.currentTimeMillis()) else dates - s.id - (star ?: "")
+        keepDates()
         if (star != null) {
             server = if (on) server + star else server - star
             scope.launch { Server.star(star, on) }

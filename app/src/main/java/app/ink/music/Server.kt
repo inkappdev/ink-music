@@ -134,13 +134,17 @@ object Server {
                 }
                 val songs = ArrayList<Song>()
                 val starred = HashSet<String>()
+                val starredAt = HashMap<String, Long>()
                 offset = 0
                 while (true) {
                     val list = call(a, "search3", "query" to "", "songCount" to 500, "songOffset" to offset, "artistCount" to 0, "albumCount" to 0)
                         ?.optJSONObject("searchResult3")?.optJSONArray("song") ?: break
                     for (i in 0 until list.length()) list.optJSONObject(i)?.let {
                         songs += song(a, it, recordArtist)
-                        if (it.optString("starred").isNotEmpty()) starred += "n" + it.optString("id")
+                        if (it.optString("starred").isNotEmpty()) {
+                            starred += "n" + it.optString("id")
+                            runCatching { java.time.Instant.parse(it.optString("starred")).toEpochMilli() }.getOrNull()?.let { at -> starredAt["n" + it.optString("id")] = at }
+                        }
                     }
                     if (list.length() < 500) break
                     offset += 500
@@ -148,6 +152,7 @@ object Server {
                 if (songs.isNotEmpty() || offset == 0) {
                     Library.putServer(songs)
                     Loved.putServer(starred)
+                    Loved.putServerDates(starredAt)
                     readPlaylists()
                     c.getSharedPreferences("loved", Context.MODE_PRIVATE).edit().putStringSet("server", starred).apply()
                     count.value = songs.size
