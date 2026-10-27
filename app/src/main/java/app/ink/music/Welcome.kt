@@ -143,14 +143,19 @@ private fun Hello(onNext: () -> Unit) {
             wave.animateTo(1f, tween(1_600, easing = WAVE))
         }
         val side = with(density) { COVER.toPx() }
-        Seeds.offered.take(SLOTS.size).chunked(12).forEach { batch ->
-            batch.map { name ->
-                async(Dispatchers.IO) {
-                    val s = YouTubeMusic.hit(name)?.takeIf { it.art != null } ?: return@async null
-                    val c = Covers.of(ctx, s) ?: return@async null
+        // each artist's cover link is kept in the app (assets, the full build), so a first open fetches the covers
+        // straight away, all at once; one whose link no longer answers is found the long way (their best-known song)
+        val known = runCatching { org.json.JSONObject(ctx.assets.open("welcome-covers.json").bufferedReader().use { it.readText() }) }.getOrNull()
+        Seeds.offered.take(SLOTS.size).forEach { name ->
+            launch {
+                val d = withContext(Dispatchers.IO) {
+                    val (s, c) = known?.optString(name)?.takeIf { it.isNotEmpty() }?.let { faceSong(name, it) }?.let { f -> Covers.of(ctx, f)?.let { f to it } }
+                        ?: YouTubeMusic.hit(name)?.takeIf { it.art != null }?.let { h -> Covers.of(ctx, h)?.let { h to it } }
+                        ?: return@withContext null
                     Looks.develop(c.image.asAndroidBitmap(), c.accent, side, density.density)?.let { f -> Developed(s, f.map { it.asImageBitmap() }) }
                 }
-            }.awaitAll().filterNotNull().forEach { d -> if (ready.none { it.song.art == d.song.art }) ready.add(d) }
+                if (d != null && ready.none { it.song.art == d.song.art }) ready.add(d)
+            }
         }
     }
     Box(Modifier.fillMaxSize()) {

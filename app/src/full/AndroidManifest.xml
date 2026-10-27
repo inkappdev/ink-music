@@ -4,6 +4,7 @@
         <!-- signing in to YouTube Music on Google's own page: a screen of its own, sized above the keyboard -->
         <activity
             android:name=".TubeSignIn"
+            android:screenOrientation="portrait"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
     </application>

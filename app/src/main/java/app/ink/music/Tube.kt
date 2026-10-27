@@ -14,3 +14,12 @@ data class TubeWho(val name: String, val handle: String)
 
 /** One of your playlists on YouTube Music: its id (no "VL"), name, what it says of itself, cover. */
 data class TubeList(val id: String, val name: String, val said: String, val art: String?)
+
+/**
+ * An artist as YouTube Music knows them, for their page: their photo (wide), what's said of them,
+ * how many listen a month, their best-known songs, records and singles, and the artists like them.
+ */
+data class ArtistInfo(
+    val id: String, val name: String, val photo: String?, val about: String, val audience: String,
+    val top: List<Song>, val albums: List<TubeAlbum>, val singles: List<TubeAlbum>, val like: List<TubeArtist>,
+)

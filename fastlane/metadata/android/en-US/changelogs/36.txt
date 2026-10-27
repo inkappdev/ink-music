@@ -1,0 +1,8 @@
+- YouTube Music is fast: mixes open in under a second, records in a blink, songs start almost at once
+- New artist pages: their photo in dither, top songs, records, their story, who fans also like
+- ListenBrainz scrobbling, and YouTube Music history fills as you play
+- Mixes and playlists in dither; radio keeps its moving sleeve
+- FIP, KUTX, WFPK, WFUV and Radio Eins say what's on
+- Opens faster, stays upright
+- The dots now have dots
+- Do something nice for someone today. Send them a song

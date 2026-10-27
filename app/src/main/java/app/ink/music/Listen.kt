@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,16 +90,39 @@ object Listen {
                 .filter { it.second.isNotEmpty() }
         }
         scope.launch {
-            // each artist's best-known song (their mix starts from it), found once and kept
-            Seeds.artists.value.filter { it.hit == null }.forEach { a -> YouTubeMusic.hit(a.name)?.let { Seeds.found(a.name, it) } }
+            // each artist's best-known song (their mix starts from it), found once and kept: looked for side by side,
+            // written down one at a time
+            Seeds.artists.value.filter { it.hit == null }.map { a -> async { a.name to YouTubeMusic.hit(a.name) } }.awaitAll()
+                .forEach { (name, hit) -> hit?.let { Seeds.found(name, it) } }
         }
         scope.launch {
-            records.value = Seeds.artists.value.take(8).flatMap { YouTubeMusic.records(it.name).take(2) }
+            // their records: as they were last time at once, then read again side by side
+            if (records.value.isEmpty()) records.value = keptRecords(c)
+            val found = Seeds.artists.value.take(8).map { a -> async { YouTubeMusic.records(a.name).take(2) } }.awaitAll().flatten()
+            if (found.isNotEmpty()) { records.value = found; keepRecords(c, found) }
         }
     }
 
-    /** An artist's mix: their song, then YouTube Music's radio from it. */
-    suspend fun mix(hit: Song): List<Song> = withContext(Dispatchers.IO) { listOf(hit) + YouTubeMusic.related(hit.id) }
+    private fun recordsFile(c: Context) = java.io.File(c.filesDir, "listen-records.json")
+
+    private fun keptRecords(c: Context): List<TubeAlbum> = runCatching {
+        val a = org.json.JSONArray(recordsFile(c).readText())
+        (0 until a.length()).map { a.getJSONObject(it) }.map { TubeAlbum(it.getString("url"), it.getString("title"), it.getString("artist"), it.optString("art").ifEmpty { null }) }
+    }.getOrDefault(emptyList())
+
+    private fun keepRecords(c: Context, list: List<TubeAlbum>) = runCatching {
+        recordsFile(c).writeText(org.json.JSONArray(list.map { org.json.JSONObject().put("url", it.url).put("title", it.title).put("artist", it.artist).put("art", it.art.orEmpty()) }).toString())
+    }
+
+    /**
+     * An artist's mix: their song at once, and YouTube Music's radio from it behind it once it's read
+     * (a second or two; a speaker takes the whole queue, so it waits for it).
+     */
+    suspend fun mix(hit: Song) {
+        if (Casting.on.value != null) return Playback.play(listOf(hit) + withContext(Dispatchers.IO) { YouTubeMusic.related(hit.id) }, 0)
+        Playback.play(listOf(hit), 0)
+        Playback.follow(hit, withContext(Dispatchers.IO) { YouTubeMusic.related(hit.id) })
+    }
 
     fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
         in 5..11 -> "GOOD MORNING"
@@ -198,12 +223,12 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         // youtube music's own mixes for you (signed in): supermix, discover, new release, replay
         if (tubeMixes.isNotEmpty()) item {
             Label("your mixes on youtube music")
-            Shelf(tubeMixes) { l -> Tile(null, l.name, l.said.ifEmpty { "mix" }.lowercase(), face = l.art) { pages.open(Page.TubeList(l)) } }
+            Shelf(tubeMixes) { l -> Tile(null, l.name, l.said.ifEmpty { "mix" }.lowercase(), face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
         }
         if (mixes.isNotEmpty()) item {
             Label("mixes for you")
             Shelf(mixes) { a ->
-                Tile(a.hit, a.name, "mix", face = a.face) { scope.launch { Playback.play(Listen.mix(a.hit!!), 0) } }
+                Tile(a.hit, a.name, "mix", face = a.face, dither = true) { scope.launch { Listen.mix(a.hit!!) } }
             }
         }
         if (onRepeat.size >= 3) item {
@@ -244,7 +269,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         }
         if (tubeLists.isNotEmpty()) item {
             Label("your playlists")
-            Shelf(tubeLists) { l -> Tile(null, l.name, "playlist", face = l.art) { pages.open(Page.TubeList(l)) } }
+            Shelf(tubeLists) { l -> Tile(null, l.name, "playlist", face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
         }
         if (tubeArtists.isNotEmpty()) item {
             Label("your artists on youtube music")
@@ -389,10 +414,12 @@ private fun <T> ShelfIndexed(items: List<T>, tile: @Composable (Int, T) -> Unit)
 
 /** A tile: a cover (or an artist's photo), a name big, a word small; numbered on a chart. */
 @Composable
-private fun Tile(song: Song?, name: String, said: String, face: String? = null, number: Int? = null, onClick: () -> Unit) {
+private fun Tile(song: Song?, name: String, said: String, face: String? = null, number: Int? = null, dither: Boolean = false, onClick: () -> Unit) {
     val shown = remember(song?.id, face) { if (face != null) faceSong(name, face) else song }
     Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
-        CoverOf(shown, name, Modifier.fillMaxWidth().aspectRatio(1f))
+        // a mix or a playlist: its picture in the dither (YouTube's lettering on it made ink's)
+        if (dither && shown?.art != null) Dithered(shown, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        else CoverOf(shown, name, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Top) {
             number?.let { BasicText("$it", style = pixel(12.sp, Ink.mid), modifier = Modifier.width(26.dp).padding(top = 2.dp)) }

@@ -18,8 +18,11 @@ object YouTubeAccount {
     fun start(c: android.content.Context) {}
     fun signOut(c: android.content.Context) {}
     fun sync() {}
-    suspend fun playlist(id: String): List<Song> = emptyList()
+    fun playlist(id: String): kotlinx.coroutines.flow.Flow<List<Song>> = kotlinx.coroutines.flow.emptyFlow()
     fun like(s: Song, on: Boolean) {}
-    suspend fun artist(a: TubeArtist): Pair<List<Song>, List<TubeAlbum>> = emptyList<Song>() to emptyList()
+    fun played(c: android.content.Context, songId: String) {}
+    fun tells(c: android.content.Context) = false
+    fun tell(c: android.content.Context, on: Boolean) {}
+    fun artist(name: String, id: String = ""): kotlinx.coroutines.flow.Flow<ArtistInfo?> = kotlinx.coroutines.flow.flowOf(null)
     fun openSignIn(c: android.content.Context) {}
 }

@@ -2,6 +2,7 @@ package app.ink.music
 
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.Image
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
@@ -53,34 +54,59 @@ object YouTubeMusic {
     fun known(id: String): Song? = known[id]
     fun remember(s: Song) { known[s.id] = s }
 
+    /** Songs and records by these words, both asked at once. */
     suspend fun search(q: String): TubeFound = withContext(Dispatchers.IO) {
         init()
+        val t0 = System.currentTimeMillis()
         val f = yt.searchQHFactory
-        val songs = runCatching {
-            SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")).relatedItems
-                .filterIsInstance<StreamInfoItem>().map { song(it) }
-        }.getOrDefault(emptyList())
-        val albums = runCatching {
-            SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS), "")).relatedItems
-                .filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), best(it.thumbnails)) }
-        }.getOrDefault(emptyList())
-        TubeFound(songs.take(20), albums.take(12))
+        val songs = async {
+            runCatching {
+                SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")).relatedItems
+                    .filterIsInstance<StreamInfoItem>().map { song(it) }
+            }.getOrDefault(emptyList())
+        }
+        val albums = async {
+            runCatching {
+                SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS), "")).relatedItems
+                    .filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), best(it.thumbnails)) }
+            }.getOrDefault(emptyList())
+        }
+        TubeFound(songs.await().take(20), albums.await().take(12))
+            .also { android.util.Log.d("ink-youtube", "search \"$q\": ${it.songs.size} songs, ${it.albums.size} records in ${System.currentTimeMillis() - t0} ms") }
     }
 
-    /** A record's songs, in order. */
+    private val albums = ConcurrentHashMap<String, List<Song>>()
+
+    /**
+     * A record's songs, in order: YouTube Music's own page for it, one read (a record from a search comes as its
+     * playlist, "OLAK5uy_...", read as one), kept for the run. A chart's playlist: each song its own cover.
+     */
     suspend fun album(record: TubeAlbum): List<Song> = withContext(Dispatchers.IO) {
-        init()
-        // one from your library comes as its page ("/browse/MPREb_..."): its own playlist, which NewPipe opens
-        val a = if ("/browse/" !in record.url) record else record.copy(
-            url = InnerTube().albumPlaylist(record.url.substringAfterLast('/'))?.let { "https://music.youtube.com/playlist?list=$it" }
-                ?: return@withContext emptyList(),
-        )
-        val info = runCatching { PlaylistInfo.getInfo(yt, a.url) }.getOrNull() ?: return@withContext emptyList()
-        val list = Regex("[?&]list=([^&]+)").find(a.url)?.groupValues?.get(1) ?: a.url.hashCode().toString()
-        // a record ("OLAK5uy_..."): its songs are one record, one cover; a playlist's (a chart's) are each their own
-        if (list.startsWith("OLAK5uy_")) info.relatedItems.mapIndexed { i, it ->
-            song(it, album = a.title, albumId = "ya$list", albumArtist = a.artist, track = i + 1, art = a.art)
-        } else info.relatedItems.map { song(it) }
+        albums[record.url]?.let { return@withContext it }
+        val t0 = System.currentTimeMillis()
+        val tube = InnerTube()
+        val list = Regex("[?&]list=([^&]+)").find(record.url)?.groupValues?.get(1)
+        val (own, tracks) = runCatching {
+            if ("/browse/" in record.url) tube.album(record.url.substringAfterLast('/'))
+            else list to tube.tracks("VL$list")
+        }.onFailure { android.util.Log.d("ink-youtube", "album ${record.url}: $it") }.getOrNull() ?: return@withContext emptyList()
+        val id = own ?: list ?: record.url.hashCode().toString()
+        val songs = if (id.startsWith("OLAK5uy_") || "/browse/" in record.url) tracks.mapIndexed { i, t ->
+            trackSong(t, album = record.title, albumId = "ya$id", albumArtist = record.artist, number = i + 1, art = record.art)
+        } else tracks.map { trackSong(it) }
+        android.util.Log.d("ink-youtube", "album ${record.title}: ${songs.size} songs in ${System.currentTimeMillis() - t0} ms")
+        songs.also { if (it.isNotEmpty()) albums[record.url] = it }
+    }
+
+    /** A song as YouTube Music's own pages list it; on a record's page, the record's words and cover. */
+    private fun trackSong(t: InnerTube.Track, album: String? = null, albumId: String? = null, albumArtist: String? = null, number: Int = 0, art: String? = null): Song {
+        val artist = t.artists.joinToString(", ").ifEmpty { albumArtist ?: "unknown" }
+        return Song(
+            id = "y${t.videoId}", uri = Uri.parse("ytm://${t.videoId}"), title = t.title, artist = artist,
+            album = album ?: t.album.orEmpty(), albumId = albumId ?: t.albumId?.let { "ya$it" } ?: "y${t.videoId}",
+            albumArtist = albumArtist ?: t.artists.firstOrNull() ?: artist, duration = t.seconds * 1000L, disc = 1, track = number,
+            year = 0, art = t.art ?: art, format = "youtube",
+        ).also(::remember)
     }
 
     /**
@@ -91,8 +117,12 @@ object YouTubeMusic {
         val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.third > System.currentTimeMillis() }?.let { return it.first to it.second }
         init()
-        val info = runCatching { StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=" + id.removePrefix("y")) }.getOrNull() ?: return null
-        keepRelated(id, info)
+        val t0 = System.currentTimeMillis()
+        // without the videos YouTube sets beside it (a half-megabyte, two thirds of the wait): the stream only
+        Fetch.lean.set(true)
+        val info = try { runCatching { StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=" + id.removePrefix("y")) }.getOrNull() } finally { Fetch.lean.set(false) }
+            ?: return null
+        android.util.Log.d("ink-youtube", "stream $id in ${System.currentTimeMillis() - t0} ms")
         val direct = info.audioStreams.filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
         // the best there is, or (data saver, Quality) the smallest
         val pick = (if (forSpeaker) direct.filter { it.format == MediaFormat.M4A }.ifEmpty { direct } else direct)
@@ -138,7 +168,7 @@ object YouTubeMusic {
 
     private val artists = ConcurrentHashMap<String, TubeArtist>()
 
-    /** An artist by name, with their photo (blocking; kept). */
+    /** An artist by name, with their photo and page id (blocking; kept). */
     fun artist(name: String): TubeArtist? {
         artists[name.lowercase()]?.let { return it }
         init()
@@ -146,7 +176,9 @@ object YouTubeMusic {
             SearchInfo.getInfo(yt, yt.searchQHFactory.fromQuery(name, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ARTISTS), "")).relatedItems
                 .filterIsInstance<ChannelInfoItem>().firstOrNull()
         }.getOrNull() ?: return null
-        return TubeArtist(found.name, best(found.thumbnails)).also { artists[name.lowercase()] = it }
+        // their page's id ("UC..."), from the channel's link
+        val id = Regex("/channel/(UC[A-Za-z0-9_-]+)").find(found.url)?.groupValues?.get(1).orEmpty()
+        return TubeArtist(found.name, best(found.thumbnails), id).also { artists[name.lowercase()] = it }
     }
 
     /** An artist's best-known song (blocking): the first YouTube Music finds that's theirs. */
@@ -212,18 +244,24 @@ object YouTubeMusic {
     /** How NewPipe reaches YouTube: plain HTTP, as a desktop browser. */
     private object Fetch : Downloader() {
         private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+        /** On this thread, a stream's "next" (the videos beside it, NewPipe asks for them always) answered empty. */
+        val lean = ThreadLocal.withInitial { false }
+        private val EMPTY = """{"responseContext":{},"contents":{},"lean":"${" ".repeat(64)}"}"""   // NewPipe refuses a short answer
 
         override fun execute(request: Request): Response {
+            if (lean.get() == true && request.url().contains("/youtubei/v1/next")) return Response(200, "OK", emptyMap(), EMPTY, request.url())
             val c = URL(request.url()).openConnection() as HttpURLConnection
             c.requestMethod = request.httpMethod()
             c.connectTimeout = 15_000; c.readTimeout = 20_000
             c.setRequestProperty("User-Agent", UA)
             request.headers().forEach { (k, vs) -> vs.forEachIndexed { i, v -> if (i == 0) c.setRequestProperty(k, v) else c.addRequestProperty(k, v) } }
             request.dataToSend()?.let { data -> c.doOutput = true; c.outputStream.use { it.write(data) } }
+            val t0 = System.nanoTime()
             try {
                 val code = c.responseCode
                 if (code == 429) throw ReCaptchaException("rate limited", request.url())
                 val body = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() }
+                android.util.Log.d("ink-youtube", "newpipe ${(System.nanoTime() - t0) / 1_000_000} ms, ${(body?.length ?: 0) / 1024} kB ${request.url().substringBefore('?').takeLast(40)}")
                 return Response(code, c.responseMessage, c.headerFields.filterKeys { it != null }, body, c.url.toString())
             } finally { c.disconnect() }
         }

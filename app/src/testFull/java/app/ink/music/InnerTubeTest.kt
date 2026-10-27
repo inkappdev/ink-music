@@ -27,9 +27,21 @@ class InnerTubeTest {
     }
 
     @Test fun artistPage() {
-        val (name, songs, records) = yt.artist("UCk0rl7syWi43334DctQNKZQ")   // MJ Lenderman
-        println("artist $name: ${songs.size} songs, ${records.size} records"); songs.take(3).forEach(::println); records.take(3).forEach(::println)
-        assertTrue(name.isNotEmpty() && songs.isNotEmpty() && records.isNotEmpty())
+        val a = yt.artist("UCk0rl7syWi43334DctQNKZQ")   // MJ Lenderman
+        println("artist ${a.name} (${a.audience}): ${a.top.size} songs, ${a.albums.size} records, ${a.singles.size} singles, like ${a.like.map { it.title }}")
+        println("photo ${a.photo}\nabout ${a.about.take(120)}"); a.top.take(3).forEach(::println); a.albums.take(3).forEach(::println)
+        assertTrue(a.name.isNotEmpty() && a.top.isNotEmpty() && a.albums.isNotEmpty() && a.like.isNotEmpty() && a.photo != null && a.about.isNotEmpty())
+    }
+
+    @Test fun albumPage() {
+        val t0 = System.currentTimeMillis()
+        val (list, songs) = yt.album("MPREb_cxmxsUKrfy4")   // Manning Fireworks
+        println("album $list: ${songs.size} songs in ${System.currentTimeMillis() - t0} ms"); songs.take(3).forEach(::println)
+        assertTrue(list != null && songs.size >= 9 && songs.all { it.title.isNotEmpty() })
+        // the same record as its playlist (a search's record comes as one)
+        val again = yt.tracks("VL$list")
+        println("as its playlist: ${again.size} songs"); again.take(2).forEach(::println)
+        assertTrue(again.size == songs.size)
     }
 
     @Test fun sign() { assertTrue(InnerTube.sign("abc", 1).startsWith("SAPISIDHASH 1_")) }

@@ -9,7 +9,11 @@ import android.webkit.WebStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitAll
@@ -28,8 +32,9 @@ import javax.crypto.spec.GCMParameterSpec
  * Your YouTube Music, signed in (the full build only): your playlists, the records and artists in
  * your library, what you played there lately, and your liked songs, which are the heart's: loving a
  * YouTube song likes it there. Signed in on YouTube's own page in a WebView; its cookies are kept on
- * the phone, sealed by a key in Android's keystore, and go only to music.youtube.com. The like is
- * the one thing told to YouTube (no history). Signing out forgets the cookies and the WebView's data.
+ * the phone, sealed by a key in Android's keystore, and go only to music.youtube.com. What's told to
+ * YouTube: the like, and a YouTube song played here (as its own app tells it; off in settings).
+ * Signing out forgets the cookies and the WebView's data.
  */
 object YouTubeAccount {
     const val available = true
@@ -47,17 +52,45 @@ object YouTubeAccount {
     val fresh = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val reading = MutableStateFlow(false)
     private var tube: InnerTube? = null
+    @Volatile private var app: Context? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private fun prefs(c: Context) = c.getSharedPreferences("youtube", Context.MODE_PRIVATE)
 
+    /**
+     * A YouTube song heard here (the player's process, blocking), told to YouTube Music as its own app
+     * would: your history there, and what its mixes learn from. Unless you've said not to ([tells]).
+     */
+    fun played(c: Context, songId: String) {
+        if (!tells(c)) return
+        InnerTube.trace = { android.util.Log.d("ink-youtube", it) }
+        // read fresh: this process's prefs would miss a sign-in or sign-out made in the screens'
+        @Suppress("DEPRECATION") val p = c.getSharedPreferences("youtube", Context.MODE_MULTI_PROCESS)
+        val auth = p.getString("auth", null)?.let { runCatching { JSONObject(open(it)) }.getOrNull() } ?: return
+        val t = InnerTube(auth.optString("cookie"), auth.optString("visitor").ifEmpty { null },
+            auth.optString("sync").ifEmpty { null }, auth.optString("version").ifEmpty { InnerTube.VERSION })
+        // youtube now and then calls a song unplayable for a moment (no tracking link): asked once more
+        val told = t.played(songId.removePrefix("y")) || run { Thread.sleep(3_000); t.played(songId.removePrefix("y")) }
+        android.util.Log.d("ink-youtube", "played $songId: told $told")
+    }
+
+    // told or not, kept as a file (both processes read it): there, YouTube isn't told
+    private fun quiet(c: Context) = java.io.File(c.filesDir, "youtube-quiet")
+    fun tells(c: Context) = !quiet(c).exists()
+    fun tell(c: Context, on: Boolean) { if (on) quiet(c).delete() else quiet(c).createNewFile() }
+
     fun start(c: Context) {
+        InnerTube.trace = { android.util.Log.d("ink-youtube", it) }
+        app = c.applicationContext
+        dir = java.io.File(c.filesDir, "youtube")
         if (tube != null) return
         val p = prefs(c)
         val auth = p.getString("auth", null)?.let { runCatching { JSONObject(open(it)) }.getOrNull() } ?: return
         tube = InnerTube(auth.optString("cookie"), auth.optString("visitor").ifEmpty { null },
             auth.optString("sync").ifEmpty { null }, auth.optString("version").ifEmpty { InnerTube.VERSION })
         _who.value = TubeWho(p.getString("name", "").orEmpty(), p.getString("handle", "").orEmpty())
+        // your library as it was last read, at once (nothing then arrives later and pushes the page down); then read again
+        keptRaw("library")?.let(::putLibrary)
         sync()
     }
 
@@ -79,6 +112,7 @@ object YouTubeAccount {
         tube = null; _who.value = null
         playlists.value = emptyList(); records.value = emptyList(); history.value = emptyList()
         liked.value = emptyList(); artists.value = emptyList(); mixes.value = emptyList(); fresh.value = emptyList()
+        lists.clear(); dir?.deleteRecursively()
         forgetWeb()
     }
 
@@ -93,7 +127,7 @@ object YouTubeAccount {
         val t = tube ?: return
         reading.value = true
         scope.launch {
-            val lists = launch {
+            val lists0 = launch {
                 runCatching { t.items("FEmusic_liked_playlists") }.onSuccess { found ->
                     // songs only (not "episodes for later", a podcast list), each saying what isn't already said:
                     // not "YouTube Music" (the row says it), nor your own name
@@ -136,9 +170,13 @@ object YouTubeAccount {
                         .map { TubeList(it.id.removePrefix("VL"), it.title, it.subtitle.split(" • ", " · ").firstOrNull { w -> w.isNotBlank() }.orEmpty(), it.art) }
                 }.onFailure { android.util.Log.d("ink-youtube", "home: $it") }
             }
-            lists.join(); recs.join(); heard.join(); likes.join(); people.join(); home.join()
+            lists0.join(); recs.join(); heard.join(); likes.join(); people.join(); home.join()
+            keepRaw("library", libraryJson())   // kept now, and again once your artists' new records are in
+            // your mixes and playlists read ahead, beside what follows
+            app?.let { c -> launch { warm(c, t) } }
             // then what your artists put out lately (their pages, once they're known)
             runCatching { fresh.value = freshFrom(t, artists.value) }.onFailure { android.util.Log.d("ink-youtube", "fresh: $it") }
+            keepRaw("library", libraryJson())
             android.util.Log.d("ink-youtube", "read ${playlists.value.size} playlists, ${records.value.size} records, " +
                 "${history.value.size} heard, ${liked.value.size} liked, ${artists.value.size} artists")
             reading.value = false
@@ -158,20 +196,125 @@ object YouTubeAccount {
         }
     }
 
-    /** An artist's page on YouTube Music: their best-known songs, and their records newest first. */
-    suspend fun artist(a: TubeArtist): Pair<List<Song>, List<TubeAlbum>> = withContext(Dispatchers.IO) {
-        runCatching {
-            val (name, tracks, items) = (tube ?: InnerTube()).artist(a.id)
-            val who = name.ifEmpty { a.name }
-            tracks.map(::song) to items.map { TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art) }
-        }.onFailure { android.util.Log.d("ink-youtube", "artist ${a.id}: $it") }.getOrDefault(emptyList<Song>() to emptyList())
+    /**
+     * An artist's page on YouTube Music, by their page's id, or found by their name (only one called just
+     * that: a near name is someone else). As it was last read at once (kept on the phone), then read again.
+     */
+    fun artist(name: String, id: String = ""): Flow<ArtistInfo?> = flow {
+        val key = "artist-" + (id.ifEmpty { name.lowercase() }).replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val was = keptRaw(key)?.let(::artistFrom)
+        if (was != null) emit(was)
+        val t0 = System.currentTimeMillis()
+        val found = runCatching {
+            val page = id.ifEmpty { YouTubeMusic.artist(name)?.takeIf { it.name.equals(name, ignoreCase = true) }?.id.orEmpty() }
+            if (page.isEmpty()) return@runCatching null
+            val a = (tube ?: InnerTube()).artist(page)
+            val who = a.name.ifEmpty { name }
+            fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art)
+            ArtistInfo(page, who, a.photo, a.about, a.audience, a.top.map(::song), a.albums.map(::record), a.singles.map(::record),
+                a.like.map { TubeArtist(it.title, it.art, it.id) })
+        }.onFailure { android.util.Log.d("ink-youtube", "artist $name $id: $it") }.getOrNull()
+        android.util.Log.d("ink-youtube", "artist $name: ${found?.top?.size} songs, ${found?.albums?.size} records in ${System.currentTimeMillis() - t0} ms")
+        if (found != null) { keepRaw(key, json(found)); emit(found) } else if (was == null) emit(null)
+    }.flowOn(Dispatchers.IO)
+
+    // your library kept as one file (files/youtube/library.json), gone at sign-out with the rest
+    private fun libraryJson(): String {
+        fun lists(l: List<TubeList>) = org.json.JSONArray(l.map { JSONObject().put("id", it.id).put("name", it.name).put("said", it.said).put("art", it.art.orEmpty()) })
+        fun records(l: List<TubeAlbum>) = org.json.JSONArray(l.map { JSONObject().put("url", it.url).put("title", it.title).put("artist", it.artist).put("art", it.art.orEmpty()) })
+        fun songs(l: List<Song>) = org.json.JSONArray(l.map { it.json() })
+        return JSONObject().put("playlists", lists(playlists.value)).put("mixes", lists(mixes.value))
+            .put("records", records(records.value)).put("fresh", records(fresh.value))
+            .put("history", songs(history.value)).put("liked", songs(liked.value))
+            .put("artists", org.json.JSONArray(artists.value.map { JSONObject().put("name", it.name).put("face", it.face.orEmpty()).put("id", it.id) }))
+            .toString()
     }
 
-    /** One of your playlists' songs, in its order ("LM" is liked music); a mix's, as its queue when it has no page. */
-    suspend fun playlist(id: String): List<Song> = withContext(Dispatchers.IO) {
-        val t = tube ?: return@withContext emptyList()
-        runCatching { t.tracks("VL$id").ifEmpty { if (id.startsWith("RD")) t.queue(id) else emptyList() }.map(::song) }
-            .onFailure { android.util.Log.d("ink-youtube", "playlist $id: $it") }.getOrDefault(emptyList())
+    private fun putLibrary(text: String) = runCatching {
+        val o = JSONObject(text)
+        fun each(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
+        fun lists(k: String) = each(k).map { TubeList(it.getString("id"), it.getString("name"), it.optString("said"), it.optString("art").ifEmpty { null }) }
+        fun records(k: String) = each(k).map { TubeAlbum(it.getString("url"), it.getString("title"), it.optString("artist"), it.optString("art").ifEmpty { null }) }
+        fun songs(k: String) = each(k).map { songOf(it).also(YouTubeMusic::remember) }
+        playlists.value = lists("playlists"); mixes.value = lists("mixes")
+        records.value = records("records"); fresh.value = records("fresh")
+        history.value = songs("history"); liked.value = songs("liked")
+        artists.value = each("artists").map { TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) }
+    }.onFailure { android.util.Log.d("ink-youtube", "kept library: $it") }
+
+    private fun json(a: ArtistInfo): String = JSONObject().put("id", a.id).put("name", a.name).put("photo", a.photo.orEmpty())
+        .put("about", a.about).put("audience", a.audience)
+        .put("top", org.json.JSONArray(a.top.map { it.json() }))
+        .put("albums", org.json.JSONArray((a.albums + a.singles).map { r -> JSONObject().put("url", r.url).put("title", r.title).put("art", r.art.orEmpty()).put("single", r in a.singles) }))
+        .put("like", org.json.JSONArray(a.like.map { JSONObject().put("name", it.name).put("face", it.face.orEmpty()).put("id", it.id) }))
+        .toString()
+
+    private fun artistFrom(text: String): ArtistInfo? = runCatching {
+        val o = JSONObject(text)
+        fun list(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
+        val records = list("albums").map { (TubeAlbum(it.getString("url"), it.getString("title"), o.getString("name"), it.optString("art").ifEmpty { null })) to it.optBoolean("single") }
+        ArtistInfo(o.getString("id"), o.getString("name"), o.optString("photo").ifEmpty { null }, o.optString("about"), o.optString("audience"),
+            list("top").map { songOf(it).also(YouTubeMusic::remember) }, records.filter { !it.second }.map { it.first }, records.filter { it.second }.map { it.first },
+            list("like").map { TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) })
+    }.getOrNull()
+
+    /**
+     * One of your playlists' songs, in its order ("LM" is liked music); a mix's, as its queue when it has no page.
+     * As it was last read at once (kept on the phone), then as it's read again, page by page. A mix
+     * ("RD...") goes on for ever, page after page of more like it: its first page only.
+     */
+    fun playlist(id: String): Flow<List<Song>> = flow {
+        val was = kept(id)
+        if (was != null) emit(was)
+        val t = tube ?: return@flow
+        val t0 = System.currentTimeMillis()
+        val pages = Channel<List<Song>>(Channel.CONFLATED)
+        val read = scope.async { read(t, id) { if (was == null) pages.trySend(it) } }
+        read.invokeOnCompletion { pages.close() }
+        for (p in pages) emit(p)
+        val all = runCatching { read.await() }.onFailure { android.util.Log.d("ink-youtube", "playlist $id: $it") }.getOrNull()
+        android.util.Log.d("ink-youtube", "playlist $id: ${all?.size} songs in ${System.currentTimeMillis() - t0} ms")
+        if (!all.isNullOrEmpty()) emit(all)
+    }.flowOn(Dispatchers.IO)
+
+    /** A list read from YouTube Music and kept (memory and phone); [each] told it as it grows. */
+    private fun read(t: InnerTube, id: String, each: (List<Song>) -> Unit = {}): List<Song> {
+        val mix = id.startsWith("RD")
+        val songs = t.tracks("VL$id", max = if (mix) 50 else 2_000) { each(it.map(::song)) }
+            .ifEmpty { if (mix) t.queue(id) else emptyList() }.map(::song)
+        if (songs.isNotEmpty()) keep(id, songs)
+        return songs
+    }
+
+    // lists as last read: in memory, and as files (files/youtube/<id>.json) so they open at once next time
+    private val lists = java.util.concurrent.ConcurrentHashMap<String, List<Song>>()
+    @Volatile private var dir: java.io.File? = null
+
+    private fun kept(id: String): List<Song>? = lists[id] ?: runCatching {
+        val a = org.json.JSONArray(java.io.File(dir ?: return null, "$id.json").readText())
+        (0 until a.length()).map { songOf(a.getJSONObject(it)).also(YouTubeMusic::remember) }
+    }.getOrNull()?.also { lists[id] = it }
+
+    private fun keptRaw(key: String): String? = runCatching { java.io.File(dir ?: return null, "$key.json").readText() }.getOrNull()
+    private fun keepRaw(key: String, text: String) { val d = dir ?: return; runCatching { d.mkdirs(); java.io.File(d, "$key.json").writeText(text) } }
+
+    private fun keep(id: String, songs: List<Song>) {
+        lists[id] = songs
+        val d = dir ?: return
+        runCatching { d.mkdirs(); java.io.File(d, "$id.json").writeText(org.json.JSONArray(songs.map { it.json() }).toString()) }
+    }
+
+    /**
+     * Your mixes and playlists read ahead (after a sync), so they open at once: each one not kept yet,
+     * and on wifi each one not read these 6 hours (a mix's page is a megabyte; a playlist's a megabyte a hundred songs).
+     */
+    private fun warm(c: Context, t: InnerTube) {
+        val metered = Quality.metered(c)
+        (mixes.value + playlists.value).take(16).forEach { l ->
+            val at = dir?.let { java.io.File(it, "${l.id}.json") }?.takeIf { it.exists() }?.lastModified()
+            if (at != null && (metered || System.currentTimeMillis() - at < 6 * 3_600_000L)) return@forEach
+            runCatching { read(t, l.id) }.onFailure { android.util.Log.d("ink-youtube", "warm ${l.id}: $it") }
+        }
     }
 
     /**
