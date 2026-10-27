@@ -139,7 +139,9 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
             }
             return@Box
         }
-        val cover = rememberCover(n.song)
+        // the cover at the screen's width: it's shown nearly that wide, and the look behind is drawn from it
+        val wide = LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440)
+        val cover = rememberCover(n.song, wide)
         val accent by animateColorAsState(cover?.accent ?: Ink.ink, tween(Motion.ENTER), label = "accent")
         // the cover in its look behind it all; what nears the controls' black bar softens (ink's bars)
         val frost = dev.chrisbanes.haze.rememberHazeState()
@@ -334,7 +336,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
 
 @Composable
 private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
-    val c = rememberCover(t.song)
+    val c = rememberCover(t.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
     Box(modifier.size(side)) {
         if (c != null) Image(c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else if (t.song?.station == true) StationCover(t.song, Modifier.fillMaxSize(), moving = t.moving)
