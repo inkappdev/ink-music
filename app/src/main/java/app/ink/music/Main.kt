@@ -102,6 +102,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -332,7 +334,7 @@ private fun LibraryPage(pages: Pages) {
     Box(Modifier.fillMaxSize().hazeSource(tabsFrost).windowInsetsPadding(sides)) {
       HorizontalPager(
         pager, Modifier.fillMaxSize(), key = { tabs[it] },
-        flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo)),
+        flingBehavior = stillOnItsPage(pager, PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo))),
       ) { page ->
        // what scrolls sideways inside a page (a row of covers) keeps its scroll: run to its end, it doesn't turn the page
        Box(Modifier.fillMaxSize().nestedScroll(keepSideways)) {
@@ -413,6 +415,24 @@ private fun LibraryPage(pages: Pages) {
     }
 }
 
+/**
+ * The pager's fling, but none when it's still and on its page. A row of covers flung to its end hands the
+ * pager what's left (nothing, `keepSideways` took it), and the pager still ran its snap, moving nowhere for
+ * a quarter second: "scrolling", so the next thumb on a row caught the pager instead (seen on the S26,
+ * 2026-10-26: quick flicks along a row slid the page toward the next tab).
+ */
+@Composable
+private fun stillOnItsPage(pager: androidx.compose.foundation.pager.PagerState, snap: androidx.compose.foundation.gestures.TargetedFlingBehavior) =
+    remember(pager, snap) {
+        object : androidx.compose.foundation.gestures.TargetedFlingBehavior {
+            override suspend fun androidx.compose.foundation.gestures.ScrollScope.performFling(
+                initialVelocity: Float, onRemainingDistanceUpdated: (Float) -> Unit,
+            ): Float =
+                if (initialVelocity == 0f && pager.currentPageOffsetFraction == 0f) 0f
+                else with(snap) { performFling(initialVelocity, onRemainingDistanceUpdated) }
+        }
+    }
+
 /** Takes what a page's sideways scrollers leave over, so running one to its end never turns the library's page. */
 private val keepSideways = object : NestedScrollConnection {
     override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource) = Offset(available.x, 0f)
@@ -445,14 +465,33 @@ private fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
     }
 }
 
+/**
+ * A tile's words under its cover: the title (two lines at most) and a word under it, given a two-line
+ * title's room whatever this one's is, so a row of covers keeps one height as it slides (a tile with a
+ * one-line title beside one with two moved the rows under it up and down, 2026-10-26).
+ */
+@Composable
+fun UnderCover(title: String, said: String, saidStyle: TextStyle, gap: Dp = 0.dp) {
+    Box {
+        Column(Modifier.alpha(0f)) {
+            BasicText("I\nI", style = headline(15.sp))
+            Spacer(Modifier.height(gap))
+            BasicText("i", style = saidStyle)
+        }
+        Column {
+            BasicText(title.uppercase(), style = headline(15.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(gap))
+            BasicText(said.lowercase(), style = saidStyle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 @Composable
 fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         CoverOf(a.songs.first(), a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
-        BasicText(a.title.uppercase(), style = headline(15.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(3.dp))
-        BasicText(a.artist.lowercase(), style = pixel(10.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        UnderCover(a.title, a.artist, pixel(10.sp, Ink.mid), gap = 3.dp)
     }
 }
 
@@ -791,9 +830,7 @@ fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         CoverOf(face, a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
-        BasicText(a.title.uppercase(), style = headline(15.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(3.dp))
-        BasicText(a.artist.lowercase(), style = pixel(10.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        UnderCover(a.title, a.artist, pixel(10.sp, Ink.mid), gap = 3.dp)
     }
 }
 

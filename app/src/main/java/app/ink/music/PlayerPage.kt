@@ -142,7 +142,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
         // nothing, the grain's overlay blend came out lighter, a light strip over the bar)
         Box(Modifier.fillMaxSize().hazeSource(frost).background(Ink.black)) { Backdrop(cover) }
         val sing by Lyrics.on.collectAsState()
-        val lyric = rememberLyric(n, sing)
+        val lines = rememberLines(n, sing)
+        val lyric = rememberLyric(n, lines)
         val look by Looks.on.collectAsState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val share = { scope.launch { ShareCard.share(ctx, n, look) }; Unit }
@@ -188,8 +189,10 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                 Word("next", pixel(16.sp), touch = 10.dp) { dir = 1; Playback.next() }
                 Word("stop", pixel(16.sp, if (n.playing) Ink.ink else OFF), touch = 10.dp) { Playback.stop() }
                 Spacer(Modifier.weight(1f))
-                // selection is brightness: lit is on
-                Word("lyrics", pixel(16.sp, if (sing) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
+                // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
+                // (lit with the cover still there read as broken to a tester)
+                val none = sing && lines?.isEmpty() == true
+                Word(if (none) "no lyrics" else "lyrics", pixel(16.sp, if (sing && !none) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
             }
             Spacer(Modifier.height(14.dp))
             Modes(n) { queueUp = true }
@@ -497,9 +500,9 @@ else HapticFeedbackConstants.CLOCK_TICK
 /** A song's synced lines and where it is in them (-1 before the first; a blank one is a gap). */
 data class Lyric(val lines: List<Line>, val index: Int)
 
-/** Where the song is in its synced lines, while lyrics are on; null for a song without them (or not yet found), or off. */
+/** The song's synced lines while lyrics are on: empty for a song lrclib has none for; null while looking, or off. */
 @Composable
-fun rememberLyric(n: Now?, on: Boolean): Lyric? {
+fun rememberLines(n: Now?, on: Boolean): List<Line>? {
     val lines by produceState<List<Line>?>(null, n?.artist, n?.title, on) {
         value = null
         // a station's song: live, its place unknown, so no lines to follow
@@ -510,6 +513,12 @@ fun rememberLyric(n: Now?, on: Boolean): Lyric? {
             delay(60_000)   // lrclib couldn't be reached: ask again in a minute
         }
     }
+    return lines
+}
+
+/** Where the song is in its synced lines; null for a song without them (or not yet found), or off. */
+@Composable
+fun rememberLyric(n: Now?, lines: List<Line>?): Lyric? {
     val track by rememberUpdatedState(n)
     val pos by produceState(n?.positionNow() ?: 0L, n) {
         while (true) {
