@@ -48,10 +48,14 @@ class InnerTube(
         TubeWho(text(h.optJSONObject("accountName")), text(h.optJSONObject("channelHandle")).ifEmpty { text(h.optJSONObject("email")) })
     }.getOrNull()
 
-    /** A page's songs, every one (its continuations followed), up to [max]. */
-    fun tracks(browseId: String, max: Int = 2_000): List<Track> {
+    /** A page's songs, every one (its continuations followed), up to [max]; [each] told the songs so far after every page. */
+    fun tracks(browseId: String, max: Int = 2_000, each: ((List<Track>) -> Unit)? = null): List<Track> {
         val out = ArrayList<Track>()
-        pages(browseId, max) { page -> all(page, "musicResponsiveListItemRenderer").mapNotNullTo(out, ::track); out.size }
+        pages(browseId, max) { page ->
+            all(page, "musicResponsiveListItemRenderer").mapNotNullTo(out, ::track)
+            each?.invoke(out.distinctBy { it.videoId }.take(max))
+            out.size
+        }
         return out.distinctBy { it.videoId }.take(max)
     }
 
@@ -97,13 +101,34 @@ class InnerTube(
         all(post("browse", JSONObject().put("browseId", browseId)), "musicTwoRowItemRenderer").mapNotNull(::tile)
             .filter { it.kind == Kind.RECORD }.distinctBy { it.id }
 
-    /** An artist's page, one read: their name, best-known songs, and records (singles too). */
-    fun artist(browseId: String): Triple<String, List<Track>, List<Item>> {
+    /** An artist's page as YouTube Music has it: who they are, how many listen, their best-known songs, records, and who's like them. */
+    data class Artist(
+        val name: String, val photo: String?, val about: String, val audience: String,
+        val top: List<Track>, val albums: List<Item>, val singles: List<Item>, val like: List<Item>,
+    )
+
+    /** An artist's page, one read: the header (photo, bio, monthly audience) and its shelves, told apart by their titles. */
+    fun artist(browseId: String): Artist {
         val page = post("browse", JSONObject().put("browseId", browseId))
-        val name = all(page, "musicImmersiveHeaderRenderer").plus(all(page, "musicVisualHeaderRenderer"))
-            .firstNotNullOfOrNull { text(it.optJSONObject("title")).ifEmpty { null } }.orEmpty()
-        return Triple(name, all(page, "musicResponsiveListItemRenderer").mapNotNull(::track).distinctBy { it.videoId },
-            all(page, "musicTwoRowItemRenderer").mapNotNull(::tile).filter { it.kind == Kind.RECORD }.distinctBy { it.id })
+        val head = all(page, "musicImmersiveHeaderRenderer").plus(all(page, "musicVisualHeaderRenderer")).firstOrNull()
+        val shelves = all(page, "musicCarouselShelfRenderer").map { shelf ->
+            all(shelf, "musicCarouselShelfBasicHeaderRenderer").firstOrNull()?.let { text(it.optJSONObject("title")) }.orEmpty().lowercase() to
+                all(shelf, "musicTwoRowItemRenderer").mapNotNull(::tile)
+        }
+        fun shelf(vararg titles: String) = shelves.filter { (t, _) -> titles.any { t.startsWith(it) } }.flatMap { it.second }.distinctBy { it.id }
+        val records = shelves.flatMap { it.second }.filter { it.kind == Kind.RECORD }.distinctBy { it.id }
+        val singles = shelf("singles", "ep").filter { it.kind == Kind.RECORD }
+        return Artist(
+            name = text(head?.optJSONObject("title")),
+            // the wide photo (2880 x 1200 or so), as it is: square ones are cut from its middle where it's shown
+            photo = biggest(head?.optJSONObject("thumbnail")),
+            about = text(head?.optJSONObject("description")).trim(),
+            audience = text(head?.optJSONObject("monthlyListenerCount")),
+            top = all(page, "musicShelfRenderer").flatMap { all(it, "musicResponsiveListItemRenderer") }.mapNotNull(::track).distinctBy { it.videoId },
+            albums = records.filter { r -> singles.none { it.id == r.id } },
+            singles = singles,
+            like = shelf("fans might also like", "fans also like", "similar").filter { it.kind == Kind.ARTIST },
+        )
     }
 
     /** A song liked on YouTube Music, or not any more (signed in): did it take? */
@@ -111,6 +136,31 @@ class InnerTube(
         post(if (on) "like/like" else "like/removelike", JSONObject().put("target", JSONObject().put("videoId", videoId)))
         true
     }.getOrDefault(false)
+
+    /**
+     * A song played, told to YouTube Music (signed in: it goes in your history there, and its mixes learn from it),
+     * as its own page does: the player's playback-tracking link, called back with a new playback id. Did it take?
+     */
+    fun played(videoId: String): Boolean = runCatching {
+        val answer = post("player", JSONObject().put("videoId", videoId))
+        val tracking = all(answer, "videostatsPlaybackUrl").firstOrNull()?.optString("baseUrl")?.takeIf { it.isNotEmpty() }
+            ?: return false.also { trace?.invoke("played $videoId: no tracking link (${answer.optJSONObject("playabilityStatus")?.let { it.optString("status") + " " + it.optString("reason") }})") }
+        val cpn = (1..16).map { CPN[java.util.concurrent.ThreadLocalRandom.current().nextInt(CPN.length)] }.joinToString("")
+        val c = URL(tracking.replace("https://s.youtube.com", BASE) + "&ver=2&c=WEB_REMIX&cpn=$cpn").openConnection() as HttpURLConnection
+        try {
+            c.connectTimeout = 15_000; c.readTimeout = 20_000
+            headers(c)
+            trace?.invoke("played $videoId: ${c.responseCode} from ${tracking.substringBefore('?')}")
+            c.responseCode in 200..299
+        } finally { c.disconnect() }
+    }.onFailure { trace?.invoke("played $videoId: $it") }.getOrDefault(false)
+
+    /** A record's page ("MPREb_..."), one read: its own playlist's id ("OLAK5uy_...") and its songs, in order. */
+    fun album(browseId: String): Pair<String?, List<Track>> {
+        val page = post("browse", JSONObject().put("browseId", browseId))
+        return Regex("OLAK5uy_[A-Za-z0-9_-]+").find(page.toString())?.value to
+            all(page, "musicResponsiveListItemRenderer").mapNotNull(::track).distinctBy { it.videoId }
+    }
 
     /** A record's own playlist ("OLAK5uy_..."), which NewPipe opens, from its browse id ("MPREb_..."). */
     fun albumPlaylist(browseId: String): String? = runCatching {
@@ -152,24 +202,34 @@ class InnerTube(
         try {
             c.requestMethod = "POST"; c.connectTimeout = 15_000; c.readTimeout = 20_000; c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
-            c.setRequestProperty("User-Agent", UA)
-            c.setRequestProperty("Origin", BASE); c.setRequestProperty("X-Origin", BASE); c.setRequestProperty("Referer", "$BASE/")
-            c.setRequestProperty("X-YouTube-Client-Name", "67"); c.setRequestProperty("X-YouTube-Client-Version", version)
-            visitorData?.let { c.setRequestProperty("X-Goog-Visitor-Id", it) }
-            if (sapisid != null) {
-                c.setRequestProperty("Cookie", cookie)
-                c.setRequestProperty("Authorization", sign(sapisid))
-                c.setRequestProperty("X-Goog-AuthUser", "0")
-            }
+            headers(c)
+            val t0 = System.nanoTime()
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = c.responseCode
             val text = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val t1 = System.nanoTime()
             if (code >= 400) throw IOException("youtube music answered $code: ${text.take(200)}")
-            return JSONObject(text)
+            return JSONObject(text).also { trace?.invoke("$endpoint ${(t1 - t0) / 1_000_000} ms + read ${(System.nanoTime() - t1) / 1_000_000} ms, ${text.length / 1024} kB") }
         } finally { c.disconnect() }
     }
 
+    /** As the web page asks: its client, your visitor id, and signed in, your cookies and the request signed. */
+    private fun headers(c: HttpURLConnection) {
+        c.setRequestProperty("User-Agent", UA)
+        c.setRequestProperty("Origin", BASE); c.setRequestProperty("X-Origin", BASE); c.setRequestProperty("Referer", "$BASE/")
+        c.setRequestProperty("X-YouTube-Client-Name", "67"); c.setRequestProperty("X-YouTube-Client-Version", version)
+        visitorData?.let { c.setRequestProperty("X-Goog-Visitor-Id", it) }
+        if (sapisid != null) {
+            c.setRequestProperty("Cookie", cookie)
+            c.setRequestProperty("Authorization", sign(sapisid))
+            c.setRequestProperty("X-Goog-AuthUser", "0")
+        }
+    }
+
     companion object {
+        private const val CPN = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        /** Each request's time and size, for the log (the app's: "ink-youtube"). */
+        @Volatile var trace: ((String) -> Unit)? = null
         const val BASE = "https://music.youtube.com"
         /** The web client's version when none was read at sign-in (YouTube takes one a little old). */
         const val VERSION = "1.20251020.01.00"
@@ -220,7 +280,10 @@ class InnerTube(
         }
 
         /** The largest picture, square ones asked for at 600 px. */
-        private fun art(o: JSONObject?): String? {
+        private fun art(o: JSONObject?): String? = biggest(o)?.replace(Regex("=w\\d+-h\\d+"), "=w600-h600")
+
+        /** The largest picture under [o], as it is. */
+        private fun biggest(o: JSONObject?): String? {
             var best: JSONObject? = null
             fun look(x: Any?) {
                 when (x) {
@@ -236,7 +299,7 @@ class InnerTube(
                 }
             }
             look(o)
-            return best?.optString("url")?.takeIf { it.isNotEmpty() }?.replace(Regex("=w\\d+-h\\d+"), "=w600-h600")
+            return best?.optString("url")?.takeIf { it.isNotEmpty() }
         }
 
         private val TIME = Regex("""^\d{1,2}(:\d{2}){1,2}$""")

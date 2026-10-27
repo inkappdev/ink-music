@@ -154,9 +154,23 @@ fun SettingsPage(pages: Pages) {
                         Spacer(Modifier.height(4.dp))
                         BasicText("tap reads it again   hold signs out", style = pixel(10.sp, Ink.mid))
                     }
+                    // what you play here, in your history there (and what youtube's mixes learn from)
+                    Spacer(Modifier.height(18.dp))
+                    BasicText("youtube songs you play here go in your history there, as in its own app, and its mixes learn from them",
+                        style = pixel(11.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    var tells by remember { mutableStateOf(YouTubeAccount.tells(ctx)) }
+                    Row {
+                        Word("tell youtube", pixel(14.sp, if (tells) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { tells = true; YouTubeAccount.tell(ctx, true) }
+                        Word("don't", pixel(14.sp, if (!tells) Ink.ink else Ink.dim), touch = 8.dp) { tells = false; YouTubeAccount.tell(ctx, false) }
+                    }
                 }
                 Spacer(Modifier.height(40.dp))
             }
+
+            // listenbrainz: what you play, told there (the player's process sends it)
+            ListenBrainzSetting()
+            Spacer(Modifier.height(40.dp))
 
             // the artists the listen page grows from (YouTube Music's mixes and records: the full build)
             if (YouTubeMusic.available) {
@@ -232,7 +246,8 @@ fun SettingsPage(pages: Pages) {
             Spacer(Modifier.height(6.dp))
             BasicText(
                 "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics; " +
-                    (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library); " else "") +
+                    (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library, and the youtube songs you play, for your history there); " else "") +
+                    "with listenbrainz connected, what you play goes there. " +
                     "the radio list comes from radio-browser.info, the indie chart and what a station is playing from the stations' own playlists. no accounts of ours, no tracking, no ads.",
                 style = pixel(11.sp, Ink.mid),
             )
@@ -300,6 +315,53 @@ fun SignIn() {
             if (trying || address.isBlank() || user.isBlank()) return@Word
             val perm = Server.local
             if (perm != null && !Server.localAllowed(ctx)) askLocal.launch(perm) else go()
+        }
+    }
+}
+
+/** ListenBrainz: your user token, tried and kept; then whose it is (a hold forgets it). */
+@Composable
+private fun ListenBrainzSetting() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val account by ListenBrainz.account.collectAsState()
+    BasicText("LISTENBRAINZ", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    val a = account
+    if (a == null) {
+        var token by remember { mutableStateOf("") }
+        var trying by remember { mutableStateOf(false) }
+        var said by remember { mutableStateOf<String?>(null) }
+        BasicText("what you play, kept as your listening history on listenbrainz.org: open, and yours. " +
+            "your user token is on its settings page", style = pixel(11.sp, Ink.mid))
+        Spacer(Modifier.height(8.dp))
+        Word("listenbrainz.org/settings", pixel(13.sp, Ink.mid), touch = 8.dp) {
+            runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://listenbrainz.org/settings/")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+        Spacer(Modifier.height(14.dp))
+        Field("user token", token, { token = it }, "", KeyboardType.Password, secret = true)
+        said?.let { BasicText(it, style = pixel(11.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
+        Word(if (trying) "CONNECTING" else "CONNECT", headline(40.sp, if (trying) Ink.mid else Ink.ink), touch = 10.dp) {
+            if (trying || token.isBlank()) return@Word
+            trying = true; said = null
+            scope.launch {
+                said = when (ListenBrainz.connect(ctx, token)) {
+                    ListenBrainz.Connect.OK -> { token = ""; null }
+                    ListenBrainz.Connect.WRONG -> "listenbrainz didn't know that token"
+                    ListenBrainz.Connect.UNREACHABLE -> "couldn't reach listenbrainz. try again in a moment"
+                }
+                trying = false
+            }
+        }
+    } else {
+        Column(Modifier.pointerInput(Unit) {
+            detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ListenBrainz.disconnect(ctx) })
+        }) {
+            BasicText(a.user.lowercase(), style = pixel(13.sp))
+            BasicText("every song you play, but radio", style = pixel(11.sp, Ink.mid))
+            Spacer(Modifier.height(4.dp))
+            BasicText("hold forgets it", style = pixel(10.sp, Ink.mid))
         }
     }
 }

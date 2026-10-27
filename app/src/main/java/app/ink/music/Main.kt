@@ -27,6 +27,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -130,6 +132,7 @@ class Main : ComponentActivity() {
         YouTubeMusic.attach(this)
         Server.start(this)
         YouTubeAccount.start(this)
+        ListenBrainz.start(this)
         Order.start(this)
         Seeds.start(this)
         Stations.curated(this)
@@ -276,7 +279,7 @@ private fun App() {
                         Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
                         Page.InkRadio -> InkRadioPage(pages)
                         is Page.TubeList -> TubeListPage(p.list, pages)
-                        is Page.TubeArtist -> TubeArtistPage(p.artist, pages)
+                        is Page.TubeArtist -> ArtistPage(p.artist.name, pages, p.artist.id)
                     }
                 }
             }
@@ -718,44 +721,183 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
 
 /** An artist's page: the name big, their records as covers, every song they're on. */
 @Composable
-private fun ArtistPage(name: String, pages: Pages) {
+private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
     val albums by Library.albums.collectAsState()
     val songs by Library.songs.collectAsState()
-    val records = remember(albums, name) { albums.filter { it.artist == name } }
-    val theirs = remember(songs, name) { songs.filter { name in it.artist.split(", ") || it.albumArtist == name } }
+    val records = remember(albums, name) { albums.filter { it.artist.equals(name, ignoreCase = true) } }
+    val theirs = remember(songs, name) { songs.filter { s -> s.artist.split(", ").any { it.equals(name, ignoreCase = true) } || s.albumArtist.equals(name, ignoreCase = true) } }
+    // YouTube Music's page for them (the full build): kept from last time at once, then read again
+    val info by androidx.compose.runtime.produceState<ArtistInfo?>(null, name, tubeId) {
+        YouTubeAccount.artist(name, tubeId).collect { if (it != null || value == null) value = it }
+    }
+    val i = info
+    // their best-known songs, the library's own copy where there is one (it plays from the phone or the server)
+    val top = remember(i, theirs) {
+        i?.top.orEmpty().take(5).map { t -> theirs.firstOrNull { it.title.equals(t.title, ignoreCase = true) } ?: t }
+    }
+    val playable = remember(top, theirs) { (top + theirs).distinctBy { it.id } }
+    LaunchedEffect(playable.firstOrNull()?.id) { Playback.warm(playable.firstOrNull()) }
+    // their records: yours first, then YouTube's that you don't have
+    val tubeAlbums = remember(i, records) { i?.albums.orEmpty().filter { t -> records.none { it.title.equals(t.title, ignoreCase = true) } } }
+    var aboutOpen by remember(name) { mutableStateOf(false) }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.back() }) { frost, top0 -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
-        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+        contentPadding = PaddingValues(top = top0, bottom = LocalFoot.current + 24.dp),
     ) {
         item {
+            // their photo across the page in the dither (the player's), developing as it opens, their name on it
+            val photo = i?.photo
+            if (photo != null) BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
+                val side = minOf(maxWidth, 560.dp)
+                Dithered(remember(photo) { photoSong(name, photo) }, Modifier.size(side).align(Alignment.Center))
+                NameOn(i.name, Modifier.fillMaxWidth().padding(bottom = 6.dp))
+            } else Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
+                BasicText((i?.name ?: name).uppercase(), style = headline(52.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
             Column(Modifier.padding(horizontal = 20.dp)) {
-                BasicText(name.uppercase(), style = headline(52.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(14.dp))
+                val count = records.size + tubeAlbums.size
                 BasicText(
-                    listOfNotNull(records.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${theirs.size} ${if (theirs.size == 1) "song" else "songs"}").joinToString("   "),
-                    style = pixel(11.sp, Ink.mid),
+                    listOfNotNull(
+                        i?.audience?.takeIf { it.isNotEmpty() }?.lowercase()?.replace("monthly audience", "a month"),
+                        count.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" },
+                        theirs.size.takeIf { it > 0 }?.let { "$it of yours" },
+                    ).joinToString("   ").ifEmpty { if (info == null && YouTubeAccount.available) "reading it from youtube music" else "" },
+                    style = pixel(12.sp, Ink.mid),
                 )
                 Spacer(Modifier.height(16.dp))
-                Row {
-                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs, 0) }
-                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(theirs.shuffled(), 0) }
+                if (playable.isNotEmpty()) Row {
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(playable, 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(playable.shuffled(), 0) }
+                    Word("radio", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.startRadio(playable.first()) }
                 }
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(10.dp))
             }
         }
-        if (records.isNotEmpty()) item {
+        if (top.isNotEmpty()) {
+            item { Label("top songs") }
+            // a chart: the place big beside each
+            itemsIndexed(top, key = { _, s -> "t" + s.id }) { n, s ->
+                Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText("${n + 1}", style = headline(34.sp), modifier = Modifier.width(48.dp))
+                    Box(Modifier.weight(1f)) { SongRow(s, pages = pages) { Playback.play(top, n) } }
+                }
+            }
+            item { Spacer(Modifier.height(10.dp)) }
+        }
+        if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) item {
+            Label("records")
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(150.dp)) { pages.open(Page.Record(a.id)) } }
+                items(tubeAlbums, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { pages.open(Page.Tube(r)) } }
             }
             Spacer(Modifier.height(18.dp))
         }
-        itemsIndexed(theirs, key = { _, s -> s.id }) { i, s ->
-            Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(theirs, i) } }
+        i?.singles?.takeIf { it.isNotEmpty() }?.let { singles ->
+            item {
+                Label("singles and eps")
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(130.dp)) { pages.open(Page.Tube(r)) } }
+                }
+                Spacer(Modifier.height(18.dp))
+            }
+        }
+        // what's said of them: four lines, a tap for the rest
+        i?.about?.takeIf { it.isNotEmpty() }?.let { about ->
+            // its first sentence pulled out big, as a lyric is; the rest small under it
+            item {
+                val (said, rest) = remember(about) { pullQuote(about) }
+                Label("about")
+                said?.let {
+                    BasicText(it.uppercase(), style = headline(24.sp).copy(lineHeight = 28.sp), modifier = Modifier.padding(horizontal = 20.dp))
+                    Spacer(Modifier.height(14.dp))
+                }
+                if (rest.isNotEmpty()) BasicText(
+                    rest, style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 22.sp),
+                    maxLines = if (aboutOpen) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                        .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { aboutOpen = !aboutOpen }),
+                )
+                if (!aboutOpen && rest.isNotEmpty()) Word("more", pixel(12.sp, Ink.mid), Modifier.padding(start = 20.dp, top = 6.dp), touch = 8.dp) { aboutOpen = true }
+                Spacer(Modifier.height(22.dp))
+            }
+        }
+        // the songs of theirs you have: on the phone, on your server
+        if (theirs.isNotEmpty()) {
+            item { Label("yours") }
+            itemsIndexed(theirs, key = { _, s -> s.id }) { n, s ->
+                Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(theirs, n) } }
+            }
+            item { Spacer(Modifier.height(18.dp)) }
+        }
+        i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
+            item {
+                Label("fans also like")
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    items(like, key = { it.id.ifEmpty { it.name } }) { a ->
+                        Column(Modifier.width(130.dp).clickable(remember { MutableInteractionSource() }, indication = null,
+                            onClick = felt { pages.open(Page.TubeArtist(a)) })) {
+                            CoverOf(remember(a.face) { a.face?.let { faceSong(a.name, it) } }, a.name, Modifier.fillMaxWidth().aspectRatio(1f))
+                            Spacer(Modifier.height(8.dp))
+                            UnderCover(a.name, "artist", pixel(12.sp, Ink.mid))
+                        }
+                    }
+                }
+            }
         }
     } }
 }
+
+/** A bio's first sentence (if it's one to pull out: not too long), and the rest. */
+fun pullQuote(about: String): Pair<String?, String> {
+    val end = Regex("""[.!?](?=\s+[A-Z“"(])""").find(about)?.range?.last ?: return null to about
+    val first = about.substring(0, end + 1).trim()
+    return if (first.length in 20..180) first to about.substring(end + 1).trim() else null to about
+}
+
+/**
+ * A picture in the dither (the player's), in its own colour, developing from black (the brightest dots first) once
+ * it's read: an artist's photo, and YouTube's mixes and playlists (their own lettering made ink's, a colour to see).
+ */
+@Composable
+fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
+    val cover = rememberCover(photo, px)
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier.background(androidx.compose.ui.graphics.Color.Black)) {
+        val side = with(density) { maxWidth.toPx() }
+        val frames by androidx.compose.runtime.produceState<List<androidx.compose.ui.graphics.ImageBitmap>?>(null, cover) {
+            val c = cover ?: return@produceState
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                Looks.develop(c.image.asAndroidBitmap(), c.accent, side, density.density)?.map { it.asImageBitmap() }
+            }
+        }
+        val shown = remember(frames) { Animatable(0f) }
+        LaunchedEffect(frames) { if (frames != null) shown.animateTo(1f, tween(900, easing = Motion.expo)) }
+        frames?.let { f ->
+            // the dots drawn as dots: unfiltered, as the player draws them
+            Image(f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)], null, Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
+        }
+    }
+}
+
+/** An artist's name on their photo: big and still when it fits the width, else running across it as the player's does. */
+@Composable
+private fun NameOn(name: String, modifier: Modifier) {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val style = headline(64.sp)
+    BoxWithConstraints(modifier) {
+        val room = with(LocalDensity.current) { (maxWidth - 40.dp).toPx() }
+        val wide = remember(name, room) { measurer.measure(name.uppercase(), style, maxLines = 1, softWrap = false).size.width > room }
+        if (wide) Marquee(name, true, Modifier.fillMaxWidth(), size = 96.sp)
+        else BasicText(name.uppercase(), style = style, maxLines = 1, modifier = Modifier.padding(horizontal = 20.dp))
+    }
+}
+
+/** An artist's wide photo as a song-shaped picture, kept apart from their small face. */
+fun photoSong(name: String, photo: String) = faceSong(name, photo).copy(id = "yphoto:$name", albumId = "photo:$name")
 
 /**
  * Find, as ink's run menu: "find >" and what's typed; records, artists and songs whose names
@@ -769,7 +911,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     val tube by androidx.compose.runtime.produceState(TubeFound(), query) {
         val typed = query.trim()
         if (!YouTubeMusic.available || typed.length < 2) { value = TubeFound(); return@produceState }
-        kotlinx.coroutines.delay(450)
+        kotlinx.coroutines.delay(300)
         value = YouTubeMusic.search(typed)
     }
     val artists = remember(albums, songs) { artistsOf(albums, songs) }
@@ -856,6 +998,7 @@ fun tubeFace(a: TubeAlbum) = Song(
 @Composable
 private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
     val songs by androidx.compose.runtime.produceState<List<Song>?>(null, a.url) { value = YouTubeMusic.album(a) }
+    LaunchedEffect(songs?.firstOrNull()?.id) { Playback.warm(songs?.firstOrNull()) }
     val list = rememberLazyListState()
     FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
         state = list,
@@ -888,7 +1031,12 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
 /** One of your playlists on YouTube Music: its name big, play and shuffle, its songs (read only: change it there). */
 @Composable
 private fun TubeListPage(pl: TubeList, pages: Pages) {
-    val songs by androidx.compose.runtime.produceState<List<Song>?>(null, pl.id) { value = YouTubeAccount.playlist(pl.id) }
+    // as it was last read at once, else page by page as it comes
+    val songs by androidx.compose.runtime.produceState<List<Song>?>(null, pl.id) {
+        YouTubeAccount.playlist(pl.id).collect { value = it }
+        if (value == null) value = emptyList()
+    }
+    LaunchedEffect(songs?.firstOrNull()?.id) { Playback.warm(songs?.firstOrNull()) }
     val list = rememberLazyListState()
     FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
         state = list,
@@ -917,46 +1065,6 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
     } }
 }
 
-/** An artist on YouTube Music: the name big, their best-known songs (play, shuffle), their records as covers. */
-@Composable
-private fun TubeArtistPage(a: TubeArtist, pages: Pages) {
-    val page by androidx.compose.runtime.produceState<Pair<List<Song>, List<TubeAlbum>>?>(null, a.id) { value = YouTubeAccount.artist(a) }
-    val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
-        state = list,
-        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
-        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
-    ) {
-        val songs = page?.first.orEmpty()
-        val records = page?.second.orEmpty()
-        item {
-            Column(Modifier.padding(horizontal = 20.dp)) {
-                BasicText(a.name.uppercase(), style = headline(52.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(8.dp))
-                BasicText(
-                    if (page == null) "reading it from youtube music"
-                    else listOfNotNull(records.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "youtube music").joinToString("   "),
-                    style = pixel(11.sp, Ink.mid),
-                )
-                Spacer(Modifier.height(16.dp))
-                if (songs.isNotEmpty()) Row {
-                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs, 0) }
-                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
-                }
-                Spacer(Modifier.height(20.dp))
-            }
-        }
-        if (records.isNotEmpty()) item {
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(records, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { pages.open(Page.Tube(r)) } }
-            }
-            Spacer(Modifier.height(18.dp))
-        }
-        itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
-            Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s) { Playback.play(songs, i) } }
-        }
-    } }
-}
 
 /** Where a held song goes into a playlist: a new one ("new >", named there), or one of yours. */
 @Composable

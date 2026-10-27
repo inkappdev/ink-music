@@ -120,11 +120,8 @@ object Playback {
         val c = controller ?: return
         val item = c.currentMediaItem ?: return run { _now.value = null }
         val md = c.mediaMetadata
-        // a station playing a song it gave a cover for: the song's cover, kept by its link
-        val song = songOf(item).let { s ->
-            val art = CoverProvider.linkOf(md.artworkUri)
-            if (s != null && s.station && art != null) s.copy(art = art, albumId = "art:$art") else s
-        }
+        // a station keeps its own sleeve whatever it's playing (OnAir)
+        val song = songOf(item)
         _now.value = Now(
             song = song,
             title = md.title?.toString() ?: song?.title.orEmpty(),
@@ -215,6 +212,15 @@ object Playback {
             android.os.Bundle().apply { putLong(PlayerService.SLEEP_MS, ms) },
         )
     }
+    /** A YouTube song likely to be played next (the first on a page just opened): the player finds its stream now. */
+    fun warm(s: Song?) {
+        if (s == null || !s.tube || casting) return
+        controller?.sendCustomCommand(
+            androidx.media3.session.SessionCommand(PlayerService.WARM, android.os.Bundle.EMPTY),
+            android.os.Bundle().apply { putString(PlayerService.WARM, s.id) },
+        )
+    }
+
     /** Radio on or off: when the queue ends, more like it. */
     fun radio(on: Boolean) {
         radio = on; update()
@@ -251,6 +257,14 @@ object Playback {
         val c = controller ?: return
         if (c.mediaItemCount == 0) return play(listOf(s), 0)
         c.addMediaItem(c.currentMediaItemIndex + 1, item(s))
+    }
+
+    /** Songs to follow [s], still playing: at the queue's end, those not in it already (radio may have topped it up). */
+    fun follow(s: Song, songs: List<Song>) {
+        val c = controller ?: return
+        if (c.currentMediaItem?.mediaId != s.id) return
+        val there = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }.toSet()
+        c.addMediaItems(songs.filter { it.id !in there }.map(::item))
     }
 
     /** At the queue's end (nothing playing: it plays). */

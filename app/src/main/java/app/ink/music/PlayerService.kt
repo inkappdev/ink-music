@@ -71,16 +71,39 @@ class PlayerService : MediaLibraryService() {
     // a server song heard far enough (half of it, or four minutes, as Last.fm counts) is told to
     // the server once; "playing now" as it starts
     private val net = java.util.concurrent.Executors.newSingleThreadExecutor()
+    /** The next YouTube song's stream found while this one plays, so a skip doesn't wait for it. */
+    private val ahead = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var told: String? = null
+    private var nowSaid: String? = null
+    private var tubeTold: String? = null
 
     private fun heard(p: Player) {
-        val id = p.currentMediaItem?.mediaId ?: return
-        if (!id.startsWith("n") || told == id) return
+        val item = p.currentMediaItem ?: return
+        val id = item.mediaId
+        // a YouTube song 30 s in: told to YouTube Music, signed in (its history, its mixes)
+        if (id.startsWith("y") && tubeTold != id && p.currentPosition >= History.ENOUGH) {
+            tubeTold = id
+            net.execute { YouTubeAccount.played(this, id) }
+        }
+        if (told == id || id.startsWith("s")) return
         val length = p.duration.takeIf { it > 0 } ?: return
         if (p.currentPosition >= minOf(length / 2, 240_000L)) {
             told = id
-            net.execute { Server.scrobble(this, id, done = true) }
+            if (id.startsWith("n")) net.execute { Server.scrobble(this, id, done = true) }
+            // and to ListenBrainz, if you've said to (every song but a station's), as it started
+            val said = said(item, length)
+            val at = startedAt.takeIf { it > 0 } ?: (System.currentTimeMillis() - p.currentPosition)   // a queue put back: no start seen
+            net.execute { ListenBrainz.listened(this, said, at) }
         }
+    }
+
+    /** When the song playing began (wall clock), for its listen. */
+    private var startedAt = 0L
+
+    private fun said(item: MediaItem, length: Long): ListenBrainz.Said {
+        val md = item.mediaMetadata
+        return ListenBrainz.Said(md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(), md.albumTitle?.toString().orEmpty(),
+            length, md.trackNumber ?: 0, item.mediaId.takeIf { it.startsWith("y") }?.removePrefix("y"))
     }
 
     // the sleep timer: when it ends (wall clock ms), or SLEEP_END_OF_SONG; told to the screens
@@ -265,9 +288,20 @@ class PlayerService : MediaLibraryService() {
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) onAir?.changed()
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) keep(p)
                 if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) tell()   // the new song's format, if it's read
+                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TIMELINE_CHANGED)) {
+                    val i = p.nextMediaItemIndex
+                    val next = if (i == C.INDEX_UNSET) null else p.getMediaItemAt(i).localConfiguration?.uri
+                    if (next?.scheme == "ytm") ahead.execute { YouTubeMusic.stream("y" + next.host, false, small = Quality.now(this@PlayerService) == Quality.SAVER) }
+                }
                 if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                    told = null
+                    told = null; startedAt = System.currentTimeMillis(); nowSaid = null; tubeTold = null
                     p.currentMediaItem?.mediaId?.takeIf { it.startsWith("n") }?.let { id -> net.execute { Server.scrobble(this@PlayerService, id, done = false) } }
+                }
+                // playing now, on ListenBrainz: once a song is actually playing (its length known by then)
+                if (p.isPlaying) p.currentMediaItem?.takeIf { !it.mediaId.startsWith("s") && it.mediaId != nowSaid }?.let { item ->
+                    nowSaid = item.mediaId
+                    val said = said(item, p.duration.coerceAtLeast(0))
+                    net.execute { ListenBrainz.playingNow(this@PlayerService, said) }
                 }
                 if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) { place(p); clock?.playing(p.isPlaying) }
                 // the widget: what plays, and whether
@@ -354,7 +388,8 @@ class PlayerService : MediaLibraryService() {
                     MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                         .setAvailableSessionCommands(
                             MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(SessionCommand(SLEEP, Bundle.EMPTY))
-                                .add(SessionCommand(LEVEL, Bundle.EMPTY)).add(SessionCommand(RADIO, Bundle.EMPTY)).build(),
+                                .add(SessionCommand(LEVEL, Bundle.EMPTY)).add(SessionCommand(RADIO, Bundle.EMPTY))
+                                .add(SessionCommand(WARM, Bundle.EMPTY)).build(),
                         )
                         .build()
 
@@ -362,6 +397,10 @@ class PlayerService : MediaLibraryService() {
                     session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle,
                 ): ListenableFuture<SessionResult> {
                     if (customCommand.customAction == SLEEP) setSleep(session.player, args.getLong(SLEEP_MS))
+                    // a YouTube song about to be played (its page is up): its stream found now, so play starts at once
+                    if (customCommand.customAction == WARM) args.getString(WARM)?.takeIf { it.startsWith("y") }?.let { id ->
+                        ahead.execute { YouTubeMusic.stream(id, false, small = Quality.now(this@PlayerService) == Quality.SAVER) }
+                    }
                     if (customCommand.customAction == LEVEL) {
                         val on = args.getBoolean(LEVEL, true)
                         prefs.edit().putBoolean("levelling", on).apply()
@@ -403,6 +442,7 @@ class PlayerService : MediaLibraryService() {
         const val SLEEP_END_OF_SONG = -1L
         const val LEVEL = "app.ink.music.LEVEL"
         const val RADIO = "app.ink.music.RADIO"
+        const val WARM = "app.ink.music.WARM"
         const val HEARD = "heard"
     }
 

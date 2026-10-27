@@ -19,10 +19,9 @@ import java.util.concurrent.Executor
  * artist, the station's name as its record, and its own words back when nothing's said (a break, a
  * show with no song). From the stream's own title (ICY: most of ink radio sends "artist - title"),
  * or for the stations that send nothing there, their playlists, asked every 30 s while one plays:
- * KEXP's API, KCRW's, The Current's and WXPN's feeds. With it the record's cover where the station
- * gives one (the playlists all do; a few streams), through [CoverProvider] so the notification and
- * the car have it too; else the station's own sleeve ([StationSleeve]). In the player's process;
- * logged as `ink-onair`.
+ * KEXP's API, KCRW's, The Current's, WXPN's, FIP's (Radio France) and WFUV's feeds, and NPR's Cadence for
+ * KUTX and WFPK. The picture stays the station's own sleeve ([StationSleeve], moving), whatever cover
+ * the station sends (2026-10-27: theirs looked bad beside it). In the player's process; logged as `ink-onair`.
  */
 class OnAir(private val player: Player, private val main: Handler, private val net: Executor) {
     /** What a station says it's playing: the song (no artist: a show, a line), and its record's cover if it gives one. */
@@ -81,7 +80,9 @@ class OnAir(private val player: Player, private val main: Handler, private val n
         val own = plain.getOrPut(id) { item.mediaMetadata }
         val md = if (said == null) own else own.buildUpon()
             .setTitle(said.title).setArtist(said.artist ?: own.artist).setAlbumTitle(own.title)
-            .setArtworkUri(said.art?.let { arts += it; CoverProvider.art(it) } ?: own.artworkUri).build()
+            // always the station's own sleeve, moving, never the cover it sends (Bronson, 2026-10-27: they looked
+            // bad, the sleeve is ink's): the song's words change, the picture stays the station's
+            .setArtworkUri(own.artworkUri).build()
         if (md == item.mediaMetadata) return
         android.util.Log.i("ink-onair", "$id: ${said?.let { "${it.artist} - ${it.title}" + (it.art?.let { a -> " [$a]" } ?: "") } ?: "(its own)"}")
         player.replaceMediaItem(at, item.buildUpon().setMediaMetadata(md).build())
@@ -116,7 +117,39 @@ class OnAir(private val player: Player, private val main: Handler, private val n
                     }
                     ?.let { song(it.optString("song"), it.optString("artist"), it.optString("image")) }
             },
+            // Radio France's live steps: the one on now, if it's a song
+            "sfip" to {
+                val now = System.currentTimeMillis() / 1000
+                val steps = JSONObject(IndieChart.get("https://api.radiofrance.fr/livemeta/pull/7")).getJSONObject("steps")
+                steps.keys().asSequence().map { steps.getJSONObject(it) }
+                    .firstOrNull { it.optString("embedType") == "song" && it.optLong("start") <= now + 30 && now < it.optLong("end") }
+                    ?.let { st ->
+                        val by = st.optJSONArray("highlightedArtists")?.let { a -> (0 until a.length()).joinToString(", ") { a.getString(it) } }
+                        song(st.optString("title"), by?.ifEmpty { null } ?: st.optString("authors"), st.optString("visual"))
+                    }
+            },
+            "skutx" to { cadence("b90e054f-2565-42b1-aff5-c744bc8fc70d") },
+            "swfpk" to { cadence("71fdc4e3-653f-4a1b-a341-3dba6a3e2bf7") },
+            "swfuv" to {
+                val there = ZoneId.of("America/New_York")
+                JSONObject(IndieChart.get("https://wfuv.org/sites/default/files/player/playlist/now_playing.json")).optJSONObject("live")
+                    ?.takeIf {
+                        it.optString("event_type") == "MUSIC" &&
+                            recent(LocalDateTime.parse(it.getString("timestamp"), DateTimeFormatter.ofPattern("MMddyyyy-HHmmss")).atZone(there).toInstant().toEpochMilli())
+                    }
+                    // no cover of its own (a placeholder)
+                    ?.let { song(it.optString("title"), it.optString("artist"), "") }
+            },
         )
+
+        /** NPR's Cadence widget (public radio's now playing): the song on now, till its end; a countdown's "#6 - " dropped. */
+        private fun cadence(widget: String): Said? {
+            val o = JSONObject(IndieChart.get("https://cadence.nprstations.org/api/cadence/widget/$widget")).optJSONObject("currentlyPlayingSong") ?: return null
+            val end = o.optJSONObject("end")?.optString("utc")?.let { runCatching { OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
+            if (end != null && end < System.currentTimeMillis() - 60_000) return null
+            val by = o.optJSONArray("artist")?.let { a -> (0 until a.length()).joinToString(", ") { a.getString(it) } }.orEmpty()
+            return song(o.optString("title").replace(Regex("^#\\d+ - "), ""), by, o.optString("artworkUrl").replace("100x100bb", "600x600bb"))
+        }
 
         /** Played in the last 12 minutes (older, the DJ's talking or it's a break). */
         private fun recent(at: Long) = System.currentTimeMillis() - at < 12 * 60_000L
@@ -128,14 +161,14 @@ class OnAir(private val player: Player, private val main: Handler, private val n
 
         /**
          * A stream's title as (title, artist), the artist null for a show or a line with no song:
-         * "artist - title", WFMU's "\"title\" by artist on show", a show's "station - show".
+         * "artist - title", WFMU's "\"title\" by artist on show" (Radio Eins's "von"), a show's "station - show".
          */
         fun parse(raw: String, station: String): Said? {
             val s = raw.trim().removeSuffix(".mp3").trim()
             val up = s.uppercase()
             // dublab's "-" between shows, and the like: nothing said
             if (s.none { it.isLetterOrDigit() } || "THIS STATION WILL" in up || "NOW PLAYING INFO" in up || up.endsWith("OFFLINE")) return null
-            Regex("^\"(.+)\" by (.+?)(?: on .+)?$").find(s)?.let { return Said(it.groupValues[1], it.groupValues[2]) }
+            Regex("^\"(.+)\" (?:by|von) (.+?)(?: (?:on|auf) .+)?$").find(s)?.let { return Said(it.groupValues[1], it.groupValues[2]) }
             val dash = s.indexOf(" - ")
             if (dash < 0) return Said(s, null)
             val a = s.substring(0, dash).trim()

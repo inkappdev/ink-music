@@ -23,6 +23,7 @@
              a Main opened over it closes itself (Main.onCreate) -->
         <activity
             android:name=".Main"
+            android:screenOrientation="portrait"
             android:exported="true"
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode">
