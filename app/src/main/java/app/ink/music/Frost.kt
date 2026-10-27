@@ -1,5 +1,6 @@
 package app.ink.music
 
+import androidx.compose.animation.core.Easing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -21,21 +22,28 @@ val LocalFoot = compositionLocalOf { 0.dp }
 /**
  * The soft edge (Bronson's call, 2026-10-25): the bars stay black; only what's about to go behind
  * one goes ever so slightly out of focus as it nears it, in a thin strip beside the bar, sharp at
- * the strip's far side, a few dp of blur where it meets the bar. No tint, nothing painted: the
+ * the strip's far side, [EDGE] of blur where it meets the bar, feathered (2026-10-27: "barely notice it"):
+ * it comes on along [FEATHER], hardly at all till the last of the strip. No tint, nothing painted: the
  * content itself, softened. `towardBottom`: the bar is below the strip (the mini player); else above
  * (the tab row, the status bar).
  */
+/** The blur where content meets a bar (4 dp till 2026-10-27, when Bronson wanted to barely notice it). */
+private val EDGE = 1.5.dp
+
+/** How the blur comes on across the strip: cubed, so it's nearly nothing till the bar. */
+private val FEATHER = Easing { it * it * it }
+
 @Composable
 fun Modifier.softEdge(state: HazeState, towardBottom: Boolean): Modifier {
     var height by remember { mutableIntStateOf(0) }
     val style = remember(height, towardBottom) {
         val h = height.toFloat().coerceAtLeast(1f)
         HazeBlurStyle {
-            blurRadius(4.dp)
+            blurRadius(EDGE)
             noiseFactor(0f)
             progressive(
-                if (towardBottom) HazeProgressive.verticalGradient(startY = 0f, startIntensity = 0f, endY = h, endIntensity = 1f)
-                else HazeProgressive.verticalGradient(startY = 0f, startIntensity = 1f, endY = h, endIntensity = 0f),
+                if (towardBottom) HazeProgressive.verticalGradient(easing = FEATHER, startY = 0f, startIntensity = 0f, endY = h, endIntensity = 1f)
+                else HazeProgressive.verticalGradient(easing = { 1f - FEATHER.transform(1f - it) }, startY = 0f, startIntensity = 1f, endY = h, endIntensity = 0f),
             )
         }
     }
@@ -48,9 +56,9 @@ fun Modifier.softEdgeEnd(state: HazeState): Modifier {
     var width by remember { mutableIntStateOf(0) }
     val style = remember(width) {
         HazeBlurStyle {
-            blurRadius(4.dp)
+            blurRadius(EDGE)
             noiseFactor(0f)
-            progressive(HazeProgressive.horizontalGradient(startX = 0f, startIntensity = 0f, endX = width.toFloat().coerceAtLeast(1f), endIntensity = 1f))
+            progressive(HazeProgressive.horizontalGradient(easing = FEATHER, startX = 0f, startIntensity = 0f, endX = width.toFloat().coerceAtLeast(1f), endIntensity = 1f))
         }
     }
     return this.onSizeChanged { width = it.width }.hazeBlur(HazeInput.Sources(state), style)

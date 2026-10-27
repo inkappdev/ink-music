@@ -23,16 +23,18 @@
 </p>
 
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="24%" alt="Listen: mixes from your artists, ink radio, the week on indie radio" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%" alt="The player in the dither look" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="24%" alt="ink radio: WFMU saying what it plays" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="24%" alt="Synced lyrics" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="19%" alt="Welcome: INK MUSIC over records developing in dither" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="19%" alt="Listen: jump back in, your YouTube Music mixes and mixes for you, in dither" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="19%" alt="An artist: their photo in dither, top songs as a chart" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="19%" alt="A lossless song's moment: LOSSLESS, 16 bit, 44.1 kHz across the cover" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="19%" alt="Synced lyrics over the cover in dither" />
 </p>
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="24%" alt="A record" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="24%" alt="Pick a few artists you love" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7.png" width="24%" alt="Find: your server and YouTube Music" />
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/8.png" width="24%" alt="Play on speakers, TVs, groups and receivers" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="19%" alt="A record" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7.png" width="19%" alt="ink radio: WFMU on its moving sleeve, saying what it plays" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/8.png" width="19%" alt="The player in the blur look" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/9.png" width="19%" alt="The player in the dither look: Madvillainy" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/10.png" width="19%" alt="The player, plain" />
 </p>
 
 ---
