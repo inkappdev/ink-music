@@ -33,6 +33,7 @@ data class Now(
     val quality: String = "", // what reaches the speaker: "flac 24/96", "mp3 320"
     val radio: Boolean = true, // the queue's end brings more like it
     val stopped: Boolean = false, // stop pressed: the queue kept, nothing at the foot till it plays again
+    val heard: Heard? = null,     // what reaches your ears, as the player read it (null: not yet, or on a speaker)
 ) {
     fun positionNow(): Long =
         if (!moving) position else (position + SystemClock.elapsedRealtime() - at).coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE)
@@ -80,7 +81,8 @@ object Playback {
             .setListener(object : MediaController.Listener {
                 // the sleep timer, as the player says it
                 override fun onExtrasChanged(controller: MediaController, extras: android.os.Bundle) {
-                    sleepAt = extras.getLong(PlayerService.SLEEP_AT); radio = extras.getBoolean(PlayerService.RADIO, true); update()
+                    sleepAt = extras.getLong(PlayerService.SLEEP_AT); radio = extras.getBoolean(PlayerService.RADIO, true)
+                    heard = Heard.of(extras.getString(PlayerService.HEARD)); update()
                 }
             })
             .buildAsync()
@@ -90,6 +92,7 @@ object Playback {
                 it.addListener(listener)
                 sleepAt = it.sessionExtras.getLong(PlayerService.SLEEP_AT)
                 radio = it.sessionExtras.getBoolean(PlayerService.RADIO, true)
+                heard = Heard.of(it.sessionExtras.getString(PlayerService.HEARD))
                 level(levelling(ctx))   // the player's copy brought in line with the setting
             }
             readQueue()
@@ -104,6 +107,7 @@ object Playback {
 
     private var sleepAt = 0L
     private var radio = true
+    private var heard: Heard? = null
 
     /**
      * The library read (again): the queue's songs looked up anew. Connected before the library had
@@ -139,6 +143,7 @@ object Playback {
             radio = radio,
             // idle without an error is a stop (an error leaves it idle too, and says so in the player)
             stopped = c.playbackState == Player.STATE_IDLE && c.playerError == null,
+            heard = heard?.takeIf { it.id == item.mediaId },   // never the song before's, told late
         )
     }
 

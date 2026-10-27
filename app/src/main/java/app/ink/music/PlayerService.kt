@@ -100,9 +100,43 @@ class PlayerService : MediaLibraryService() {
         tell()
     }
 
-    /** What the screens are told through the session's extras: sleep's end, and radio. */
+    /** What the screens are told through the session's extras: sleep's end, radio, and what's heard. */
     private fun tell() {
-        session?.setSessionExtras(Bundle().apply { putLong(SLEEP_AT, sleepAt); putBoolean(RADIO, radio) })
+        val heard = nowHeard()?.json().orEmpty()
+        session?.setSessionExtras(Bundle().apply { putLong(SLEEP_AT, sleepAt); putBoolean(RADIO, radio); putString(HEARD, heard) })
+    }
+
+    /** The song playing as it reaches your ears: its format once the player has read it, how it came, its gain. */
+    private fun nowHeard(): Heard? {
+        val p = session?.player ?: return null
+        val item = p.currentMediaItem ?: return null
+        val f = formats[item.mediaId] ?: return null
+        val uri = item.localConfiguration?.uri?.toString().orEmpty()
+        val c = chosen[uri]
+        val id = item.mediaId
+        val from = when {
+            id.startsWith("s") -> "station"
+            id.startsWith("y") -> "youtube"
+            id.startsWith("n") -> "server"
+            else -> "phone"
+        }
+        val made = when (from) {
+            "server" -> when (c?.quality) { Quality.HIGH -> "mp3 320"; Quality.SAVER -> "opus 96"; else -> "" }
+            "youtube" -> if (c?.quality == Quality.SAVER) "smallest" else "best"
+            else -> ""
+        }
+        val kbps = when {
+            from == "youtube" -> YouTubeMusic.kbps(id, c?.quality == Quality.SAVER)
+            made == "mp3 320" -> 320
+            made == "opus 96" -> 96
+            else -> (f.averageBitrate.takeIf { it > 0 } ?: f.bitrate).takeIf { it > 0 }?.div(1000) ?: 0
+        }
+        return Heard(
+            id = id, codec = Heard.codecOf(f.sampleMimeType), bits = Heard.bitsOf(f), rate = f.sampleRate.coerceAtLeast(0),
+            channels = f.channelCount.coerceAtLeast(0), kbps = kbps, from = from, made = made,
+            quality = if (from == "server" || from == "youtube") c?.quality ?: -1 else -1, metered = c?.metered == true,
+            gain = levelling?.takeIf { it.on }?.db,
+        )
     }
 
     // radio: on, the queue's last songs bring more like them (Radio); asked once per seed
@@ -156,6 +190,12 @@ class PlayerService : MediaLibraryService() {
         })
     }
 
+    /** Each stream's quality as chosen when the song began (Quality), when, and on mobile data or not: an hour, then chosen anew. */
+    private data class Chosen(val quality: Int, val at: Long, val metered: Boolean)
+    private val chosen = java.util.concurrent.ConcurrentHashMap<String, Chosen>()
+    /** Each song's stream format as the player read it (by media id): a song's comes in a little before it plays. */
+    private val formats = java.util.concurrent.ConcurrentHashMap<String, androidx.media3.common.Format>()
+
     override fun onCreate() {
         super.onCreate()
         // this process's WebView keeps its own data (YouTube's poToken runs one here, and the
@@ -165,11 +205,26 @@ class PlayerService : MediaLibraryService() {
         // stopped (the player's "stop"), the notification goes; Media3 kept it after a stop by default
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
         Stations.curated(this)   // ink radio's stations, known by id (the car, the queue kept)
-        // a YouTube Music song plays from "ytm://<id>": its stream found as it starts (the full build only)
+        // a YouTube Music song plays from "ytm://<id>": its stream found as it starts (the full build only);
+        // a Navidrome song's stream as the quality asks for the network it starts on (Quality)
         val sources = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
             androidx.media3.datasource.ResolvingDataSource.Factory(androidx.media3.datasource.DefaultDataSource.Factory(this)) { spec ->
-                if (spec.uri.scheme != "ytm") spec
-                else spec.withUri(Uri.parse(YouTubeMusic.stream("y" + spec.uri.host, false)?.first ?: throw java.io.IOException("no stream")))
+                // chosen once a song: a seek opens it again partway, and must get the same stream
+                fun quality(): Int {
+                    val key = spec.uri.toString()
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    chosen[key]?.takeIf { now - it.at < 3_600_000L }?.let { return it.quality }
+                    if (chosen.size > 500) chosen.clear()
+                    val metered = Quality.metered(this)
+                    return Quality.now(this).also { chosen[key] = Chosen(it, now, metered) }
+                }
+                when {
+                    spec.uri.scheme == "ytm" -> spec.withUri(Uri.parse(
+                        YouTubeMusic.stream("y" + spec.uri.host, false, small = quality() == Quality.SAVER)?.first
+                            ?: throw java.io.IOException("no stream")))
+                    spec.uri.path?.endsWith("/rest/stream") == true -> spec.withUri(Quality.server(spec.uri, quality()))
+                    else -> spec
+                }
             },
         )
         val player = ExoPlayer.Builder(this)
@@ -182,7 +237,21 @@ class PlayerService : MediaLibraryService() {
         kept()?.let { (items, index, at) -> player.setMediaItems(items, index, at); player.prepare() }
         player.shuffleModeEnabled = prefs.getBoolean("shuffle", false)
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
-        levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true) }
+        levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true); it.onApply = { tell() } }
+        // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
+        player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+            override fun onAudioInputFormatChanged(
+                eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                format: androidx.media3.common.Format,
+                decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+            ) {
+                if (eventTime.timeline.isEmpty) return
+                val id = eventTime.timeline.getWindow(eventTime.windowIndex, androidx.media3.common.Timeline.Window()).mediaItem.mediaId
+                if (formats.size > 50) formats.clear()
+                formats[id] = format
+                tell()
+            }
+        })
         clock = History.Clock(this).also { it.song(player.currentMediaItem, false) }
         // the widget shows the queue as it was left (paused), till the music says otherwise
         player.currentMediaItem?.let { Widget.show(this, it.mediaId, it.mediaMetadata.title?.toString().orEmpty(), it.mediaMetadata.artist?.toString().orEmpty(), false) }
@@ -195,6 +264,7 @@ class PlayerService : MediaLibraryService() {
             override fun onEvents(p: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) onAir?.changed()
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) keep(p)
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) tell()   // the new song's format, if it's read
                 if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
                     told = null
                     p.currentMediaItem?.mediaId?.takeIf { it.startsWith("n") }?.let { id -> net.execute { Server.scrobble(this@PlayerService, id, done = false) } }
@@ -333,6 +403,7 @@ class PlayerService : MediaLibraryService() {
         const val SLEEP_END_OF_SONG = -1L
         const val LEVEL = "app.ink.music.LEVEL"
         const val RADIO = "app.ink.music.RADIO"
+        const val HEARD = "heard"
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session

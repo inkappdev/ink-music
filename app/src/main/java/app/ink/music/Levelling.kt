@@ -26,17 +26,23 @@ class Levelling(private val player: Player, private val context: android.content
     /** What the player's volume is at, levelled (sleep's fade works down from it). */
     var level = 1f
         private set
+    /** The song's gain as last applied (dB); told to the screens (Heard) once it's worked out. */
+    var db = 0f
+        private set
+    var onApply: (() -> Unit)? = null
     private var boost: LoudnessEnhancer? = null
     private var session = C.AUDIO_SESSION_ID_UNSET
 
     /** The song's gain worked out again (a new song, its tags read, the queue round it changed). */
     fun apply() {
         val db = if (on) gain() else 0f
+        this.db = db
         level = 10f.pow(db.coerceAtMost(0f) / 20f)
         player.volume = level
         val up = (db.coerceAtLeast(0f) * 100).toInt()   // millibels
         val e = enhancer()?.runCatching { setTargetGain(up); enabled = up > 0 }
         android.util.Log.d("ink-level", "${player.currentMediaItem?.mediaId} ${"%.1f".format(db)} dB  volume $level  boost $up mB ${if (e?.isSuccess == true) "" else "(no enhancer)"}")
+        onApply?.invoke()
     }
 
     private fun enhancer(): LoudnessEnhancer? {

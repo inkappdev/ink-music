@@ -70,6 +70,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -114,6 +116,9 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
     var dir by remember { mutableIntStateOf(1) }   // the push's way: next in from the right, back from the left
     var queueUp by remember { mutableStateOf(false) }
     var playOnUp by remember { mutableStateOf(false) }
+    var heardUp by remember { mutableStateOf(false) }
+    // a lossless song's moment across the cover, while it types (the word at the top waits for it)
+    var typing by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(playOnUp) { playOnUp = false }
     val close by rememberUpdatedState(onClose)
     val scrub = remember { Scrub() }
@@ -169,12 +174,12 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                 Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     if (withLyrics && lyric != null) {
                         LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
-                        Scrubber(n, accent, scrub)
+                        Scrubber(n, accent, scrub) { HeardWord(n, typing) { heardUp = true } }
                         Song(n, dir, small = true, scrub, onOpen, share)
                     } else {
                         Spacer(Modifier.weight(1f))
-                        Scrubber(n, accent, scrub)
-                        Song(n, dir, small = false, scrub, onOpen, share)
+                        Scrubber(n, accent, scrub) { HeardWord(n, typing) { heardUp = true } }
+                        Song(n, dir, small = false, scrub, onOpen, share) { t -> Moment(t) { typing = it } }
                         Spacer(Modifier.weight(.4f))
                     }
                 }
@@ -210,6 +215,11 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) { PlayOnPage(onClose = { playOnUp = false }) }
+        androidx.compose.animation.AnimatedVisibility(
+            heardUp && n.heard != null,
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { n.heard?.let { HeardPage(it, onClose = { heardUp = false }) } }
     }
 }
 
@@ -254,7 +264,7 @@ private val SLEEPS = listOf(0L, 15 * 60_000L, 30 * 60_000L, 60 * 60_000L, Player
  * lyrics up), the cover at 72 dp (the mini player's size) with the words beside it. A new song pushes in.
  */
 @Composable
-private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit) {
+private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit, over: @Composable (Now) -> Unit = {}) {
     AnimatedContent(
         targetState = n,
         // a station's new song pushes in too
@@ -286,6 +296,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val side = minOf(maxWidth, 420.dp)
                 Sleeve(t, side, Modifier.clickwheel({ live }, scrub))
+                Box(Modifier.size(side)) { over(t) }
             }
             Spacer(Modifier.height(20.dp))
             // the title, and beside it the desktop's heart
@@ -374,7 +385,10 @@ private fun Grain() {
  * down, the song jumps there on letting go.
  */
 @Composable
-private fun Scrubber(n: Now, accent: Color, scrub: Scrub) {
+private fun Scrubber(n: Now, accent: Color, scrub: Scrub, middle: @Composable () -> Unit = {}) {
+    // where the middle word sits: a tap there is the word's, not a seek
+    var hole by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val margin = with(androidx.compose.ui.platform.LocalDensity.current) { 12.dp.toPx() }
     var pos by remember { mutableLongStateOf(n.positionNow()) }
     LaunchedEffect(n) {
         while (true) { pos = n.positionNow(); if (!n.moving) break; delay(250) }
@@ -388,7 +402,7 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub) {
         Modifier
             .pointerInput(Unit) {
                 detectTapGestures(onPress = { o ->
-                    if (duration <= 0) return@detectTapGestures
+                    if (duration <= 0 || hole?.contains(o) == true) return@detectTapGestures
                     scrub.at = where(o.x, size.width)
                     if (tryAwaitRelease()) scrub.at?.let(Playback::seek)
                     scrub.at = null
@@ -402,9 +416,13 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub) {
                 ) { c, _ -> c.consume(); if (duration > 0) scrub.at = where(c.position.x, size.width) }
             },
     ) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            BasicText(clock(shown), style = pixel(SMALL, times))
-            BasicText(if (n.duration > 0) "-" + clock(n.duration - shown) else "", style = pixel(SMALL, times))
+        // the times at the ends, and dead centre between them what's heard
+        Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            BasicText(clock(shown), style = pixel(SMALL, times), modifier = Modifier.align(androidx.compose.ui.Alignment.CenterStart))
+            Box(Modifier.align(androidx.compose.ui.Alignment.Center)
+                .onGloballyPositioned { hole = it.boundsInParent().inflate(margin) }) { middle() }
+            BasicText(if (n.duration > 0) "-" + clock(n.duration - shown) else "", style = pixel(SMALL, times),
+                modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
         }
         // the line sits on the cover's top edge: nothing between them
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
@@ -572,4 +590,113 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
             }
         }
     }
+}
+
+/**
+ * A lossless song's moment (Bronson's pick, 2026-10-26): as it starts, "HI-RES" or "LOSSLESS" types itself
+ * across the cover, its depth and rate under it, holds a moment, and goes; the word at the player's top
+ * says it after. Once a song, only at its start, never for lossy (the word alone says that).
+ */
+@Composable
+private fun Moment(t: Now, onTyping: (Boolean) -> Unit) {
+    val h = t.heard
+    val key = t.song?.id ?: (t.title + t.artist)
+    var big by remember(key) { mutableStateOf("") }
+    var small by remember(key) { mutableStateOf("") }
+    // 0 while it's typed and held; to 1 as it fades where it is, the dim lifting with it
+    val leave = remember(key) { androidx.compose.animation.core.Animatable(1f) }
+    androidx.compose.runtime.DisposableEffect(key) { onDispose { onTyping(false) } }
+    LaunchedEffect(key, h?.lossless) {
+        if (h?.lossless != true || t.positionNow() > 8_000 || !Moments.on.value) return@LaunchedEffect
+        val a = if (h.hires) "HI-RES" else "LOSSLESS"
+        val b = listOfNotNull(h.bits.takeIf { it > 0 }?.let { "$it bit" }, h.rate.takeIf { it > 0 }?.let { "${Heard.khz(it)} khz" }).joinToString(" · ")
+        onTyping(true)
+        leave.animateTo(0f, tween(Motion.ENTER, easing = Motion.expo))
+        delay(100)
+        for (i in 1..a.length) { big = a.take(i); delay(70) }
+        for (i in 1..b.length) { small = b.take(i); delay(30) }
+        delay(1_400)
+        // it fades where it is; once it's gone, the word between the times fades in
+        leave.animateTo(1f, tween(SETTLE, easing = SETTLING))
+        big = ""; small = ""
+        onTyping(false)
+    }
+    Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .55f * (1f - leave.value))),
+        contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Column(Modifier.graphicsLayer { alpha = 1f - leave.value }, horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+            BasicText(big, style = headline(40.sp))
+            Spacer(Modifier.height(10.dp))
+            BasicText(small, style = pixel(14.sp))
+        }
+    }
+}
+
+/** The moment's fade, and the word's fade in after it: slow, gentle at both ends. */
+private const val SETTLE = 1_400
+private val SETTLING = androidx.compose.animation.core.CubicBezierEasing(.45f, 0f, .2f, 1f)
+
+/** All of what reaches your ears: the stream's format, where it came from and how, the quality and even volume. */
+@Composable
+private fun HeardPage(h: Heard, onClose: () -> Unit) {
+    val lines = listOfNotNull(
+        "format" to (h.codec + if (h.hires) ", hi-res lossless" else if (h.lossless) ", lossless" else ", lossy"),
+        h.bits.takeIf { it > 0 }?.let { "bit depth" to "$it bit" },
+        h.rate.takeIf { it > 0 }?.let { "sample rate" to "${Heard.khz(it)} khz" },
+        h.channels.takeIf { it > 0 }?.let { "channels" to when (it) { 1 -> "mono"; 2 -> "stereo"; else -> "$it" } },
+        h.kbps.takeIf { it > 0 }?.let { "bitrate" to "$it kbps" },
+        "from" to when (h.from) {
+            "server" -> if (h.made.isEmpty()) "your server, the file as it is" else "your server, made ${h.made} for you"
+            "youtube" -> "youtube music, its ${h.made.ifEmpty { "best" }} stream"
+            "station" -> "the station's stream"
+            else -> "this phone, the file as it is"
+        },
+        h.quality.takeIf { it >= 0 }?.let { "quality" to "${Quality.words[it]} on ${if (h.metered) "mobile data" else "wifi"}" },
+        "even volume" to (h.gain?.let { "%+.1f db".format(java.util.Locale.ROOT, it) } ?: "off"),
+    )
+    Column(
+        Modifier.fillMaxSize().background(Ink.black).windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
+            .navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp),
+    ) {
+        Row(Modifier.fillMaxWidth()) {
+            Spacer(Modifier.weight(1f))
+            Word("close", pixel(SMALL, SAID), touch = 10.dp, onClick = onClose)
+        }
+        Spacer(Modifier.height(28.dp))
+        BasicText("WHAT YOU HEAR", style = headline(44.sp))
+        Spacer(Modifier.height(8.dp))
+        BasicText(h.word, style = pixel(16.sp, if (h.lossless) Ink.ink else SAID))
+        Spacer(Modifier.height(32.dp))
+        lines.forEach { (label, value) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                BasicText(label, style = pixel(12.sp, Ink.mid), modifier = Modifier.width(130.dp).padding(top = 2.dp))
+                BasicText(value, style = pixel(14.sp), modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/**
+ * What's heard, between the song's times on the cover's top edge ("flac 24/96", lit when lossless; at 75%
+ * when lossy); a tap tells all of it. After a lossless song's moment it fades in slowly (Bronson's ask,
+ * 2026-10-26: once the moment has faded, as slowly). Not on a speaker:
+ * the line under the title says what reaches it there.
+ */
+@Composable
+private fun HeardWord(n: Now, typing: Boolean, onOpen: () -> Unit) {
+    val h = n.heard?.takeIf { n.device.isEmpty() }
+    var last by remember { mutableStateOf(h) }
+    if (h != null) last = h
+    androidx.compose.animation.AnimatedVisibility(h != null && !typing,
+        enter = fadeIn(tween(SETTLE, easing = SETTLING)), exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
+        last?.let { Word(it.word, pixel(SMALL, if (it.lossless) Ink.ink else SAID), onClick = onOpen) }
+    }
+}
+
+/** The hi-res moment, on unless turned off (settings); the word between the times shows either way. */
+object Moments {
+    private val _on = kotlinx.coroutines.flow.MutableStateFlow(true)
+    val on: kotlinx.coroutines.flow.StateFlow<Boolean> = _on
+    private fun prefs(c: android.content.Context) = c.getSharedPreferences("player", android.content.Context.MODE_PRIVATE)
+    fun start(c: android.content.Context) { _on.value = prefs(c).getBoolean("moment", true) }
+    fun set(c: android.content.Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("moment", on).apply() }
 }
