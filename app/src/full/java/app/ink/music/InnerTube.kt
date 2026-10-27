@@ -31,6 +31,9 @@ class InnerTube(
 
     enum class Kind { RECORD, PLAYLIST, ARTIST, OTHER }
 
+    /** One of the home page's shelves: its title, its tiles. */
+    data class Shelf(val title: String, val items: List<Item>)
+
     val signedIn get() = sapisid != null
 
     private val sapisid = cookie?.split(';')?.map { it.trim() }?.let { parts ->
@@ -62,6 +65,37 @@ class InnerTube(
         }
         return out.distinctBy { it.id }.take(max)
     }
+
+    /** Your home on YouTube Music (signed in, it's yours): its shelves, a few pages of them. */
+    fun home(max: Int = 30): List<Shelf> {
+        val out = ArrayList<Shelf>()
+        pages("FEmusic_home", max) { page ->
+            all(page, "musicCarouselShelfRenderer").forEach { shelf ->
+                val title = all(shelf, "musicCarouselShelfBasicHeaderRenderer").firstOrNull()?.let { text(it.optJSONObject("title")) }.orEmpty()
+                out += Shelf(title, all(shelf, "musicTwoRowItemRenderer").mapNotNull(::tile))
+            }
+            out.size
+        }
+        return out
+    }
+
+    /** A mix's songs as its player queue (a mix may have no page of its own to browse). */
+    fun queue(playlistId: String, max: Int = 50): List<Track> = runCatching {
+        all(post("next", JSONObject().put("playlistId", playlistId).put("isAudioOnly", true)), "playlistPanelVideoRenderer").mapNotNull { r ->
+            val id = r.optString("videoId").ifEmpty { return@mapNotNull null }
+            val by = runs(r.optJSONObject("longBylineText"))
+            val artists = by.filter { kind(pageType(browse(it))) == Kind.ARTIST }.map { it.optString("text") }
+                .ifEmpty { listOfNotNull(by.firstOrNull()?.optString("text")?.trim()?.takeIf { it.isNotEmpty() }) }
+            val album = by.firstOrNull { kind(pageType(browse(it))) == Kind.RECORD }
+            Track(id, text(r.optJSONObject("title")), artists, album?.optString("text"), browse(album)?.optString("browseId"),
+                text(r.optJSONObject("lengthText")).let { if (TIME.matches(it)) seconds(it) else 0 }, art(r.optJSONObject("thumbnail")))
+        }.distinctBy { it.videoId }.take(max)
+    }.getOrDefault(emptyList())
+
+    /** An artist's records with their subtitles ("Single • 2026"), newest first as the page has them. */
+    fun records(browseId: String): List<Item> =
+        all(post("browse", JSONObject().put("browseId", browseId)), "musicTwoRowItemRenderer").mapNotNull(::tile)
+            .filter { it.kind == Kind.RECORD }.distinctBy { it.id }
 
     /** An artist's page, one read: their name, best-known songs, and records (singles too). */
     fun artist(browseId: String): Triple<String, List<Track>, List<Item>> {
@@ -240,10 +274,15 @@ class InnerTube(
             return Track(videoId, title, artists, album, albumId, length, art(r.optJSONObject("thumbnail")))
         }
 
-        /** A tile: a record, playlist or artist. */
+        /** A tile: a record, playlist or artist; a mix that only plays (no page), as its playlist. */
         fun tile(r: JSONObject): Item? {
-            val b = r.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
-                ?: runs(r.optJSONObject("title")).firstNotNullOfOrNull { browse(it) } ?: return null
+            val nav = r.optJSONObject("navigationEndpoint")
+            val b = nav?.optJSONObject("browseEndpoint") ?: runs(r.optJSONObject("title")).firstNotNullOfOrNull { browse(it) }
+            if (b == null) {
+                val list = (nav?.optJSONObject("watchPlaylistEndpoint") ?: nav?.optJSONObject("watchEndpoint"))?.optString("playlistId").orEmpty()
+                if (list.isEmpty()) return null
+                return Item("VL$list", text(r.optJSONObject("title")), text(r.optJSONObject("subtitle")), art(r.optJSONObject("thumbnailRenderer")), Kind.PLAYLIST)
+            }
             val id = b.optString("browseId").ifEmpty { return null }
             return Item(id, text(r.optJSONObject("title")), text(r.optJSONObject("subtitle")), art(r.optJSONObject("thumbnailRenderer")), kind(pageType(b)))
         }
