@@ -80,6 +80,8 @@ listening to at ink, picked by real people.
 - **An equalizer** of its own, ten bands, with corrections for thousands of **headphones** from [AutoEq](https://github.com/jaakkopasanen/AutoEq).
 - **Even volume** (ReplayGain) from the files' own tags or the server's. A record played through keeps its own quiet and loud.
 - **Soft pause**: the music eases out and back in. And it says exactly what reaches your ears: codec, bit depth, rate.
+- Small words step up a brightness in **sunlight**, read by the light sensor, so it reads outdoors.
+- **Motion** to suit the phone: full, or less on a slower one (no cascades or softening), as Android says by default.
 
 **Listening**
 - **Radio**: when the queue runs out, more like it. Your server's similar songs first, then YouTube Music's mix.
@@ -91,7 +93,7 @@ listening to at ink, picked by real people.
 - **Scrobbling** to [ListenBrainz](https://listenbrainz.org) and Last.fm.
 
 **Everywhere else**
-- **Play on** Chromecast speakers and TVs, speaker groups and DLNA receivers (Denon HEOS and others), sending the original hi-res file where the speaker can take it. No Google Play services needed.
+- **Play on** Chromecast and Google Nest speakers, TVs, speaker groups and DLNA receivers (Denon HEOS and others), sending the original hi-res file where the speaker can take it. No Google Play services needed.
 - **Android Auto**: records, artists, lists, search, and "play … on ink music".
 - A **home-screen widget**, the mini player in ink's look.
 
