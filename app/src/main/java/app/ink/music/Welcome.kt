@@ -230,7 +230,18 @@ private fun Sources(onAllowed: () -> Unit, onNext: () -> Unit) {
                 server = !server
             }
             if (server && account == null) Box(Modifier.padding(top = 4.dp, bottom = 18.dp)) { SignIn() }
-            if (YouTubeMusic.available) Source("youtube music", "search and play anything, no account", true) {}
+            if (YouTubeMusic.available) {
+                // no account needed; signing in (if you like) brings your liked songs, playlists and artists in
+                val who by YouTubeAccount.who.collectAsState()
+                Source("youtube music", who?.let { w -> "signed in as ${w.name.ifEmpty { w.handle }.lowercase()}" }
+                    ?: "search and play anything, no account needed", true) {}
+                if (who == null) Column(Modifier.padding(bottom = 14.dp)) {
+                    Word("sign in >", pixel(14.sp), touch = 10.dp) { YouTubeAccount.openSignIn(ctx) }
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("if you like: your liked songs, playlists and artists. ink music isn't youtube's own app, " +
+                        "and google could, rarely, mind one being used. your sign-in stays on this phone", style = pixel(12.sp, Ink.mid))
+                }
+            }
             Source("radio", "thousands of stations, every kind of music", true) {}
             Spacer(Modifier.height(30.dp))
             Word("NEXT", headline(56.sp), touch = 12.dp, onClick = onNext)
@@ -265,7 +276,19 @@ fun ArtistPicker(title: String, skip: Boolean, onDone: () -> Unit) {
     // the order holds still as you pick (what you'd picked before, then the library's, then the well-loved);
     // only an artist found by name comes in at the top
     val first = remember(mine) { (Seeds.artists.value.map { it.name } + mine + Seeds.offered).distinctBy { it.lowercase() } }
-    val offered = (found + first).distinctBy { it.lowercase() }
+    // signed in to YouTube Music: your artists there first, and on the first open already picked
+    // (press done and you're through); later, from settings, offered but not picked for you
+    val tube by YouTubeAccount.artists.collectAsState()
+    val yours = remember { mutableStateListOf<String>() }
+    LaunchedEffect(tube) {
+        tube.take(12).forEach { a ->
+            if (yours.none { it.equals(a.name, ignoreCase = true) }) {
+                yours.add(a.name)
+                if (skip && picked.none { it.equals(a.name, ignoreCase = true) }) picked.add(a.name)
+            }
+        }
+    }
+    val offered = (found + yours + first).distinctBy { it.lowercase() }
     var query by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     fun find() {
@@ -288,7 +311,8 @@ fun ArtistPicker(title: String, skip: Boolean, onDone: () -> Unit) {
                 Column {
                     BasicText(title, style = headline(36.sp))
                     Spacer(Modifier.height(8.dp))
-                    BasicText("your listen page grows from them: their mixes, their records", style = pixel(12.sp, Ink.mid))
+                    BasicText(if (yours.isNotEmpty() && skip) "yours from youtube music, picked. your listen page grows from them: their mixes, their records"
+                        else "your listen page grows from them: their mixes, their records", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BasicText("find > ", style = pixel(14.sp, Ink.dim))
