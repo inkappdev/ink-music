@@ -21,6 +21,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -59,6 +60,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.SolidColor
@@ -115,24 +117,48 @@ fun Welcome(onAllowed: () -> Unit, onDone: () -> Unit) {
 /** INK MUSIC over covers drifting by, the line about it, and the one word to go on. */
 @Composable
 private fun Hello(onNext: () -> Unit) {
-    // real records' covers (the full build): the well-loved artists' best-known songs, found
-    // side by side while the welcome is up, each shown as it comes
-    val covers = remember { mutableStateListOf<Song>() }
+    val ctx = LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // real records' covers (the full build): the well-loved artists' best-known songs, found and drawn
+    // in the dither before any is shown; then the field develops at once, in one wave (2026-10-26: shown
+    // as each came, it looked like pictures loading slowly)
+    val ready = remember { mutableStateListOf<Developed>() }
+    var revealed by remember { mutableStateOf(0) }   // how many were there when the field developed
+    val wave = remember { Animatable(0f) }
+    // the words (INK MUSIC, the line, BEGIN) held back till the covers are ready, then faded in just ahead of
+    // them, so the two come together (Bronson, 2026-10-26); with no covers coming, in after a short hold
+    val words = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        if (!YouTubeMusic.available) return@LaunchedEffect
-        Seeds.offered.take(24).chunked(6).forEach { batch ->
-            batch.map { name -> async(Dispatchers.IO) { YouTubeMusic.hit(name) } }.awaitAll()
-                .filterNotNull().filter { it.art != null }.forEach {
-                    // let in one at a time, not six at once
-                    if (covers.none { c -> c.art == it.art }) { covers.add(it); delay(Motion.STAGGER.toLong()) }
+        val start = android.os.SystemClock.elapsedRealtime()
+        if (!YouTubeMusic.available) { delay(400); words.animateTo(1f, tween(700, easing = WAVE)); return@LaunchedEffect }
+        launch {
+            // the field when it's full enough, or a moment in with what's there (never a field of one or two);
+            // offline, the words alone after 4 s
+            while (ready.size < REVEAL_AT && android.os.SystemClock.elapsedRealtime() - start < 2_500) delay(50)
+            while (ready.size < 6 && android.os.SystemClock.elapsedRealtime() - start < 4_000) delay(50)
+            launch { words.animateTo(1f, tween(700, easing = WAVE)) }
+            while (ready.size < 6) delay(50)
+            delay(250)
+            revealed = ready.size
+            wave.animateTo(1f, tween(1_600, easing = WAVE))
+        }
+        val side = with(density) { COVER.toPx() }
+        Seeds.offered.take(SLOTS.size).chunked(12).forEach { batch ->
+            batch.map { name ->
+                async(Dispatchers.IO) {
+                    val s = YouTubeMusic.hit(name)?.takeIf { it.art != null } ?: return@async null
+                    val c = Covers.of(ctx, s) ?: return@async null
+                    Looks.develop(c.image.asAndroidBitmap(), c.accent, side, density.density)?.let { f -> Developed(s, f.map { it.asImageBitmap() }) }
                 }
+            }.awaitAll().filterNotNull().forEach { d -> if (ready.none { it.song.art == d.song.art }) ready.add(d) }
         }
     }
     Box(Modifier.fillMaxSize()) {
-        if (covers.isNotEmpty()) Drift(covers, Modifier.fillMaxSize().alpha(.6f))
+        if (revealed > 0) Drift(ready, revealed, wave.value, Modifier.fillMaxSize().alpha(.6f))
         // no covers to show (the play build, or offline): the kinds of music, drifting by as words
         else if (!YouTubeMusic.available) WordDrift(Stations.genres.map { it.first }, Modifier.fillMaxSize())
-        Column(Modifier.fillMaxSize().windowInsetsPadding(bars).navigationBarsPadding().padding(horizontal = 28.dp, vertical = 24.dp)) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(bars).navigationBarsPadding().padding(horizontal = 28.dp, vertical = 24.dp)
+            .graphicsLayer { alpha = words.value }) {
             Spacer(Modifier.weight(1f))
             BasicText("INK", style = headline(96.sp))
             BasicText("MUSIC", style = pixel(40.sp), modifier = Modifier.padding(top = 6.dp))
@@ -144,49 +170,69 @@ private fun Hello(onNext: () -> Unit) {
     }
 }
 
-/**
- * A cover in the dither (the player's own drawing of it, at the size it's shown), black till it's
- * ready, then developing: from black to the whole of it, the brightest dots first, on ink's curve.
- */
+/** A cover found and drawn in the dither, from black to the whole of it (the player's own drawing, at the size it's shown). */
+private class Developed(val song: Song, val frames: List<androidx.compose.ui.graphics.ImageBitmap>)
+
+private val COVER = 150.dp
+/** How many ready before the field develops (else 2.5 s in, with what's there). */
+private const val REVEAL_AT = 15
+/** The wave's curve: gentle at both ends, so it reads as one movement across the field. */
+private val WAVE = androidx.compose.animation.core.CubicBezierEasing(.45f, 0f, .2f, 1f)
+/** How far behind the first cover the last one starts, as a part of the wave. */
+private const val SPREAD = .8f
+
+/** A cover at `shown` (0 black, 1 whole), the brightest dots first. */
 @Composable
-private fun Looked(song: Song, side: Dp) {
-    val ctx = LocalContext.current
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val frames by produceState<List<androidx.compose.ui.graphics.ImageBitmap>?>(null, song.id) {
-        value = withContext(Dispatchers.Default) {
-            val c = Covers.of(ctx, song) ?: return@withContext null
-            Looks.develop(c.image.asAndroidBitmap(), c.accent, with(density) { side.toPx() }, density.density)?.map { it.asImageBitmap() }
-        }
-    }
-    val f = frames
-    if (f == null) { Box(Modifier.size(side)); return }
-    val shown = remember(f) { Animatable(0f) }
-    LaunchedEffect(f) { shown.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
-    androidx.compose.foundation.Image(f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)], null, Modifier.size(side),
+private fun Looked(d: Developed, shown: Float) {
+    val f = d.frames
+    if (shown <= 0f) { Box(Modifier.size(COVER)); return }
+    androidx.compose.foundation.Image(f[((shown * f.size).toInt()).coerceIn(0, f.size - 1)], null, Modifier.size(COVER),
         contentScale = androidx.compose.ui.layout.ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
 }
 
-/** Where the covers go as they come, spread over the three rows (row * 8 + place), not filling the top row first. */
+/** Where the covers go, spread over the three rows (row * 8 + place), not filling the top row first. */
 private val SLOTS = intArrayOf(9, 2, 21, 13, 5, 18, 11, 0, 23, 15, 7, 19, 3, 12, 17, 6, 22, 1, 10, 16, 4, 20, 14, 8)
 
-/** Three rows of covers sliding by, each its own way and pace, wider than the screen. */
+/**
+ * Three rows of covers sliding by, each its own way and pace, wider than the screen. Those there when it
+ * opened develop together as a wave from the top left to the bottom right; one found later develops on
+ * its own as slowly, in a place that was empty.
+ */
 @Composable
-private fun Drift(covers: List<Song>, modifier: Modifier) {
+private fun Drift(covers: List<Developed>, revealed: Int, wave: Float, modifier: Modifier) {
     val t = rememberInfiniteTransition(label = "drift")
     val run by t.animateFloat(0f, 1f, infiniteRepeatable(tween(60_000, easing = LinearEasing), RepeatMode.Reverse), label = "run")
-    Column(modifier.clipToBounds().padding(top = 40.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // each slot's cover, once one has come for it
-        val at = arrayOfNulls<Song>(SLOTS.size).also { slot -> covers.take(SLOTS.size).forEachIndexed { i, s -> slot[SLOTS[i]] = s } }
+    BoxWithConstraints(modifier.clipToBounds()) {
+    val screen = maxWidth
+    Column(Modifier.padding(top = 40.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // each slot's cover, and whether it came before the field developed
+        val at = arrayOfNulls<Int>(SLOTS.size).also { slot -> covers.take(SLOTS.size).indices.forEach { i -> slot[SLOTS[i]] = i } }
         for (row in 0 until 3) {
-            val side = 150.dp
             val way = if (row % 2 == 0) -1 else 1
-            Row(Modifier.requiredWidth(side * 8 + 12.dp * 7).offset(x = (way * run * 220 - 110 * way).dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val shift = (way * run * 220 - 110 * way).dp
+            // the row is wider than the screen, centred on it, then shifted
+            val left = (screen - (COVER * 8 + 12.dp * 7)) / 2 + shift
+            Row(Modifier.requiredWidth(COVER * 8 + 12.dp * 7).offset(x = shift), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 for (place in 0 until 8) {
-                    val s = at[row * 8 + place]
-                    if (s == null) Box(Modifier.size(side)) else key(s.id) { Looked(s, side) }
+                    val i = at[row * 8 + place]
+                    if (i == null) { Box(Modifier.size(COVER)); continue }
+                    val d = covers[i]
+                    key(d.song.id) {
+                        if (i < revealed) {
+                            // its place in the wave, by where it is on the screen: across first, then down
+                            val across = ((left + (COVER + 12.dp) * place + COVER / 2) / screen).coerceIn(0f, 1f)
+                            val start = (across * .75f + row / 2f * .25f) * SPREAD
+                            Looked(d, ((wave * (1f + SPREAD) - start)).coerceIn(0f, 1f))
+                        } else {
+                            val own = remember { Animatable(0f) }
+                            LaunchedEffect(Unit) { own.animateTo(1f, tween(1_600, easing = WAVE)) }
+                            Looked(d, own.value)
+                        }
+                    }
                 }
             }
         }
+    }
     }
 }
 
