@@ -111,7 +111,9 @@ fun main() {
 /** What's over the library: a record, an artist, the player. */
 sealed interface Page {
     data class Record(val id: String) : Page
-    data class Artist(val name: String) : Page
+    /** An artist's page: by name (found on YouTube Music), or by their page's id there too. */
+    data class Artist(val name: String, val id: String = "") : Page
+    data object Find : Page
     data object Playing : Page
     data object Settings : Page
     data object Queue : Page
@@ -139,7 +141,7 @@ private fun App() {
                     k.key == Key.DirectionRight -> { Player.seek(Player.position.value + 10_000); true }
                     k.key == Key.DirectionLeft -> { Player.seek((Player.position.value - 10_000).coerceAtLeast(0)); true }
                     k.key == Key.Escape && pages.isNotEmpty() -> { pages.removeLast(); true }
-                    k.key == Key.F && k.isMetaPressed -> { pages.clear(); Finding.asked.value++; true }
+                    k.key == Key.F && k.isMetaPressed -> { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++; true }
                     else -> false
                 }
             },
@@ -158,7 +160,8 @@ private fun App() {
                     when (page) {
                         null -> LibraryPage { pages += it }
                         is Page.Record -> RecordPage(page.id, { pages += it }) { pages.removeLast() }
-                        is Page.Artist -> ArtistPage(page.name, { pages += it }) { pages.removeLast() }
+                        is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { pages.removeLast() }
+                        Page.Find -> Column(Modifier.fillMaxSize()) { Close { pages.removeLast() }; FindTab { pages += it } }
                         Page.Playing -> PlayerPage({ pages += it }) { pages.removeLast() }
                         Page.Settings -> SettingsPage { pages.removeLast() }
                         Page.Queue -> QueuePage({ pages += it }) { pages.removeLast() }
@@ -170,6 +173,7 @@ private fun App() {
             if (pages.lastOrNull() != Page.Playing) MiniPlayer(
                 { if (pages.lastOrNull() != Page.Queue) pages += Page.Queue },
                 { if (pages.lastOrNull() != Page.PlayOn) pages += Page.PlayOn },
+                { name -> pages += Page.Artist(name) },
             ) { if (pages.lastOrNull() != Page.Playing) pages += Page.Playing }
         }
     }
@@ -181,21 +185,20 @@ private fun LibraryPage(open: (Page) -> Unit) {
     val songs by Library.songs.collectAsState()
     val read by Library.read.collectAsState()
     var tab by remember { mutableStateOf("albums") }
-    val asked by Finding.asked.collectAsState()
-    LaunchedEffect(asked) { if (asked > 0) tab = "find" }
     Column(Modifier.fillMaxSize().padding(top = TOP + 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Bottom) {
-            for (t in listOf("albums", "artists", "songs", "radio", "find")) {
+            for (t in listOf("albums", "artists", "songs", "radio")) {
                 Word(t.uppercase(), headline(34.sp, if (t == tab) Ink.ink else Ink.dim)) { tab = t }
             }
             Spacer(Modifier.weight(1f))
+            Word("find", pixel(13.sp, Ink.mid), Modifier.padding(bottom = 6.dp, end = 20.dp), touch = 8.dp) { open(Page.Find) }
             Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(bottom = 6.dp), touch = 8.dp) { open(Page.Settings) }
         }
         Spacer(Modifier.height(14.dp))
-        if (songs.isNotEmpty() && tab != "find" && tab != "radio") SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
+        if (songs.isNotEmpty() && tab != "radio") SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
             Modifier.padding(horizontal = SIDE))
         Spacer(Modifier.height(4.dp))
-        if (read && songs.isEmpty() && tab != "radio" && tab != "find") {
+        if (read && songs.isEmpty() && tab != "radio") {
             Column(Modifier.padding(horizontal = SIDE)) {
                 val syncing by Server.syncing.collectAsState()
                 BasicText(if (syncing) "READING YOUR SERVER" else "NO MUSIC YET", style = headline(28.sp))
@@ -246,7 +249,6 @@ private fun LibraryPage(open: (Page) -> Unit) {
                 }
                 key(ac, seed) { Artists(artists, open) }
             }
-            "find" -> FindTab(open)
             "radio" -> RadioTab()
             else -> {
                 val every = remember(songs, sc, seed, heard, minute) {
@@ -346,7 +348,8 @@ fun SongRow(
                 BasicText(s.title.uppercase(), style = headline(17.sp, color), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (said != null) BasicText(said, style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            BasicText(clock(s.duration), style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), modifier = Modifier.padding(start = 16.dp))
+            // a length not known (YouTube's top songs come without one): none said
+            if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), modifier = Modifier.padding(start = 16.dp))
         }
         if (options) Row(
             Modifier.padding(start = if (number != null) 36.dp else 0.dp, bottom = 10.dp).fadeUp(),
@@ -450,31 +453,12 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
     }
 }
 
-@Composable
-private fun ArtistPage(name: String, open: (Page) -> Unit, onClose: () -> Unit) {
-    val albums by Library.albums.collectAsState()
-    val songs by Library.songs.collectAsState()
-    val theirs = remember(albums, name) { albums.filter { it.artist == name }.sortedBy { it.year } }
-    val loose = remember(songs, name) { songs.filter { it.albumArtist == name && it.album.isEmpty() } }
-    Column(Modifier.fillMaxSize()) {
-        Close(onClose)
-        Records(theirs, open) {
-            Column(Modifier.padding(top = 10.dp, bottom = 8.dp)) {
-                BasicText(name.uppercase(), style = headline(64.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(10.dp))
-                Word("play all", pixel(14.sp), touch = 8.dp) { Player.play(theirs.flatMap { it.songs } + loose) }
-                loose.forEachIndexed { i, s -> SongRow(s, open = open) { Player.play(loose, i) } }
-            }
-        }
-    }
-}
-
 /**
  * What's playing, along the foot of the window: the line along the cover's top edge filling with the
  * song in its colour, the cover, the song, back / play / next and the times. A click opens the player.
  */
 @Composable
-private fun MiniPlayer(onQueue: () -> Unit, onPlayOn: () -> Unit, onOpen: () -> Unit) {
+private fun MiniPlayer(onQueue: () -> Unit, onPlayOn: () -> Unit, onArtist: (String) -> Unit, onOpen: () -> Unit) {
     val now by Player.now.collectAsState()
     val trouble by Player.trouble.collectAsState()
     trouble?.let {
@@ -497,7 +481,10 @@ private fun MiniPlayer(onQueue: () -> Unit, onPlayOn: () -> Unit, onOpen: () -> 
                     BasicText(title.uppercase(), style = headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
                     val on by Casting.on.collectAsState()
-                    BasicText(artist.lowercase() + (on?.let { "  on ${it.name.lowercase()}" } ?: ""), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row {
+                        Word(artist.lowercase(), pixel(12.sp, Ink.mid)) { if (!n.song.station) onArtist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }) }
+                        on?.let { BasicText("  on ${it.name.lowercase()}", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
                 }
             }
             Controls(n)
@@ -584,6 +571,9 @@ private fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             Column {
                                 BasicText(title.uppercase(), style = headline(44.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(12.dp))
+                                if (!n.song.station) Word(said(n).second.lowercase(), pixel(14.sp)) {
+                                    open(Page.Artist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }))
+                                }
                                 Word(n.song.album.lowercase(), pixel(14.sp, Ink.mid)) {
                                     if (n.song.album.isNotEmpty()) open(Page.Record(n.song.albumId))
                                 }

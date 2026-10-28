@@ -105,6 +105,9 @@ object YouTube {
     }
 
     /** A song as YouTube Music's own pages list it; on a record's page, the record's words and cover. */
+    /** A song from YouTube Music's own pages (an artist's top songs). */
+    fun song(t: InnerTube.Track): Song = trackSong(t)
+
     private fun trackSong(t: InnerTube.Track, album: String? = null, albumId: String? = null, albumArtist: String? = null, number: Int = 0, art: String? = null): Song {
         val artist = t.artists.joinToString(", ").ifEmpty { albumArtist ?: "unknown" }
         return Song(
