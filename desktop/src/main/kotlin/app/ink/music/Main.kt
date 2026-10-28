@@ -93,7 +93,7 @@ fun main() {
             icon = androidx.compose.ui.graphics.painter.BitmapPainter(
                 org.jetbrains.skia.Image.makeFromEncoded(Ink::class.java.getResourceAsStream("/ink-music.png")!!.readBytes()).toComposeImageBitmap(),
             ),
-            state = rememberWindowState(size = DpSize(1180.dp, 800.dp)),
+            state = rememberWindowState(size = DpSize(1440.dp, 900.dp)),
         ) {
             LaunchedEffect(Unit) {
                 window.minimumSize = java.awt.Dimension(720, 520)
@@ -119,6 +119,7 @@ sealed interface Page {
     data object Queue : Page
     data object PlayOn : Page
     data class Tube(val album: TubeAlbum) : Page
+    data class List(val id: String, val name: String) : Page
 }
 
 /** Clear of the Mac's traffic lights (the title bar is gone, its buttons stay). */
@@ -128,6 +129,7 @@ val SIDE = 32.dp
 @Composable
 private fun App() {
     val pages = remember { mutableStateListOf<Page>() }
+    var place by remember { mutableStateOf("listen") }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     Box(
@@ -146,7 +148,12 @@ private fun App() {
                 }
             },
     ) {
-        Column(Modifier.fillMaxSize()) {
+      BoxWithConstraints(Modifier.fillMaxSize()) {
+        val frame = frameOf(maxWidth)
+        Row(Modifier.fillMaxSize()) {
+        if (frame != Frame.NARROW) Rail(place, { place = it; pages.clear() }, { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++ },
+            { if (pages.lastOrNull() != Page.Settings) pages += Page.Settings })
+        Column(Modifier.weight(1f).fillMaxHeight()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 val top = pages.lastOrNull()
                 AnimatedContent(
@@ -158,7 +165,7 @@ private fun App() {
                     label = "page",
                 ) { page ->
                     when (page) {
-                        null -> LibraryPage { pages += it }
+                        null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
                         is Page.Record -> RecordPage(page.id, { pages += it }) { pages.removeLast() }
                         is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { pages.removeLast() }
                         Page.Find -> Column(Modifier.fillMaxSize()) { Close { pages.removeLast() }; FindTab { pages += it } }
@@ -167,38 +174,42 @@ private fun App() {
                         Page.Queue -> QueuePage({ pages += it }) { pages.removeLast() }
                         Page.PlayOn -> PlayOnPage { pages.removeLast() }
                         is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { pages.removeLast() }
+                        is Page.List -> ListPage(page.id, page.name, { pages += it }) { pages.removeLast() }
                     }
                 }
             }
-            if (pages.lastOrNull() != Page.Playing) MiniPlayer(
+            // the bar along the foot where there's no room for the now column
+            if (frame != Frame.WIDE && pages.lastOrNull() != Page.Playing) MiniPlayer(
                 { if (pages.lastOrNull() != Page.Queue) pages += Page.Queue },
                 { if (pages.lastOrNull() != Page.PlayOn) pages += Page.PlayOn },
                 { name -> pages += Page.Artist(name) },
             ) { if (pages.lastOrNull() != Page.Playing) pages += Page.Playing }
         }
+        if (frame == Frame.WIDE && pages.lastOrNull() != Page.Playing) NowColumn { pages += it }
+        }
+      }
     }
 }
 
 @Composable
-private fun LibraryPage(open: (Page) -> Unit) {
+private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, open: (Page) -> Unit) {
     val albums by Library.albums.collectAsState()
     val songs by Library.songs.collectAsState()
     val read by Library.read.collectAsState()
-    var tab by remember { mutableStateOf("albums") }
-    Column(Modifier.fillMaxSize().padding(top = TOP + 16.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Bottom) {
-            for (t in listOf("albums", "artists", "songs", "radio")) {
-                Word(t.uppercase(), headline(34.sp, if (t == tab) Ink.ink else Ink.dim)) { tab = t }
-            }
-            Spacer(Modifier.weight(1f))
-            Word("find", pixel(13.sp, Ink.mid), Modifier.padding(bottom = 6.dp, end = 20.dp), touch = 8.dp) { open(Page.Find) }
-            Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(bottom = 6.dp), touch = 8.dp) { open(Page.Settings) }
+    Column(Modifier.fillMaxSize().padding(top = TOP + if (words) 16.dp else 40.dp)) {
+        // the phone's layout (a narrow window): the places as words across the top
+        if (words) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (t in PLACES) Word(t.uppercase(), headline(26.sp, if (t == tab) Ink.ink else Ink.dim)) { onPlace(t) }
+            Word("find", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Find) }
+            Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Settings) }
         }
+        // beside the rail: the place's own name, big
+        else BasicText(tab.uppercase(), style = headline(44.sp), modifier = Modifier.padding(horizontal = SIDE))
         Spacer(Modifier.height(14.dp))
-        if (songs.isNotEmpty() && tab != "radio") SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
+        if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
             Modifier.padding(horizontal = SIDE))
         Spacer(Modifier.height(4.dp))
-        if (read && songs.isEmpty() && tab != "radio") {
+        if (read && songs.isEmpty() && tab in setOf("albums", "artists", "songs")) {
             Column(Modifier.padding(horizontal = SIDE)) {
                 val syncing by Server.syncing.collectAsState()
                 BasicText(if (syncing) "READING YOUR SERVER" else "NO MUSIC YET", style = headline(28.sp))
@@ -250,6 +261,9 @@ private fun LibraryPage(open: (Page) -> Unit) {
                 key(ac, seed) { Artists(artists, open) }
             }
             "radio" -> RadioTab()
+            "listen" -> ListenPage(open)
+            "explore" -> ExplorePage(open)
+            "lists" -> ListsPage(open)
             else -> {
                 val every = remember(songs, sc, seed, heard, minute) {
                     Sorts.order(songs, sc, seed, { it.id }) { s ->
@@ -499,7 +513,7 @@ private fun MiniPlayer(onQueue: () -> Unit, onPlayOn: () -> Unit, onArtist: (Str
 }
 
 @Composable
-private fun Controls(n: Player.Now) {
+fun Controls(n: Player.Now) {
     Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
         Word("back", pixel(14.sp, Ink.mid), touch = 10.dp) { Player.previous() }
         Word(if (n.playing) "pause" else "play", pixel(14.sp), touch = 10.dp) { Player.toggle() }
@@ -515,7 +529,7 @@ private fun Times(n: Player.Now, modifier: Modifier = Modifier) {
 
 /** The 1 px line filling with the song in the cover's colour; a click along it goes there. */
 @Composable
-private fun Line(n: Player.Now, accent: Color, modifier: Modifier = Modifier) {
+fun Line(n: Player.Now, accent: Color, modifier: Modifier = Modifier) {
     val pos by Player.position.collectAsState()
     // a station has no length (mpv's guess is the stream's buffer): the line stays a hairline
     val frac = if (n.duration > 0 && !n.song.station) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
@@ -595,14 +609,8 @@ private fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             Word("up next: ${up.title.lowercase()}", pixel(12.sp, Ink.mid), touch = 6.dp) { open(Page.Queue) }
                         }
                         // the song's words, the sung line lit, as it plays
-                        val on by Lyrics.on.collectAsState()
-                        val lines by androidx.compose.runtime.produceState<List<Line>?>(null, n.song.id, on) {
-                            value = null
-                            // lrclib busy (it says 503 at times) is no answer: asked again while the song plays
-                            while (on) { Lyrics.of(n.song)?.let { value = it; return@produceState }; kotlinx.coroutines.delay(61_000) }
-                        }
                         val pos by Player.position.collectAsState()
-                        lines?.takeIf { on && it.isNotEmpty() }?.let { all ->
+                        rememberLyrics(n.song)?.let { all ->
                             Spacer(Modifier.height(28.dp))
                             LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.weight(1f).fillMaxWidth())
                         }
@@ -629,26 +637,52 @@ private fun QueuePage(open: (Page) -> Unit, onClose: () -> Unit) {
             Spacer(Modifier.height(6.dp))
             BasicText(if (queue.isEmpty()) "nothing queued" else "${queue.size} ${if (queue.size == 1) "song" else "songs"}   right click one for more",
                 style = pixel(12.sp, Ink.mid))
-            // radio: lit, the queue's end brings more like it
-            val radio by Player.radio.collectAsState()
-            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Word("radio", pixel(13.sp, if (radio) Ink.ink else Ink.dim), touch = 8.dp) { Player.radio(!radio) }
-                BasicText(if (radio) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
-            }
+            RadioWord(Modifier.padding(top = 8.dp))
             Spacer(Modifier.height(16.dp))
         }
-        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, bottom = 32.dp)) {
-            // no keys: one song can be queued twice
-            itemsIndexed(queue) { i, s ->
-                SongRow(s, said = s.artist.lowercase(), open = open, lit = i == at, dim = i < at, onRemove = { Player.remove(i) }) { Player.jump(i) }
-            }
+        QueueList(open, list, PaddingValues(start = SIDE, end = SIDE, bottom = 32.dp), Modifier.fillMaxSize())
+    }
+}
+
+/** Radio: lit, the queue's end brings more like it. */
+@Composable
+fun RadioWord(modifier: Modifier = Modifier) {
+    val radio by Player.radio.collectAsState()
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Word("radio", pixel(13.sp, if (radio) Ink.ink else Ink.dim), touch = 8.dp) { Player.radio(!radio) }
+        BasicText(if (radio) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
+    }
+}
+
+/** The queue's songs: played dim, the one playing lit, the rest as they come; a click plays from there. */
+@Composable
+fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyListState, pad: PaddingValues, modifier: Modifier) {
+    val queue by Player.queue.collectAsState()
+    val now by Player.now.collectAsState()
+    val at = now?.index ?: -1
+    LazyColumn(modifier.feather(list), list, contentPadding = pad) {
+        // no keys: one song can be queued twice
+        itemsIndexed(queue) { i, s ->
+            SongRow(s, said = s.artist.lowercase(), open = open, lit = i == at, dim = i < at, onRemove = { Player.remove(i) }) { Player.jump(i) }
         }
     }
 }
 
+/** A song's lines, read as it plays (null while there are none to show; lrclib busy is asked again each minute). */
+@Composable
+fun rememberLyrics(song: Song): List<Line>? {
+    val on by Lyrics.on.collectAsState()
+    val lines by androidx.compose.runtime.produceState<List<Line>?>(null, song.id, on) {
+        value = null
+        while (on && !song.station) { Lyrics.of(song)?.let { value = it; return@produceState }; kotlinx.coroutines.delay(61_000) }
+    }
+    return lines?.takeIf { on && it.isNotEmpty() }
+}
+
 /** The words: the line before dim, the sung one big (lit word by word), the next three dim; a new line rises in. */
 @Composable
-private fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier) {
+fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolean = false) {
+    val k = if (small) .62f else 1f
     val drift = with(androidx.compose.ui.platform.LocalDensity.current) { Motion.drift.roundToPx() }
     // the lines to come run out of room at the foot: feathered, never cut
     Box(modifier.clipToBounds().feather({ 0f }, { 1f })) {
@@ -665,16 +699,16 @@ private fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier) {
             val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(3).toList()
             Column(Modifier.fillMaxWidth()) {
                 before?.let {
-                    BasicText(it.words.uppercase(), style = headline(20.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(16.dp))
+                    BasicText(it.words.uppercase(), style = headline(20.sp * k, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(16.dp * k))
                 }
                 sung?.let {
-                    FadeText(it.words.uppercase(), headline(40.sp), maxLines = 4, overflow = TextOverflow.Ellipsis, from = Ink.dim)
-                    Spacer(Modifier.height(18.dp))
+                    FadeText(it.words.uppercase(), headline(40.sp * k), maxLines = 4, overflow = TextOverflow.Ellipsis, from = Ink.dim)
+                    Spacer(Modifier.height(18.dp * k))
                 }
                 after.forEach {
-                    BasicText(it.words.uppercase(), style = headline(22.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(12.dp))
+                    BasicText(it.words.uppercase(), style = headline(22.sp * k, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(12.dp * k))
                 }
             }
         }
