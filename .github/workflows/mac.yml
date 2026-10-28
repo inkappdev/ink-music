@@ -1,0 +1,41 @@
+# The Mac app, on each push that touches it: an unsigned arm64 .dmg, kept with the run (Actions,
+# this workflow, its run, Artifacts). Unsigned: the first open is System Settings, Privacy &
+# Security, Open Anyway (Apple's $99 a year only takes that step away).
+name: mac
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/**", "app/src/main/res/font/**", ".github/workflows/mac.yml", "*.gradle.kts", "gradle/**"]
+  workflow_dispatch:
+
+jobs:
+  dmg:
+    runs-on: macos-15   # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21" }
+      - uses: gradle/actions/setup-gradle@v4
+
+      # libmpv and everything it needs, beside it in the app (found through @loader_path), each
+      # signed again (ad hoc) once its paths are rewritten, or macOS won't load it
+      - name: libmpv, bundled
+        run: |
+          brew install mpv dylibbundler
+          out=desktop/native/macos-arm64
+          mkdir -p $out
+          cp "$(brew --prefix mpv)/lib/libmpv.2.dylib" $out/
+          chmod u+w $out/libmpv.2.dylib
+          install_name_tool -id @loader_path/libmpv.2.dylib $out/libmpv.2.dylib
+          dylibbundler -of -b -x $out/libmpv.2.dylib -d $out -p @loader_path/ -s "$(brew --prefix)/lib" < /dev/null
+          chmod u+w $out/*.dylib
+          codesign --force -s - $out/*.dylib
+          du -sh $out; ls $out | wc -l
+
+      - name: dmg
+        run: ./gradlew :desktop:packageDmg -PdesktopOnly --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ink-music-mac
+          path: desktop/build/compose/binaries/main/dmg/*.dmg
