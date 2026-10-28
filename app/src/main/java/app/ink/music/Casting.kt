@@ -106,6 +106,66 @@ object Casting {
     /** The queue as handed over, so the song playing there can be found in it again (back to the phone). */
     private var handed: List<Song> = emptyList()
 
+    // ---- the cast kept, to come back to ----
+
+    private var files: java.io.File? = null
+    private fun kept(ctx: Context) = java.io.File(ctx.filesDir, "cast-now.json")
+
+    /** The speaker played on and the songs handed it (a Cast one: the music goes on there with ink music shut). */
+    private fun keep(ctx: Context, to: Speaker, songs: List<Song>) {
+        files = ctx.filesDir
+        if (to.kind != "cast") return forget()
+        runCatching {
+            kept(ctx).writeText(JSONObject().put("key", to.key).put("name", to.name).put("group", to.group).put("model", to.model)
+                .put("host", to.address.hostString).put("port", to.address.port).put("at", System.currentTimeMillis())
+                .put("ids", JSONArray(songs.map { it.id }))
+                // a station kept whole (one found by genre is known only the run it was found in)
+                .put("radio", JSONArray(songs.filter { it.station }.map { r ->
+                    JSONObject().put("id", r.id).put("url", r.uri.toString()).put("name", r.title).put("city", r.artist).put("mime", r.mime)
+                })).toString())
+        }
+    }
+
+    /** No cast to come back to (back on the phone, or ours no longer running there). */
+    private fun forget() { files?.let { java.io.File(it, "cast-now.json").delete() } }
+
+    /**
+     * ink music opened again with a cast kept from before (in the last twelve hours): the speaker asked whether our
+     * player still runs there; if it does, it's joined as it is (nothing loaded again: its song, place and queue
+     * shown, steered from here); if not, forgotten. A tester opened the app and saw the phone's song, not the
+     * speaker's. Main thread, once the phone's own player is known (its queue holds the songs handed over).
+     */
+    fun rejoin(ctx: Context) {
+        if (link != null) return
+        files = ctx.filesDir
+        val o = runCatching { JSONObject(kept(ctx).readText()) }.getOrNull() ?: return
+        if (System.currentTimeMillis() - o.optLong("at") > 12 * 3_600_000L) return forget()
+        val mine = Playback.handover()?.first.orEmpty().associateBy { it.id }
+        val radio = o.optJSONArray("radio")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty().associate { r ->
+            r.getString("id") to Song(
+                id = r.getString("id"), uri = android.net.Uri.parse(r.getString("url")), title = r.getString("name"), artist = r.optString("city"),
+                album = "", albumId = r.getString("id"), albumArtist = r.getString("name"), duration = 0, disc = 1, track = 0, year = 0,
+                format = "radio", mime = r.optString("mime", "audio/mpeg"),
+            )
+        }
+        val ids = o.optJSONArray("ids") ?: return forget()
+        Stations.curated(ctx)
+        val songs = (0 until ids.length()).mapNotNull { i ->
+            ids.optString(i).let { mine[it] ?: Library.song(it) ?: YouTubeMusic.known(it) ?: Stations.known(it) ?: radio[it] }
+        }
+        if (songs.isEmpty()) return forget()
+        val to = Speaker(o.optString("key"), o.optString("name"), o.optBoolean("group"),
+            InetSocketAddress(o.optString("host"), o.optInt("port")), o.optString("model"))
+        android.util.Log.d("ink-cast", "${to.name}: asked again, ${songs.size} songs kept")
+        Serve.start(ctx)
+        if (prefs == null) prefs = ctx.getSharedPreferences("cast", Context.MODE_PRIVATE)
+        handed = songs
+        _on.value = to
+        Playback.pauseHere()
+        Playback.showCastQueue(songs)
+        link = Link(to, songs, 0L, joining = true).also { it.open() }
+    }
+
     // ---- finding them ----
 
     fun find(ctx: Context) {
@@ -168,6 +228,8 @@ object Casting {
         if (queue.isEmpty()) return
         link?.close()
         handed = queue.drop(index.coerceIn(queue.indices)).take(100)
+        Playback.showCastQueue(handed)
+        keep(ctx, to, handed)
         Serve.start(ctx)
         if (prefs == null) prefs = ctx.getSharedPreferences("cast", Context.MODE_PRIVATE)
         _on.value = to
@@ -196,6 +258,7 @@ object Casting {
         val playing = now?.playing == true
         val queue = handed
         l.stopThere()
+        forget()
         end()
         if (queue.isNotEmpty()) Playback.play(queue, index, at, playing)
     }
@@ -210,6 +273,15 @@ object Casting {
     }
 
     fun toggle() { val n = Playback.now.value ?: return; link?.toggle(n.playing) }
+    /** Play there (said outright, so saying it twice does nothing more). */
+    fun resume() { link?.toggle(false) }
+
+    /** The speaker's queue from its `index`th song (up next, tapped while casting). Main thread. */
+    fun jump(ctx: Context, index: Int) {
+        val to = _on.value ?: return
+        val queue = handed
+        if (index in queue.indices) play(ctx, to, queue, index, 0L)
+    }
     fun next() { link?.next() }
     fun previous() { link?.previous() }
     fun seek(ms: Long) { link?.seek(ms) }
@@ -226,14 +298,17 @@ object Casting {
     internal fun lost(r: Remote) = main.post { if (link === r) end() }
 
     /** A Cast speaker, talked to on its own thread. */
-    private class Link(val to: Speaker, val queue: List<Song>, val at: Long) : Remote {
+    private class Link(val to: Speaker, val queue: List<Song>, val at: Long, val joining: Boolean = false) : Remote {
         @Volatile private var open = true
         @Volatile private var socket: SSLSocket? = null
         private var out: DataOutputStream? = null
         @Volatile private var transport: String? = null
         @Volatile private var session = 0
         @Volatile private var appSession: String? = null
-        private var loaded = false
+        // joining a cast from before: it's loaded there already
+        private var loaded = joining
+        // the speaker answered at all (joining one that's gone: let go at once, not tried again)
+        @Volatile private var heard = false
         private var requests = 10
         private var current: Song? = queue.firstOrNull()
         private var duration = 0L
@@ -252,9 +327,26 @@ object Casting {
             Thread { runCatching { s.close() } }.start()
         }
 
+        /** Our receiver closed on the speaker, or the queue never loaded: no coming back. */
+        @Volatile private var over = false
+
         private fun run() {
-            try { talk() } catch (e: Exception) { android.util.Log.d("ink-cast", "${to.name}: $e") }
-            // the connection gone (the speaker off the wifi, or another phone took it over)
+            // a connection that breaks while the speaker plays on (the wifi blinking, "connection abort"): found
+            // again, up to five times, a second more apart each; the speaker's queue left as it is and its song read
+            // again. It had let go at once, and the phone showed its own song while the speaker went on with another
+            var tries = 0
+            while (open) {
+                val began = SystemClock.elapsedRealtime()
+                try { talk() } catch (e: Exception) { android.util.Log.d("ink-cast", "${to.name}: $e") }
+                if (!open || over || !loaded || (joining && !heard)) break
+                if (SystemClock.elapsedRealtime() - began > 60_000) tries = 0
+                if (++tries > 5) break
+                android.util.Log.d("ink-cast", "${to.name}: lost, again in ${tries}s ($tries of 5)")
+                runCatching { socket?.close() }
+                Thread.sleep(1_000L * tries)
+                transport = null
+            }
+            // the connection gone for good (the speaker off the wifi, or another phone took it over)
             if (open) main.post { if (link === this) end() }
         }
 
@@ -267,7 +359,9 @@ object Casting {
             val input = DataInputStream(s.inputStream.buffered())
             out = DataOutputStream(s.outputStream)
             send("receiver-0", CONN, JSONObject().put("type", "CONNECT"))
-            send("receiver-0", RECEIVER, JSONObject().put("type", "LAUNCH").put("appId", APP).put("requestId", 1))
+            // found again: what the speaker is doing asked, nothing launched or loaded again
+            if (loaded) send("receiver-0", RECEIVER, JSONObject().put("type", "GET_STATUS").put("requestId", ++requests))
+            else send("receiver-0", RECEIVER, JSONObject().put("type", "LAUNCH").put("appId", APP).put("requestId", 1))
             var quiet = 0
             while (open) {
                 val (ns, body) = try { read(input) } catch (e: SocketTimeoutException) {
@@ -281,9 +375,9 @@ object Casting {
                     "PING" -> send("receiver-0", BEAT, JSONObject().put("type", "PONG"))
                     "RECEIVER_STATUS" -> receiver(m.optJSONObject("status"))
                     "MEDIA_STATUS" -> if (ns == MEDIA) media(m.optJSONArray("status")?.optJSONObject(0))
-                    "LOAD_FAILED", "LOAD_CANCELLED" -> { android.util.Log.d("ink-cast", "${to.name}: ${m.optString("type")} ${body.take(300)}"); if (!loaded) return }
+                    "LOAD_FAILED", "LOAD_CANCELLED" -> { android.util.Log.d("ink-cast", "${to.name}: ${m.optString("type")} ${body.take(300)}"); if (!loaded) { over = true; return } }
                     "LAUNCH_ERROR", "INVALID_REQUEST" -> android.util.Log.d("ink-cast", "${to.name}: ${body.take(300)}")
-                    "CLOSE" -> if (m.optString("sourceId") == transport) { android.util.Log.d("ink-cast", "${to.name}: closed"); return }
+                    "CLOSE" -> if (m.optString("sourceId") == transport) { android.util.Log.d("ink-cast", "${to.name}: closed"); over = true; forget(); return }
                 }
             }
         }
@@ -293,8 +387,9 @@ object Casting {
             val apps = status?.optJSONArray("applications") ?: JSONArray()
             val ours = (0 until apps.length()).map { apps.getJSONObject(it) }.firstOrNull { it.optString("appId") == APP }
             android.util.Log.d("ink-cast", "${to.name}: receiver ${(0 until apps.length()).joinToString { apps.getJSONObject(it).optString("displayName") }} (ours ${ours != null}, loaded $loaded)")
+            heard = true
             if (ours == null) {
-                if (loaded) { open = false; main.post { if (link === this) end() } }
+                if (loaded) { open = false; forget(); main.post { if (link === this) end() } }
                 return
             }
             appSession = ours.optString("sessionId")
@@ -302,6 +397,8 @@ object Casting {
             if (t != transport) {
                 transport = t
                 send(t, CONN, JSONObject().put("type", "CONNECT"))
+                // found again: where the speaker is, in which song
+                if (loaded) send(t, MEDIA, JSONObject().put("type", "GET_STATUS").put("requestId", ++requests))
             }
             if (!loaded) {
                 loaded = true
