@@ -11,6 +11,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +55,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isMetaPressed
@@ -82,6 +85,9 @@ fun main() {
         Window(
             onCloseRequest = { Player.close(); exitApplication() },
             title = "ink music",
+            icon = androidx.compose.ui.graphics.painter.BitmapPainter(
+                org.jetbrains.skia.Image.makeFromEncoded(Ink::class.java.getResourceAsStream("/ink-music.png")!!.readBytes()).toComposeImageBitmap(),
+            ),
             state = rememberWindowState(size = DpSize(1180.dp, 800.dp)),
         ) {
             LaunchedEffect(Unit) {
@@ -107,8 +113,8 @@ sealed interface Page {
 }
 
 /** Clear of the Mac's traffic lights (the title bar is gone, its buttons stay). */
-private val TOP = if (Home.mac) 28.dp else 0.dp
-private val SIDE = 32.dp
+val TOP = if (Home.mac) 28.dp else 0.dp
+val SIDE = 32.dp
 
 @Composable
 private fun App() {
@@ -126,6 +132,7 @@ private fun App() {
                     k.key == Key.DirectionRight -> { Player.seek(Player.position.value + 10_000); true }
                     k.key == Key.DirectionLeft -> { Player.seek((Player.position.value - 10_000).coerceAtLeast(0)); true }
                     k.key == Key.Escape && pages.isNotEmpty() -> { pages.removeLast(); true }
+                    k.key == Key.F && k.isMetaPressed -> { pages.clear(); Finding.asked.value++; true }
                     else -> false
                 }
             },
@@ -162,16 +169,18 @@ private fun LibraryPage(open: (Page) -> Unit) {
     val songs by Library.songs.collectAsState()
     val read by Library.read.collectAsState()
     var tab by remember { mutableStateOf("albums") }
+    val asked by Finding.asked.collectAsState()
+    LaunchedEffect(asked) { if (asked > 0) tab = "find" }
     Column(Modifier.fillMaxSize().padding(top = TOP + 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Bottom) {
-            for (t in listOf("albums", "artists", "songs")) {
+            for (t in listOf("albums", "artists", "songs", "find")) {
                 Word(t.uppercase(), headline(34.sp, if (t == tab) Ink.ink else Ink.dim)) { tab = t }
             }
             Spacer(Modifier.weight(1f))
             Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(bottom = 6.dp), touch = 8.dp) { open(Page.Settings) }
         }
         Spacer(Modifier.height(14.dp))
-        if (songs.isNotEmpty()) SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
+        if (songs.isNotEmpty() && tab != "find") SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
             Modifier.padding(horizontal = SIDE))
         Spacer(Modifier.height(4.dp))
         if (read && songs.isEmpty()) {
@@ -225,6 +234,7 @@ private fun LibraryPage(open: (Page) -> Unit) {
                 }
                 key(ac, seed) { Artists(artists, open) }
             }
+            "find" -> FindTab(open)
             else -> {
                 val every = remember(songs, sc, seed, heard, minute) {
                     Sorts.order(songs, sc, seed, { it.id }) { s ->
@@ -254,9 +264,9 @@ private fun Records(albums: List<Album>, open: (Page) -> Unit, header: (@Composa
 }
 
 /** An artist, with how much of theirs is here. */
-private data class ArtistEntry(val name: String, val records: Int, val songs: Int)
+data class ArtistEntry(val name: String, val records: Int, val songs: Int)
 
-private fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry> {
+fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry> {
     val records = albums.groupingBy { it.artist }.eachCount()
     return songs.groupBy { it.albumArtist }.map { (name, s) -> ArtistEntry(name, records[name] ?: 0, s.size) }
         .sortedBy { Library.sortName(it.name) }
@@ -266,15 +276,18 @@ private fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry>
 private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
-        items(artists, key = { it.name }) { a ->
-            Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Artist(a.name)) }).padding(vertical = 9.dp)) {
-                BasicText(a.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                BasicText(
-                    listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
-                    style = pixel(12.sp, Ink.mid),
-                )
-            }
-        }
+        items(artists, key = { it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }
+    }
+}
+
+@Composable
+fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
+        BasicText(a.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        BasicText(
+            listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
+            style = pixel(12.sp, Ink.mid),
+        )
     }
 }
 
@@ -295,10 +308,12 @@ fun SongRow(
     val now by Player.now.collectAsState()
     val on = lit ?: (now?.song?.id == s.id)
     var options by remember { mutableStateOf(false) }
-    val color = if (on) Ink.ink else if (dim) Ink.dim else Ink.mid
+    val src = remember { MutableInteractionSource() }
+    val over by src.collectIsHoveredAsState()
+    val color = (if (on) Ink.ink else if (dim) Ink.dim else Ink.mid).let { if (over) brighter(it) else it }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { options = false; onClick() })
+            Modifier.fillMaxWidth().hoverable(src).clickable(src, indication = null, onClick = felt { options = false; onClick() })
                 // a right click (the phone's hold): its options open under it
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
@@ -355,7 +370,7 @@ private fun UnderCover(title: String, said: String) {
 }
 
 @Composable
-private fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
+fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         CoverOf(a.songs.first(), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
@@ -374,9 +389,7 @@ fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640) {
 
 /** Close: the down arrow, as the phone's, top left (clear of the traffic lights). */
 @Composable
-private fun Close(onClose: () -> Unit) {
-    Word("close", pixel(13.sp, Ink.mid), Modifier.padding(start = SIDE, top = TOP + 12.dp), touch = 8.dp, onClick = onClose)
-}
+fun Close(onClose: () -> Unit) = CloseArrow(Modifier.padding(start = SIDE - 8.dp, top = TOP), onClick = onClose)
 
 @Composable
 private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {

@@ -37,7 +37,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsPage(onClose: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
-        Word("close", pixel(13.sp, Ink.mid), Modifier.padding(start = 32.dp, top = (if (Home.mac) 28 else 0).dp + 12.dp), touch = 8.dp, onClick = onClose)
+        Close(onClose)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 16.dp)) {
           Column(Modifier.widthIn(max = 640.dp)) {
             BasicText("SETTINGS", style = headline(64.sp))
