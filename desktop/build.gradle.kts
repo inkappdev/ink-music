@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 // ink music on a Mac (Linux and Windows later): the same look, the library from a folder and the
@@ -8,10 +9,33 @@ plugins {
     id("org.jetbrains.compose")
 }
 
+// the phone's version for now (a Mac package's must start above 0)
+version = "1.4.9"
+
 kotlin { jvmToolchain(21) }
 
-// the two fonts, the app's own files (never a copy that could drift)
-sourceSets.main { resources.srcDir("../app/src/main/res/font") }
+// the two fonts, the app's own files (never a copy that could drift); and the keys the build was given
+val keys = layout.buildDirectory.dir("generated/keys")
+sourceSets.main { resources.srcDir("../app/src/main/res/font"); resources.srcDir(keys) }
+
+// Last.fm's key and secret, from keystore.properties (here) or the environment (the GitHub Action's secrets),
+// written for the app to read; never in git
+val writeKeys by tasks.registering {
+    val from = rootProject.file("keystore.properties")
+    val out = keys.map { it.file("keys.properties") }
+    val version = project.version.toString()
+    inputs.property("env", listOf(System.getenv("LASTFM_KEY").orEmpty(), System.getenv("LASTFM_SECRET").orEmpty()).joinToString())
+    if (from.exists()) inputs.file(from)
+    outputs.file(out)
+    doLast {
+        val p = Properties()
+        if (from.exists()) from.inputStream().use { p.load(it) }
+        val key = System.getenv("LASTFM_KEY") ?: p.getProperty("lastfmKey").orEmpty()
+        val secret = System.getenv("LASTFM_SECRET") ?: p.getProperty("lastfmSecret").orEmpty()
+        out.get().asFile.apply { parentFile.mkdirs() }.writeText("lastfmKey=$key\nlastfmSecret=$secret\nversion=$version\n")
+    }
+}
+tasks.named("processResources") { dependsOn(writeKeys) }
 
 dependencies {
     implementation(compose.desktop.currentOs)
@@ -23,6 +47,7 @@ dependencies {
     implementation("org.json:json:20240303")
     // YouTube Music: its API by hand (the phone's InnerTube.kt, shared), its streams through NewPipe's extractor (GPL-3.0)
     implementation(project(":youtube"))
+    implementation(project(":core"))
 }
 
 compose.desktop {
@@ -32,7 +57,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg)
             packageName = "ink music"
-            packageVersion = "1.4.9"
+            packageVersion = project.version.toString()
             description = "A music player in ink's look"
             vendor = "ink"
             licenseFile.set(rootProject.file("LICENSE"))

@@ -139,9 +139,18 @@ object Player {
     private fun heard(ms: Long) {
         val n = _now.value ?: return
         val s = n.song
-        if (!s.server || counted == s.id || n.duration <= 0) return
-        if (ms >= n.duration / 2 || ms >= 240_000) { counted = s.id; Server.scrobble(s.id, true) }
+        if (counted == s.id || n.duration <= 0) return
+        if (ms >= n.duration / 2 || ms >= 240_000) {
+            counted = s.id
+            if (s.server) Server.scrobble(s.id, true)
+            val at = System.currentTimeMillis() - ms
+            scope.launch { val said = said(s, n.duration); ListenBrainz.listened(Home.dir, said, at); LastFm.listened(Home.dir, said, at) }
+        }
     }
+
+    /** A song as ListenBrainz and Last.fm are told it. */
+    private fun said(s: Song, length: Long) =
+        ListenBrainz.Said(s.title, s.artist, s.album, length, s.track, s.id.takeIf { s.tube }?.removePrefix("y"))
 
     // the song playing as History will write it: since when, and how long it has played
     private var timing: Song? = null
@@ -197,7 +206,12 @@ object Player {
         timeSong(s)
         topUp()
         _now.value = s?.let { Now(it, index, !paused, duration.takeIf { d -> d > 0 } ?: it.duration) }
-        if (s != null && s.server && toldNow != "${s.id}/$index" && !paused) { toldNow = "${s.id}/$index"; counted = null; Server.scrobble(s.id, false) }
+        if (s != null && toldNow != "${s.id}/$index" && !paused) {
+            toldNow = "${s.id}/$index"; counted = null
+            if (s.server) Server.scrobble(s.id, false)
+            val said = said(s, duration.takeIf { it > 0 } ?: s.duration)
+            scope.launch { ListenBrainz.playingNow(Home.dir, said); LastFm.playingNow(Home.dir, said) }
+        }
         if (s != null) keep()
     }
 

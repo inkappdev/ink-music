@@ -65,6 +65,10 @@ fun SettingsPage(onClose: () -> Unit) {
             }
 
             Spacer(Modifier.height(36.dp))
+            ListenBrainzSetting()
+            if (LastFm.available) { Spacer(Modifier.height(36.dp)); LastFmSetting() }
+
+            Spacer(Modifier.height(36.dp))
             BasicText("YOUR FILES", style = headline(24.sp))
             Spacer(Modifier.height(6.dp))
             BasicText("every song in ${Library.said}", style = pixel(12.sp, Ink.mid))
@@ -129,4 +133,88 @@ private fun Field(name: String, value: String, onValue: (String) -> Unit, hint: 
         Spacer(Modifier.height(8.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
     }
+}
+
+/** ListenBrainz: your user token, tried and kept; then whose it is (disconnect forgets it). */
+@Composable
+private fun ListenBrainzSetting() {
+    val scope = rememberCoroutineScope()
+    val account by ListenBrainz.account.collectAsState()
+    BasicText("LISTENBRAINZ", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    val a = account
+    if (a == null) {
+        var token by remember { mutableStateOf("") }
+        var trying by remember { mutableStateOf(false) }
+        var said by remember { mutableStateOf<String?>(null) }
+        fun go() {
+            if (trying || token.isBlank()) return
+            trying = true; said = null
+            scope.launch {
+                said = when (ListenBrainz.connect(Home.dir, token)) {
+                    ListenBrainz.Connect.OK -> { token = ""; null }
+                    ListenBrainz.Connect.WRONG -> "listenbrainz didn't know that token"
+                    ListenBrainz.Connect.UNREACHABLE -> "couldn't reach listenbrainz. try again in a moment"
+                }
+                trying = false
+            }
+        }
+        BasicText("what you play, kept as your listening history on listenbrainz.org: open, and yours. " +
+            "your user token is on its settings page", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(4.dp))
+        Word("listenbrainz.org/settings", pixel(13.sp, Ink.mid), touch = 8.dp) { browse("https://listenbrainz.org/settings/") }
+        Spacer(Modifier.height(10.dp))
+        Field("user token", token, { token = it }, "", secret = true, onEnter = ::go)
+        said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
+        Word(if (trying) "CONNECTING" else "CONNECT", headline(40.sp, if (trying) Ink.mid else Ink.ink), touch = 10.dp) { go() }
+    } else {
+        BasicText(a.user.lowercase(), style = pixel(13.sp))
+        BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(8.dp))
+        Word("disconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { ListenBrainz.disconnect(Home.dir) }
+    }
+}
+
+/** Last.fm: your name and password swapped for a session (the password not kept); then whose it is. */
+@Composable
+private fun LastFmSetting() {
+    val scope = rememberCoroutineScope()
+    val account by LastFm.account.collectAsState()
+    BasicText("LAST.FM", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    val a = account
+    if (a == null) {
+        var name by remember { mutableStateOf("") }
+        var password by remember { mutableStateOf("") }
+        var trying by remember { mutableStateOf(false) }
+        var said by remember { mutableStateOf<String?>(null) }
+        fun go() {
+            if (trying || name.isBlank() || password.isBlank()) return
+            trying = true; said = null
+            scope.launch {
+                said = when (LastFm.connect(Home.dir, name, password)) {
+                    LastFm.Connect.OK -> { password = ""; null }
+                    LastFm.Connect.WRONG -> "last.fm didn't take that name and password"
+                    LastFm.Connect.UNREACHABLE -> "couldn't reach last.fm. try again in a moment"
+                }
+                trying = false
+            }
+        }
+        BasicText("scrobble what you play to last.fm. your password goes to last.fm once, and isn't kept here", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(10.dp))
+        Field("name", name, { name = it }, "", onEnter = ::go)
+        Field("password", password, { password = it }, "", secret = true, onEnter = ::go)
+        said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
+        Word(if (trying) "CONNECTING" else "CONNECT", headline(40.sp, if (trying) Ink.mid else Ink.ink), touch = 10.dp) { go() }
+    } else {
+        BasicText(a.name.lowercase(), style = pixel(13.sp))
+        BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(8.dp))
+        Word("disconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { LastFm.disconnect(Home.dir) }
+    }
+}
+
+/** A page in the browser. */
+fun browse(url: String) {
+    runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }
 }
