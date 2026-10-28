@@ -206,7 +206,8 @@ val bars @Composable get() = WindowInsets.statusBars.union(WindowInsets.displayC
 
 /** A page over the library. */
 sealed interface Page {
-    data class Record(val id: String) : Page
+    /** A record of yours; [tube], YouTube Music's own of it where it's known (the artist page), for the songs you don't have. */
+    data class Record(val id: String, val tube: TubeAlbum? = null) : Page
     data class Artist(val name: String) : Page
     data object Find : Page
     data object Settings : Page
@@ -303,7 +304,7 @@ private fun App() {
                     CompositionLocalProvider(LocalOpened provides opened, LocalShared provides shared, LocalPageScope provides this) {
                     when (p) {
                         null -> Box(Modifier.fillMaxSize())
-                        is Page.Record -> RecordPage(p.id, pages)
+                        is Page.Record -> RecordPage(p.id, pages, p.tube)
                         is Page.Artist -> ArtistPage(p.name, pages)
                         Page.Find -> FindPage(pages.query, { pages.query = it }, pages)
                         Page.Settings -> SettingsPage(pages)
@@ -551,7 +552,7 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
  * Not where a swipe turns the page (the library's songs): there, held is the way.
  */
 @Composable
-private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, swipe: Boolean = true, onClick: () -> Unit) {
+private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, swipe: Boolean = true, yours: Boolean = true, onClick: () -> Unit) {
     val now by Playback.now.collectAsState()
     val on = now?.song?.id == s.id
     var open by remember { mutableStateOf(false) }
@@ -599,7 +600,7 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
         Row(verticalAlignment = Alignment.Bottom) {
             number?.let { BasicText(it, style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(30.dp).padding(bottom = 3.dp)) }
             Column(Modifier.weight(1f)) {
-                BasicText(s.title.uppercase(), style = headline(19.sp, if (on || now == null) Ink.ink else Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                BasicText(s.title.uppercase(), style = headline(19.sp, when { on -> Ink.ink; !yours -> if (now == null) Ink.mid else Ink.dim; now == null -> Ink.ink; else -> Ink.mid }), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (number == null) BasicText(s.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // a swipe's word stays a moment where the length was: it's done
@@ -634,9 +635,23 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
 
 /** A record's page: its cover, its name, its songs as words; a tap plays from there. */
 @Composable
-private fun RecordPage(id: String, pages: Pages) {
+private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
     val albums by Library.albums.collectAsState()
     val a = albums.firstOrNull { it.id == id } ?: return
+    // the whole record, where YouTube Music has it: your songs in their places (they play from the phone or the
+    // server), the ones you don't have from YouTube; a tester had one song of a record and saw only that
+    val whole by androidx.compose.runtime.produceState(a.songs, a) {
+        if (!YouTubeMusic.available || a.songs.any { it.tube }) return@produceState
+        val record = tube ?: runCatching { YouTubeMusic.search("${a.artist} ${a.title}").albums }.getOrDefault(emptyList())
+            .firstOrNull { plainName(it.title) == plainName(a.title) && plainName(it.artist).contains(plainName(a.artist).take(12)) }
+            ?: return@produceState
+        val tracks = runCatching { YouTubeMusic.album(record) }.getOrDefault(emptyList())
+        if (tracks.size <= a.songs.size) return@produceState
+        val mine = a.songs.toMutableList()
+        val placed = tracks.map { t -> mine.firstOrNull { plainName(it.title) == plainName(t.title) }?.also { mine.remove(it) } ?: t }
+        value = placed + mine   // any of yours YouTube's hasn't (a bonus track), after
+    }
+    val yours = remember(a) { a.songs.map { it.id }.toSet() }
     val list = rememberLazyListState()
     FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
         state = list,
@@ -653,20 +668,23 @@ private fun RecordPage(id: String, pages: Pages) {
             Word(a.artist.lowercase(), pixel(13.sp, Ink.mid), touch = 6.dp) { pages.open(Page.Artist(a.artist)) }
             Spacer(Modifier.height(4.dp))
             BasicText(
-                listOfNotNull(a.year.takeIf { it > 0 }?.toString(), "${a.songs.size} ${if (a.songs.size == 1) "song" else "songs"}",
-                    a.length.takeIf { it > 0 }?.let { "${(it / 60_000).coerceAtLeast(1)} min" }).joinToString("   "),
+                listOfNotNull(a.year.takeIf { it > 0 }?.toString(), "${whole.size} ${if (whole.size == 1) "song" else "songs"}",
+                    "${a.songs.size} yours".takeIf { whole.size > a.songs.size },
+                    whole.sumOf { it.duration }.takeIf { it > 0 }?.let { "${(it / 60_000).coerceAtLeast(1)} min" }).joinToString("   "),
                 style = pixel(12.sp, Ink.mid),
             )
             Spacer(Modifier.height(16.dp))
             Row {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(a.songs, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(a.songs.shuffled(), 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(whole, 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(whole.shuffled(), 0) }
                 KeepOffline(a.songs)
             }
             Spacer(Modifier.height(14.dp))
         }}
-        itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) {
-            SongRow(s, number = s.track.takeIf { it > 0 }?.toString() ?: "${i + 1}", pages = pages) { Playback.play(a.songs, i) }
+        itemsIndexed(whole, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) {
+            // numbered by place on the whole record; a song you don't have a step dimmer
+            val number = if (whole.size > a.songs.size) "${i + 1}" else s.track.takeIf { it > 0 }?.toString() ?: "${i + 1}"
+            SongRow(s, number = number, pages = pages, yours = s.id in yours) { Playback.play(whole, i) }
         }}
     } }
 }
@@ -853,7 +871,9 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) item {
             Label("records")
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(150.dp)) { pages.open(Page.Record(a.id)) } }
+                items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(150.dp)) {
+                    pages.open(Page.Record(a.id, (i?.albums.orEmpty() + i?.singles.orEmpty()).firstOrNull { it.title.equals(a.title, ignoreCase = true) }))
+                } }
                 items(tubeAlbums, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { pages.open(Page.Tube(r)) } }
             }
             Spacer(Modifier.height(18.dp))
@@ -1730,3 +1750,6 @@ private fun Line(n: Now, accent: androidx.compose.ui.graphics.Color) {
         Box(Modifier.fillMaxWidth(frac).height(1.dp).background(accent))
     }
 }
+
+/** A name as compared: case and marks aside. */
+private fun plainName(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
