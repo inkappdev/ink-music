@@ -122,6 +122,9 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.lifecycle.lifecycleScope
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -148,6 +151,13 @@ class Main : ComponentActivity() {
         Seeds.start(this)
         Stations.curated(this)
         setContent { App() }
+        // casting: the volume buttons, while ink music is open, go to the player's session, which turns the speaker
+        // (Android gives them to a session only while it plays, and the phone's own player is paused under a speaker)
+        lifecycleScope.launch {
+            Casting.volume.map { it != null }.distinctUntilChanged().collect { on ->
+                mediaController = Playback.token?.takeIf { on }?.let { android.media.session.MediaController(this@Main, it) }
+            }
+        }
     }
 
     override fun onStart() {

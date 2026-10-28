@@ -58,6 +58,8 @@ object Casting {
         fun seek(ms: Long)
         /** Stops our music there (never someone else's). */
         fun stopThere()
+        /** The speaker's own volume, 0 to 1. */
+        fun volume(level: Float) {}
     }
 
     // ---- what a speaker can play ----
@@ -163,6 +165,7 @@ object Casting {
         _on.value = to
         Playback.pauseHere()
         Playback.showCastQueue(songs)
+        Playback.mirror(songs)
         link = Link(to, songs, 0L, joining = true).also { it.open() }
     }
 
@@ -235,6 +238,7 @@ object Casting {
         _on.value = to
         connecting.value = true
         Playback.pauseHere()
+        Playback.mirror(handed)
         // the first YouTube song's stream looked up while the speaker connects, not after it asks (most of a second)
         handed.first().takeIf { it.tube }?.let { s -> Thread { runCatching { YouTubeMusic.stream(s.id, true) } }.start() }
         link = (if (to.kind == "dlna") Dlna.Link(to, handed, at) else Link(to, handed, at)).also { it.open() }
@@ -274,14 +278,43 @@ object Casting {
     private fun end() {
         link?.close()
         link = null
+        volume.value = null
         _on.value = null
         connecting.value = false
         Playback.castEnded()
     }
 
     fun toggle() { val n = Playback.now.value ?: return; link?.toggle(n.playing) }
+    /** The speaker's volume, 0 to 1, as it says it (null: not heard yet, or not casting). */
+    val volume = MutableStateFlow<Float?>(null)
+    private var volumeSetAt = 0L
+
+    /**
+     * The speaker's volume set from the phone (its buttons, anywhere: the player's session hears them, as Android
+     * does a cast app's), in 5% steps: shown at once, sent, the session told. Main thread.
+     */
+    fun setVolume(level: Float) {
+        val l = link ?: return
+        val v = Math.round(level.coerceIn(0f, 1f) * 20) / 20f
+        volumeSetAt = SystemClock.elapsedRealtime()
+        volume.value = v
+        android.util.Log.d("ink-cast", "volume ${Math.round(v * 100)}% from the phone")
+        l.volume(v)
+        Playback.tellPlayer()
+    }
+
+    /** The speaker's volume as it says it (set on the speaker, or another phone); our own echoes let pass a moment. */
+    private fun heardVolume(level: Float) {
+        if (SystemClock.elapsedRealtime() - volumeSetAt < 1_500 || volume.value == level) return
+        volume.value = level
+        android.util.Log.d("ink-cast", "volume ${Math.round(level * 100)}% as the speaker says")
+        Playback.tellPlayer()
+    }
+
     /** Play there (said outright, so saying it twice does nothing more). */
     fun resume() { link?.toggle(false) }
+    /** Pause there (said outright). */
+    fun pauseThere() { link?.toggle(true) }
 
     /** The speaker's queue from its `index`th song (up next, tapped while casting). Main thread. */
     fun jump(ctx: Context, index: Int) {
@@ -289,6 +322,8 @@ object Casting {
         val queue = handed
         if (index in queue.indices) play(ctx, to, queue, index, 0L)
     }
+    /** The speaker's queue from the song with this id (asked from the notification, the car). Main thread. */
+    fun jumpTo(ctx: Context, id: String) { val i = handed.indexOfFirst { it.id == id }; if (i >= 0) jump(ctx, i) }
     fun next() { link?.next() }
     fun previous() { link?.previous() }
     fun seek(ms: Long) { link?.seek(ms) }
@@ -396,6 +431,10 @@ object Casting {
             val ours = (0 until apps.length()).map { apps.getJSONObject(it) }.firstOrNull { it.optString("appId") == APP }
             android.util.Log.d("ink-cast", "${to.name}: receiver ${(0 until apps.length()).joinToString { apps.getJSONObject(it).optString("displayName") }} (ours ${ours != null}, loaded $loaded)")
             heard = true
+            status?.optJSONObject("volume")?.takeIf { it.has("level") }?.let { v ->
+                val level = v.optDouble("level").toFloat()
+                main.post { if (link === this) heardVolume(level) }
+            }
             if (ours == null) {
                 if (loaded) { open = false; forget(); main.post { if (link === this) end() } }
                 return
@@ -510,6 +549,10 @@ object Casting {
                     send(t, MEDIA, JSONObject().put("type", type).put("mediaSessionId", session).put("requestId", ++requests).apply(more))
                 }
             }
+        }
+
+        override fun volume(level: Float) = io.execute {
+            runCatching { send("receiver-0", RECEIVER, JSONObject().put("type", "SET_VOLUME").put("volume", JSONObject().put("level", level.toDouble())).put("requestId", ++requests)) }
         }
 
         /** Stops our receiver on the speaker (only if it's still ours: another phone's music is left alone). */
