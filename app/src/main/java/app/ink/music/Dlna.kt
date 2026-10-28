@@ -18,6 +18,9 @@ import java.util.concurrent.Executors
  */
 object Dlna {
     private const val AVT = "urn:schemas-upnp-org:service:AVTransport:1"
+    private const val RC = "urn:schemas-upnp-org:service:RenderingControl:1"
+    /** DLNA's word that a link can be jumped about in by byte ranges (OP=01; Serve answers ranges, YouTube's too). */
+    private const val SEEKABLE = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 
     /** Looks for renderers for a few seconds, handing each one found to `found` (off the main thread). */
     fun find(found: (Casting.Speaker) -> Unit) = Thread({
@@ -51,11 +54,16 @@ object Dlna {
         val service = Regex("<service>(.*?)</service>", RegexOption.DOT_MATCHES_ALL).findAll(xml)
             .map { it.groupValues[1] }.firstOrNull { "AVTransport" in tag("serviceType", it) } ?: return null
         val control = URL(URL(tag("URLBase").ifEmpty { location }), tag("controlURL", service)).toString()
+        // its volume, where it has one (RenderingControl)
+        val rendering = Regex("<service>(.*?)</service>", RegexOption.DOT_MATCHES_ALL).findAll(xml)
+            .map { it.groupValues[1] }.firstOrNull { "RenderingControl" in tag("serviceType", it) }
+            ?.let { URL(URL(tag("URLBase").ifEmpty { location }), tag("controlURL", it)).toString() }.orEmpty()
         val url = URL(location)
         Casting.Speaker(
             key = "dlna:" + tag("UDN").ifEmpty { location }, name = name, group = false,
             address = InetSocketAddress(url.host, if (url.port > 0) url.port else 80),
             model = unescape(tag("modelName")), kind = "dlna", control = control, maker = unescape(tag("manufacturer")),
+            volumeControl = rendering,
         )
     }.getOrNull()
 
@@ -91,6 +99,12 @@ object Dlna {
         @Volatile private var nextSet = -1
         @Volatile private var lastState = ""
         @Volatile private var position = 0L
+        // the time kept here while the receiver's own is no good ("transitioning"): from where a song began or was sought
+        @Volatile private var clockPos = 0L
+        @Volatile private var clockAt = 0L
+        private var stuckSince = 0L
+        private var nudged = -1
+        private fun timeFrom(from: Long) { clockPos = from; clockAt = SystemClock.elapsedRealtime(); stuckSince = 0L }
         private var misses = 0
 
         // asking where it is on a thread of its own; play, pause and the rest on `io`, so they never wait behind it
@@ -111,6 +125,7 @@ object Dlna {
             if (i !in queue.indices || urls[i].isEmpty()) return false
             index = i
             nextSet = -1
+            timeFrom(from)
             if (runCatching { soap("SetAVTransportURI", "<CurrentURI>${esc(urls[i])}</CurrentURI><CurrentURIMetaData>${esc(didl(queue[i], urls[i]))}</CurrentURIMetaData>") }.isFailure) {
                 open = false; Casting.lost(this); return false
             }
@@ -142,17 +157,31 @@ object Dlna {
             position = ms(Regex("<RelTime>([^<]*)<").find(pos)?.groupValues?.get(1).orEmpty())
             val length = ms(Regex("<TrackDuration>([^<]*)<").find(pos)?.groupValues?.get(1).orEmpty())
             // it moved on to the queued song by itself: queue the one after that
-            urls.indexOfFirst { it.isNotEmpty() && it == track }.takeIf { it >= 0 && it != index }?.let { index = it; queueNext() }
+            urls.indexOfFirst { it.isNotEmpty() && it == track }.takeIf { it >= 0 && it != index }?.let { index = it; timeFrom(0); queueNext() }
             // it stopped at a song's end without taking the next: hand it over
             if (st == "STOPPED" && lastState == "PLAYING" && index + 1 in queue.indices) { lastState = st; start(index + 1, 0); return }
             // something else is playing there now (another app took it): done
             if (track.isNotEmpty() && urls.none { it == track } && st == "PLAYING") { open = false; Casting.lost(this); return }
             lastState = st
+            // the Denon (HEOS) says "transitioning" for minutes at a YouTube song's start, playing all the while, its
+            // position stuck or jumping about (the lock screen's bar with it): timed here instead, and told "play" once,
+            // a few seconds in (a pause and play by hand set it right)
+            val now = SystemClock.elapsedRealtime()
+            val stuck = st == "TRANSITIONING"
+            if (stuck) {
+                if (stuckSince == 0L) stuckSince = now
+                if (now - stuckSince > 4_000 && nudged != index) { nudged = index; runCatching { soap("Play", "<Speed>1</Speed>") } }
+                position = clockPos + now - clockAt
+            } else { stuckSince = 0L; clockPos = position; clockAt = now }
+            // its volume (0 to 100), so the phone's buttons start from where it is, and follow its own knob
+            if (to.volumeControl.isNotEmpty()) runCatching { soap("GetVolume", "<Channel>Master</Channel>", RC, to.volumeControl) }.getOrNull()
+                ?.let { Regex("<CurrentVolume>(\\d+)<").find(it)?.groupValues?.get(1)?.toIntOrNull() }
+                ?.let { Casting.heard(this, it.coerceIn(0, 100) / 100f) }
             val s = queue[index]
             Casting.show(Now(
                 song = s, title = s.title, artist = s.artist, album = s.album,
                 duration = length.takeIf { it > 0 } ?: s.duration, position = position, at = SystemClock.elapsedRealtime(),
-                playing = st == "PLAYING" || st == "TRANSITIONING", moving = st == "PLAYING",
+                playing = st == "PLAYING" || stuck, moving = st == "PLAYING" || stuck,
                 index = index, count = queue.size, device = to.name, quality = Serve.quality(s, lossless),
             ))
         }
@@ -160,31 +189,37 @@ object Dlna {
         override fun toggle(playing: Boolean) = io.execute { runCatching { if (playing) soap("Pause", "") else soap("Play", "<Speed>1</Speed>") } }.let { }
         override fun next() = io.execute { if (index + 1 in queue.indices) start(index + 1, 0) }.let { }
         override fun previous() = io.execute { if (position > 3_000 || index == 0) runCatching { soap("Seek", "<Unit>REL_TIME</Unit><Target>0:00:00</Target>") } else start(index - 1, 0) }.let { }
-        override fun seek(ms: Long) = io.execute { runCatching { soap("Seek", "<Unit>REL_TIME</Unit><Target>${clock(ms)}</Target>") } }.let { }
+        override fun seek(ms: Long) = io.execute { timeFrom(ms); runCatching { soap("Seek", "<Unit>REL_TIME</Unit><Target>${clock(ms)}</Target>") } }.let { }
         override fun stopThere() { Thread { runCatching { soap("Stop", "") } }.start() }
+        override fun volume(level: Float) {
+            if (to.volumeControl.isEmpty()) return
+            io.execute { runCatching { soap("SetVolume", "<Channel>Master</Channel><DesiredVolume>${Math.round(level * 100)}</DesiredVolume>", RC, to.volumeControl) } }
+        }
 
         /** A song as DIDL-Lite, so the receiver shows its title, artist and cover. */
         private fun didl(s: Song, url: String): String {
             val art = Serve.art(s)?.let { "<upnp:albumArtURI>${esc(it)}</upnp:albumArtURI>" }.orEmpty()
             val type = Serve.type(s, lossless)
+            // its length and that it can be jumped about in, for a receiver that reads them (the Denon reads the file)
+            val length = if (s.duration > 0) " duration=\"${clock(s.duration)}.000\"" else ""
             return "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" " +
                 "xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\"><item id=\"1\" parentID=\"0\" restricted=\"1\">" +
                 "<dc:title>${esc(s.title)}</dc:title><upnp:artist>${esc(s.artist)}</upnp:artist><upnp:album>${esc(s.album)}</upnp:album>$art" +
                 "<upnp:class>object.item.audioItem.musicTrack</upnp:class>" +
-                "<res protocolInfo=\"http-get:*:$type:*\">${esc(url)}</res></item></DIDL-Lite>"
+                "<res protocolInfo=\"http-get:*:$type:$SEEKABLE\"$length>${esc(url)}</res></item></DIDL-Lite>"
         }
 
-        /** One AVTransport action; its answer's body. Throws when the receiver can't be reached. */
-        private fun soap(action: String, args: String): String {
+        /** One AVTransport action (or RenderingControl's, its volume); its answer's body. Throws when the receiver can't be reached. */
+        private fun soap(action: String, args: String, service: String = AVT, at: String = to.control): String {
             val body = "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" " +
-                "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body><u:$action xmlns:u=\"$AVT\">" +
+                "s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body><u:$action xmlns:u=\"$service\">" +
                 "<InstanceID>0</InstanceID>$args</u:$action></s:Body></s:Envelope>"
-            val c = URL(to.control).openConnection() as HttpURLConnection
+            val c = URL(at).openConnection() as HttpURLConnection
             c.connectTimeout = 4_000; c.readTimeout = 6_000
             c.requestMethod = "POST"
             c.doOutput = true
             c.setRequestProperty("Content-Type", "text/xml; charset=\"utf-8\"")
-            c.setRequestProperty("SOAPACTION", "\"$AVT#$action\"")
+            c.setRequestProperty("SOAPACTION", "\"$service#$action\"")
             return try {
                 c.outputStream.use { it.write(body.toByteArray()) }
                 (if (c.responseCode in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()

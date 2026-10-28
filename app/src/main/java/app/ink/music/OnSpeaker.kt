@@ -23,7 +23,10 @@ import java.util.concurrent.CopyOnWriteArraySet
  */
 class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer(p) {
     /** What the speaker says: meant to play, actually moving, where (ms at `at`, elapsedRealtime), how long, its volume (0 to 1, null not heard). */
-    private data class Said(val playing: Boolean, val moving: Boolean, val position: Long, val at: Long, val duration: Long, val volume: Float?)
+    private data class Said(
+        val playing: Boolean, val moving: Boolean, val position: Long, val at: Long, val duration: Long, val volume: Float?,
+        val seekable: Boolean = true,
+    )
     private var said: Said? = null
     private val main = Handler(Looper.getMainLooper())
     private val told = CopyOnWriteArraySet<Player.Listener>()
@@ -43,14 +46,14 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
         val was = said
         said = b?.let {
             Said(it.getBoolean("playing"), it.getBoolean("moving"), it.getLong("position"), SystemClock.elapsedRealtime(),
-                it.getLong("duration"), it.getFloat("volume", -1f).takeIf { v -> v >= 0f })
+                it.getLong("duration"), it.getFloat("volume", -1f).takeIf { v -> v >= 0f }, it.getBoolean("seekable", true))
         }
         android.util.Log.d("ink-cast", "player: ${said?.let { "the speaker's, ${if (it.moving) "playing" else if (it.playing) "starting" else "paused"} at ${it.position / 1000}s, volume ${it.volume}" } ?: "the phone's own"}")
         // casting begins: the phone's own player paused (faded) here, not asked separately by the screens (an ask
         // that arrived after this was taken for the speaker's: reopened on a cast, ink music paused the speaker)
         if (was == null && said != null && super.getPlayWhenReady()) super.pause()
         b?.getString("id")?.let(::follow)
-        tell((was == null) != (said == null) || (was?.volume == null) != (said?.volume == null))
+        tell((was == null) != (said == null) || (was?.volume == null) != (said?.volume == null) || was?.seekable != said?.seekable)
     }
 
     /** The phone's player, paused, moved to the speaker's song: its title and cover what Android shows. */
@@ -110,6 +113,7 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
     override fun seekForward() { if (said == null) super.seekForward() else seek(currentPosition + seekForwardIncrement) }
 
     private fun seek(ms: Long) {
+        if (said?.seekable == false) return
         val to = ms.coerceAtLeast(0)
         said = said?.copy(position = to, at = now())
         asked("seek") { putLong("ms", to) }; tell(false)
@@ -122,8 +126,10 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
     // ---- what's said: the speaker's ----
 
     override fun getPlayWhenReady() = said?.playing ?: super.getPlayWhenReady()
-    override fun isPlaying() = said?.moving ?: super.isPlaying()
-    override fun getPlaybackState() = said?.let { if (it.playing && !it.moving) Player.STATE_BUFFERING else Player.STATE_READY } ?: super.getPlaybackState()
+    // starting counts as playing: the lock screen hides a card that's buffering, and the Denon says "transitioning",
+    // at 0:00, for its first minutes of a YouTube song while it plays (its card came only once it said "playing")
+    override fun isPlaying() = said?.playing ?: super.isPlaying()
+    override fun getPlaybackState() = if (said != null) Player.STATE_READY else super.getPlaybackState()
     override fun getPlaybackSuppressionReason() = if (said != null) Player.PLAYBACK_SUPPRESSION_REASON_NONE else super.getPlaybackSuppressionReason()
     override fun getPlayerError(): PlaybackException? = if (said != null) null else super.getPlayerError()
     override fun getCurrentPosition(): Long {
@@ -164,6 +170,7 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
             Player.COMMAND_PLAY_PAUSE, Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_PREVIOUS,
             Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
         )
+        if (said?.seekable == false) b.remove(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
         if (level != null) b.addAll(
             Player.COMMAND_GET_DEVICE_VOLUME, Player.COMMAND_SET_DEVICE_VOLUME, Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS,
             Player.COMMAND_ADJUST_DEVICE_VOLUME, Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS,

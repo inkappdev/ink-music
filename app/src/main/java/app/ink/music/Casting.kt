@@ -46,6 +46,7 @@ object Casting {
     data class Speaker(
         val key: String, val name: String, val group: Boolean, val address: InetSocketAddress, val model: String = "",
         val kind: String = "cast", val control: String = "", val maker: String = "",
+        val volumeControl: String = "",   // a DLNA receiver's RenderingControl, where its volume's set ("": none)
     )
 
     /** One speaker being played on, whichever way it's spoken to. */
@@ -302,6 +303,9 @@ object Casting {
         l.volume(v)
         Playback.tellPlayer()
     }
+
+    /** A DLNA receiver's volume as it says it (any thread). */
+    internal fun heard(r: Remote, level: Float) = main.post { if (link === r) heardVolume(level) }
 
     /** The speaker's volume as it says it (set on the speaker, or another phone); our own echoes let pass a moment. */
     private fun heardVolume(level: Float) {

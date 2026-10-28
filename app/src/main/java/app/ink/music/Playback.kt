@@ -221,6 +221,9 @@ object Playback {
             b.putBoolean("playing", n.playing); b.putBoolean("moving", n.moving)
             b.putLong("position", n.positionNow()); b.putLong("duration", n.duration)
             n.song?.id?.let { b.putString("id", it) }
+            // a YouTube song on a DLNA receiver can't be jumped about in (the Denon takes the seek, says the new time
+            // and plays on: YouTube's m4a comes in fragments): its bar not draggable
+            b.putBoolean("seekable", !(Casting.on.value?.kind == "dlna" && n.song?.tube == true))
             Casting.volume.value?.let { b.putFloat("volume", it) }
         }
         controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.CAST, android.os.Bundle.EMPTY), b)
