@@ -56,39 +56,8 @@ object Playback {
         override fun onEvents(player: Player, events: Player.Events) {
             // the queue read again only when it changed (a long one is a thousand items)
             if (events.contains(Player.EVENT_TIMELINE_CHANGED)) readQueue()
-            if (casting) steered(player, events)
             update()
         }
-    }
-
-    /**
-     * While a speaker plays, the phone's own player stays still: asked to play or to move from somewhere that
-     * doesn't know of the speaker (the notification, the lock screen, a headset), it's paused at once (before a
-     * sound: a play rises from nothing) and the ask goes to the speaker: a play its play, a new song the speaker's
-     * queue from there. A tester heard the phone start under the speaker.
-     *
-     * Only an edge counts (not playing, then playing), never within two seconds of the last (a handover's own fade
-     * out still says "playing" for a moment), and the speaker is told "play", not toggled: toggled, every echo
-     * flipped it, it answered, and a handover became thousands of commands a second.
-     */
-    private var wasPlaying = false
-    private var steeredAt = 0L
-
-    private fun steered(p: Player, events: Player.Events) {
-        val speaker = Casting.on.value ?: return
-        val playing = p.playWhenReady
-        val began = playing && !wasPlaying
-        wasPlaying = playing
-        val moved = events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) &&
-            p.currentMediaItem?.mediaId != now.value?.song?.id
-        if (!began && !moved) return
-        if (playing) p.pause()
-        val t = android.os.SystemClock.elapsedRealtime()
-        if (t - steeredAt < 2_000) return
-        steeredAt = t
-        android.util.Log.d("ink-cast", "the phone asked to ${if (moved) "go to ${p.currentMediaItemIndex}" else "play"}: to the speaker")
-        if (moved) handover()?.let { (songs, index, _) -> app?.let { Casting.play(it, speaker, songs, index, 0L) } }
-        else Casting.resume()
     }
 
     /** While casting, up next is the speaker's queue (what was handed over), its song lit by the speaker's place. */
@@ -110,6 +79,7 @@ object Playback {
 
     fun connect(ctx: Context) {
         app = ctx.applicationContext
+        lingering = false
         if (controller != null || connecting) return
         connecting = true
         val token = SessionToken(ctx, ComponentName(ctx, PlayerService::class.java))
@@ -121,6 +91,28 @@ object Playback {
                     heard = Heard.of(extras.getString(PlayerService.HEARD)); audioSession = extras.getInt(PlayerService.AUDIO)
                 Eq.bandsOf(extras.getString(PlayerService.EQ))?.let { bands.value = it }; update()
                 }
+
+                // while casting, what the notification, the lock screen, a headset, the car or the volume buttons asked
+                // of the player's session (OnSpeaker): to the speaker
+                override fun onCustomCommand(
+                    controller: MediaController, command: androidx.media3.session.SessionCommand, args: android.os.Bundle,
+                ): com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.SessionResult> {
+                    if (command.customAction == PlayerService.CAST_ASK && casting) {
+                        android.util.Log.d("ink-cast", "asked from outside: ${args.getString("what")}")
+                        when (args.getString("what")) {
+                            "play" -> Casting.resume()
+                            "pause" -> Casting.pauseThere()
+                            "next" -> Casting.next()
+                            "previous" -> Casting.previous()
+                            "seek" -> Casting.seek(args.getLong("ms"))
+                            "jump" -> args.getString("id")?.let { id -> app?.let { Casting.jumpTo(it, id) } }
+                            "stop" -> Casting.bringBack(stopped = true)
+                            "volume" -> Casting.setVolume(args.getFloat("level"))
+                        }
+                    }
+                    return com.google.common.util.concurrent.Futures.immediateFuture(
+                        androidx.media3.session.SessionResult(androidx.media3.session.SessionResult.RESULT_SUCCESS))
+                }
             })
             .buildAsync()
         future.addListener({
@@ -131,6 +123,7 @@ object Playback {
                 radio = it.sessionExtras.getBoolean(PlayerService.RADIO, true)
                 heard = Heard.of(it.sessionExtras.getString(PlayerService.HEARD))
                 audioSession = it.sessionExtras.getInt(PlayerService.AUDIO)
+                Playback.token = it.sessionExtras.parcelable(PlayerService.TOKEN)
                 Eq.bandsOf(it.sessionExtras.getString(PlayerService.EQ))?.let { b -> bands.value = b }
                 level(levelling(ctx))   // the player's copy brought in line with the setting
             }
@@ -141,10 +134,17 @@ object Playback {
         }, ContextCompat.getMainExecutor(ctx))
     }
 
+    /**
+     * The screens gone (ink music left): the player let go. Not while casting: the player says the speaker's state to
+     * Android only while held (let go as the phone locked, the lock screen went to another app's); it's let go
+     * when the cast ends, if no screen's up by then.
+     */
     fun release() {
+        if (casting) { lingering = true; return }
         controller?.run { removeListener(listener); release() }
         controller = null
     }
+    private var lingering = false
 
     private var sleepAt = 0L
     private var radio = true
@@ -210,12 +210,41 @@ object Playback {
         if (go) c.play()
     }
 
-    /** The phone stops for a speaker (it keeps its queue, paused). */
-    fun pauseHere() { controller?.pause(); casting = true; wasPlaying = false; steeredAt = android.os.SystemClock.elapsedRealtime() }
+    /**
+     * What the speaker does, told to the player's session ([OnSpeaker]): Android then shows and steers the speaker,
+     * its volume buttons too. Not casting: told it's over.
+     */
+    fun tellPlayer() {
+        val b = android.os.Bundle()
+        if (casting) b.putBoolean("on", true)
+        if (casting) _now.value?.let { n ->
+            b.putBoolean("playing", n.playing); b.putBoolean("moving", n.moving)
+            b.putLong("position", n.positionNow()); b.putLong("duration", n.duration)
+            n.song?.id?.let { b.putString("id", it) }
+            Casting.volume.value?.let { b.putFloat("volume", it) }
+        }
+        controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.CAST, android.os.Bundle.EMPTY), b)
+    }
+
+    /** The phone stops for a speaker: the player told it casts, it pauses itself (OnSpeaker) and keeps its queue. */
+    fun pauseHere() { casting = true; tellPlayer() }
+    /**
+     * The phone's queue made the speaker's when it hasn't the speaker's songs (ink music opened again on a cast), so
+     * its player, paused, can be moved along with the speaker's.
+     */
+    fun mirror(songs: List<Song>) {
+        val c = controller ?: return
+        val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }.toHashSet()
+        if (songs.isNotEmpty() && songs.any { it.id !in ids }) c.setMediaItems(songs.map(::item), 0, 0)
+    }
     /** The speaker's song, as it says it. */
-    fun showCast(n: Now) { casting = true; _now.value = n }
+    fun showCast(n: Now) { casting = true; _now.value = n; tellPlayer() }
     /** Casting over: the phone's own player shows again. */
-    fun castEnded() { casting = false; _now.value = null; readQueue(); update() }
+    fun castEnded() {
+        casting = false; tellPlayer(); _now.value = null; readQueue(); update()
+        // held only for the speaker: let go once what ends the cast is done with it (back to the phone plays here)
+        if (lingering) android.os.Handler(android.os.Looper.getMainLooper()).post { if (lingering) { lingering = false; release() } }
+    }
 
     fun toggle() { if (casting) return Casting.toggle(); controller?.run { if (playWhenReady) pause() else { if (playbackState == Player.STATE_IDLE) prepare(); play() } } }
     fun next() { if (casting) return Casting.next(); controller?.seekToNextMediaItem() }
@@ -265,6 +294,8 @@ object Playback {
 
     /** The player's audio session (in its own process), for the phone's equalizer. */
     @Volatile var audioSession = 0
+    /** The player's session as Android knows it (its volume buttons are handed to it while casting: Main). */
+    var token: android.media.session.MediaSession.Token? = null
         private set
 
     /** The phone's own equalizer for ink music's sound (Samsung's, Android's, an equalizer app's): false if it has none. */
@@ -356,3 +387,7 @@ object Playback {
         )
         .build()
 }
+
+@Suppress("DEPRECATION")
+private fun android.os.Bundle.parcelable(key: String): android.media.session.MediaSession.Token? =
+    if (android.os.Build.VERSION.SDK_INT >= 33) getParcelable(key, android.media.session.MediaSession.Token::class.java) else getParcelable(key)

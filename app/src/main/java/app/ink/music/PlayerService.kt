@@ -38,6 +38,9 @@ import kotlinx.coroutines.launch
  */
 class PlayerService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
+    private var onSpeaker: OnSpeaker? = null
+    // the screens' controller telling us what a speaker does (its asks go back to it; gone, casting's over here)
+    private var caster: MediaSession.ControllerInfo? = null
     private val work = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var clock: History.Clock? = null
     private var onAir: OnAir? = null
@@ -186,6 +189,8 @@ class PlayerService : MediaLibraryService() {
         session?.setSessionExtras(Bundle().apply {
             putLong(SLEEP_AT, sleepAt); putBoolean(RADIO, radio); putString(HEARD, heard); putInt(AUDIO, audio)
             putString(EQ, Eq.bandsJson(bands))
+            // for the screens to hand Android: their volume buttons to this session (a speaker's, while casting)
+            session?.platformToken?.let { putParcelable(TOKEN, it) }
         })
     }
 
@@ -481,7 +486,12 @@ class PlayerService : MediaLibraryService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         exo = player
-        session = MediaLibrarySession.Builder(this, Soft(player), object : MediaLibrarySession.Callback {
+        val onSpeaker = OnSpeaker(Soft(player)) { b ->
+            val s = session ?: return@OnSpeaker
+            val c = caster ?: return@OnSpeaker
+            s.sendCustomCommand(c, SessionCommand(CAST_ASK, Bundle.EMPTY), b)
+        }.also { onSpeaker = it }
+        session = MediaLibrarySession.Builder(this, onSpeaker, object : MediaLibrarySession.Callback {
                 // Android Auto's library: records, artists, lists ([Auto])
                 override fun onGetLibraryRoot(
                     session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?,
@@ -539,14 +549,25 @@ class PlayerService : MediaLibraryService() {
                         .setAvailableSessionCommands(
                             MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(SessionCommand(SLEEP, Bundle.EMPTY))
                                 .add(SessionCommand(LEVEL, Bundle.EMPTY)).add(SessionCommand(RADIO, Bundle.EMPTY))
-                                .add(SessionCommand(WARM, Bundle.EMPTY)).add(SessionCommand(EQ, Bundle.EMPTY)).build(),
+                                .add(SessionCommand(WARM, Bundle.EMPTY)).add(SessionCommand(EQ, Bundle.EMPTY))
+                                .add(SessionCommand(CAST, Bundle.EMPTY)).build(),
                         )
                         .build()
+
+                // the screens gone while casting (closed, or killed): the session the phone's own again
+                override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+                    if (controller == caster) { android.util.Log.d("ink-cast", "player: the screens gone"); caster = null; onSpeaker?.speaker(null) }
+                }
 
                 override fun onCustomCommand(
                     session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle,
                 ): ListenableFuture<SessionResult> {
                     if (customCommand.customAction == SLEEP) setSleep(session.player, args.getLong(SLEEP_MS))
+                    // casting: what the speaker does (OnSpeaker), or casting over
+                    if (customCommand.customAction == CAST) {
+                        if (args.getBoolean("on")) { caster = controller; onSpeaker?.speaker(args) }
+                        else { caster = null; onSpeaker?.speaker(null) }
+                    }
                     // the equalizer changed on the screens: read again and applied
                     if (customCommand.customAction == EQ) { equalize(); tell() }
                     // a YouTube song about to be played (its page is up): its stream found now, so play starts at once
@@ -598,6 +619,13 @@ class PlayerService : MediaLibraryService() {
         const val HEARD = "heard"
         const val AUDIO = "audioSession"
         const val EQ = "app.ink.music.EQ"
+        /** The screens to the player: what a speaker does ("on", "playing", "moving", "position", "duration", "id", "volume"). */
+        const val CAST = "app.ink.music.CAST"
+        /** The player to the screens: an ask for the speaker ("what": play, pause, next, previous, seek "ms", jump "id", stop, volume "level"). */
+        const val CAST_ASK = "app.ink.music.CAST_ASK"
+        const val TOKEN = "token"
+        /** A speaker's volume in steps of 5%, each press of the phone's buttons one. */
+        const val STEPS = 20
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
