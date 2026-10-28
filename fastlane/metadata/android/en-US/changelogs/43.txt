@@ -1,0 +1,6 @@
+- Casting holds on: it reconnects by itself, reopening ink music finds the cast, up next shows the speaker's queue
+- While casting, the lock screen, headphones and volume buttons steer the speaker (DLNA too)
+- The player's controls drawn in pixels, play in the middle
+- Stop is one tap: the player sinks away and a cast ends
+- One afternoon our speaker was told play and pause thousands of times a second. It forgave us.
+- Do something nice for someone today. Let them pick the next song
