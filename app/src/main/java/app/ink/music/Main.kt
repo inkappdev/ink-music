@@ -340,14 +340,22 @@ private fun App() {
                 }
             }
         }
+        // stopped, the player sinks all the way off the screen as the music fades (a quarter second), the song and
+        // the page going together; closed any other way, the quick fade. The mini player goes at once, under it
+        // (left to go by itself it went a beat after the player had: two goings), and is back when something plays
+        var stopping by remember { mutableStateOf(false) }
+        val playing = Playback.now.collectAsState().value?.playing == true
+        LaunchedEffect(playerUp) { if (playerUp) stopping = false }
+        LaunchedEffect(playing) { if (playing) stopping = false }
         Box(Modifier.align(Alignment.BottomCenter).onSizeChanged { foot = with(density) { it.height.toDp() } }) {
-            MiniPlayer(frost, onOpen = { playerUp = true })
+            if (!stopping) MiniPlayer(frost, onOpen = { playerUp = true })
         }
         androidx.compose.animation.AnimatedVisibility(
             playerUp,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
-            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { PlayerPage(onClose = { playerUp = false }, onOpen = { playerUp = false; pages.open(it) }) }
+            exit = if (stopping) slideOutVertically(tween(STOP_MS, easing = Motion.expo)) { it } + fadeOut(tween(STOP_MS, delayMillis = STOP_MS / 2))
+                else slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { PlayerPage(onClose = { playerUp = false }, onOpen = { playerUp = false; pages.open(it) }, onStop = { stopping = true; playerUp = false }) }
     }
 }
 
@@ -1782,3 +1790,6 @@ private fun Line(n: Now, accent: androidx.compose.ui.graphics.Color) {
 
 /** A name as compared: case and marks aside. */
 private fun plainName(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+
+/** How long the player takes to sink away on stop: with the music's own fade out (Soft, 250 ms). */
+private const val STOP_MS = 280

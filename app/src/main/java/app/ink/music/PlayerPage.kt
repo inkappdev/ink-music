@@ -77,6 +77,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.foundation.layout.offset
+import kotlin.math.roundToInt
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -114,7 +117,7 @@ private class Scrub { var at by mutableStateOf<Long?>(null) }
  * small beside the song, still under the line. A new song is the iPod's push. Pull down to close.
  */
 @Composable
-fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
+fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> Unit = onClose) {
     val ctx = LocalContext.current
     val now by Playback.now.collectAsState()
     val n = now
@@ -187,7 +190,9 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                     start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true } },
                     middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
                     end = { Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                        Word(look.word, pixel(SMALL, SAID), touch = 10.dp) { Looks.next(ctx) }
+                        // the look drawn, not named ("fluted glass" was a lot of words up here): the backdrop changes
+                        // behind it as it's tapped, so its picture is all the saying it needs
+                        LookGlyph(look) { Looks.next(ctx) }
                         Pixel(CLOSE, "close", SAID, Modifier.align(Alignment.CenterVertically), onClick = onClose)
                     } },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
@@ -202,7 +207,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                 Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     if (withLyrics && lyric != null) {
                         LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
-                        Scrubber(n, accent, scrub) { HeardWord(n, typing) { heardUp = true } }
+                        // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
+                        Scrubber(n, accent, scrub, line = 2.dp) { HeardWord(n, typing) { heardUp = true } }
                         Song(n, dir, small = true, scrub, onOpen, share)
                     } else {
                         // the cover as big as the width allows, unless the song's words under it would then run
@@ -258,7 +264,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
             // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
             // (lit with the cover still there read as broken to a tester)
             val none = sing && lines?.isEmpty() == true
-            Modes(n, if (none) "no lyrics" else "lyrics", sing && !none, onQueue = { queueUp = true }, onStop = onClose)
+            Modes(n, if (none) "no lyrics" else "lyrics", sing && !none, onQueue = { queueUp = true }, onStop = onStop)
             Spacer(Modifier.height(12.dp))
             Marquee(n.artist, n.moving, Modifier.fillMaxWidth().bleedPastCutout(), size = 120.sp)
             }
@@ -319,7 +325,7 @@ private val SLEEPS = listOf(0L, 15 * 60_000L, 30 * 60_000L, 60 * 60_000L, Player
 /**
  * The song under the line: the cover (its clickwheel: circle a thumb round it to scrub, tap to
  * play / pause) and its words. Big, the cover across the width and the words under it; small (the
- * lyrics up), the cover at 72 dp (the mini player's size) with the words beside it. A new song pushes in.
+ * lyrics up), the cover at 96 dp (72, the mini player's, read as too small under the lines) with the words beside it. A new song pushes in.
  */
 @Composable
 private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit, over: @Composable (Now) -> Unit = {}) {
@@ -337,7 +343,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
     ) { t ->
         val live by rememberUpdatedState(t)
         if (small) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Sleeve(t, 72.dp, Modifier.clickwheel({ live }, scrub))
+            Sleeve(t, 96.dp, Modifier.clickwheel({ live }, scrub))
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
@@ -443,7 +449,7 @@ private fun Grain() {
  * down, the song jumps there on letting go.
  */
 @Composable
-private fun Scrubber(n: Now, accent: Color, scrub: Scrub, middle: @Composable () -> Unit = {}) {
+private fun Scrubber(n: Now, accent: Color, scrub: Scrub, line: androidx.compose.ui.unit.Dp = 1.dp, middle: @Composable () -> Unit = {}) {
     // where the middle word sits: a tap there is the word's, not a seek
     var hole by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val margin = with(androidx.compose.ui.platform.LocalDensity.current) { 12.dp.toPx() }
@@ -483,8 +489,8 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub, middle: @Composable ()
                 modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
         }
         // the line sits on the cover's top edge: nothing between them
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
-            Box(Modifier.fillMaxWidth(frac).height(1.dp).background(accent))
+        Box(Modifier.fillMaxWidth().height(line).background(Ink.line)) {
+            Box(Modifier.fillMaxWidth(frac).height(line).background(accent))
         }
     }
 }
@@ -599,6 +605,45 @@ private val NEXT = listOf("#...#", "##..#", "###.#", "#####", "###.#", "##..#", 
 private val SHUFFLE = listOf("........#..", "##....#####", "..#..#..#..", "...##......", "..#..#..#..", "##....#####", "........#..")
 private val REPEAT = listOf("..#........", ".##########", "#.#.......#", "#.........#", "#.......#.#", "##########.", "........#..")
 private val REPEAT_ONE = listOf("..#........", ".##########", "#.#.......#", "#....#....#", "#.......#.#", "##########.", "........#..")
+/** Each look as a tile in a frame: plain empty, blur a soft blot, fluted glass its ribs, pixels its blocks, dither its checks. */
+private val LOOKS = mapOf(
+    Look.PLAIN to listOf("#########", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#########"),
+    Look.BLUR to listOf("#########", "#.......#", "#...#...#", "#..###..#", "#.#####.#", "#..###..#", "#...#...#", "#.......#", "#########"),
+    Look.FLUTED to listOf("#########", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#########"),
+    Look.PIXELS to listOf("#########", "####....#", "####....#", "####....#", "#.......#", "#....####", "#....####", "#....####", "#########"),
+    Look.DITHER to listOf("#########", "##.#.#.##", "#.#.#.#.#", "##.#.#.##", "#.#.#.#.#", "##.#.#.##", "#.#.#.#.#", "##.#.#.##", "#########"),
+)
+
+/**
+ * The look's glyph. In the pixels look it's one of the backdrop's own tiles, exactly their size and sat on one, its
+ * frame on their gutters (at 2 dp it was nearly a tile, astride two). The tiles: the page's longer side, cut into
+ * about 18 dp squares (Looks.pixels), the square centred on the page.
+ */
+@Composable
+private fun LookGlyph(look: Look, onClick: () -> Unit) {
+    val win = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
+    val d = LocalDensity.current
+    val side = maxOf(win.width, win.height).toFloat()
+    val tile = if (look == Look.PIXELS && side > 0) side / (side / (18 * d.density)).roundToInt().coerceIn(4, 80) else 0f
+    var nudge by remember(look) { mutableStateOf(androidx.compose.ui.unit.IntOffset.Zero) }
+    val rows = LOOKS.getValue(look)
+    Pixel(
+        rows, "look, ${look.word}", SAID,
+        modifier = Modifier.offset { nudge },
+        cell = if (tile > 0) with(d) { (tile / rows.size).toDp() } else 2.dp,
+        inner = if (tile > 0) Modifier.onGloballyPositioned { c ->
+            // where it would be without the nudge, then the nearest tile's corner
+            val p = c.positionInWindow() - androidx.compose.ui.geometry.Offset(nudge.x.toFloat(), nudge.y.toFloat())
+            val ox = (win.width - side) / 2f; val oy = (win.height - side) / 2f
+            val tx = ox + kotlin.math.round((p.x - ox) / tile) * tile
+            val ty = oy + kotlin.math.round((p.y - oy) / tile) * tile
+            val n = androidx.compose.ui.unit.IntOffset(kotlin.math.round(tx - p.x).toInt(), kotlin.math.round(ty - p.y).toInt())
+            if (n != nudge) nudge = n
+        } else Modifier,
+        onClick = onClick,
+    )
+}
+
 /** close: the player goes down, as it's pulled. */
 private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
 
@@ -606,7 +651,7 @@ private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
 @Composable
 private fun Pixel(
     rows: List<String>, name: String, colour: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier,
-    cell: androidx.compose.ui.unit.Dp = 2.dp, onClick: () -> Unit,
+    cell: androidx.compose.ui.unit.Dp = 2.dp, inner: Modifier = Modifier, onClick: () -> Unit,
 ) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
@@ -614,7 +659,7 @@ private fun Pixel(
     Box(
         modifier.semantics { contentDescription = name; role = androidx.compose.ui.semantics.Role.Button }
             .clickable(src, indication = null, onClick = felt(then = onClick)).padding(horizontal = cell * 4, vertical = cell * 6),
-    ) { Sprite(rows, c, cell) }
+    ) { Sprite(rows, c, cell, inner) }
 }
 
 /** "play on" as a pixel speaker: lit in ink while a speaker plays, at the row's words' dimness on the phone. */
