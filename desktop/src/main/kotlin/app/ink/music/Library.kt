@@ -40,6 +40,8 @@ data class Song(
     val tube get() = id.startsWith("y")
     /** A radio station ([Stations]): live, no end, no record. */
     val station get() = id.startsWith("s")
+    /** Past CD: more than 16 bits, or more than 48 kHz. */
+    val hiRes get() = bits > 16 || rate > 48_000
 
     /** As said: "flac 24/96", "flac 16/44.1", "mp3". */
     val quality get() = listOfNotNull(format.takeIf { it.isNotEmpty() },

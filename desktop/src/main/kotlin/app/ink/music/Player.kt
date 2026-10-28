@@ -111,7 +111,7 @@ object Player {
                     }
                     "playlist-pos" -> { index = (e.value as? Long)?.toInt() ?: -1; tell() }
                     "duration" -> { duration = ((e.value as? Double) ?: 0.0).times(1000).toLong(); tell() }
-                    "time-pos" -> {
+                    "time-pos" -> if (!casting) {
                         val ms = ((e.value as? Double) ?: 0.0).times(1000).toLong()
                         // a few times a second is plenty for a line and a clock
                         if (kotlin.math.abs(ms - position.value) >= 200 || ms < position.value) position.value = ms
@@ -188,6 +188,8 @@ object Player {
 
     private fun topUp() {
         val q = _queue.value
+        // casting, where the speaker is (this computer's own player waits, paused)
+        val index = if (casting) _now.value?.index ?: -1 else index
         if (!radio.value || q.isEmpty() || index < 0 || index < q.size - 2) return
         val last = q.last()
         // a station plays on forever: nothing to follow it
@@ -203,6 +205,8 @@ object Player {
             val more = Radio.after(seeds, queued)
             if (more.isEmpty() || !radio.value || _queue.value.lastOrNull()?.id != last.id) return@launch
             fromRadio += more.map { it.id }
+            // on a speaker: to its queue
+            if (casting) return@launch javax.swing.SwingUtilities.invokeLater { Casting.extend(more) }
             val m = mpv ?: return@launch
             _queue.value = _queue.value + more
             more.forEach { m.command("loadfile", where(it), "append") }
@@ -211,6 +215,7 @@ object Player {
     }
 
     private fun tell() {
+        if (casting) return
         val q = _queue.value
         val s = q.getOrNull(index)
         timeSong(s)
@@ -226,7 +231,62 @@ object Player {
     }
 
     /** These songs, from `start`: the queue they become. */
-    fun play(songs: List<Song>, start: Int = 0) { pendingSeek = 0; load(songs, start, go = true) }
+    fun play(songs: List<Song>, start: Int = 0) {
+        // a speaker chosen: there
+        Casting.on.value?.let { to -> return Casting.play(to, songs, start, 0L) }
+        pendingSeek = 0; load(songs, start, go = true)
+    }
+
+    // ---- casting: a speaker plays, this computer's player waits, paused, and shows the speaker's song ----
+
+    @Volatile private var casting = false
+    @Volatile private var castPos = 0L
+    @Volatile private var castAt = 0L
+    @Volatile private var castMoving = false
+    /** The queue this computer's player holds while a speaker plays (shown again if the cast's lost). */
+    private var waiting: List<Song> = emptyList()
+    private var ticking: kotlinx.coroutines.Job? = null
+
+    /** A speaker takes the queue: this computer pauses, and up next is what the speaker was handed. */
+    fun pauseHere(handed: List<Song>) {
+        if (!casting) waiting = _queue.value
+        casting = true
+        mpv?.set("pause", "yes")
+        _queue.value = handed
+        // the speaker says where it is when it changes; between, the clock runs on here
+        ticking?.cancel()
+        ticking = scope.launch {
+            while (casting) {
+                if (castMoving) position.value = castPos + (SystemClock.elapsedRealtime() - castAt)
+                kotlinx.coroutines.delay(500)
+            }
+        }
+    }
+
+    /** What the speaker says it plays. */
+    fun showCast(n: app.ink.music.Now) {
+        if (!casting) return
+        castPos = n.position; castAt = n.at; castMoving = n.moving
+        position.value = n.position
+        _now.value = Now(n.song, n.index, n.playing, n.duration)
+        topUp()
+    }
+
+    /** Up next while casting: the speaker's queue. */
+    fun showCastQueue(songs: List<Song>) { if (casting) _queue.value = songs }
+
+    /** Casting over: this computer's own player shows again, where it waited. */
+    fun castEnded() {
+        casting = false
+        ticking?.cancel()
+        val m = mpv ?: return
+        _queue.value = waiting
+        index = m.get("playlist-pos")?.toIntOrNull() ?: -1
+        tell()
+    }
+
+    /** Back from a speaker: its queue here, from the song it was on, where it was; playing if it was. */
+    fun takeBack(songs: List<Song>, start: Int, at: Long, go: Boolean) { pendingSeek = at; load(songs, start, go) }
 
     private fun load(songs: List<Song>, start: Int, go: Boolean) {
         val m = mpv ?: return
@@ -242,6 +302,8 @@ object Player {
 
     /** After the song playing (nothing playing: plays it). */
     fun playNext(s: Song) {
+        // a speaker's queue grows only at its end
+        if (casting) return Casting.extend(listOf(s))
         val m = mpv ?: return
         if (_queue.value.isEmpty() || index < 0) return play(listOf(s))
         _queue.value = _queue.value.toMutableList().apply { add(index + 1, s) }
@@ -251,6 +313,7 @@ object Player {
 
     /** At the queue's end (nothing playing: plays it). */
     fun add(s: Song) {
+        if (casting) return Casting.extend(listOf(s))
         val m = mpv ?: return
         if (_queue.value.isEmpty() || index < 0) return play(listOf(s))
         _queue.value = _queue.value + s
@@ -260,6 +323,7 @@ object Player {
 
     /** The queue's `i`th song, from its start. */
     fun jump(i: Int) {
+        if (casting) return Casting.jump(i)
         val m = mpv ?: return
         if (i !in _queue.value.indices) return
         m.set("playlist-pos", i.toString())
@@ -268,6 +332,8 @@ object Player {
 
     /** The queue's `i`th song out of it (the one playing: on to the next). */
     fun remove(i: Int) {
+        // a speaker's queue is fixed but for its end
+        if (casting) return
         val m = mpv ?: return
         if (i !in _queue.value.indices) return
         _queue.value = _queue.value.toMutableList().apply { removeAt(i) }
@@ -283,18 +349,20 @@ object Player {
         else -> s.path
     }
 
-    fun toggle() { mpv?.command("cycle", "pause") }
+    fun toggle() { if (casting) return Casting.toggle(); mpv?.command("cycle", "pause") }
 
-    fun next() { mpv?.command("playlist-next") }
+    fun next() { if (casting) return Casting.next(); mpv?.command("playlist-next") }
 
     /** Back: to the song's start, or (in its first seconds) the one before. */
     fun previous() {
+        if (casting) return Casting.previous()
         val m = mpv ?: return
         if (position.value > 3_000 || index <= 0) seek(0) else m.command("playlist-prev")
     }
 
     fun seek(ms: Long) {
         position.value = ms
+        if (casting) { castPos = ms; castAt = SystemClock.elapsedRealtime(); return Casting.seek(ms) }
         mpv?.command("seek", "%.3f".format(java.util.Locale.ROOT, ms / 1000.0), "absolute")
     }
 
