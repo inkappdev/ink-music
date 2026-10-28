@@ -76,6 +76,7 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze-blur:2.0.1")
     // YouTube Music, the full build only (NewPipe's extractor, GPL-3.0): never in the play build
     "fullImplementation"("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+    "fullImplementation"(project(":youtube"))
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")   // Android's own is a stub under unit tests
 }

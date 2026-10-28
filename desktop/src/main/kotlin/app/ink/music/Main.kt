@@ -110,6 +110,7 @@ sealed interface Page {
     data object Playing : Page
     data object Settings : Page
     data object Queue : Page
+    data class Tube(val album: TubeAlbum) : Page
 }
 
 /** Clear of the Mac's traffic lights (the title bar is gone, its buttons stay). */
@@ -155,6 +156,7 @@ private fun App() {
                         Page.Playing -> PlayerPage({ pages += it }) { pages.removeLast() }
                         Page.Settings -> SettingsPage { pages.removeLast() }
                         Page.Queue -> QueuePage({ pages += it }) { pages.removeLast() }
+                        is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { pages.removeLast() }
                     }
                 }
             }
@@ -354,7 +356,7 @@ fun SongRow(
  * title's room whatever this one's is, so a row of covers keeps one height.
  */
 @Composable
-private fun UnderCover(title: String, said: String) {
+fun UnderCover(title: String, said: String) {
     Box {
         Column(Modifier.alpha(0f)) {
             BasicText("I\nI", style = headline(15.sp))

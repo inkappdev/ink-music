@@ -18,3 +18,5 @@ rootProject.name = "ink-music"
 // -PdesktopOnly: the Mac app alone (its GitHub Action has no Android SDK to configure the phone's)
 if (providers.gradleProperty("desktopOnly").orNull == null) include(":app")
 include(":desktop")
+// YouTube Music's own API, by hand (InnerTube.kt): the phone's full build and the desktop's, never the play build
+include(":youtube")

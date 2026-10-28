@@ -23,6 +23,8 @@ internal interface MpvApi : Library {
     fun mpv_observe_property(h: Pointer, userdata: Long, name: String, format: Int): Int
     fun mpv_wait_event(h: Pointer, timeout: Double): Pointer
     fun mpv_wakeup(h: Pointer)
+    fun mpv_hook_add(h: Pointer, userdata: Long, name: String, priority: Int): Int
+    fun mpv_hook_continue(h: Pointer, id: Long): Int
     fun mpv_terminate_destroy(h: Pointer)
     fun mpv_error_string(error: Int): String
 }
@@ -63,10 +65,15 @@ class Mpv(options: Map<String, String>) {
 
     fun observe(name: String, format: Int) = api.mpv_observe_property(h, 0, name, format)
 
+    /** Asked before each file opens ("on_load"): [Hook] comes, and the file waits till [proceed]. */
+    fun hook(name: String) = api.mpv_hook_add(h, 0, name, 0)
+    fun proceed(id: Long) = api.mpv_hook_continue(h, id)
+
     sealed interface Event
     data class Changed(val name: String, val value: Any?) : Event
     data class Ended(val reason: Int) : Event
     data object Loaded : Event
+    data class Hook(val name: String, val id: Long) : Event
     data object Shutdown : Event
 
     /**
@@ -80,6 +87,8 @@ class Mpv(options: Map<String, String>) {
             SHUTDOWN -> Shutdown
             FILE_LOADED -> Loaded
             END_FILE -> Ended(e.getPointer(16)?.getInt(0) ?: 0)
+            // mpv_event_hook { const char* name; uint64_t id }
+            HOOK -> e.getPointer(16)?.let { p -> Hook(p.getPointer(0).getString(0, "UTF-8"), p.getLong(8)) }
             PROPERTY_CHANGE -> {
                 val p = e.getPointer(16) ?: return null
                 val name = p.getPointer(0).getString(0, "UTF-8")
@@ -102,7 +111,7 @@ class Mpv(options: Map<String, String>) {
     companion object {
         const val STRING = 1; const val FLAG = 3; const val INT64 = 4; const val DOUBLE = 5
         private const val SHUTDOWN = 1; private const val END_FILE = 7; private const val FILE_LOADED = 8
-        private const val PROPERTY_CHANGE = 22
+        private const val PROPERTY_CHANGE = 22; private const val HOOK = 25
         /** Why a file ended (mpv_end_file_reason): played to its end, or stopped, or it couldn't play. */
         const val EOF = 0; const val STOP = 2; const val ERROR = 4
 

@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -62,6 +66,12 @@ fun FindTab(open: (Page) -> Unit) {
     val foundArtists = remember(q, artists) { if (q.isEmpty()) emptyList() else artists.mapNotNull { a -> rank(a.name)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(8) }
     val foundRecords = remember(q, albums) { if (q.isEmpty()) emptyList() else albums.mapNotNull { a -> listOfNotNull(rank(a.title), rank(a.artist)?.plus(1)).minOrNull()?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(16) }
     val foundSongs = remember(q, songs) { if (q.isEmpty()) emptyList() else songs.mapNotNull { s -> listOfNotNull(rank(s.title), rank(s.artist)?.plus(1), rank(s.album)?.plus(2)).minOrNull()?.let { it to s } }.sortedBy { it.first }.map { it.second }.take(60) }
+    // YouTube Music too, once the typing rests
+    val tube by androidx.compose.runtime.produceState(emptyList<Song>() to emptyList<TubeAlbum>(), q) {
+        if (q.length < 2) { value = emptyList<Song>() to emptyList(); return@produceState }
+        kotlinx.coroutines.delay(300)
+        value = YouTube.search(q)
+    }
     val focus = remember { FocusRequester() }
     LaunchedEffect(asked) { runCatching { focus.requestFocus() } }
     val list = rememberLazyListState()
@@ -80,7 +90,7 @@ fun FindTab(open: (Page) -> Unit) {
                 )
             }
             Spacer(Modifier.height(18.dp))
-            if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty())
+            if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && tube.first.isEmpty() && tube.second.isEmpty())
                 BasicText("nothing called that", style = pixel(12.sp, Ink.mid))
         }
         if (foundArtists.isNotEmpty()) {
@@ -100,10 +110,67 @@ fun FindTab(open: (Page) -> Unit) {
                 SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i) }
             }
         }
+        // what YouTube Music has: its records, then its songs
+        val (tubeSongs, tubeRecords) = tube
+        if (tubeSongs.isNotEmpty() || tubeRecords.isNotEmpty()) item { Label("on youtube music") }
+        if (tubeRecords.isNotEmpty()) item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(tubeRecords, key = { "ta" + it.url }) { a -> TubeTile(a, Modifier.width(160.dp)) { open(Page.Tube(a)) } }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        itemsIndexed(tubeSongs, key = { _, s -> "t" + s.id }) { i, s ->
+            SongRow(s, said = s.artist.lowercase()) { Player.play(tubeSongs, i) }
+        }
     }
 }
 
 @Composable
 fun Label(text: String) {
     BasicText(text, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+}
+
+/** A YouTube Music record as a tile: its cover (from its link), name and artist. */
+@Composable
+fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
+    androidx.compose.foundation.layout.Column(modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        CoverOf(face(a), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        Spacer(Modifier.height(8.dp))
+        UnderCover(a.title, a.artist)
+    }
+}
+
+/** Enough of a song to show a YouTube record's cover by. */
+fun face(a: TubeAlbum) = Song(id = "yface", path = "", title = a.title, artist = a.artist, album = a.title,
+    albumId = "ya" + a.url.hashCode(), albumArtist = a.artist, duration = 0, disc = 1, track = 0, year = 0, art = a.art)
+
+/** A YouTube Music record: its songs read from YouTube Music, played from there. */
+@Composable
+fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
+    val songs by androidx.compose.runtime.produceState<List<Song>?>(null, a.url) { value = YouTube.album(a) }
+    androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
+        Close(onClose)
+        Row(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 16.dp)) {
+            androidx.compose.foundation.layout.Column(Modifier.width(320.dp)) {
+                CoverOf(face(a), a.title, Modifier.size(320.dp))
+                Spacer(Modifier.height(16.dp))
+                BasicText(a.title.uppercase(), style = headline(30.sp), maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                BasicText(a.artist.lowercase(), style = pixel(14.sp))
+                Spacer(Modifier.height(4.dp))
+                BasicText(songs?.let { s -> listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration }), "youtube music").joinToString("  ·  ") } ?: "reading",
+                    style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(16.dp))
+                songs?.takeIf { it.isNotEmpty() }?.let { s -> Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) } }
+            }
+            Spacer(Modifier.width(40.dp))
+            val list = rememberLazyListState()
+            val s = songs.orEmpty()
+            LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
+                itemsIndexed(s, key = { _, x -> x.id }) { i, x ->
+                    SongRow(x, number = "${i + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase()) { Player.play(s, i) }
+                }
+            }
+        }
+    }
 }

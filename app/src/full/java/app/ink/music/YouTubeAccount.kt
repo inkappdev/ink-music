@@ -111,7 +111,7 @@ object YouTubeAccount {
         // "<brand>||<you>": a brand account speaks on behalf of its id; your own has nothing before the bars
         val brand = dataSyncId?.split("||")?.firstOrNull()?.takeIf { it.isNotBlank() && dataSyncId.contains("||") && dataSyncId.substringAfter("||").isNotBlank() }
         val t = InnerTube(cookie, visitor, brand, version ?: InnerTube.VERSION)
-        val w = t.who() ?: return@withContext false
+        val w = t.who()?.let { TubeWho(it.name, it.handle) } ?: return@withContext false
         val auth = JSONObject().put("cookie", cookie).put("visitor", visitor.orEmpty()).put("sync", brand.orEmpty()).put("version", version.orEmpty())
         prefs(c).edit().putString("auth", seal(auth.toString())).putString("name", w.name).putString("handle", w.handle).apply()
         tube = t; _who.value = w

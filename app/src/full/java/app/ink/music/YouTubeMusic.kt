@@ -4,21 +4,13 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
-import org.schabi.newpipe.extractor.Image
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
-import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.downloader.Downloader
-import org.schabi.newpipe.extractor.downloader.Request
-import org.schabi.newpipe.extractor.downloader.Response
-import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
-import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
-import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.net.HttpURLConnection
@@ -40,12 +32,9 @@ object YouTubeMusic {
     // left alone till the player starts again (that phone can't make them)
     private val refusedSongs = ConcurrentHashMap.newKeySet<String>()
     private val related = ConcurrentHashMap<String, List<Song>>()   // id -> the songs YouTube sets beside it
-    @Volatile private var ready = false
 
-    private fun init() {
-        if (ready) return
-        synchronized(this) { if (!ready) { NewPipe.init(Fetch, Localization("en", "US")); ready = true } }
-    }
+    // NewPipe as both apps use it (the youtube module's Pipe), its timings in the phone's log
+    private fun init() { Pipe.log = { android.util.Log.d("ink-youtube", it) }; Pipe.init() }
 
     /** Before any stream: YouTube's poToken minted on this phone (NewPipe's way: [PoTokens]). */
     @Volatile private var app: android.content.Context? = null
@@ -74,7 +63,7 @@ object YouTubeMusic {
         val albums = async {
             runCatching {
                 SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS), "")).relatedItems
-                    .filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), best(it.thumbnails)) }
+                    .filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), Pipe.best(it.thumbnails)) }
             }.getOrDefault(emptyList())
         }
         TubeFound(songs.await().take(20), albums.await().take(12))
@@ -134,21 +123,13 @@ object YouTubeMusic {
             }
         }
         val t0 = System.currentTimeMillis()
-        // without the videos YouTube sets beside it (a half-megabyte, two thirds of the wait): the stream only
-        Fetch.lean.set(true)
-        val info = try { runCatching { StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=" + id.removePrefix("y")) }.getOrNull() } finally { Fetch.lean.set(false) }
-            ?: return null
+        val info = Pipe.streamInfo(id.removePrefix("y")) ?: return null
         android.util.Log.d("ink-youtube", "stream $id in ${System.currentTimeMillis() - t0} ms")
-        val direct = info.audioStreams.filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
-        // the best there is, or (data saver, Quality) the smallest
-        val pick = (if (forSpeaker) direct.filter { it.format == MediaFormat.M4A }.ifEmpty { direct } else direct)
-            .let { all -> val rate = { a: org.schabi.newpipe.extractor.stream.AudioStream -> a.averageBitrate.takeIf { b -> b > 0 } ?: a.bitrate }
-                if (small) all.minByOrNull(rate) else all.maxByOrNull(rate) } ?: return null
-        val mime = pick.format?.mimeType ?: "audio/mp4"
-        // its bitrate, for the player to say (NewPipe gives kbps or bps, by the stream)
-        (pick.averageBitrate.takeIf { it > 0 } ?: pick.bitrate).let { b -> rates[key] = if (b > 10_000) b / 1000 else b }
-        streams[key] = Triple(pick.content, mime, System.currentTimeMillis() + 4 * 3_600_000L)
-        return pick.content to mime
+        val (url, mime, kbps) = Pipe.audio(info, forSpeaker, small) ?: return null
+        // its bitrate, for the player to say
+        rates[key] = kbps
+        streams[key] = Triple(url, mime, System.currentTimeMillis() + 4 * 3_600_000L)
+        return url to mime
     }
 
     /**
@@ -290,7 +271,7 @@ object YouTubeMusic {
         }.getOrNull() ?: return null
         // their page's id ("UC..."), from the channel's link
         val id = Regex("/channel/(UC[A-Za-z0-9_-]+)").find(found.url)?.groupValues?.get(1).orEmpty()
-        return TubeArtist(found.name, best(found.thumbnails), id).also { artists[name.lowercase()] = it }
+        return TubeArtist(found.name, Pipe.best(found.thumbnails), id).also { artists[name.lowercase()] = it }
     }
 
     /** An artist's best-known song (blocking): the first YouTube Music finds that's theirs. */
@@ -306,7 +287,7 @@ object YouTubeMusic {
         init()
         SearchInfo.getInfo(yt, yt.searchQHFactory.fromQuery(name, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS), "")).relatedItems
             .filterIsInstance<PlaylistInfoItem>().filter { it.uploaderName.orEmpty().contains(name, ignoreCase = true) }
-            .map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), best(it.thumbnails)) }
+            .map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), Pipe.best(it.thumbnails)) }
     }.getOrDefault(emptyList())
 
     /**
@@ -331,61 +312,13 @@ object YouTubeMusic {
     private fun song(
         it: StreamInfoItem, album: String = "", albumId: String? = null, albumArtist: String? = null, track: Int = 0, art: String? = null,
     ): Song {
-        val vid = Regex("[?&]v=([^&]+)").find(it.url)?.groupValues?.get(1) ?: it.url.substringAfterLast('/')
-        val (title, artist) = tidy(it.name.orEmpty(), it.uploaderName.orEmpty())
+        val vid = Pipe.videoId(it.url)
+        val (title, artist) = Pipe.tidy(it.name.orEmpty(), it.uploaderName.orEmpty())
         return Song(
             id = "y$vid", uri = Uri.parse("ytm://$vid"), title = title.ifEmpty { "untitled" }, artist = artist.ifEmpty { "unknown" },
             album = album, albumId = albumId ?: "y$vid", albumArtist = albumArtist?.ifEmpty { null } ?: artist,
             duration = it.duration.coerceAtLeast(0) * 1000, disc = 1, track = track, year = 0,
-            art = best(it.thumbnails) ?: art, format = "youtube",
+            art = Pipe.best(it.thumbnails) ?: art, format = "youtube",
         ).also(::remember)
-    }
-
-    /**
-     * A song's words as a person would say them. A song's own upload ("X - Topic") is already
-     * clean; a video's ("Shakira, Burna Boy - Dai Dai (Official Video)", by "Shakira and 2 more")
-     * loses its "Official Video", its "| ..." tail, and gives up the artists it starts with.
-     */
-    private fun tidy(name: String, uploader: String): Pair<String, String> {
-        if (uploader.endsWith(" - Topic")) return name to uploader.removeSuffix(" - Topic")
-        var title = name.substringBefore(" | ").trim()
-        title = title.replace(Regex("""\s*[(\[][^)\]]*(official|video|lyric|visuali[sz]er|audio|mv|m/v)[^)\]]*[)\]]""", RegexOption.IGNORE_CASE), "").trim()
-        var artist = uploader.substringBefore(" and ").substringBefore(" & ").trim()
-        val dash = title.indexOf(" - ")
-        // "Artist - Song": only when what's before the dash is who uploaded it ("Song - 2011 Remaster" stays whole)
-        if (dash > 0 && title.substring(0, dash).contains(artist, ignoreCase = true)) {
-            artist = title.substring(0, dash).substringBefore(", ").trim(); title = title.substring(dash + 3).trim()
-        }
-        return title to artist
-    }
-
-    /** The largest picture; YouTube Music's square ones asked for at 600 px. */
-    private fun best(images: List<Image>?): String? =
-        images.orEmpty().maxByOrNull { it.width * it.height }?.url?.replace(Regex("=w\\d+-h\\d+"), "=w600-h600")
-
-    /** How NewPipe reaches YouTube: plain HTTP, as a desktop browser. */
-    private object Fetch : Downloader() {
-        private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
-        /** On this thread, a stream's "next" (the videos beside it, NewPipe asks for them always) answered empty. */
-        val lean = ThreadLocal.withInitial { false }
-        private val EMPTY = """{"responseContext":{},"contents":{},"lean":"${" ".repeat(64)}"}"""   // NewPipe refuses a short answer
-
-        override fun execute(request: Request): Response {
-            if (lean.get() == true && request.url().contains("/youtubei/v1/next")) return Response(200, "OK", emptyMap(), EMPTY, request.url())
-            val c = URL(request.url()).openConnection() as HttpURLConnection
-            c.requestMethod = request.httpMethod()
-            c.connectTimeout = 15_000; c.readTimeout = 20_000
-            c.setRequestProperty("User-Agent", UA)
-            request.headers().forEach { (k, vs) -> vs.forEachIndexed { i, v -> if (i == 0) c.setRequestProperty(k, v) else c.addRequestProperty(k, v) } }
-            request.dataToSend()?.let { data -> c.doOutput = true; c.outputStream.use { it.write(data) } }
-            val t0 = System.nanoTime()
-            try {
-                val code = c.responseCode
-                if (code == 429) throw ReCaptchaException("rate limited", request.url())
-                val body = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() }
-                android.util.Log.d("ink-youtube", "newpipe ${(System.nanoTime() - t0) / 1_000_000} ms, ${(body?.length ?: 0) / 1024} kB ${request.url().substringBefore('?').takeLast(40)}")
-                return Response(code, c.responseMessage, c.headerFields.filterKeys { it != null }, body, c.url.toString())
-            } finally { c.disconnect() }
-        }
     }
 }

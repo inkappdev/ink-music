@@ -38,8 +38,7 @@ object Covers {
         kept.get(song.albumId)?.takeIf { it.image.width >= px * 9 / 10 || song.albumId in whole }?.let { return it }
         if (song.albumId in none) return null
         return withContext(Dispatchers.IO) {
-            val bytes = if (song.server) song.art?.let { art -> fromDisk(art, px) ?: Server.cover(art, px)?.also { toDisk(art, px, it) } }
-                else picture(File(song.path))
+            val bytes = remote(song, px) ?: if (song.server || song.tube) null else picture(File(song.path))
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
             if (img == null) {
                 kept.get(song.albumId)?.let { return@withContext it }
@@ -51,7 +50,32 @@ object Covers {
         }
     }
 
-    // the server's covers kept on the computer too, so the next start has them at once
+    /** A server's or YouTube's cover, from the computer if it's been fetched before. */
+    private fun remote(song: Song, px: Int): ByteArray? {
+        val art = song.art ?: return null
+        if (!song.server && !song.tube) return null
+        return fromDisk(art, px) ?: (if (song.server) Server.cover(art, px) else fetch(art, px))?.also { toDisk(art, px, it) }
+    }
+
+    /**
+     * A picture at a link (YouTube Music's covers), about `px` across. Its square art is asked for at that size
+     * (Google's image server makes any size); a video's frame at its largest, its middle cut square later.
+     */
+    private fun fetch(url: String, px: Int): ByteArray? {
+        val tries = Regex("""^https?://i\d?\.ytimg\.com/vi(?:_webp)?/([^/]+)/""").find(url)?.let {
+            val id = it.groupValues[1]
+            listOf("https://i.ytimg.com/vi/$id/maxresdefault.jpg", "https://i.ytimg.com/vi/$id/hq720.jpg", url)
+        } ?: if ("googleusercontent.com" in url && Regex("=w\\d+-h\\d+").containsMatchIn(url))
+            listOf(url.replace(Regex("=w\\d+-h\\d+"), "=w$px-h$px"), url) else listOf(url)
+        for (u in tries) runCatching {
+            val c = java.net.URL(u).openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 10_000; c.readTimeout = 15_000
+            try { if (c.responseCode == 200) return c.inputStream.use { it.readBytes() } } finally { c.disconnect() }
+        }
+        return null
+    }
+
+    // the server's and YouTube's covers kept on the computer too, so the next start has them at once
     private fun diskFile(art: String, px: Int): File {
         val key = java.security.MessageDigest.getInstance("SHA-1").digest("$art|$px".toByteArray()).joinToString("") { "%02x".format(it) }
         return File(File(Home.cache, "covers"), key)
@@ -68,8 +92,7 @@ object Covers {
     /** A record's colour from a small copy of its cover (the color order; blocking); null with no cover. */
     fun accentOf(song: Song): Color? {
         kept.get(song.albumId)?.let { return it.accent }
-        val bytes = if (song.server) song.art?.let { art -> fromDisk(art, 64) ?: Server.cover(art, 64)?.also { toDisk(art, 64, it) } }
-            else picture(File(song.path))
+        val bytes = remote(song, 64) ?: if (song.server || song.tube) null else picture(File(song.path))
         val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() } ?: return null
         return accentOf(square(img, 64))
     }

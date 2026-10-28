@@ -21,6 +21,8 @@ dependencies {
     // a file's tags and cover (LGPL)
     implementation("net.jthink:jaudiotagger:3.0.1")
     implementation("org.json:json:20240303")
+    // YouTube Music: its API by hand (the phone's InnerTube.kt, shared), its streams through NewPipe's extractor (GPL-3.0)
+    implementation(project(":youtube"))
 }
 
 compose.desktop {

@@ -60,6 +60,8 @@ object Player {
         m.observe("playlist-pos", Mpv.INT64)
         m.observe("duration", Mpv.DOUBLE)
         m.observe("time-pos", Mpv.DOUBLE)
+        // a YouTube song's stream found as it opens (they expire: never ahead of time)
+        m.hook("on_load")
         Thread({ listen(m) }, "mpv").apply { isDaemon = true }.start()
         // the queue as it was, once the library knows its songs (a server's come from disk in a moment)
         scope.launch {
@@ -71,7 +73,10 @@ object Player {
     private fun restore() {
         val o = runCatching { JSONObject(kept.readText()) }.getOrNull() ?: return
         val ids = o.optJSONArray("ids") ?: return
-        val songs = (0 until ids.length()).mapNotNull { Library.song(ids.optString(it)) }
+        val whole = o.optJSONArray("songs")
+        val songs = (0 until ids.length()).mapNotNull { i ->
+            Library.song(ids.optString(i)) ?: whole?.optJSONObject(i)?.let(::songOf)?.also { if (it.tube) YouTube.remember(it) }
+        }
         if (songs.isEmpty() || _queue.value.isNotEmpty()) return
         val at = songs.indexOfFirst { it.id == o.optString("id") }.takeIf { it >= 0 } ?: 0
         pendingSeek = if (at >= 0) o.optLong("position") else 0
@@ -82,10 +87,14 @@ object Player {
     private fun keep() {
         val q = _queue.value
         val s = q.getOrNull(index)
-        val text = JSONObject().put("ids", JSONArray(q.map { it.id })).put("id", s?.id ?: "").put("position", position.value).toString()
+        val text = written(q, s)
         scope.launch { runCatching { Home.write(kept, text) } }
     }
     private var keptAt = 0L
+
+    /** The queue as kept: its ids, each song whole (YouTube's aren't in the library), the one playing and where. */
+    private fun written(q: List<Song>, s: Song?) = JSONObject().put("ids", JSONArray(q.map { it.id }))
+        .put("songs", JSONArray(q.map { if (it.tube) it.json() else JSONObject() })).put("id", s?.id ?: "").put("position", position.value).toString()
 
     private fun listen(m: Mpv) {
         while (true) {
@@ -105,6 +114,15 @@ object Player {
                         lastMs = ms
                         if (!paused && System.currentTimeMillis() - keptAt > 10_000) { keptAt = System.currentTimeMillis(); keep() }
                     }
+                }
+                is Mpv.Hook -> {
+                    val url = m.get("stream-open-filename").orEmpty()
+                    if (!url.startsWith("ytm://")) m.proceed(e.id)
+                    // found on a thread of its own: the events (the clock, the line) go on meanwhile
+                    else Thread {
+                        YouTube.stream("y" + url.removePrefix("ytm://"))?.let { m.set("stream-open-filename", it) }
+                        m.proceed(e.id)
+                    }.start()
                 }
                 is Mpv.Loaded -> if (pendingSeek > 0) { val ms = pendingSeek; pendingSeek = 0; seek(ms) }
                 is Mpv.Shutdown -> return
@@ -198,7 +216,11 @@ object Player {
     }
 
     /** Where a song plays from: its file, or the server's stream. */
-    private fun where(s: Song) = if (s.server) Server.stream(s).orEmpty() else s.path
+    private fun where(s: Song) = when {
+        s.server -> Server.stream(s).orEmpty()
+        s.tube -> "ytm://" + s.id.removePrefix("y")
+        else -> s.path
+    }
 
     fun toggle() { mpv?.command("cycle", "pause") }
 
@@ -224,7 +246,7 @@ object Player {
         timeSong(null)
         // where it was, written now (not on another thread: the app's about to go)
         _queue.value.getOrNull(index)?.let { s ->
-            runCatching { Home.write(kept, JSONObject().put("ids", JSONArray(_queue.value.map { it.id })).put("id", s.id).put("position", position.value).toString()) }
+            runCatching { Home.write(kept, written(_queue.value, s)) }
         }
         mpv?.close(); mpv = null
     }
