@@ -66,7 +66,8 @@ compose.desktop {
             // libmpv and what it needs, put there by the build (native/<os>-<arch>/), read at run time
             // from compose.application.resources.dir
             appResourcesRootDir.set(project.layout.projectDirectory.dir("native"))
-            modules("java.net.http", "java.sql", "java.naming", "jdk.unsupported")
+            // what the app reaches for (Compose's suggestRuntimeModules), and the naming and sql jaudiotagger and JmDNS use
+            modules("java.instrument", "java.net.http", "java.sql", "java.naming", "jdk.dynalink", "jdk.unsupported")
             macOS {
                 bundleID = "app.ink.music"
                 appCategory = "public.app-category.music"
