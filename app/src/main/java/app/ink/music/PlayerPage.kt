@@ -235,7 +235,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                 Word("back", pixel(16.sp), touch = 10.dp) { dir = -1; Playback.previous() }
                 Word(if (n.playing) "pause" else "play", pixel(16.sp), touch = 10.dp) { Playback.toggle() }
                 Word("next", pixel(16.sp), touch = 10.dp) { dir = 1; Playback.next() }
-                Word("stop", pixel(16.sp, if (n.playing) Ink.ink else OFF), touch = 10.dp) { Playback.stop() }
+                // stopped, the player goes too (the mini player's gone with it: nothing left to come back down to)
+                Word("stop", pixel(16.sp, if (n.playing) Ink.ink else OFF), touch = 10.dp) { Playback.stop(); onClose() }
                 Spacer(Modifier.weight(1f))
                 // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
                 // (lit with the cover still there read as broken to a tester)

@@ -270,11 +270,18 @@ class PlayerService : MediaLibraryService() {
      */
     private inner class Soft(p: ExoPlayer) : androidx.media3.common.ForwardingPlayer(p) {
         private var fading = 0   // the fade in hand; a newer one ends it
+        // fading out to a pause: told as paused already, so a screen hears "paused" at once, not "playing" with each
+        // step of the fade (casting took that for the phone asked to play, paused it again, and the fade began anew:
+        // the phone went on, ever quieter, for many seconds under the speaker)
+        private var leaving = false
+        // fading out to a stop: told as stopped already (the mini player went, came back with the fade's steps, went)
+        private var ending = false
 
         private fun on() = !java.io.File(filesDir, "soft-off").exists()
 
         private fun fade(from: Float, to: Float, ms: Long, then: () -> Unit = {}) {
             val mine = ++fading
+            leaving = false; ending = false
             val start = android.os.SystemClock.uptimeMillis()
             main.post(object : Runnable {
                 override fun run() {
@@ -290,18 +297,26 @@ class PlayerService : MediaLibraryService() {
 
         private fun level() = levelling?.level ?: 1f
 
+        override fun getPlayWhenReady() = !leaving && !ending && super.getPlayWhenReady()
+        override fun getPlaybackState() = if (ending) Player.STATE_IDLE else super.getPlaybackState()
+
         override fun pause() {
-            if (!on() || !isPlaying) { fading++; return super.pause() }
-            fade(volume, 0f, 250) { super.pause(); volume = level() }
+            if (leaving) return   // already on its way
+            if (!on() || !isPlaying) { fading++; leaving = false; return super.pause() }
+            fade(volume, 0f, 250) { leaving = false; super.pause(); volume = level() }
+            leaving = true
         }
 
+        /** Stop: faded out, let go, and back to the song's start (rewound once quiet: before, its first moment was heard). */
         override fun stop() {
-            if (!on() || !isPlaying) { fading++; return super.stop() }
-            fade(volume, 0f, 250) { super.stop(); volume = level() }
+            if (ending) return
+            if (!on() || !isPlaying) { fading++; leaving = false; super.stop(); return super.seekTo(currentMediaItemIndex, 0) }
+            fade(volume, 0f, 250) { super.stop(); super.seekTo(currentMediaItemIndex, 0); volume = level() }
+            ending = true
         }
 
         override fun play() {
-            if (!on()) return super.play()
+            if (!on()) { fading++; leaving = false; return super.play() }
             // still fading out to a pause: that pause called off, the sound brought back
             if (isPlaying) { fade(volume, level(), 200); return }
             volume = 0f

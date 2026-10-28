@@ -235,6 +235,8 @@ object Casting {
         _on.value = to
         connecting.value = true
         Playback.pauseHere()
+        // the first YouTube song's stream looked up while the speaker connects, not after it asks (most of a second)
+        handed.first().takeIf { it.tube }?.let { s -> Thread { runCatching { YouTubeMusic.stream(s.id, true) } }.start() }
         link = (if (to.kind == "dlna") Dlna.Link(to, handed, at) else Link(to, handed, at)).also { it.open() }
     }
 
@@ -249,18 +251,23 @@ object Casting {
         play(ctx, to, queue, index, at)
     }
 
-    /** Back to the phone: the song the speaker was on, from where it was; the speaker stops. Main thread. */
-    fun bringBack() {
+    /**
+     * Back to the phone: the song the speaker was on, from where it was; the speaker stops. Main thread.
+     * [stopped]: stop pressed while casting, done (as on the phone): the speaker let go too, its queue on the phone
+     * stopped at that song's start, the mini player gone.
+     */
+    fun bringBack(stopped: Boolean = false) {
         val l = link ?: return
         val now = Playback.now.value
         val index = now?.song?.let { s -> handed.indexOfFirst { it.id == s.id } }?.takeIf { it >= 0 } ?: 0
-        val at = now?.positionNow() ?: 0L
-        val playing = now?.playing == true
+        val at = if (stopped) 0L else now?.positionNow() ?: 0L
+        val playing = !stopped && now?.playing == true
         val queue = handed
         l.stopThere()
         forget()
         end()
         if (queue.isNotEmpty()) Playback.play(queue, index, at, playing)
+        if (stopped) Playback.stop()
     }
 
     /** No longer casting (stopped here, or the speaker let go): the phone shows its own player again. */
@@ -324,7 +331,8 @@ object Casting {
         override fun close() {
             open = false
             val s = socket ?: return
-            Thread { runCatching { s.close() } }.start()
+            // after whatever's still to be sent (a STOP, back to the phone: closed first, the speaker played on under it)
+            io.execute { runCatching { s.close() } }
         }
 
         /** Our receiver closed on the speaker, or the queue never loaded: no coming back. */
