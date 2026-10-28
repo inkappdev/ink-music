@@ -32,23 +32,24 @@ object YouTube {
     fun known(id: String): Song? = known[id]
     fun remember(s: Song) { known[s.id] = s }
 
-    /** Songs and records by these words, both asked at once. */
-    suspend fun search(q: String): Pair<List<Song>, List<TubeAlbum>> = withContext(Dispatchers.IO) {
-        Pipe.init()
+    /** Songs and records by these words, both asked at once; null when YouTube Music didn't answer at all. */
+    suspend fun search(q: String): Pair<List<Song>, List<TubeAlbum>>? = withContext(Dispatchers.IO) {
+        runCatching { Pipe.init() }.onFailure { Log.d("youtube: $it"); return@withContext null }
         val f = yt.searchQHFactory
         val songs = async {
             runCatching {
                 SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")).relatedItems
                     .filterIsInstance<StreamInfoItem>().map { song(it) }
-            }.getOrDefault(emptyList())
+            }.onFailure { Log.d("youtube songs: $it") }.getOrNull()
         }
         val records = async {
             runCatching {
                 SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS), "")).relatedItems
                     .filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), Pipe.best(it.thumbnails)) }
-            }.getOrDefault(emptyList())
+            }.onFailure { Log.d("youtube records: $it") }.getOrNull()
         }
-        songs.await().take(20) to records.await().take(12)
+        val (s, r) = songs.await() to records.await()
+        if (s == null && r == null) null else s.orEmpty().take(20) to r.orEmpty().take(12)
     }
 
     /**

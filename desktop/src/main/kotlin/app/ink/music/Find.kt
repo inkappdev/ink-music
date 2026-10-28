@@ -67,7 +67,8 @@ fun FindTab(open: (Page) -> Unit) {
     val foundRecords = remember(q, albums) { if (q.isEmpty()) emptyList() else albums.mapNotNull { a -> listOfNotNull(rank(a.title), rank(a.artist)?.plus(1)).minOrNull()?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(16) }
     val foundSongs = remember(q, songs) { if (q.isEmpty()) emptyList() else songs.mapNotNull { s -> listOfNotNull(rank(s.title), rank(s.artist)?.plus(1), rank(s.album)?.plus(2)).minOrNull()?.let { it to s } }.sortedBy { it.first }.map { it.second }.take(60) }
     // YouTube Music too, once the typing rests
-    val tube by androidx.compose.runtime.produceState(emptyList<Song>() to emptyList<TubeAlbum>(), q) {
+    // null: YouTube Music didn't answer (said, so its silence isn't taken for nothing found)
+    val tube by androidx.compose.runtime.produceState<Pair<List<Song>, List<TubeAlbum>>?>(emptyList<Song>() to emptyList(), q) {
         if (q.length < 2) { value = emptyList<Song>() to emptyList(); return@produceState }
         kotlinx.coroutines.delay(300)
         value = YouTube.search(q)
@@ -90,7 +91,8 @@ fun FindTab(open: (Page) -> Unit) {
                 )
             }
             Spacer(Modifier.height(18.dp))
-            if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && tube.first.isEmpty() && tube.second.isEmpty())
+            if (q.length >= 2 && tube == null) BasicText("couldn't reach youtube music", style = pixel(12.sp, Ink.mid))
+            else if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && tube?.first.isNullOrEmpty() && tube?.second.isNullOrEmpty())
                 BasicText("nothing called that", style = pixel(12.sp, Ink.mid))
         }
         if (foundArtists.isNotEmpty()) {
@@ -104,14 +106,17 @@ fun FindTab(open: (Page) -> Unit) {
             }
             Spacer(Modifier.height(10.dp))
         }
-        if (foundSongs.isNotEmpty()) {
+        // your songs, the first few; then YouTube Music's (below a whole library's worth of songs, it went unseen);
+        // then the rest of yours
+        val (first, rest) = foundSongs.take(10) to foundSongs.drop(10)
+        if (first.isNotEmpty()) {
             item { Label("songs") }
-            itemsIndexed(foundSongs, key = { _, s -> "s" + s.id }) { i, s ->
+            itemsIndexed(first, key = { _, s -> "s" + s.id }) { i, s ->
                 SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i) }
             }
         }
         // what YouTube Music has: its records, then its songs
-        val (tubeSongs, tubeRecords) = tube
+        val (tubeSongs, tubeRecords) = tube ?: (emptyList<Song>() to emptyList())
         if (tubeSongs.isNotEmpty() || tubeRecords.isNotEmpty()) item { Label("on youtube music") }
         if (tubeRecords.isNotEmpty()) item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -121,6 +126,12 @@ fun FindTab(open: (Page) -> Unit) {
         }
         itemsIndexed(tubeSongs, key = { _, s -> "t" + s.id }) { i, s ->
             SongRow(s, said = s.artist.lowercase()) { Player.play(tubeSongs, i) }
+        }
+        if (rest.isNotEmpty()) {
+            item { Label("more of your songs") }
+            itemsIndexed(rest, key = { _, s -> "s" + s.id }) { i, s ->
+                SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i + first.size) }
+            }
         }
     }
 }
