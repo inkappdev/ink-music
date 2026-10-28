@@ -61,6 +61,8 @@ object Casting {
         fun stopThere()
         /** The speaker's own volume, 0 to 1. */
         fun volume(level: Float) {}
+        /** More songs at the queue's end (radio's, found while it plays). */
+        fun extend(songs: List<Song>) {}
     }
 
     // ---- what a speaker can play ----
@@ -243,6 +245,8 @@ object Casting {
         // the first YouTube song's stream looked up while the speaker connects, not after it asks (most of a second)
         handed.first().takeIf { it.tube }?.let { s -> Thread { runCatching { YouTubeMusic.stream(s.id, true) } }.start() }
         link = (if (to.kind == "dlna") Dlna.Link(to, handed, at) else Link(to, handed, at)).also { it.open() }
+        // what the phone's queue has after these (taken in before the speaker loads: one queue, from the first)
+        Playback.toSpeaker()
     }
 
     /** From one speaker to another: the song it was on, from where it was; the first stops. Main thread. */
@@ -328,6 +332,24 @@ object Casting {
     }
     /** The speaker's queue from the song with this id (asked from the notification, the car). Main thread. */
     fun jumpTo(ctx: Context, id: String) { val i = handed.indexOfFirst { it.id == id }; if (i >= 0) jump(ctx, i) }
+
+    /**
+     * Songs radio found for the queue's end, added to the speaker's queue. Radio runs in the phone's player, which
+     * follows the speaker paused: its songs went only there, the speaker played out its queue and stopped, and the
+     * phone's queue with radio's songs came back, played on the phone (Bronson, 2026-10-28). Main thread.
+     */
+    fun extend(ctx: Context, songs: List<Song>) {
+        val l = link ?: return
+        val to = _on.value ?: return
+        val ids = handed.map { it.id }.toHashSet()
+        val more = songs.filter { it.id !in ids }
+        if (more.isEmpty()) return
+        handed = handed + more
+        Playback.showCastQueue(handed)
+        keep(ctx, to, handed)
+        android.util.Log.d("ink-cast", "${to.name}: ${more.size} from radio for the queue's end")
+        l.extend(more)
+    }
     fun next() { link?.next() }
     fun previous() { link?.previous() }
     fun seek(ms: Long) { link?.seek(ms) }
@@ -344,7 +366,9 @@ object Casting {
     internal fun lost(r: Remote) = main.post { if (link === r) end() }
 
     /** A Cast speaker, talked to on its own thread. */
-    private class Link(val to: Speaker, val queue: List<Song>, val at: Long, val joining: Boolean = false) : Remote {
+    private class Link(val to: Speaker, first: List<Song>, val at: Long, val joining: Boolean = false) : Remote {
+        // the queue as handed over, longer when radio adds to its end ([extend])
+        @Volatile private var queue: List<Song> = first
         @Volatile private var open = true
         @Volatile private var socket: SSLSocket? = null
         private var out: DataOutputStream? = null
@@ -462,13 +486,31 @@ object Casting {
          * is 64 KB at most: a hundred songs' links overran it, and the speaker hung up), the rest added as it nears
          * the end of them ([more]).
          */
-        private fun load(t: String, songs: List<Song>, from: Long) {
+        @Synchronized private fun load(t: String, songs: List<Song>, from: Long) {
             pending = songs
             handedOver = queue.size - songs.size   // songs is the queue from some song on (all, or from one refused)
             val first = chunk()
             android.util.Log.d("ink-cast", "${to.name}: queue of ${first.length()} of ${songs.size}, the first ${first.optJSONObject(0)?.optJSONObject("media")?.let { it.optString("contentType") + " " + it.optString("contentId").substringBefore('?').take(80) }}")
             send(t, MEDIA, JSONObject().put("type", "QUEUE_LOAD").put("requestId", ++requests).put("items", first)
                 .put("startIndex", 0).put("currentTime", from / 1000.0).put("repeatMode", "REPEAT_OFF"))
+        }
+
+        @Synchronized private fun nearEnd() { current?.let { c -> if (pending.isNotEmpty() && queue.indexOf(c) >= handedOver - 3) more() } }
+
+        @Volatile private var finished = false
+
+        /** Radio's songs: after the rest, or, the queue already played out, played from the first of them. */
+        @Synchronized override fun extend(songs: List<Song>) {
+            queue = queue + songs
+            if (finished) {
+                val t = transport ?: return
+                finished = false
+                current = songs.first()
+                io.execute { runCatching { load(t, songs, 0L) } }
+            } else {
+                pending = pending + songs
+                io.execute { runCatching { nearEnd() } }
+            }
         }
 
         /** Songs not yet handed over, and how many have been. */
@@ -500,8 +542,9 @@ object Casting {
         }
 
         /** The speaker nearing the end of what it has: the next songs added to its queue. */
-        private fun more() {
+        @Synchronized private fun more() {
             val t = transport ?: return
+            if (session == 0) return   // not loaded yet: the load takes the whole queue
             if (pending.isEmpty()) return
             val items = chunk()
             if (items.length() == 0) return
@@ -517,8 +560,11 @@ object Casting {
                 duration = (m.optDouble("duration", 0.0) * 1000).toLong()
             }
             // a few songs from the end of what the speaker has: the next ones handed over
-            current?.let { c -> if (pending.isNotEmpty() && queue.indexOf(c) >= handedOver - 3) more() }
+            nearEnd()
             val state = st.optString("playerState")
+            // the last song played out: nothing more there (radio's, found later, starts it again: [extend])
+            if (state == "IDLE" && st.optString("idleReason") == "FINISHED" && current == queue.lastOrNull()) finished = true
+            else if (state == "PLAYING" || state == "BUFFERING") finished = false
             android.util.Log.d("ink-cast", "${to.name}: $state ${st.optString("idleReason")}")
             val s0 = current
             // a song the speaker couldn't play as the original: it gets mp3 from here on, from that song

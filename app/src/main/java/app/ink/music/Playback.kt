@@ -60,11 +60,27 @@ object Playback {
         }
     }
 
+    /**
+     * While casting, what radio added to the phone's queue (it runs in the phone's player, which follows the speaker):
+     * the songs after the speaker's last, handed to it too. And as a cast starts or jumps: the phone's queue goes on
+     * past what the speaker was handed (a jump to its last song handed it that one, and radio, seeing songs after it
+     * in the phone's queue, never came).
+     */
+    fun toSpeaker() {
+        val c = controller ?: return
+        val last = _queue.value.lastOrNull()?.song?.id ?: return
+        val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+        val at = ids.lastIndexOf(last)
+        if (at < 0 || at == ids.size - 1) return
+        val more = (at + 1 until ids.size).mapNotNull { songOf(c.getMediaItemAt(it)) }
+        if (more.isNotEmpty()) app?.let { Casting.extend(it, more) }
+    }
+
     /** While casting, up next is the speaker's queue (what was handed over), its song lit by the speaker's place. */
     fun showCastQueue(songs: List<Song>) { _queue.value = songs.map { Queued(it.title, it.artist, it) } }
 
     private fun readQueue() {
-        if (casting) return
+        if (casting) return toSpeaker()
         val c = controller ?: return
         _queue.value = (0 until c.mediaItemCount).map { i ->
             val item = c.getMediaItemAt(i)

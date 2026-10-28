@@ -230,32 +230,45 @@ class PlayerService : MediaLibraryService() {
     // radio: on, the queue's last songs bring more like them (Radio); asked once per seed
     private var radio = true
     private var radioFrom: String? = null
+    /** Songs radio added (this run): not seeds for the next round while there are songs you chose. */
+    private val fromRadio = HashSet<String>()
 
     /** One song or none left (repeat off): ten more like the last, added at the end. */
     private fun topUp(p: Player) {
         if (!radio || p.repeatMode != Player.REPEAT_MODE_OFF || p.mediaItemCount == 0) return
-        val next = p.nextMediaItemIndex
-        val after = if (next == C.INDEX_UNSET) C.INDEX_UNSET else p.currentTimeline.getNextWindowIndex(next, p.repeatMode, p.shuffleModeEnabled)
+        // casting, the speaker plays the list in order (shuffle is the phone's own): its end is the list's end. Going
+        // by the shuffled order, the speaker ran out while the phone thought songs were left (2026-10-28)
+        val inOrder = onSpeaker?.casting == true
+        fun after(i: Int) = if (inOrder) (i + 1).takeIf { it < p.mediaItemCount } ?: C.INDEX_UNSET
+            else p.currentTimeline.getNextWindowIndex(i, p.repeatMode, p.shuffleModeEnabled)
+        val next = if (inOrder) after(p.currentMediaItemIndex) else p.nextMediaItemIndex
+        val after = if (next == C.INDEX_UNSET) C.INDEX_UNSET else after(next)
         if (after != C.INDEX_UNSET) return
         val last = p.getMediaItemAt(if (next != C.INDEX_UNSET) next else p.currentMediaItemIndex)
         // a station plays on forever: nothing to follow it
         if (radioFrom == last.mediaId || last.mediaId.startsWith("s")) return
         radioFrom = last.mediaId
-        val md = last.mediaMetadata
-        val title = md.title?.toString().orEmpty()
-        val artist = md.artist?.toString().orEmpty()
+        fun seed(i: androidx.media3.common.MediaItem) =
+            Radio.Seed(i.mediaId, i.mediaMetadata.title?.toString().orEmpty(), i.mediaMetadata.artist?.toString().orEmpty())
         val queued = HashSet<String>()
         for (i in 0 until p.mediaItemCount) p.getMediaItemAt(i).let {
             queued += it.mediaId
             queued += Radio.key(it.mediaMetadata.title?.toString().orEmpty(), it.mediaMetadata.artist?.toString().orEmpty())
         }
+        // the last song, and the last two before it you chose (radio's own passed over): where the vibe is
+        val at = (0 until p.mediaItemCount).indexOfLast { p.getMediaItemAt(it).mediaId == last.mediaId }
+        val chosen = (at - 1 downTo 0).map { p.getMediaItemAt(it) }
+            .filter { it.mediaId !in fromRadio && !it.mediaId.startsWith("s") && it.mediaId != last.mediaId }
+            .distinctBy { it.mediaId }.take(2)
+        val seeds = listOf(seed(last)) + chosen.map(::seed)
         net.execute {
-            val more = Radio.after(this, last.mediaId, title, artist, queued)
-            android.util.Log.d("ink-radio", "after $title - $artist: ${more.size} (${more.joinToString { it.title + " - " + it.artist }})")
+            val more = Radio.after(this, seeds, queued)
+            android.util.Log.d("ink-radio", "after ${seeds.joinToString(" + ") { it.title + " - " + it.artist }}: ${more.size} (${more.joinToString { it.title + " - " + it.artist }})")
             if (more.isEmpty()) return@execute
             main.post {
                 if (!radio) return@post
                 val ended = p.playbackState == Player.STATE_ENDED
+                fromRadio += more.map { it.id }
                 p.addMediaItems(more.map { Playback.item(it) })
                 // it ran out while asking: on into the first of them
                 if (ended) { p.seekTo(p.mediaItemCount - more.size, 0); p.prepare(); p.play() }
@@ -570,7 +583,8 @@ class PlayerService : MediaLibraryService() {
                     if (customCommand.customAction == SLEEP) setSleep(session.player, args.getLong(SLEEP_MS))
                     // casting: what the speaker does (OnSpeaker), or casting over
                     if (customCommand.customAction == CAST) {
-                        if (args.getBoolean("on")) { caster = controller; onSpeaker?.speaker(args) }
+                        // (and radio looked at again: the speaker's song may be the list's last, no song change here)
+                        if (args.getBoolean("on")) { caster = controller; onSpeaker?.speaker(args); topUp(session.player) }
                         else { caster = null; onSpeaker?.speaker(null) }
                     }
                     // the equalizer changed on the screens: read again and applied
