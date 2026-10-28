@@ -15,4 +15,6 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "ink-music"
-include(":app")
+// -PdesktopOnly: the Mac app alone (its GitHub Action has no Android SDK to configure the phone's)
+if (providers.gradleProperty("desktopOnly").orNull == null) include(":app")
+include(":desktop")
