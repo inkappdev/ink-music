@@ -65,6 +65,15 @@ object Covers {
         tmp.renameTo(f)
     }
 
+    /** A record's colour from a small copy of its cover (the color order; blocking); null with no cover. */
+    fun accentOf(song: Song): Color? {
+        kept.get(song.albumId)?.let { return it.accent }
+        val bytes = if (song.server) song.art?.let { art -> fromDisk(art, 64) ?: Server.cover(art, 64)?.also { toDisk(art, 64, it) } }
+            else picture(File(song.path))
+        val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() } ?: return null
+        return accentOf(square(img, 64))
+    }
+
     private fun picture(f: File): ByteArray? =
         runCatching { AudioFileIO.read(f).tag?.firstArtwork?.binaryData }.getOrNull()
             ?: f.parentFile?.listFiles()?.filter { it.extension.lowercase() in setOf("jpg", "jpeg", "png") }

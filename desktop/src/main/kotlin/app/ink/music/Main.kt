@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +74,9 @@ import androidx.compose.ui.window.rememberWindowState
 fun main() {
     Library.start()
     Server.start()
+    Sorts.start()
+    Listened.read()
+    Colours.start()
     Player.start()
     application {
         Window(
@@ -166,7 +170,10 @@ private fun LibraryPage(open: (Page) -> Unit) {
             Spacer(Modifier.weight(1f))
             Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(bottom = 6.dp), touch = 8.dp) { open(Page.Settings) }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(14.dp))
+        if (songs.isNotEmpty()) SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
+            Modifier.padding(horizontal = SIDE))
+        Spacer(Modifier.height(4.dp))
         if (read && songs.isEmpty()) {
             Column(Modifier.padding(horizontal = SIDE)) {
                 val syncing by Server.syncing.collectAsState()
@@ -180,10 +187,55 @@ private fun LibraryPage(open: (Page) -> Unit) {
             }
             return@Column
         }
+        // each tab in its own order (Sorting.kt): a to z, by year, lately, most, forgotten, this hour, by color, shuffled
+        val chosen by Sorts.chosen.collectAsState()
+        val seed by Order.seed.collectAsState()
+        val heard by Listened.now.collectAsState()
+        val colours by Colours.known.collectAsState()
+        val ac = chosen["artists"] ?: Sorts.Chosen()
+        val rc = chosen["albums"] ?: Sorts.Chosen()
+        val sc = chosen["songs"] ?: Sorts.Chosen()
+        val now = remember(chosen, heard) { System.currentTimeMillis() }
+        val minute = remember(chosen, heard) { Listening.minuteOfWeek(now) }
+        // the color order asks for the colors it doesn't know yet (worked out in the background, kept)
+        LaunchedEffect(rc.sort, albums) { if (rc.sort == Sort.COLOUR) Colours.fill(albums) }
+        // a new order starts at the top: each list made anew with it
         when (tab) {
-            "albums" -> Records(albums, open)
-            "artists" -> Artists(albums, songs, open)
-            else -> Songs(songs, open)
+            "albums" -> {
+                val records = remember(albums, rc, seed, heard, colours) {
+                    Sorts.order(albums, rc, seed, { it.id },
+                        compareBy<Album>({ Library.sortName(it.artist) }, { it.year }, { Library.sortName(it.title) })) { a ->
+                        when (rc.sort) {
+                            // a timeline: the oldest first
+                            Sort.YEAR -> a.year.takeIf { it > 0 }?.let { -it.toDouble() }
+                            Sort.LATELY -> heard.lately("r:" + a.id)
+                            Sort.COLOUR -> Colours.place(colours[a.id])
+                            else -> null
+                        }
+                    }
+                }
+                key(rc, seed) { Records(records, open) }
+            }
+            "artists" -> {
+                val artists = remember(albums, songs, ac, seed, heard) {
+                    Sorts.order(artistsOf(albums, songs), ac, seed, { it.name }) { a ->
+                        val k = "a:" + a.name.lowercase()
+                        when (ac.sort) { Sort.MOST -> heard.most(k); Sort.LATELY -> heard.lately(k); Sort.FORGOTTEN -> heard.forgotten(k, now); else -> null }
+                    }
+                }
+                key(ac, seed) { Artists(artists, open) }
+            }
+            else -> {
+                val every = remember(songs, sc, seed, heard, minute) {
+                    Sorts.order(songs, sc, seed, { it.id }) { s ->
+                        when (sc.sort) {
+                            Sort.HOUR -> heard.hour(s.id, minute); Sort.LATELY -> heard.lately(s.id); Sort.MOST -> heard.most(s.id)
+                            Sort.FORGOTTEN -> heard.forgotten(s.id, now); else -> null
+                        }
+                    }
+                }
+                key(sc, seed) { Songs(every, open) }
+            }
         }
     }
 }
@@ -211,8 +263,7 @@ private fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry>
 }
 
 @Composable
-private fun Artists(albums: List<Album>, songs: List<Song>, open: (Page) -> Unit) {
-    val artists = remember(albums, songs) { artistsOf(albums, songs) }
+private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
         items(artists, key = { it.name }) { a ->
