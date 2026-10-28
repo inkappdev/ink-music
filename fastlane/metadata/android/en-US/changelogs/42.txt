@@ -1,0 +1,6 @@
+- Words fit at any text size: the player's rows and the song under the cover no longer run off the screen, and the tabs slide with the one you're on in view
+- A record you have a song or two of shows whole, the rest from YouTube Music
+- Pull the player down and it comes with your finger
+- Back on another tab goes to listen first
+- Tested on a phone with tiny text for a week. We apologise to everyone's eyes.
+- Do something nice for someone today. Ask them what they've been listening to
