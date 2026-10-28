@@ -89,6 +89,12 @@ object Covers {
         tmp.renameTo(f)
     }
 
+    /** A file's record's cover as a 600 px JPEG, for a speaker's screen (blocking); null with none. */
+    fun jpeg(song: Song): ByteArray? {
+        val img = picture(File(song.path))?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() } ?: return null
+        return square(img, 600).encodeToData(org.jetbrains.skia.EncodedImageFormat.JPEG, 88)?.bytes
+    }
+
     /** A record's colour from a small copy of its cover (the color order; blocking); null with no cover. */
     fun accentOf(song: Song): Color? {
         kept.get(song.albumId)?.let { return it.accent }

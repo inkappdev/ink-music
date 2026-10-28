@@ -115,6 +115,7 @@ sealed interface Page {
     data object Playing : Page
     data object Settings : Page
     data object Queue : Page
+    data object PlayOn : Page
     data class Tube(val album: TubeAlbum) : Page
 }
 
@@ -161,11 +162,15 @@ private fun App() {
                         Page.Playing -> PlayerPage({ pages += it }) { pages.removeLast() }
                         Page.Settings -> SettingsPage { pages.removeLast() }
                         Page.Queue -> QueuePage({ pages += it }) { pages.removeLast() }
+                        Page.PlayOn -> PlayOnPage { pages.removeLast() }
                         is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { pages.removeLast() }
                     }
                 }
             }
-            if (pages.lastOrNull() != Page.Playing) MiniPlayer({ if (pages.lastOrNull() != Page.Queue) pages += Page.Queue }) { if (pages.lastOrNull() != Page.Playing) pages += Page.Playing }
+            if (pages.lastOrNull() != Page.Playing) MiniPlayer(
+                { if (pages.lastOrNull() != Page.Queue) pages += Page.Queue },
+                { if (pages.lastOrNull() != Page.PlayOn) pages += Page.PlayOn },
+            ) { if (pages.lastOrNull() != Page.Playing) pages += Page.Playing }
         }
     }
 }
@@ -469,7 +474,7 @@ private fun ArtistPage(name: String, open: (Page) -> Unit, onClose: () -> Unit) 
  * song in its colour, the cover, the song, back / play / next and the times. A click opens the player.
  */
 @Composable
-private fun MiniPlayer(onQueue: () -> Unit, onOpen: () -> Unit) {
+private fun MiniPlayer(onQueue: () -> Unit, onPlayOn: () -> Unit, onOpen: () -> Unit) {
     val now by Player.now.collectAsState()
     val trouble by Player.trouble.collectAsState()
     trouble?.let {
@@ -491,13 +496,17 @@ private fun MiniPlayer(onQueue: () -> Unit, onOpen: () -> Unit) {
                     val (title, artist) = said(n)
                     BasicText(title.uppercase(), style = headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
-                    BasicText(artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val on by Casting.on.collectAsState()
+                    BasicText(artist.lowercase() + (on?.let { "  on ${it.name.lowercase()}" } ?: ""), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Controls(n)
             Spacer(Modifier.width(24.dp))
             Times(n, Modifier.widthIn(min = 96.dp))
             Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
+            // where it plays: lit while on a speaker
+            val on by Casting.on.collectAsState()
+            Word("play on", pixel(14.sp, if (on != null) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onPlayOn)
         }
     }
 }
