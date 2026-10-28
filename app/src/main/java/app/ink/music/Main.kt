@@ -360,9 +360,9 @@ private fun App() {
         // the page going together; closed any other way, the quick fade. The mini player goes at once, under it
         // (left to go by itself it went a beat after the player had: two goings), and is back when something plays
         var stopping by remember { mutableStateOf(false) }
-        val playing = Playback.now.collectAsState().value?.playing == true
-        LaunchedEffect(playerUp) { if (playerUp) stopping = false }
-        LaunchedEffect(playing) { if (playing) stopping = false }
+        // only for the sink itself: a second on, it's stopped and the mini player's own rule keeps it away (left till
+        // playing was seen to start, a start not seen kept it hidden while a song played)
+        LaunchedEffect(stopping) { if (stopping) { delay(1_000); stopping = false } }
         Box(Modifier.align(Alignment.BottomCenter).onSizeChanged { foot = with(density) { it.height.toDp() } }) {
             if (!stopping && !sideways()) MiniPlayer(frost, onOpen = { playerUp = true })
         }
