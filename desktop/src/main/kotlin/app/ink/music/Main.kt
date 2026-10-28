@@ -593,6 +593,12 @@ private fun QueuePage(open: (Page) -> Unit, onClose: () -> Unit) {
             Spacer(Modifier.height(6.dp))
             BasicText(if (queue.isEmpty()) "nothing queued" else "${queue.size} ${if (queue.size == 1) "song" else "songs"}   right click one for more",
                 style = pixel(12.sp, Ink.mid))
+            // radio: lit, the queue's end brings more like it
+            val radio by Player.radio.collectAsState()
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Word("radio", pixel(13.sp, if (radio) Ink.ink else Ink.dim), touch = 8.dp) { Player.radio(!radio) }
+                BasicText(if (radio) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
+            }
             Spacer(Modifier.height(16.dp))
         }
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, bottom = 32.dp)) {

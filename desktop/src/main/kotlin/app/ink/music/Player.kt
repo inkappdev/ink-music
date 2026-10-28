@@ -156,10 +156,46 @@ object Player {
         timing = s; timingAt = System.currentTimeMillis(); playedMs = 0; lastMs = 0
     }
 
+    /** Radio: when the queue's down to its last song, more like it at its end (a setting, on at first). */
+    val radio = MutableStateFlow(runCatching { !File(Home.dir, "radio-off").exists() }.getOrDefault(true))
+    // songs radio added: not seeds for its next round while there are songs you chose; and the last seed asked
+    private val fromRadio = java.util.Collections.synchronizedSet(HashSet<String>())
+    @Volatile private var radioFrom: String? = null
+
+    fun radio(on: Boolean) {
+        radio.value = on
+        runCatching { File(Home.dir, "radio-off").let { if (on) it.delete() else it.writeText("") } }
+        radioFrom = null
+        topUp()
+    }
+
+    private fun topUp() {
+        val q = _queue.value
+        if (!radio.value || q.isEmpty() || index < 0 || index < q.size - 2) return
+        val last = q.last()
+        if (radioFrom == last.id) return
+        radioFrom = last.id
+        fun seed(s: Song) = Radio.Seed(s.id, s.title, s.artist)
+        // the last song, and the last two before it you chose (radio's own passed over): where the vibe is
+        val chosen = q.dropLast(1).asReversed().filter { it.id !in fromRadio && it.id != last.id }.distinctBy { it.id }.take(2)
+        val seeds = listOf(seed(last)) + chosen.map(::seed)
+        val queued = q.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) }.toHashSet()
+        scope.launch {
+            val more = Radio.after(seeds, queued)
+            if (more.isEmpty() || !radio.value || _queue.value.lastOrNull()?.id != last.id) return@launch
+            fromRadio += more.map { it.id }
+            val m = mpv ?: return@launch
+            _queue.value = _queue.value + more
+            more.forEach { m.command("loadfile", where(it), "append") }
+            keep()
+        }
+    }
+
     private fun tell() {
         val q = _queue.value
         val s = q.getOrNull(index)
         timeSong(s)
+        topUp()
         _now.value = s?.let { Now(it, index, !paused, duration.takeIf { d -> d > 0 } ?: it.duration) }
         if (s != null && s.server && toldNow != "${s.id}/$index" && !paused) { toldNow = "${s.id}/$index"; counted = null; Server.scrobble(s.id, false) }
         if (s != null) keep()

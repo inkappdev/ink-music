@@ -165,6 +165,28 @@ object Server {
         scope.launch { runCatching { call(a, "scrobble", "id" to songId.removePrefix("n"), "submission" to done) } }
     }
 
+    /**
+     * Songs like this one in your library (Navidrome asks Last.fm, then plays what you have; blocking). A song not
+     * the server's is found there by its title and artist first.
+     */
+    fun similar(id: String, title: String, artist: String): List<Song> {
+        val a = _account.value ?: return emptyList()
+        return runCatching {
+            val sid = if (id.startsWith("n")) id.removePrefix("n") else {
+                val found = call(a, "search3", "query" to title, "songCount" to 10, "artistCount" to 0, "albumCount" to 0)
+                    ?.optJSONObject("searchResult3")?.optJSONArray("song") ?: return emptyList()
+                val who = artist.lowercase().substringBefore(",").trim()
+                (0 until found.length()).mapNotNull { found.optJSONObject(it) }
+                    .firstOrNull { it.optString("title").equals(title, true) && it.optString("artist").lowercase().contains(who) }
+                    ?.optString("id") ?: return emptyList()
+            }
+            val list = call(a, "getSimilarSongs2", "id" to sid, "count" to 40)?.optJSONObject("similarSongs2")?.optJSONArray("song")
+                ?: return emptyList()
+            (0 until list.length()).mapNotNull { list.optJSONObject(it) }.map { Library.song("n" + it.optString("id")) ?: song(a, it, emptyMap()) }
+                .filter { it.id != "n$sid" }
+        }.getOrDefault(emptyList())
+    }
+
     fun url(a: Account, method: String, vararg params: Pair<String, Any>): String {
         val q = (listOf("u" to a.user, "t" to a.token, "s" to a.salt, "v" to "1.16.1", "c" to "inkmusic", "f" to "json") + params)
             .joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v.toString(), "UTF-8") }
