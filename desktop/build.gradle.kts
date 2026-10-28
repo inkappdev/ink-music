@@ -42,6 +42,14 @@ compose.desktop {
                 bundleID = "app.ink.music"
                 appCategory = "public.app-category.music"
                 project.file("ink-music.icns").takeIf { it.exists() }?.let { iconFile.set(it) }
+                // macOS 15 asks before an app reaches the home network (the server on it); without this it never
+                // asks, and every connection to the server fails
+                infoPlist {
+                    extraKeysRawXml = """
+                        <key>NSLocalNetworkUsageDescription</key>
+                        <string>ink music plays the music on your own server, on your network.</string>
+                    """.trimIndent()
+                }
             }
         }
     }

@@ -38,7 +38,8 @@ object Covers {
         kept.get(song.albumId)?.takeIf { it.image.width >= px * 9 / 10 || song.albumId in whole }?.let { return it }
         if (song.albumId in none) return null
         return withContext(Dispatchers.IO) {
-            val bytes = picture(File(song.path))
+            val bytes = if (song.server) song.art?.let { art -> fromDisk(art, px) ?: Server.cover(art, px)?.also { toDisk(art, px, it) } }
+                else picture(File(song.path))
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
             if (img == null) {
                 kept.get(song.albumId)?.let { return@withContext it }
@@ -48,6 +49,20 @@ object Covers {
             if (sq.width < px * 9 / 10) whole += song.albumId
             Cover(sq.toComposeImageBitmap(), accentOf(sq)).also { kept.put(song.albumId, it) }
         }
+    }
+
+    // the server's covers kept on the computer too, so the next start has them at once
+    private fun diskFile(art: String, px: Int): File {
+        val key = java.security.MessageDigest.getInstance("SHA-1").digest("$art|$px".toByteArray()).joinToString("") { "%02x".format(it) }
+        return File(File(Home.cache, "covers"), key)
+    }
+    private fun fromDisk(art: String, px: Int): ByteArray? = diskFile(art, px).takeIf { it.exists() }?.readBytes()
+    private fun toDisk(art: String, px: Int, bytes: ByteArray) = runCatching {
+        val f = diskFile(art, px)
+        f.parentFile.mkdirs()
+        val tmp = File(f.path + ".part")
+        tmp.writeBytes(bytes)
+        tmp.renameTo(f)
     }
 
     private fun picture(f: File): ByteArray? =

@@ -56,7 +56,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -71,6 +71,7 @@ import androidx.compose.ui.window.rememberWindowState
 
 fun main() {
     Library.start()
+    Server.start()
     Player.start()
     application {
         Window(
@@ -96,6 +97,7 @@ sealed interface Page {
     data class Record(val id: String) : Page
     data class Artist(val name: String) : Page
     data object Playing : Page
+    data object Settings : Page
 }
 
 /** Clear of the Mac's traffic lights (the title bar is gone, its buttons stay). */
@@ -109,8 +111,8 @@ private fun App() {
     LaunchedEffect(Unit) { focus.requestFocus() }
     Box(
         Modifier.fillMaxSize().background(Ink.black).focusRequester(focus).focusable()
-            .onPreviewKeyEvent { k ->
-                if (k.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            .onKeyEvent { k ->
+                if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when {
                     k.key == Key.Spacebar -> { Player.toggle(); true }
                     k.key == Key.DirectionRight && k.isMetaPressed -> { Player.next(); true }
@@ -138,6 +140,7 @@ private fun App() {
                         is Page.Record -> RecordPage(page.id, { pages += it }) { pages.removeLast() }
                         is Page.Artist -> ArtistPage(page.name, { pages += it }) { pages.removeLast() }
                         Page.Playing -> PlayerPage({ pages += it }) { pages.removeLast() }
+                        Page.Settings -> SettingsPage { pages.removeLast() }
                     }
                 }
             }
@@ -153,17 +156,24 @@ private fun LibraryPage(open: (Page) -> Unit) {
     val read by Library.read.collectAsState()
     var tab by remember { mutableStateOf("albums") }
     Column(Modifier.fillMaxSize().padding(top = TOP + 16.dp)) {
-        Row(Modifier.padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Bottom) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Bottom) {
             for (t in listOf("albums", "artists", "songs")) {
                 Word(t.uppercase(), headline(34.sp, if (t == tab) Ink.ink else Ink.dim)) { tab = t }
             }
+            Spacer(Modifier.weight(1f))
+            Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(bottom = 6.dp), touch = 8.dp) { open(Page.Settings) }
         }
         Spacer(Modifier.height(18.dp))
         if (read && songs.isEmpty()) {
             Column(Modifier.padding(horizontal = SIDE)) {
-                BasicText("NO MUSIC YET", style = headline(28.sp))
+                val syncing by Server.syncing.collectAsState()
+                BasicText(if (syncing) "READING YOUR SERVER" else "NO MUSIC YET", style = headline(28.sp))
                 Spacer(Modifier.height(8.dp))
-                BasicText("put songs in ${Library.folder.path.lowercase()} and they'll be here", style = pixel(13.sp, Ink.mid))
+                if (!syncing) {
+                    BasicText("put songs in ${Library.said}, or sign in to your server", style = pixel(13.sp, Ink.mid))
+                    Spacer(Modifier.height(16.dp))
+                    Word("SIGN IN", headline(28.sp), touch = 8.dp) { open(Page.Settings) }
+                }
             }
             return@Column
         }
