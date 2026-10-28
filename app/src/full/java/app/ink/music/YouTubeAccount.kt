@@ -288,9 +288,36 @@ object YouTubeAccount {
      * that: a near name is someone else). As it was last read at once (kept on the phone), then read again.
      */
     fun artist(name: String, id: String = ""): Flow<ArtistInfo?> = flow {
-        val key = "artist-" + (id.ifEmpty { name.lowercase() }).replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val key = artistKey(name, id)
         val was = keptRaw(key)?.let(::artistFrom)
         if (was != null) emit(was)
+        val found = readShared(name, id)
+        if (found != null) emit(found) else if (was == null) emit(null)
+    }.flowOn(Dispatchers.IO)
+
+    private val artistReads = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Deferred<ArtistInfo?>>()
+
+    /**
+     * Their page read and kept, one read at a time: asked again while it's under way (a row pressed, then its page
+     * opening; read ahead, then tapped) the same read is waited on, not a second begun.
+     */
+    private suspend fun readShared(name: String, id: String): ArtistInfo? {
+        val key = artistKey(name, id)
+        val d = artistReads.computeIfAbsent(key) {
+            ahead.async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                val was = keptRaw(key)?.let(::artistFrom)
+                readArtist(name, id.ifEmpty { was?.id.orEmpty() })?.also { keepRaw(key, json(it)) }
+            }
+        }
+        d.invokeOnCompletion { artistReads.remove(key, d) }
+        d.start()
+        return d.await()
+    }
+
+    private fun artistKey(name: String, id: String) = "artist-" + (id.ifEmpty { name.lowercase() }).replace(Regex("[^A-Za-z0-9_-]"), "_")
+
+    /** Their page from YouTube Music: by its id, else found by name first (a search, half a second more). */
+    private fun readArtist(name: String, id: String): ArtistInfo? {
         val t0 = System.currentTimeMillis()
         val found = runCatching {
             val page = id.ifEmpty { YouTubeMusic.artist(name)?.takeIf { it.name.equals(name, ignoreCase = true) }?.id.orEmpty() }
@@ -302,8 +329,77 @@ object YouTubeAccount {
                 a.like.map { TubeArtist(it.title, it.art, it.id) })
         }.onFailure { android.util.Log.d("ink-youtube", "artist $name $id: $it") }.getOrNull()
         android.util.Log.d("ink-youtube", "artist $name: ${found?.top?.size} songs, ${found?.albums?.size} records in ${System.currentTimeMillis() - t0} ms")
-        if (found != null) { keepRaw(key, json(found)); emit(found) } else if (was == null) emit(null)
-    }.flowOn(Dispatchers.IO)
+        return found
+    }
+
+    private val warming = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val ahead = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * An artist's page read ahead, their photo too, so it opens at once when tapped: the fans-also-like on an artist's
+     * page, the artist of what's playing, of a record. Only on wifi (pages most won't open, not on someone's data);
+     * one read in the last half hour is left as it is.
+     */
+    fun warm(ctx: Context, name: String, id: String = "") {
+        if (!wifi(ctx)) return
+        val app = ctx.applicationContext
+        if (due(name, id, 30 * 60_000L)) ahead.launch { warmOne(app, name, id, inMemory = true) }
+    }
+
+    @Volatile private var libraryWarmed = false
+
+    /**
+     * The artists you have most songs by (`names`, most first), their pages and photos read ahead once a day, one at a
+     * time with a breath between (never in the way of what's playing or opening), so a first visit from the library
+     * opens at once, as a second one does. Wifi only; stops if it goes. Once a run.
+     */
+    fun warmLibrary(ctx: Context, names: List<String>) {
+        if (libraryWarmed || !wifi(ctx)) return
+        libraryWarmed = true
+        val app = ctx.applicationContext
+        ahead.launch {
+            var read = 0
+            for (name in names) {
+                if (!wifi(app)) break
+                if (!due(name, "", 24 * 3_600_000L)) continue
+                warmOne(app, name, "", inMemory = false)
+                read++
+                kotlinx.coroutines.delay(1_500)
+            }
+            android.util.Log.d("ink-youtube", "library artists read ahead: $read of ${names.size}")
+        }
+    }
+
+    private fun wifi(ctx: Context): Boolean {
+        val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java) ?: return false
+        return dir != null && !cm.isActiveNetworkMetered
+    }
+
+    /** Not read within `age` ms (here or kept): marked as being read now. */
+    private fun due(name: String, id: String, age: Long): Boolean {
+        if (name.isBlank()) return false
+        val key = artistKey(name, id)
+        val now = System.currentTimeMillis()
+        if (now - (warming[key] ?: 0L) < age) return false
+        val kept = dir?.let { java.io.File(it, "$key.json") }
+        if (kept != null && now - kept.lastModified() < age) { warming[key] = kept.lastModified(); return false }
+        warming[key] = now
+        return true
+    }
+
+    private suspend fun warmOne(app: Context, name: String, id: String, inMemory: Boolean) {
+        val a = readShared(name, id) ?: return
+        val photo = a.photo ?: return
+        // what's likely next (fans also like, a row pressed) held ready to draw; the library's many only on the phone
+        if (inMemory) Covers.of(app, photoSong(name, photo), 1080)
+        else Covers.keepOnDisk(app, photoSong(name, photo), 1080)
+    }
+
+    /** An artist row pressed: their page read from the touch, not once it's open (a fifth of a second sooner). */
+    fun warmNow(ctx: Context, name: String) {
+        val app = ctx.applicationContext
+        if (dir != null && due(name, "", 30 * 60_000L)) ahead.launch { warmOne(app, name, "", inMemory = true) }
+    }
 
     // your library kept as one file (files/youtube/library.json), gone at sign-out with the rest
     private fun libraryJson(): String {

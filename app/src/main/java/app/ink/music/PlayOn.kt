@@ -71,7 +71,7 @@ fun PlayOnPage(onClose: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 BasicText("the music moves there from where it is", style = pixel(12.sp, Ink.mid))
             }
-            Word("close", pixel(12.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+            CloseArrow(onClick = onClose)
         }
         Spacer(Modifier.height(26.dp))
         LazyColumn(Modifier.weight(1f)) {

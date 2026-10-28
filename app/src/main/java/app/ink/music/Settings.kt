@@ -93,7 +93,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
         item {
             Row(Modifier.fillMaxWidth()) {
                 BasicText(title, style = headline(52.sp), modifier = Modifier.weight(1f).then(if (part != null) Modifier.carried("settings-$part") else Modifier))
-                Word("close", pixel(12.sp, Ink.mid), touch = 10.dp) { pages.back() }
+                CloseArrow { pages.close() }
             }
             if (part == null) {
                 BasicText("version ${BuildConfig.VERSION_NAME}", style = pixel(12.sp, Ink.mid))
@@ -316,20 +316,6 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     }
                 }
 
-                Column(Modifier.cascade(2)) {
-                    // the library's order: a to z, or shuffled anew each time it's opened
-                    BasicText("ORDER", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("records, artists and songs a to z, or shuffled: a new order every time you open ink music", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    val shuffled by Order.shuffled.collectAsState()
-                    Row {
-                        Word("a to z", pixel(14.sp, if (!shuffled) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { Order.set(false) }
-                        Word("shuffled", pixel(14.sp, if (shuffled) Ink.ink else Ink.dim), touch = 8.dp) { Order.set(true) }
-                    }
-                    Spacer(Modifier.height(40.dp))
-                }
-
                 Column(Modifier.cascade(3)) {
                     // listenbrainz: what you play, told there (the player's process sends it)
                     ListenBrainzSetting()
@@ -415,7 +401,6 @@ private fun SettingsIndex(pages: Pages) {
     val lb by ListenBrainz.account.collectAsState()
     val lastfm by LastFm.account.collectAsState()
     val seeds by Seeds.artists.collectAsState()
-    val shuffled by Order.shuffled.collectAsState()
     val kept by Offline.kept.collectAsState()
     val quality = remember { Quality.read(ctx) }
     val eq = remember { Eq.read(ctx) }
@@ -442,7 +427,6 @@ private fun SettingsIndex(pages: Pages) {
     ).joinToString(" · "), "sound", 2)
     Entry("LISTENING", listOfNotNull(
         seeds.size.takeIf { it > 0 }?.let { "$it artists" },
-        if (shuffled) "shuffled" else "a to z",
         if (lb != null) "listenbrainz on" else null,
         if (lastfm != null) "last.fm on" else null,
         if (Moves.less.value) "moving less" else null,

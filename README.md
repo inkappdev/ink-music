@@ -6,7 +6,7 @@
 
 <p align="center">
   A free, open-source music player for Android.<br />
-  Pure black, warm white type, no chrome: the album art is the only colour on screen.
+  Pure black, warm white type, no chrome: the album art is the only color on screen.
 </p>
 
 <p align="center">
@@ -189,7 +189,7 @@ MediaLibrarySession in its own process) and [Haze](https://github.com/chrisbanes
 Built by Bronson with Claude (Anthropic's AI) as a coding partner: the design, the decisions and the
 testing are mine. Every feature is tried on a real phone before it ships, testers' notes come back as
 fixes within days, and ink weekly is picked by hand. It's all here to read, under the GPL, and every
-piece of someone else's work it stands on is named below, with its licence.
+piece of someone else's work it stands on is named below, with its license.
 
 ## Contributing
 

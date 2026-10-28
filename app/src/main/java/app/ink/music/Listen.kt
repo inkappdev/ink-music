@@ -389,7 +389,7 @@ fun InkRadioPage(pages: Pages) {
     val all = remember { Stations.curated(ctx) }
     val now by Playback.now.collectAsState()
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),

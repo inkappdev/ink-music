@@ -102,7 +102,7 @@ fun YearPage(pages: Pages) {
             BasicText("${pager.currentPage + 1} of $count", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(vertical = 10.dp))
             Spacer(Modifier.weight(1f))
             if (some) Word("share", pixel(12.sp, Ink.mid), touch = 10.dp) { scope.launch { ShareCard.shareYear(ctx, y!!) } }
-            Word("close", pixel(12.sp, Ink.mid), touch = 10.dp) { pages.back() }
+            CloseArrow { pages.close() }
         }
         if (y == null) return@Column
         VerticalPager(pager, Modifier.weight(1f).fillMaxWidth()) { i ->

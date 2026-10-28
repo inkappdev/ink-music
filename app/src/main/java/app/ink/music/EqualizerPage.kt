@@ -56,7 +56,7 @@ fun EqualizerPage(pages: Pages) {
     var state by remember { mutableStateOf(Eq.read(ctx)) }
     var looking by remember { mutableStateOf(false) }
     fun set(s: Eq.State) { state = s; Playback.equalize(ctx, s) }
-    FrostedPage(onClose = { pages.back() }) { frost, top ->
+    FrostedPage(onClose = { pages.close() }) { frost, top ->
         Column(
             Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal))
                 .verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),

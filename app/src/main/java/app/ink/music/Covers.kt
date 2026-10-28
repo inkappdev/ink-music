@@ -65,6 +65,12 @@ object Covers {
         return java.io.File(java.io.File(ctx.cacheDir, "covers"), "$key.jpg")
     }
 
+    /** A network picture fetched and kept on the phone only (read ahead: not held in memory, where it'd push out what's on screen). */
+    fun keepOnDisk(ctx: Context, song: Song, px: Int) {
+        if (diskFile(ctx, song, px).exists()) return
+        song.art?.let { runCatching { fetch(it, px) }.getOrNull() }?.let { toDisk(ctx, song, px, it) }
+    }
+
     private fun fromDisk(ctx: Context, song: Song, px: Int): Bitmap? =
         diskFile(ctx, song, px).takeIf { it.exists() }?.let { android.graphics.BitmapFactory.decodeFile(it.path) }
 
