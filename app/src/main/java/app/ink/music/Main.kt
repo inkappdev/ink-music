@@ -113,6 +113,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.only
@@ -444,14 +446,27 @@ private fun LibraryPage(pages: Pages) {
             // (softening as they near them)
             val slide = rememberHazeState()
             Box(Modifier.weight(1f)) {
-                Row(Modifier.hazeSource(slide).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                val slid = rememberScrollState()
+                // where each tab starts and ends, so the one you're on slides into view (at Android's own text size
+                // they're wider than the row: lists past its end)
+                val spans = remember { HashMap<Int, IntRange>() }
+                val chosen = tabs.indexOf(tab)
+                LaunchedEffect(chosen, slid.maxValue) {
+                    val at = spans[chosen] ?: return@LaunchedEffect
+                    val view = slid.value until slid.value + slid.viewportSize
+                    val to = when { at.first < view.first -> at.first; at.last > view.last -> at.last - slid.viewportSize + 1; else -> return@LaunchedEffect }
+                    slid.animateScrollTo(to.coerceIn(0, slid.maxValue), tween(Motion.ENTER, easing = Motion.expo))
+                }
+                Row(Modifier.hazeSource(slide).horizontalScroll(slid), verticalAlignment = Alignment.CenterVertically) {
                     tabs.forEachIndexed { i, t ->
-                        Word(t, pixel(14.sp, if (t == tab) Ink.ink else Ink.dim), Modifier.padding(end = 12.dp), touch = 8.dp) {
+                        Word(t, pixel(14.sp, if (t == tab) Ink.ink else Ink.dim), Modifier.padding(end = 12.dp)
+                            .onGloballyPositioned { c -> val x = c.positionInParent().x.toInt(); spans[i] = x until x + c.size.width }, touch = 8.dp) {
                             scope.launch { pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
                         }
                     }
                 }
-                Box(Modifier.matchParentSize().wrapContentWidth(Alignment.End).width(BAND).softEdgeEnd(slide))
+                // softened only while there's more to slide to (it blurred "lists" when they all fit)
+                if (slid.maxValue > 0) Box(Modifier.matchParentSize().wrapContentWidth(Alignment.End).width(BAND).softEdgeEnd(slide))
             }
             Spacer(Modifier.width(12.dp))
             // the cog is on the listen page, by its greeting

@@ -157,18 +157,19 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)),
         ) {
-            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)) {
-                Row(Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.Center), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                    // where in the queue; a tap opens it
-                    Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true }
-                    Spacer(Modifier.weight(1f))
-                    Word(look.word, pixel(SMALL, SAID), touch = 10.dp) { Looks.next(ctx) }
-                    Word("close", pixel(SMALL, SAID), touch = 10.dp, onClick = onClose)
-                }
-                // where it plays: a pixel speaker (as the heart is drawn) in the middle of the row, lit while it's a
-                // speaker, dim on the phone; a tap opens every speaker. the speaker's name is under the title ("flac
-                // on bedroom speaker"): a long one here pushed close off the row
-                PlayOnSpeaker(n.device.isNotEmpty(), Modifier.align(androidx.compose.ui.Alignment.Center)) { playOnUp = true }
+            Fit(least = 12f / 13) {
+                // where in the queue (a tap opens it); where it plays, a pixel speaker (as the heart is drawn) in the
+                // middle, lit while it's a speaker, dim on the phone, a tap opens every speaker (its name is under the
+                // title: "flac on bedroom speaker", a long one here pushed close off the row); the look; close
+                Centred(
+                    start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true } },
+                    middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
+                    end = { Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                        Word(look.word, pixel(SMALL, SAID), touch = 10.dp) { Looks.next(ctx) }
+                        Word("close", pixel(SMALL, SAID), touch = 10.dp, onClick = onClose)
+                    } },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                )
             }
             val words = lyric != null
             AnimatedContent(
@@ -182,10 +183,30 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                         Scrubber(n, accent, scrub) { HeardWord(n, typing) { heardUp = true } }
                         Song(n, dir, small = true, scrub, onOpen, share)
                     } else {
-                        Spacer(Modifier.weight(1f))
-                        Scrubber(n, accent, scrub) { HeardWord(n, typing) { heardUp = true } }
-                        Song(n, dir, small = false, scrub, onOpen, share) { t -> Moment(t) { typing = it } }
-                        Spacer(Modifier.weight(.4f))
+                        // the cover as big as the width allows, unless the song's words under it would then run
+                        // under the controls (Android's own display size, a short phone): then it gives up just
+                        // that much height. What's left over goes above and below, as the weights had it (1 : .4)
+                        val body = @Composable { room: androidx.compose.ui.unit.Dp ->
+                            androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
+                                Column {
+                                    Scrubber(n, accent, scrub) { HeardWord(n, typing) { heardUp = true } }
+                                    Song(n, dir, small = false, scrub, onOpen, share) { t -> Moment(t) { typing = it } }
+                                }
+                            }
+                        }
+                        androidx.compose.ui.layout.SubcomposeLayout(Modifier.fillMaxSize()) { c ->
+                            val loose = c.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity)
+                            val whole = subcompose("whole") { body(androidx.compose.ui.unit.Dp.Infinity) }.map { it.measure(loose) }
+                            val over = whole.sumOf { it.height } - c.maxHeight
+                            val placed = if (over <= 0) whole else {
+                                val side = minOf(c.maxWidth.toDp(), 420.dp)
+                                val room = (side - over.toDp() - 4.dp).coerceAtLeast(140.dp)
+                                subcompose("fit") { body(room) }.map { it.measure(loose) }
+                            }
+                            val h = placed.sumOf { it.height }
+                            val top = ((c.maxHeight - h).coerceAtLeast(0) / 1.4f).toInt()
+                            layout(c.maxWidth, c.maxHeight) { var y = top; placed.forEach { it.place(0, y); y += it.height } }
+                        }
                     }
                 }
             }
@@ -193,7 +214,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
             // shuffle, repeat, up next and sleep over dither); the art softens into the bar, never fades
             Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = true))
             Column(Modifier.fillMaxWidth().background(Ink.black).navigationBarsPadding().padding(top = 6.dp)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            Fit { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                 Word("back", pixel(16.sp), touch = 10.dp) { dir = -1; Playback.previous() }
                 Word(if (n.playing) "pause" else "play", pixel(16.sp), touch = 10.dp) { Playback.toggle() }
                 Word("next", pixel(16.sp), touch = 10.dp) { dir = 1; Playback.next() }
@@ -203,7 +224,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                 // (lit with the cover still there read as broken to a tester)
                 val none = sing && lines?.isEmpty() == true
                 Word(if (none) "no lyrics" else "lyrics", pixel(16.sp, if (sing && !none) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
-            }
+            } }
             Spacer(Modifier.height(14.dp))
             Modes(n) { queueUp = true }
             Spacer(Modifier.height(12.dp))
@@ -242,7 +263,7 @@ private fun Modes(n: Now, onQueue: () -> Unit) {
         while (n.sleepAt > 0) { value = n.sleepAt - System.currentTimeMillis(); delay(15_000) }
         value = 0L
     }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
         Word("shuffle", pixel(style, if (n.shuffle) Ink.ink else OFF), touch = 10.dp) { Playback.shuffle() }
         Word(if (n.repeat == androidx.media3.common.Player.REPEAT_MODE_ONE) "repeat one" else "repeat",
             pixel(style, if (n.repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) Ink.ink else OFF), touch = 10.dp) { Playback.repeat() }
@@ -257,7 +278,7 @@ private fun Modes(n: Now, onQueue: () -> Unit) {
             step = (step + 1) % SLEEPS.size
             Playback.sleep(SLEEPS[step])
         }
-    }
+    } }
 }
 
 /** Sleep's steps: off, 15m, 30m, 1h, the song's end. */
@@ -299,7 +320,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
             }
         } else Column {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val side = minOf(maxWidth, 420.dp)
+                val side = minOf(maxWidth, 420.dp, LocalCoverRoom.current)
                 Sleeve(t, side, Modifier.clickwheel({ live }, scrub))
                 Box(Modifier.size(side)) { over(t) }
             }
