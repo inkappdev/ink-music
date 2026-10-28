@@ -1,0 +1,153 @@
+package app.ink.music
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.FileNotFoundException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.security.MessageDigest
+
+/** lrclib asks every app to say who it is. */
+const val AGENT = "ink music/0.1 (+https://inkhome.app; hello@inkhome.app)"
+
+/** One sung line: when it starts (ms into the song) and its words. */
+data class Line(val at: Long, val words: String)
+
+/**
+ * Synced lyrics from lrclib, as ink has them (the phone's Lyrics.kt, its Android parts the desktop's way): synced
+ * lines only, a song lrclib has only plain (untimed) words for shows none. Where lrclib has none, YouTube Music's
+ * (timed by Musixmatch for song uploads). Answers are cached on disk; lrclib being unreachable is not an answer, so
+ * that song is asked again after a minute.
+ */
+object Lyrics {
+    const val LEAD = 250L   // show a line this much early: reading lags hearing
+
+    private val _on = MutableStateFlow(true)
+    val on: StateFlow<Boolean> = _on
+
+    private val dir = File(Home.cache, "lyrics")
+    private val off = File(Home.dir, "lyrics-off")
+    private val retry = java.util.concurrent.ConcurrentHashMap<String, Long>()   // key -> when lrclib may be asked again
+
+    fun start() { _on.value = !off.exists() }
+
+    fun toggle() {
+        _on.value = !_on.value
+        runCatching { if (_on.value) off.delete() else off.writeText("") }
+    }
+
+    /** The song's synced lines; empty when there are none; null when lrclib couldn't be reached. */
+    suspend fun of(t: Song): List<Line>? = withContext(Dispatchers.IO) {
+        val artist = t.artist.split(',').first().trim()
+        val key = "$artist|${t.title}"
+        val base = File(dir, sha1(key))
+        val lrc = File("${base.path}.lrc")
+        val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
+        if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
+            // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
+            if (text.isBlank() && !asked.exists()) tube(t, lrc, asked)?.let { return@withContext it }
+            return@withContext parse(text)
+        }
+        if ((retry[key] ?: 0L) > System.currentTimeMillis()) return@withContext null
+        val got = ask(artist, t.title, t.album, t.duration / 1000)
+        if (got == null) {
+            retry[key] = System.currentTimeMillis() + 60_000
+            return@withContext null
+        }
+        // kept, so lrclib isn't asked again (a full disk only means asking again)
+        runCatching {
+            dir.mkdirs()
+            lrc.writeText(got.first)
+            File("${base.path}.txt").writeText(got.second)
+        }
+        // none synced on lrclib: YouTube Music's (the full build), timed by Musixmatch
+        if (got.first.isBlank()) tube(t, lrc, asked)?.let { return@withContext it }
+        parse(got.first)
+    }
+
+    /** YouTube Music's timed lines for the song, kept as lrclib's are (null: YouTube couldn't be asked, so again next time). */
+    private fun tube(t: Song, lrc: File, asked: File): List<Line>? {
+        val artist = t.artist.split(',').first().trim()
+        val lines = runCatching {
+            val vid = if (t.tube) t.id.removePrefix("y") else YouTube.find(t.title, artist)?.id?.removePrefix("y")
+            // "♪" is YouTube's mark for music without words: a gap, as lrclib's blank line
+            if (vid == null) emptyList() else InnerTube().lyrics(vid).map { (at, words) -> Line(at, if (words.trim() == "♪") "" else words) }
+        }.getOrNull() ?: return null
+        runCatching {
+            dir.mkdirs()
+            if (lines.isNotEmpty()) lrc.writeText(lines.joinToString("\n") {
+                "[%02d:%05.2f]%s".format(java.util.Locale.US, it.at / 60_000, (it.at % 60_000) / 1000.0, it.words)
+            })
+            asked.writeText("")
+        }
+        return lines
+    }
+
+    /** (synced, plain) from lrclib: "" for none. null: lrclib never answered. */
+    private fun ask(artist: String, title: String, album: String, seconds: Long): Pair<String, String>? {
+        fun q(vararg kv: Pair<String, Any>) =
+            kv.joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v.toString(), "UTF-8") }
+        val urls = listOf(
+            "https://lrclib.net/api/get?" + q(
+                "artist_name" to artist, "track_name" to title, "album_name" to album, "duration" to seconds,
+            ),
+            "https://lrclib.net/api/search?" + q("artist_name" to artist, "track_name" to title),
+        )
+        var answered = false
+        var words = ""
+        for (url in urls) {
+            val body = try {
+                get(url)
+            } catch (e: FileNotFoundException) {   // 404: "no such track" is an answer
+                answered = true; continue
+            } catch (e: Exception) {
+                continue
+            }
+            // not json (a wifi's sign-in page): no answer
+            val hits = try {
+                body.trim().let { if (it.startsWith("[")) JSONArray(it) else JSONArray().put(JSONObject(it)) }
+            } catch (e: Exception) { continue }
+            answered = true
+            for (i in 0 until hits.length()) {
+                val hit = hits.optJSONObject(i) ?: continue
+                val synced = hit.optString("syncedLyrics").takeIf { it.isNotBlank() && it != "null" }
+                if (synced != null) return synced to ""
+                if (hit.optBoolean("instrumental")) return "" to ""
+                if (words.isEmpty()) words = hit.optString("plainLyrics").takeIf { it != "null" }.orEmpty()
+            }
+        }
+        return if (answered) "" to words else null
+    }
+
+    private fun get(url: String): String {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 10_000
+        c.readTimeout = 10_000
+        c.setRequestProperty("User-Agent", AGENT)
+        try {
+            return c.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    private val stamp = Regex("""\[(\d+):(\d+(?:\.\d+)?)]""")
+
+    private fun parse(text: String): List<Line> = text.lineSequence().flatMap { raw ->
+        val words = stamp.replace(raw, "").trim()
+        stamp.findAll(raw).mapNotNull { m ->
+            val min = m.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+            val sec = m.groupValues[2].toDoubleOrNull() ?: return@mapNotNull null
+            Line((min * 60_000 + sec * 1000).toLong(), words)
+        }
+    }.sortedBy { it.at }.toList()
+
+    private fun sha1(s: String) =
+        MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+}

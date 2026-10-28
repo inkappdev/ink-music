@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -78,6 +79,7 @@ fun main() {
     Library.start()
     Server.start()
     Sorts.start()
+    Lyrics.start()
     Listened.read()
     Colours.start()
     Player.start()
@@ -564,11 +566,28 @@ private fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             }
                         }
                         Spacer(Modifier.height(28.dp))
-                        Controls(n)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Controls(n)
+                            Spacer(Modifier.width(18.dp))
+                            val on by Lyrics.on.collectAsState()
+                            Word("lyrics", pixel(14.sp, if (on) Ink.ink else Ink.dim), touch = 10.dp) { Lyrics.toggle() }
+                        }
                         Spacer(Modifier.height(20.dp))
                         val q by Player.queue.collectAsState()
                         q.getOrNull(n.index + 1)?.let { up ->
                             Word("up next: ${up.title.lowercase()}", pixel(12.sp, Ink.mid), touch = 6.dp) { open(Page.Queue) }
+                        }
+                        // the song's words, the sung line lit, as it plays
+                        val on by Lyrics.on.collectAsState()
+                        val lines by androidx.compose.runtime.produceState<List<Line>?>(null, n.song.id, on) {
+                            value = null
+                            // lrclib busy (it says 503 at times) is no answer: asked again while the song plays
+                            while (on) { Lyrics.of(n.song)?.let { value = it; return@produceState }; kotlinx.coroutines.delay(61_000) }
+                        }
+                        val pos by Player.position.collectAsState()
+                        lines?.takeIf { on && it.isNotEmpty() }?.let { all ->
+                            Spacer(Modifier.height(28.dp))
+                            LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.weight(1f).fillMaxWidth())
                         }
                     }
                 }
@@ -609,3 +628,39 @@ private fun QueuePage(open: (Page) -> Unit, onClose: () -> Unit) {
         }
     }
 }
+
+/** The words: the line before dim, the sung one big (lit word by word), the next three dim; a new line rises in. */
+@Composable
+private fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier) {
+    val drift = with(androidx.compose.ui.platform.LocalDensity.current) { Motion.drift.roundToPx() }
+    // the lines to come run out of room at the foot: feathered, never cut
+    Box(modifier.clipToBounds().feather({ 0f }, { 1f })) {
+        AnimatedContent(
+            targetState = index,
+            transitionSpec = {
+                (slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { drift } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
+                    (slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { -drift } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)))
+            },
+            label = "line",
+        ) { i ->
+            val sung = lines.getOrNull(i)?.takeIf { it.words.isNotBlank() }
+            val before = (i - 1 downTo 0).asSequence().map { lines[it] }.firstOrNull { it.words.isNotBlank() }?.takeIf { sung != null }
+            val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(3).toList()
+            Column(Modifier.fillMaxWidth()) {
+                before?.let {
+                    BasicText(it.words.uppercase(), style = headline(20.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(16.dp))
+                }
+                sung?.let {
+                    FadeText(it.words.uppercase(), headline(40.sp), maxLines = 4, overflow = TextOverflow.Ellipsis, from = Ink.dim)
+                    Spacer(Modifier.height(18.dp))
+                }
+                after.forEach {
+                    BasicText(it.words.uppercase(), style = headline(22.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+        }
+    }
+}
+
