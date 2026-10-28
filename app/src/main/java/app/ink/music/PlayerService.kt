@@ -317,13 +317,14 @@ class PlayerService : MediaLibraryService() {
             if (ending) return
             prefs.edit().putBoolean("stopped", true).apply()
             if (!on() || !isPlaying) { fading++; leaving = false; super.stop(); return super.seekTo(currentMediaItemIndex, 0) }
-            fade(volume, 0f, 250) { super.stop(); super.seekTo(currentMediaItemIndex, 0); volume = level() }
+            // stopped now in truth: no longer told so ahead of time
+            fade(volume, 0f, 250) { ending = false; super.stop(); super.seekTo(currentMediaItemIndex, 0); volume = level() }
             ending = true
         }
 
         override fun play() {
             prefs.edit().putBoolean("stopped", false).apply()
-            if (!on()) { fading++; leaving = false; return super.play() }
+            if (!on()) { fading++; leaving = false; ending = false; return super.play() }
             // still fading out to a pause: that pause called off, the sound brought back
             if (isPlaying) { fade(volume, level(), 200); return }
             volume = 0f
