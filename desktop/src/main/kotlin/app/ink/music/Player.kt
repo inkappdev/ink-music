@@ -59,6 +59,7 @@ object Player {
                         val ms = ((e.value as? Double) ?: 0.0).times(1000).toLong()
                         // a few times a second is plenty for a line and a clock
                         if (kotlin.math.abs(ms - position.value) >= 200 || ms < position.value) position.value = ms
+                        heard(ms)
                     }
                 }
                 is Mpv.Shutdown -> return
@@ -67,10 +68,23 @@ object Player {
         }
     }
 
+    // the server told what's playing, and that it was heard once it has played half, or four minutes
+    // (as the phone does, and Last.fm counts); Navidrome passes it on to its own scrobbling
+    private var toldNow: String? = null
+    private var counted: String? = null
+
+    private fun heard(ms: Long) {
+        val n = _now.value ?: return
+        val s = n.song
+        if (!s.server || counted == s.id || n.duration <= 0) return
+        if (ms >= n.duration / 2 || ms >= 240_000) { counted = s.id; Server.scrobble(s.id, true) }
+    }
+
     private fun tell() {
         val q = _queue.value
         val s = q.getOrNull(index)
         _now.value = s?.let { Now(it, index, !paused, duration.takeIf { d -> d > 0 } ?: it.duration) }
+        if (s != null && s.server && toldNow != "${s.id}/$index" && !paused) { toldNow = "${s.id}/$index"; counted = null; Server.scrobble(s.id, false) }
     }
 
     /** These songs, from `start`: the queue they become. */
@@ -80,11 +94,14 @@ object Player {
         _queue.value = songs
         m.command("stop")
         m.command("playlist-clear")
-        songs.forEach { m.command("loadfile", it.path, "append") }
+        songs.forEach { m.command("loadfile", where(it), "append") }
         position.value = 0
         m.set("playlist-pos", start.toString())
         m.set("pause", "no")
     }
+
+    /** Where a song plays from: its file, or the server's stream. */
+    private fun where(s: Song) = if (s.server) Server.stream(s).orEmpty() else s.path
 
     fun toggle() { mpv?.command("cycle", "pause") }
 
