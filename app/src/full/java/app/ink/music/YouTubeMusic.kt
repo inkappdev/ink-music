@@ -36,6 +36,9 @@ object YouTubeMusic {
     private val yt get() = ServiceList.YouTube
     private val known = ConcurrentHashMap<String, Song>()
     private val streams = ConcurrentHashMap<String, Triple<String, String, Long>>()   // id -> url, mime, until
+    // songs whose signed stream failed as it played: theirs NewPipe's from then on; three, and signed streams are
+    // left alone till the player starts again (that phone can't make them)
+    private val refusedSongs = ConcurrentHashMap.newKeySet<String>()
     private val related = ConcurrentHashMap<String, List<Song>>()   // id -> the songs YouTube sets beside it
     @Volatile private var ready = false
 
@@ -123,7 +126,7 @@ object YouTubeMusic {
         // signed in: the stream YouTube Music's web player gets as you (Premium: its 256k AAC; your uploads),
         // else, or if that fails, the one NewPipe finds signed out. A speaker always gets NewPipe's (it fetches the
         // link itself, from its own address)
-        if (SIGNED && !forSpeaker) app?.let { YouTubeAccount.signed(it) }?.let { t ->
+        if (SIGNED && !forSpeaker && id !in refusedSongs && refusedSongs.size < 3) app?.let { YouTubeAccount.signed(it) }?.let { t ->
             signedStream(t, id, small)?.let { (url, mime, kbps) ->
                 rates[key] = kbps
                 streams[key] = Triple(url, mime, System.currentTimeMillis() + 4 * 3_600_000L)
@@ -211,11 +214,34 @@ object YouTubeMusic {
         if (n != null && nAnswer != null) url = url.replace("n=" + java.net.URLEncoder.encode(n, "UTF-8"), "n=" + java.net.URLEncoder.encode(nAnswer, "UTF-8"))
             .let { if (it == url) url.replace("n=$n", "n=$nAnswer") else it }
         tokens?.second?.let { url += "&pot=" + java.net.URLEncoder.encode(it, "UTF-8") }
+        // tried before it's trusted: a link with a step half-done (no poToken minted, the signature or n not
+        // solved on that phone's WebView) is turned away (403), and played nothing for testers on 1.4.5; turned
+        // away, the stream NewPipe finds signed out plays instead
+        if (!opens(url)) {
+            android.util.Log.d("ink-youtube", "signed $vid: turned away (${if (tokens != null) "with" else "no"} poToken, n ${if (nAnswer != null) "solved" else "none"})")
+            return null
+        }
         val kbps = rate(pick) / 1000
         android.util.Log.d("ink-youtube", "signed $vid: itag ${pick.optInt("itag")} ${pick.optString("mimeType").substringBefore(';')} $kbps kbps " +
             "(${if (tokens != null) "with" else "no"} poToken, ${if (cipher != null) "cipher" else "plain"}, n ${if (nAnswer != null) "solved" else "none"}) in ${System.currentTimeMillis() - t0} ms")
         Triple(url, pick.optString("mimeType").substringBefore(';'), kbps)
     }.onFailure { android.util.Log.d("ink-youtube", "signed $id: $it") }.getOrNull()
+
+    /** A song's stream failed as it played: its links forgotten, and the next one NewPipe's, signed out. */
+    fun refused(id: String) {
+        streams.keys.removeAll { it.startsWith(id) }
+        if (refusedSongs.add(id)) android.util.Log.d("ink-youtube", "refused $id: signed out from here (${refusedSongs.size})")
+    }
+
+    /** Whether a stream's link gives its first bytes (200 or 206). */
+    private fun opens(url: String): Boolean = runCatching {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        try {
+            c.connectTimeout = 6_000; c.readTimeout = 6_000
+            c.setRequestProperty("Range", "bytes=0-1")
+            c.responseCode in 200..206
+        } finally { c.disconnect() }
+    }.getOrDefault(false)
 
     /** The bitrate (kbps) of the stream last picked for a song, 0 if none. */
     fun kbps(id: String, small: Boolean): Int = rates[id + if (small) ":small" else ""] ?: 0

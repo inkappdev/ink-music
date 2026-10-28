@@ -327,6 +327,8 @@ class PlayerService : MediaLibraryService() {
     /** Each stream's quality as chosen when the song began (Quality), when, and on mobile data or not: an hour, then chosen anew. */
     private data class Chosen(val quality: Int, val at: Long, val metered: Boolean)
     private val chosen = java.util.concurrent.ConcurrentHashMap<String, Chosen>()
+    // YouTube songs found again after their stream failed, and how often (onPlayerError)
+    private val retried = HashMap<String, Int>()
     /** Each song's stream format as the player read it (by media id): a song's comes in a little before it plays. */
     private val formats = java.util.concurrent.ConcurrentHashMap<String, androidx.media3.common.Format>()
 
@@ -397,6 +399,21 @@ class PlayerService : MediaLibraryService() {
         player.addListener(object : Player.Listener {
             // a station's song, as its stream says it
             override fun onMetadata(metadata: androidx.media3.common.Metadata) { onAir?.metadata(metadata) }
+
+            // a YouTube song's stream failing (turned away, its link run out, the network dropped): found again, signed
+            // out, and played on from where it stopped, twice a song; the player had stopped on the error, and on
+            // phones where the signed stream fails no YouTube song played (1.4.5)
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                val uri = player.currentMediaItem?.localConfiguration?.uri ?: return
+                if (uri.scheme != "ytm" || error.errorCode !in 2000 until 3000) return
+                val id = "y" + uri.host
+                val tries = (retried[id] ?: 0) + 1
+                android.util.Log.d("ink-youtube", "$id failed playing (${error.errorCodeName}), try $tries")
+                if (tries > 2) return
+                retried[id] = tries
+                YouTubeMusic.refused(id)
+                player.prepare()
+            }
 
             override fun onEvents(p: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) onAir?.changed()

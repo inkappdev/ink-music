@@ -1,0 +1,4 @@
+- YouTube songs play again for everyone signed in: if YouTube turns a stream away, ink music finds another and carries on where it stopped
+- The release page has one APK now (the one with YouTube Music)
+- Fixed the bug that ate your music. It was full, at least.
+- Do something nice for someone today. Tell them about a band they've never heard of

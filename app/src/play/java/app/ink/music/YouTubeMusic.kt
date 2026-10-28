@@ -11,6 +11,7 @@ object YouTubeMusic {
     fun lyrics(id: String, title: String, artist: String): List<Line>? = emptyList()
     fun stream(id: String, forSpeaker: Boolean, small: Boolean = false): Pair<String, String>? = null
     fun kbps(id: String, small: Boolean): Int = 0
+    fun refused(id: String) {}
     fun related(id: String): List<Song> = emptyList()
     fun find(title: String, artist: String): Song? = null
     fun artist(name: String): TubeArtist? = null
