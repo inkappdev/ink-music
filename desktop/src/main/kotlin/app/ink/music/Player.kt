@@ -99,6 +99,10 @@ object Player {
                         // a few times a second is plenty for a line and a clock
                         if (kotlin.math.abs(ms - position.value) >= 200 || ms < position.value) position.value = ms
                         heard(ms)
+                        // how long this song has actually played (a jump isn't playing)
+                        val step = ms - lastMs
+                        if (!paused && step in 1..2_000) playedMs += step
+                        lastMs = ms
                         if (!paused && System.currentTimeMillis() - keptAt > 10_000) { keptAt = System.currentTimeMillis(); keep() }
                     }
                 }
@@ -121,9 +125,23 @@ object Player {
         if (ms >= n.duration / 2 || ms >= 240_000) { counted = s.id; Server.scrobble(s.id, true) }
     }
 
+    // the song playing as History will write it: since when, and how long it has played
+    private var timing: Song? = null
+    private var timingAt = 0L
+    @Volatile private var playedMs = 0L
+    @Volatile private var lastMs = 0L
+
+    /** The song before written down as heard (30 s or more), and the clock started for this one. */
+    private fun timeSong(s: Song?) {
+        if (s?.id == timing?.id) return
+        timing?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
+        timing = s; timingAt = System.currentTimeMillis(); playedMs = 0; lastMs = 0
+    }
+
     private fun tell() {
         val q = _queue.value
         val s = q.getOrNull(index)
+        timeSong(s)
         _now.value = s?.let { Now(it, index, !paused, duration.takeIf { d -> d > 0 } ?: it.duration) }
         if (s != null && s.server && toldNow != "${s.id}/$index" && !paused) { toldNow = "${s.id}/$index"; counted = null; Server.scrobble(s.id, false) }
         if (s != null) keep()
@@ -203,6 +221,7 @@ object Player {
     }
 
     fun close() {
+        timeSong(null)
         // where it was, written now (not on another thread: the app's about to go)
         _queue.value.getOrNull(index)?.let { s ->
             runCatching { Home.write(kept, JSONObject().put("ids", JSONArray(_queue.value.map { it.id })).put("id", s.id).put("position", position.value).toString()) }
