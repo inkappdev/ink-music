@@ -54,6 +54,11 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clipToBounds
@@ -183,7 +188,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
                     middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
                     end = { Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                         Word(look.word, pixel(SMALL, SAID), touch = 10.dp) { Looks.next(ctx) }
-                        Word("close", pixel(SMALL, SAID), touch = 10.dp, onClick = onClose)
+                        Pixel(CLOSE, "close", SAID, Modifier.align(Alignment.CenterVertically), onClick = onClose)
                     } },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
@@ -231,20 +236,29 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
             // shuffle, repeat, up next and sleep over dither); the art softens into the bar, never fades
             Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = true))
             Column(Modifier.fillMaxWidth().background(Ink.black).navigationBarsPadding().padding(top = 6.dp)) {
-            Fit { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                Word("back", pixel(16.sp), touch = 10.dp) { dir = -1; Playback.previous() }
-                Word(if (n.playing) "pause" else "play", pixel(16.sp), touch = 10.dp) { Playback.toggle() }
-                Word("next", pixel(16.sp), touch = 10.dp) { dir = 1; Playback.next() }
-                // stopped, the player goes too (the mini player's gone with it: nothing left to come back down to)
-                Word("stop", pixel(16.sp, if (n.playing) Ink.ink else OFF), touch = 10.dp) { Playback.stop(); onClose() }
-                Spacer(Modifier.weight(1f))
-                // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
-                // (lit with the cover still there read as broken to a tester)
-                val none = sing && lines?.isEmpty() == true
-                Word(if (none) "no lyrics" else "lyrics", pixel(16.sp, if (sing && !none) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
-            } }
-            Spacer(Modifier.height(14.dp))
-            Modes(n) { queueUp = true }
+            // what's played with, drawn (as the speaker is), by how often it's pressed: play in the middle, under the
+            // thumb, the biggest; back and next either side; shuffle and repeat a size smaller at the ends, lit when on.
+            // A play shape says what it does, where "play" and "pause" read as a state to a tester (2026-10-28)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Pixel(SHUFFLE, if (n.shuffle) "shuffle, on" else "shuffle, off", if (n.shuffle) Ink.ink else OFF) { Playback.shuffle() }
+                Pixel(BACK, "back", Ink.ink, cell = 3.dp) { dir = -1; Playback.previous() }
+                Pixel(if (n.playing) PAUSE else PLAY, if (n.playing) "pause" else "play", Ink.ink, cell = 3.dp) { Playback.toggle() }
+                Pixel(NEXT, "next", Ink.ink, cell = 3.dp) { dir = 1; Playback.next() }
+                val repeat = n.repeat
+                Pixel(
+                    if (repeat == androidx.media3.common.Player.REPEAT_MODE_ONE) REPEAT_ONE else REPEAT,
+                    when (repeat) { androidx.media3.common.Player.REPEAT_MODE_ONE -> "repeat one"; androidx.media3.common.Player.REPEAT_MODE_OFF -> "repeat, off"; else -> "repeat, on" },
+                    if (repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) Ink.ink else OFF,
+                ) { Playback.repeat() }
+            }
+            Spacer(Modifier.height(8.dp))
+            // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
+            // (lit with the cover still there read as broken to a tester)
+            val none = sing && lines?.isEmpty() == true
+            Modes(n, if (none) "no lyrics" else "lyrics", sing && !none, onQueue = { queueUp = true }, onStop = onClose)
             Spacer(Modifier.height(12.dp))
             Marquee(n.artist, n.moving, Modifier.fillMaxWidth().bleedPastCutout(), size = 120.sp)
             }
@@ -272,7 +286,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
  * up next, and sleep (15m, 30m, 1h, the song's end, off; while set, the time left).
  */
 @Composable
-private fun Modes(n: Now, onQueue: () -> Unit) {
+private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit) {
     val style = 14.sp
     // where sleep's steps are; back to the start once the timer has run out
     var step by remember { mutableIntStateOf(0) }
@@ -281,12 +295,10 @@ private fun Modes(n: Now, onQueue: () -> Unit) {
         while (n.sleepAt > 0) { value = n.sleepAt - System.currentTimeMillis(); delay(15_000) }
         value = 0L
     }
-    Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-        Word("shuffle", pixel(style, if (n.shuffle) Ink.ink else OFF), touch = 10.dp) { Playback.shuffle() }
-        Word(if (n.repeat == androidx.media3.common.Player.REPEAT_MODE_ONE) "repeat one" else "repeat",
-            pixel(style, if (n.repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) Ink.ink else OFF), touch = 10.dp) { Playback.repeat() }
+    // the words with no drawing everyone reads, stop last, away from next (it ends everything and closes the player)
+    Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Word("up next", pixel(style, SAID), touch = 10.dp, onClick = onQueue)
-        Spacer(Modifier.weight(1f))
+        Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
         val said = when {
             n.sleepAt == PlayerService.SLEEP_END_OF_SONG -> "sleep  end"
             n.sleepAt > 0 -> "sleep ${((left + 59_999) / 60_000).coerceAtLeast(1)}m"
@@ -296,6 +308,8 @@ private fun Modes(n: Now, onQueue: () -> Unit) {
             step = (step + 1) % SLEEPS.size
             Playback.sleep(SLEEPS[step])
         }
+        // stopped, the player goes too (the mini player's gone with it: nothing left to come back down to)
+        Word("stop", pixel(style, if (n.playing) SAID else OFF), touch = 10.dp) { Playback.stop(); onStop() }
     } }
 }
 
@@ -575,6 +589,33 @@ private val SPEAKER = listOf(
     "#........#",
     "##########",
 )
+
+/** The player's controls as pixels, on the speaker's grid. Play and pause nine high, back and next seven (at 3 dp). */
+private val BACK = listOf("#...#", "#..##", "#.###", "#####", "#.###", "#..##", "#...#")
+private val PLAY = listOf("#....", "##...", "###..", "####.", "#####", "####.", "###..", "##...", "#....")
+private val PAUSE = listOf("##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##")
+private val NEXT = listOf("#...#", "##..#", "###.#", "#####", "###.#", "##..#", "#...#")
+/** Shuffle and repeat (at 2 dp): two crossing ways; a loop, a lit pixel in it for repeat one. */
+private val SHUFFLE = listOf("........#..", "##....#####", "..#..#..#..", "...##......", "..#..#..#..", "##....#####", "........#..")
+private val REPEAT = listOf("..#........", ".##########", "#.#.......#", "#.........#", "#.......#.#", "##########.", "........#..")
+private val REPEAT_ONE = listOf("..#........", ".##########", "#.#.......#", "#....#....#", "#.......#.#", "##########.", "........#..")
+/** close: the player goes down, as it's pulled. */
+private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
+
+/** A pixel control: dimmer while pressed (as a word is), felt, room round it to touch, its name for a screen reader. */
+@Composable
+private fun Pixel(
+    rows: List<String>, name: String, colour: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier,
+    cell: androidx.compose.ui.unit.Dp = 2.dp, onClick: () -> Unit,
+) {
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val c by androidx.compose.animation.animateColorAsState(if (pressed) Ink.mid else colour, tween(Motion.FADE), label = name)
+    Box(
+        modifier.semantics { contentDescription = name; role = androidx.compose.ui.semantics.Role.Button }
+            .clickable(src, indication = null, onClick = felt(then = onClick)).padding(horizontal = cell * 4, vertical = cell * 6),
+    ) { Sprite(rows, c, cell) }
+}
 
 /** "play on" as a pixel speaker: lit in ink while a speaker plays, at the row's words' dimness on the phone. */
 @Composable
