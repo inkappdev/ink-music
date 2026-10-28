@@ -43,9 +43,12 @@ class InnerTube(
     // a brand account's id rides along as onBehalfOfUser; if YouTube refuses it, asked again without
     @Volatile private var onBehalf = !dataSyncId.isNullOrBlank()
 
-    fun who(): TubeWho? = runCatching {
+    /** Who's signed in: their name, and their handle or email. */
+    data class Who(val name: String, val handle: String)
+
+    fun who(): Who? = runCatching {
         val h = all(post("account/account_menu", JSONObject()), "activeAccountHeaderRenderer").firstOrNull() ?: return null
-        TubeWho(text(h.optJSONObject("accountName")), text(h.optJSONObject("channelHandle")).ifEmpty { text(h.optJSONObject("email")) })
+        Who(text(h.optJSONObject("accountName")), text(h.optJSONObject("channelHandle")).ifEmpty { text(h.optJSONObject("email")) })
     }.getOrNull()
 
     /** A page's songs, every one (its continuations followed), up to [max]; [each] told the songs so far after every page. */
