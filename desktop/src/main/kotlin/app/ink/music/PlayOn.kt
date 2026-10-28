@@ -28,11 +28,7 @@ import androidx.compose.ui.unit.sp
  */
 @Composable
 fun PlayOnPage(onClose: () -> Unit) {
-    LaunchedEffect(Unit) { Casting.find() }
     val speakers by Casting.speakers.collectAsState()
-    val on by Casting.on.collectAsState()
-    val connecting by Casting.connecting.collectAsState()
-    val volume by Casting.volume.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         Column(Modifier.padding(start = SIDE, end = SIDE, top = 16.dp)) {
@@ -41,32 +37,45 @@ fun PlayOnPage(onClose: () -> Unit) {
             BasicText(if (speakers.isEmpty()) "looking for speakers on your network" else "speakers and tvs on your network",
                 style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(20.dp))
-            Place(if (Home.mac) "THIS MAC" else "THIS COMPUTER", "here", on == null) {
-                if (on != null) Casting.bringBack()
-                onClose()
+            PlayOnList(onClose)
+        }
+    }
+}
+
+/** This computer and each speaker found, the one playing lit; a speaker's volume under it while it plays there. */
+@Composable
+fun PlayOnList(onPicked: () -> Unit = {}, small: Boolean = false) {
+    LaunchedEffect(Unit) { Casting.find() }
+    val speakers by Casting.speakers.collectAsState()
+    val on by Casting.on.collectAsState()
+    val connecting by Casting.connecting.collectAsState()
+    val volume by Casting.volume.collectAsState()
+    Column {
+        Place(if (Home.mac) "THIS MAC" else "THIS COMPUTER", "here", on == null, small) {
+            if (on != null) Casting.bringBack()
+            onPicked()
+        }
+        speakers.forEach { s ->
+            val lit = on?.key == s.key
+            Place(s.name.uppercase(), listOfNotNull(
+                if (s.group) "group" else null, s.model.lowercase().takeIf { it.isNotEmpty() }, s.maker.lowercase().takeIf { it.isNotEmpty() && s.kind == "dlna" },
+                if (lit && connecting) "connecting" else null,
+            ).joinToString(" · "), lit, small) {
+                if (lit) return@Place
+                val n = Player.now.value
+                val q = Player.queue.value
+                if (on != null) Casting.moveTo(s)
+                else if (n != null && q.isNotEmpty()) Casting.play(s, q, n.index, Player.position.value)
+                onPicked()
             }
-            speakers.forEach { s ->
-                val lit = on?.key == s.key
-                Place(s.name.uppercase(), listOfNotNull(
-                    if (s.group) "group" else null, s.model.lowercase().takeIf { it.isNotEmpty() }, s.maker.lowercase().takeIf { it.isNotEmpty() && s.kind == "dlna" },
-                    if (lit && connecting) "connecting" else null,
-                ).joinToString(" · "), lit) {
-                    if (lit) return@Place
-                    val n = Player.now.value
-                    val q = Player.queue.value
-                    if (on != null) Casting.moveTo(s)
-                    else if (n != null && q.isNotEmpty()) Casting.play(s, q, n.index, Player.position.value)
-                    onClose()
-                }
-                // its volume, while it plays there
-                if (lit) volume?.let { v ->
-                    Row(Modifier.padding(start = 2.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Word("quieter", pixel(13.sp, Ink.mid), touch = 8.dp) { Casting.setVolume(v - .05f) }
-                        Spacer(Modifier.width(18.dp))
-                        BasicText("${Math.round(v * 100)}%", style = pixel(13.sp))
-                        Spacer(Modifier.width(18.dp))
-                        Word("louder", pixel(13.sp, Ink.mid), touch = 8.dp) { Casting.setVolume(v + .05f) }
-                    }
+            // its volume, while it plays there
+            if (lit) volume?.let { v ->
+                Row(Modifier.padding(start = 2.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Word("quieter", pixel(13.sp, Ink.mid), touch = 8.dp) { Casting.setVolume(v - .05f) }
+                    Spacer(Modifier.width(18.dp))
+                    BasicText("${Math.round(v * 100)}%", style = pixel(13.sp))
+                    Spacer(Modifier.width(18.dp))
+                    Word("louder", pixel(13.sp, Ink.mid), touch = 8.dp) { Casting.setVolume(v + .05f) }
                 }
             }
         }
@@ -75,9 +84,9 @@ fun PlayOnPage(onClose: () -> Unit) {
 
 /** A place to play: its name (lit where it plays), and what it is. */
 @Composable
-private fun Place(name: String, said: String, lit: Boolean, onClick: () -> Unit) {
+private fun Place(name: String, said: String, lit: Boolean, small: Boolean, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
-        BasicText(name, style = headline(26.sp, if (lit) Ink.ink else Ink.mid))
+        BasicText(name, style = headline(if (small) 18.sp else 26.sp, if (lit) Ink.ink else Ink.mid))
         if (said.isNotEmpty()) BasicText(said, style = pixel(12.sp, Ink.mid))
     }
 }

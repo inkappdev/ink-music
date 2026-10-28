@@ -108,6 +108,7 @@ object Server {
                     offset += 500
                 }
                 if (songs.isNotEmpty() || offset == 0) {
+                    readPlaylists()
                     Library.putServer(songs)
                     count.value = songs.size
                     runCatching { Home.write(songsFile, JSONArray().apply { songs.forEach { put(it.json()) } }.toString()) }
@@ -157,6 +158,40 @@ object Server {
             if (c.responseCode != 200 || c.contentType?.startsWith("image") != true) null
             else c.inputStream.use { it.readBytes() }
         } catch (e: java.io.IOException) { null } finally { c.disconnect() }
+    }
+
+    /** The records added to the server last (the library's own, by its record ids). */
+    suspend fun newest(n: Int): List<String> = withContext(Dispatchers.IO) {
+        val a = _account.value ?: return@withContext emptyList()
+        val list = runCatching { call(a, "getAlbumList2", "type" to "newest", "size" to n)?.optJSONObject("albumList2")?.optJSONArray("album") }
+            .getOrNull() ?: return@withContext emptyList()
+        (0 until list.length()).mapNotNull { list.optJSONObject(it)?.optString("id") }.map { "na$it" }
+    }
+
+    /** A playlist on the server: its name, how many songs, and whether it's yours (only yours can change). */
+    data class Playlist(val id: String, val name: String, val count: Int, val mine: Boolean)
+
+    private val _playlists = MutableStateFlow<List<Playlist>>(emptyList())
+    val playlists: StateFlow<List<Playlist>> = _playlists
+
+    /** The server's playlists, read anew. */
+    fun readPlaylists() {
+        val a = _account.value ?: return
+        scope.launch {
+            val list = runCatching { call(a, "getPlaylists")?.optJSONObject("playlists")?.optJSONArray("playlist") }.getOrNull() ?: return@launch
+            _playlists.value = (0 until list.length()).mapNotNull { list.optJSONObject(it) }
+                .map { Playlist(it.optString("id"), it.optString("name").ifEmpty { "untitled" }, it.optInt("songCount"),
+                    it.optString("owner").let { o -> o.isEmpty() || o == a.user }) }
+                .sortedBy { Library.sortName(it.name) }
+        }
+    }
+
+    /** A playlist's songs, in its order (the library's own where it has them; one it hasn't read yet, made from the answer). */
+    suspend fun playlist(id: String): List<Song> = withContext(Dispatchers.IO) {
+        val a = _account.value ?: return@withContext emptyList()
+        val entries = runCatching { call(a, "getPlaylist", "id" to id)?.optJSONObject("playlist")?.optJSONArray("entry") }.getOrNull()
+            ?: return@withContext emptyList()
+        (0 until entries.length()).mapNotNull { entries.optJSONObject(it) }.map { o -> Library.song("n" + o.optString("id")) ?: song(a, o, emptyMap()) }
     }
 
     /** Tells the server a song was heard (`done`: played enough to count, else "playing now"). A miss is let go. */
