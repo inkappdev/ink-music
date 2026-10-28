@@ -66,19 +66,36 @@ object Playback {
      * doesn't know of the speaker (the notification, the lock screen, a headset), it's paused at once (before a
      * sound: a play rises from nothing) and the ask goes to the speaker: a play its play, a new song the speaker's
      * queue from there. A tester heard the phone start under the speaker.
+     *
+     * Only an edge counts (not playing, then playing), never within two seconds of the last (a handover's own fade
+     * out still says "playing" for a moment), and the speaker is told "play", not toggled: toggled, every echo
+     * flipped it, it answered, and a handover became thousands of commands a second.
      */
+    private var wasPlaying = false
+    private var steeredAt = 0L
+
     private fun steered(p: Player, events: Player.Events) {
         val speaker = Casting.on.value ?: return
-        val moved = events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
-        val started = events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED) && p.playWhenReady
-        if (!moved && !started) return
-        if (p.playWhenReady) p.pause()
+        val playing = p.playWhenReady
+        val began = playing && !wasPlaying
+        wasPlaying = playing
+        val moved = events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) &&
+            p.currentMediaItem?.mediaId != now.value?.song?.id
+        if (!began && !moved) return
+        if (playing) p.pause()
+        val t = android.os.SystemClock.elapsedRealtime()
+        if (t - steeredAt < 2_000) return
+        steeredAt = t
         android.util.Log.d("ink-cast", "the phone asked to ${if (moved) "go to ${p.currentMediaItemIndex}" else "play"}: to the speaker")
         if (moved) handover()?.let { (songs, index, _) -> app?.let { Casting.play(it, speaker, songs, index, 0L) } }
-        else if (now.value?.playing != true) Casting.toggle()
+        else Casting.resume()
     }
 
+    /** While casting, up next is the speaker's queue (what was handed over), its song lit by the speaker's place. */
+    fun showCastQueue(songs: List<Song>) { _queue.value = songs.map { Queued(it.title, it.artist, it) } }
+
     private fun readQueue() {
+        if (casting) return
         val c = controller ?: return
         _queue.value = (0 until c.mediaItemCount).map { i ->
             val item = c.getMediaItemAt(i)
@@ -119,6 +136,8 @@ object Playback {
             }
             readQueue()
             update()
+            // a cast still playing on a speaker since ink music was last open: shown again
+            app?.let { Casting.rejoin(it) }
         }, ContextCompat.getMainExecutor(ctx))
     }
 
@@ -192,11 +211,11 @@ object Playback {
     }
 
     /** The phone stops for a speaker (it keeps its queue, paused). */
-    fun pauseHere() { controller?.pause(); casting = true }
+    fun pauseHere() { controller?.pause(); casting = true; wasPlaying = false; steeredAt = android.os.SystemClock.elapsedRealtime() }
     /** The speaker's song, as it says it. */
     fun showCast(n: Now) { casting = true; _now.value = n }
     /** Casting over: the phone's own player shows again. */
-    fun castEnded() { casting = false; _now.value = null; update() }
+    fun castEnded() { casting = false; _now.value = null; readQueue(); update() }
 
     fun toggle() { if (casting) return Casting.toggle(); controller?.run { if (playWhenReady) pause() else { if (playbackState == Player.STATE_IDLE) prepare(); play() } } }
     fun next() { if (casting) return Casting.next(); controller?.seekToNextMediaItem() }
@@ -295,12 +314,12 @@ object Playback {
     /** The queue's `index`th song, from its start. */
     fun jump(index: Int) {
         // on a speaker: the speaker's queue from there (the phone's own player had started under it)
-        val speaker = Casting.on.value
-        if (casting && speaker != null) { handover()?.let { (songs, _, _) -> if (index in songs.indices) app?.let { Casting.play(it, speaker, songs, index, 0L) } }; return }
+        if (casting) { app?.let { Casting.jump(it, index) }; return }
         controller?.run { if (index in 0 until mediaItemCount) { seekTo(index, 0); play() } }
     }
-    fun move(from: Int, to: Int) { controller?.run { if (from in 0 until mediaItemCount && to in 0 until mediaItemCount) moveMediaItem(from, to) } }
-    fun remove(index: Int) { controller?.run { if (index in 0 until mediaItemCount) removeMediaItem(index) } }
+    // on a speaker the queue there is fixed for now (it holds its own): moving and removing are the phone's
+    fun move(from: Int, to: Int) { if (casting) return; controller?.run { if (from in 0 until mediaItemCount && to in 0 until mediaItemCount) moveMediaItem(from, to) } }
+    fun remove(index: Int) { if (casting) return; controller?.run { if (index in 0 until mediaItemCount) removeMediaItem(index) } }
 
     /** After the song playing (nothing playing: it plays). */
     fun playNext(s: Song) {
