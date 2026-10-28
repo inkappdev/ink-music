@@ -221,11 +221,12 @@ object Playback {
     fun next() { if (casting) return Casting.next(); controller?.seekToNextMediaItem() }
     /**
      * Stop: the song back to its start and the player let go (its notification goes with it); the
-     * queue stays, and play starts it again. On a speaker, a pause (the speaker holds its own queue).
+     * queue stays, and play starts it again. On a speaker, the same: the speaker let go, its queue here.
      */
     fun stop() {
-        if (casting) { if (now.value?.playing == true) Casting.toggle(); return }
-        controller?.run { pause(); seekTo(0); stop() }
+        if (casting) return Casting.bringBack(stopped = true)
+        // one ask: the player fades, lets go and goes back to the start itself (three made the fade start over)
+        controller?.stop()
     }
     /** Back: to the song's start, or the song before when it's only just begun (as every player). */
     fun previous() { if (casting) return Casting.previous(); controller?.seekToPrevious() }
