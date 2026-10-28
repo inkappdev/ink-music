@@ -14,9 +14,9 @@ version = "1.4.9"
 
 kotlin { jvmToolchain(21) }
 
-// the two fonts, the app's own files (never a copy that could drift); and the keys the build was given
+// the two fonts and ink radio's stations, the app's own files (never a copy that could drift); and the keys the build was given
 val keys = layout.buildDirectory.dir("generated/keys")
-sourceSets.main { resources.srcDir("../app/src/main/res/font"); resources.srcDir(keys) }
+sourceSets.main { resources.srcDir("../app/src/main/res/font"); resources.srcDir("../app/src/main/assets"); resources.srcDir(keys) }
 
 // Last.fm's key and secret, from keystore.properties (here) or the environment (the GitHub Action's secrets),
 // written for the app to read; never in git

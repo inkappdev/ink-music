@@ -180,17 +180,17 @@ private fun LibraryPage(open: (Page) -> Unit) {
     LaunchedEffect(asked) { if (asked > 0) tab = "find" }
     Column(Modifier.fillMaxSize().padding(top = TOP + 16.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.Bottom) {
-            for (t in listOf("albums", "artists", "songs", "find")) {
+            for (t in listOf("albums", "artists", "songs", "radio", "find")) {
                 Word(t.uppercase(), headline(34.sp, if (t == tab) Ink.ink else Ink.dim)) { tab = t }
             }
             Spacer(Modifier.weight(1f))
             Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(bottom = 6.dp), touch = 8.dp) { open(Page.Settings) }
         }
         Spacer(Modifier.height(14.dp))
-        if (songs.isNotEmpty() && tab != "find") SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
+        if (songs.isNotEmpty() && tab != "find" && tab != "radio") SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
             Modifier.padding(horizontal = SIDE))
         Spacer(Modifier.height(4.dp))
-        if (read && songs.isEmpty()) {
+        if (read && songs.isEmpty() && tab != "radio" && tab != "find") {
             Column(Modifier.padding(horizontal = SIDE)) {
                 val syncing by Server.syncing.collectAsState()
                 BasicText(if (syncing) "READING YOUR SERVER" else "NO MUSIC YET", style = headline(28.sp))
@@ -242,6 +242,7 @@ private fun LibraryPage(open: (Page) -> Unit) {
                 key(ac, seed) { Artists(artists, open) }
             }
             "find" -> FindTab(open)
+            "radio" -> RadioTab()
             else -> {
                 val every = remember(songs, sc, seed, heard, minute) {
                     Sorts.order(songs, sc, seed, { it.id }) { s ->
@@ -386,12 +387,23 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640) {
+fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, moving: Boolean = false) {
+    // a station: its own sleeve (its logo small and every shape; a word works)
+    if (song?.station == true) return StationCover(song, modifier, moving)
     val cover = rememberCover(song, px)
     BoxWithConstraints(modifier) {
         if (cover != null) Image(cover.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else NameCover(name, maxWidth)
     }
+}
+
+/** A song's words as shown: a station's, what it says it's playing (its own name and city with nothing said). */
+@Composable
+fun said(n: Player.Now): Pair<String, String> {
+    val air by Player.onAir.collectAsState()
+    val s = n.song
+    val a = air
+    return if (s.station && a != null) a.title to (a.artist ?: s.title) else s.title to s.artist
 }
 
 /** Close: the down arrow, as the phone's, top left (clear of the traffic lights). */
@@ -476,9 +488,10 @@ private fun MiniPlayer(onQueue: () -> Unit, onOpen: () -> Unit) {
                 CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.size(72.dp))
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
-                    BasicText(n.song.title.uppercase(), style = headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    val (title, artist) = said(n)
+                    BasicText(title.uppercase(), style = headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
-                    BasicText(n.song.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BasicText(artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             Controls(n)
@@ -501,18 +514,19 @@ private fun Controls(n: Player.Now) {
 @Composable
 private fun Times(n: Player.Now, modifier: Modifier = Modifier) {
     val pos by Player.position.collectAsState()
-    BasicText("${clock(pos)} / ${clock(n.duration)}", style = pixel(12.sp, Ink.mid), modifier = modifier)
+    BasicText(if (n.song.station) "live" else "${clock(pos)} / ${clock(n.duration)}", style = pixel(12.sp, Ink.mid), modifier = modifier)
 }
 
 /** The 1 px line filling with the song in the cover's colour; a click along it goes there. */
 @Composable
 private fun Line(n: Player.Now, accent: Color, modifier: Modifier = Modifier) {
     val pos by Player.position.collectAsState()
-    val frac = if (n.duration > 0) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
+    // a station has no length (mpv's guess is the stream's buffer): the line stays a hairline
+    val frac = if (n.duration > 0 && !n.song.station) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
     // a line too thin to aim at: its click reaches 8 dp either side of it
     Box(
         modifier.fillMaxWidth().height(17.dp).pointerInput(n.duration) {
-            detectTapGestures { at -> if (n.duration > 0) Player.seek((at.x / size.width * n.duration).toLong()) }
+            detectTapGestures { at -> if (n.duration > 0 && !n.song.station) Player.seek((at.x / size.width * n.duration).toLong()) }
         },
         contentAlignment = Alignment.BottomStart,
     ) {
@@ -532,7 +546,7 @@ private fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
     val n = now ?: return Close(onClose)
     val cover = rememberCover(n.song, 1200)
     Box(Modifier.fillMaxSize()) {
-        Marquee(n.song.artist, n.playing, Modifier.align(Alignment.BottomStart).fillMaxWidth(), size = 150.sp)
+        Marquee(said(n).second, n.playing, Modifier.align(Alignment.BottomStart).fillMaxWidth(), size = 150.sp)
         Column(Modifier.fillMaxSize()) {
             Close(onClose)
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(start = SIDE, end = SIDE, top = 8.dp, bottom = 190.dp)) {
@@ -541,16 +555,17 @@ private fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                     Column(Modifier.width(side)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             val pos by Player.position.collectAsState()
-                            BasicText(clock(pos), style = pixel(12.sp, Ink.mid))
-                            BasicText("-" + clock((n.duration - pos).coerceAtLeast(0)), style = pixel(12.sp, Ink.mid))
+                            BasicText(if (n.song.station) "live" else clock(pos), style = pixel(12.sp, Ink.mid))
+                            if (!n.song.station) BasicText("-" + clock((n.duration - pos).coerceAtLeast(0)), style = pixel(12.sp, Ink.mid))
                         }
                         Line(n, cover?.accent ?: Ink.ink, Modifier.width(side))
-                        CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.size(side), px = 1200)
+                        CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.size(side), px = 1200, moving = n.playing)
                     }
                     Spacer(Modifier.width(40.dp))
                     Column(Modifier.weight(1f).padding(top = 24.dp)) {
+                        val (title, _) = said(n)
                         AnimatedContent(
-                            n.song.id,
+                            n.song.id + title,
                             transitionSpec = {
                                 (slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 4 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
                                     (slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { -it / 4 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)))
@@ -558,7 +573,7 @@ private fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             label = "song",
                         ) { _ ->
                             Column {
-                                BasicText(n.song.title.uppercase(), style = headline(44.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
+                                BasicText(title.uppercase(), style = headline(44.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(12.dp))
                                 Word(n.song.album.lowercase(), pixel(14.sp, Ink.mid)) {
                                     if (n.song.album.isNotEmpty()) open(Page.Record(n.song.albumId))

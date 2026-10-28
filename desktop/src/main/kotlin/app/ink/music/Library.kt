@@ -38,6 +38,8 @@ data class Song(
     val server get() = id.startsWith("n")
     /** From YouTube Music. */
     val tube get() = id.startsWith("y")
+    /** A radio station ([Stations]): live, no end, no record. */
+    val station get() = id.startsWith("s")
 
     /** As said: "flac 24/96", "flac 16/44.1", "mp3". */
     val quality get() = listOfNotNull(format.takeIf { it.isNotEmpty() },
@@ -84,7 +86,11 @@ object Library {
     /** The folder as said: ~/music. */
     val said: String get() = folder.path.replaceFirst(System.getProperty("user.home"), "~").lowercase()
 
-    fun song(id: String): Song? = byId[id] ?: if (id.startsWith("y")) YouTube.known(id) else null
+    fun song(id: String): Song? = byId[id] ?: when {
+        id.startsWith("y") -> YouTube.known(id)
+        id.startsWith("s") -> Stations.known(id)
+        else -> null
+    }
 
     // jaudiotagger says a great deal about every file it reads; held, or the logger (and its quiet) is collected
     private val quiet = java.util.logging.Logger.getLogger("org.jaudiotagger").apply { level = java.util.logging.Level.OFF }
