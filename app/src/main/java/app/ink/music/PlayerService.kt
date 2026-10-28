@@ -315,12 +315,14 @@ class PlayerService : MediaLibraryService() {
         /** Stop: faded out, let go, and back to the song's start (rewound once quiet: before, its first moment was heard). */
         override fun stop() {
             if (ending) return
+            prefs.edit().putBoolean("stopped", true).apply()
             if (!on() || !isPlaying) { fading++; leaving = false; super.stop(); return super.seekTo(currentMediaItemIndex, 0) }
             fade(volume, 0f, 250) { super.stop(); super.seekTo(currentMediaItemIndex, 0); volume = level() }
             ending = true
         }
 
         override fun play() {
+            prefs.edit().putBoolean("stopped", false).apply()
             if (!on()) { fading++; leaving = false; return super.play() }
             // still fading out to a pause: that pause called off, the sound brought back
             if (isPlaying) { fade(volume, level(), 200); return }
@@ -393,7 +395,9 @@ class PlayerService : MediaLibraryService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         // the queue as it was left: there, paused, ready to go on
-        kept()?.let { (items, index, at) -> player.setMediaItems(items, index, at); player.prepare() }
+        // the queue as it was left; stopped (stop pressed) it stays stopped, the mini player away till something's chosen
+        // (it came back paused whenever ink music started again)
+        kept()?.let { (items, index, at) -> player.setMediaItems(items, index, at); if (!prefs.getBoolean("stopped", false)) player.prepare() }
         player.shuffleModeEnabled = prefs.getBoolean("shuffle", false)
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
         levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true); it.onApply = { tell() } }

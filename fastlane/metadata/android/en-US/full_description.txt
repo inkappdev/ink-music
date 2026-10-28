@@ -1,4 +1,4 @@
-<p>A music player in ink's look: pure black, warm white type, no chrome. The album art is the only colour on screen.</p>
+<p>A music player in ink's look: pure black, warm white type, no chrome. The album art is the only color on screen.</p>
 
 <p><b>Your music, from wherever it lives</b></p>
 <ul>

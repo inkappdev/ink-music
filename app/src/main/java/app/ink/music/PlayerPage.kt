@@ -176,6 +176,9 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         val sing by Lyrics.on.collectAsState()
         val lines = rememberLines(n, sing)
         val lyric = rememberLyric(n, lines)
+        // the artist read ahead (their name, here, is a way to their page)
+        val artist = artistOf(n)
+        LaunchedEffect(artist) { artist?.let { YouTubeAccount.warm(ctx, it) } }
         val look by Looks.on.collectAsState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val share = { scope.launch { ShareCard.share(ctx, n, look) }; Unit }
@@ -266,7 +269,9 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             val none = sing && lines?.isEmpty() == true
             Modes(n, if (none) "no lyrics" else "lyrics", sing && !none, onQueue = { queueUp = true }, onStop = onStop)
             Spacer(Modifier.height(12.dp))
-            Marquee(n.artist, n.moving, Modifier.fillMaxWidth().bleedPastCutout(), size = 120.sp)
+            // the artist's name, big, a way to their page too
+            Marquee(n.artist, n.moving, Modifier.fillMaxWidth().bleedPastCutout().clickable(remember { MutableInteractionSource() }, indication = null,
+                onClick = felt { artistOf(n)?.let { onOpen(Page.Artist(it)) } }), size = 120.sp)
             }
         }
         androidx.compose.animation.AnimatedVisibility(
@@ -352,7 +357,9 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 }
                 Spacer(Modifier.height(4.dp))
                 Row {
-                    FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null,
+                            onClick = felt { artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
                     Word("share", pixel(SMALL, SAID), Modifier.padding(start = 12.dp), onClick = onShare)
                 }
             }
@@ -381,7 +388,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 val song = t.song
                 FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
-                        onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Artist(it.albumArtist)) } }))
+                        onClick = felt { artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
                 if (t.album.isNotBlank()) {
                     Spacer(Modifier.width(14.dp))
                     FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -647,9 +654,17 @@ private fun LookGlyph(look: Look, onClick: () -> Unit) {
 /** close: the player goes down, as it's pulled. */
 private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
 
+/** Whose page the song's artist opens: the record's artist, else the song's (none for a station). */
+private fun artistOf(n: Now): String? = n.song?.takeUnless { it.station }?.let { it.albumArtist.ifBlank { it.artist } }?.takeIf { it.isNotBlank() }
+
+/** Close, wherever there's one: the down chevron (the player's; a word there before). */
+@Composable
+fun CloseArrow(colour: androidx.compose.ui.graphics.Color = Ink.mid, modifier: Modifier = Modifier, onClick: () -> Unit) =
+    Pixel(CLOSE, "close", colour, modifier, onClick = onClick)
+
 /** A pixel control: dimmer while pressed (as a word is), felt, room round it to touch, its name for a screen reader. */
 @Composable
-private fun Pixel(
+internal fun Pixel(
     rows: List<String>, name: String, colour: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier,
     cell: androidx.compose.ui.unit.Dp = 2.dp, inner: Modifier = Modifier, onClick: () -> Unit,
 ) {
@@ -815,7 +830,7 @@ private fun HeardPage(h: Heard, onClose: () -> Unit) {
     ) {
         Row(Modifier.fillMaxWidth()) {
             Spacer(Modifier.weight(1f))
-            Word("close", pixel(SMALL, SAID), touch = 10.dp, onClick = onClose)
+            CloseArrow(SAID, onClick = onClose)
         }
         Spacer(Modifier.height(28.dp))
         BasicText("WHAT YOU HEAR", style = headline(44.sp))

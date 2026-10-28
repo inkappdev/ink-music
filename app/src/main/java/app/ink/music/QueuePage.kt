@@ -94,7 +94,7 @@ fun QueuePage(onClose: () -> Unit) {
                     BasicText(if (on) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
                 }
             }
-            Word("close", pixel(12.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+            CloseArrow(onClick = onClose)
         }
         Spacer(Modifier.height(14.dp))
         // the list softens just under the heading as it goes behind it

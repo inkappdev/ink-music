@@ -17,6 +17,7 @@ import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -105,6 +106,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.layout.layout
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.Animatable
@@ -162,6 +164,9 @@ class Main : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // your listening read again for the orders (lately, most, this hour: what was played since counts)
+        Listened.read(this)
+        Colours.start(this)
         Playback.connect(this)
         Order.opened()
     }
@@ -180,23 +185,14 @@ class Main : ComponentActivity() {
  * meanwhile slots in without moving the rest.
  */
 object Order {
-    private val _shuffled = MutableStateFlow(false)
-    val shuffled: StateFlow<Boolean> = _shuffled
     private val _seed = MutableStateFlow(java.util.Random().nextLong())
     val seed: StateFlow<Long> = _seed
     private var away = 0L
-    private var prefs: android.content.SharedPreferences? = null
 
-    fun start(c: android.content.Context) {
-        prefs = c.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-        _shuffled.value = prefs!!.getBoolean("shuffled", false)
-    }
+    fun start(c: android.content.Context) { Sorts.start(c) }
 
-    fun set(on: Boolean) {
-        prefs?.edit()?.putBoolean("shuffled", on)?.apply()
-        _shuffled.value = on
-        if (on) _seed.value = java.util.Random().nextLong()
-    }
+    /** Shuffle tapped again: a new order. */
+    fun reshuffle() { _seed.value = java.util.Random().nextLong() }
 
     fun left() { away = android.os.SystemClock.elapsedRealtime() }
     fun opened() {
@@ -245,9 +241,29 @@ class Pages {
     var forward by mutableStateOf(true)
     /** What's typed in find: opened afresh it's empty; come back to it from a result and it's as you left it. */
     var query by mutableStateOf("")
-    fun open(p: Page) { forward = true; if (p == Page.Find) query = ""; stack.add(p) }
+    /** Opened: on top; a page of the browsing already in the stack is gone back to, not stacked again (going in circles). */
+    fun open(p: Page) {
+        val at = stack.indexOf(p)
+        if (at >= 0 && p.browsing()) { forward = false; while (stack.size > at + 1) stack.removeAt(stack.lastIndex); return }
+        forward = true; if (p == Page.Find) query = ""; stack.add(p)
+    }
+    /** Back (Android's): one page. */
     fun back() { forward = false; stack.removeLastOrNull() }
+    /**
+     * Close (the arrow, or pulled down): the page and the browsing that led to it, artist to record to artist, back to
+     * where it began (the library, find, a list; a tester got lost pages deep, closing one at a time). Any other page
+     * (settings, add to a playlist) just itself.
+     */
+    fun close() {
+        forward = false
+        if (stack.lastOrNull()?.browsing() != true) { stack.removeLastOrNull(); return }
+        while (stack.lastOrNull()?.browsing() == true) stack.removeAt(stack.lastIndex)
+    }
 }
+
+/** A page of browsing: one music leads to another from (an artist, a record, a playlist, YouTube's). */
+private fun Page.browsing() = this is Page.Artist || this is Page.TubeArtist || this is Page.Record || this is Page.Tube ||
+    this is Page.Playlist || this is Page.TubeList
 
 @Composable
 private fun App() {
@@ -348,7 +364,7 @@ private fun App() {
         LaunchedEffect(playerUp) { if (playerUp) stopping = false }
         LaunchedEffect(playing) { if (playing) stopping = false }
         Box(Modifier.align(Alignment.BottomCenter).onSizeChanged { foot = with(density) { it.height.toDp() } }) {
-            if (!stopping) MiniPlayer(frost, onOpen = { playerUp = true })
+            if (!stopping && !sideways()) MiniPlayer(frost, onOpen = { playerUp = true })
         }
         androidx.compose.animation.AnimatedVisibility(
             playerUp,
@@ -388,13 +404,53 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     val artistList = rememberLazyListState()
     val listsList = rememberLazyListState()
     val songList = rememberLazyListState()
-    val shuffled by Order.shuffled.collectAsState()
     val seed by Order.seed.collectAsState()
-    // the library in the run's order, when shuffled; a new order starts at the top
-    val artists = remember(albums, songs, shuffled, seed) { artistsOf(albums, songs).let { if (shuffled) Order.of(it, seed) { a -> a.name } else it } }
-    val records = remember(albums, shuffled, seed) { if (shuffled) Order.of(albums, seed) { it.id } else albums }
-    val everySong = remember(songs, shuffled, seed) { if (shuffled) Order.of(songs, seed) { it.id } else songs }
-    LaunchedEffect(shuffled, seed) { grid.scrollToItem(0); artistList.scrollToItem(0); songList.scrollToItem(0) }
+    // each tab in its own order (Sorting.kt): a to z, by year, lately, most, forgotten, this hour, by colour, shuffled
+    val chosen by Sorts.chosen.collectAsState()
+    val heard by Listened.now.collectAsState()
+    val colours by Colours.known.collectAsState()
+    val ac = chosen["artists"] ?: Sorts.Chosen()
+    val rc = chosen["albums"] ?: Sorts.Chosen()
+    val sc = chosen["songs"] ?: Sorts.Chosen()
+    val now = remember(chosen, heard) { System.currentTimeMillis() }
+    val minute = remember(chosen, heard) { Listening.minuteOfWeek(now) }
+    val artists = remember(albums, songs, ac, seed, heard) {
+        Sorts.order(artistsOf(albums, songs), ac, seed, { it.name }) { a ->
+            val k = "a:" + a.name.lowercase()
+            when (ac.sort) { Sort.MOST -> heard.most(k); Sort.LATELY -> heard.lately(k); Sort.FORGOTTEN -> heard.forgotten(k, now); else -> null }
+        }
+    }
+    // the artists you have most songs by, read ahead (wifi, once a day), so a first visit opens at once
+    val ctx = LocalContext.current
+    LaunchedEffect(albums, songs) {
+        if (songs.isNotEmpty()) YouTubeAccount.warmLibrary(ctx, artistsOf(albums, songs).sortedByDescending { it.songs }.take(40).map { it.name })
+    }
+    // the colour order asks for the colours it doesn't know yet (worked out in the background, kept)
+    LaunchedEffect(rc.sort, albums) { if (rc.sort == Sort.COLOUR) Colours.fill(ctx, albums) }
+    val records = remember(albums, rc, seed, heard, colours) {
+        Sorts.order(albums, rc, seed, { it.id },
+            compareBy<Album>({ Library.sortName(it.artist) }, { it.year }, { Library.sortName(it.title) })) { a ->
+            when (rc.sort) {
+                // a timeline: the oldest first
+                Sort.YEAR -> a.year.takeIf { it > 0 }?.let { -it.toDouble() }
+                Sort.LATELY -> heard.lately("r:" + a.id)
+                Sort.COLOUR -> Colours.place(colours[a.id])
+                else -> null
+            }
+        }
+    }
+    val everySong = remember(songs, sc, seed, heard, minute) {
+        Sorts.order(songs, sc, seed, { it.id }) { s ->
+            when (sc.sort) {
+                Sort.HOUR -> heard.hour(s.id, minute); Sort.LATELY -> heard.lately(s.id); Sort.MOST -> heard.most(s.id)
+                Sort.FORGOTTEN -> heard.forgotten(s.id, now); else -> null
+            }
+        }
+    }
+    // a new order starts at the top
+    LaunchedEffect(ac, seed) { artistList.scrollToItem(0) }
+    LaunchedEffect(rc, seed) { grid.scrollToItem(0) }
+    LaunchedEffect(sc, seed) { songList.scrollToItem(0) }
     val tabsFrost = rememberHazeState()
     var head by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
@@ -416,9 +472,25 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
                 GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
-                items(records, key = { it.id }) { a -> RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "sort") { SortRow("albums", Sorts.RECORDS) }
+                if (rc.sort == Sort.YEAR) {
+                    // by year: the year big where each begins, a timeline down the page
+                    var at = 0
+                    while (at < records.size) {
+                        val year = records[at].year
+                        var end = at
+                        while (end < records.size && records[end].year == year) end++
+                        val run = records.subList(at, end)
+                        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "year$year") {
+                            BasicText(if (year > 0) "$year" else "no year", style = headline(28.sp), modifier = Modifier.padding(top = 6.dp))
+                        }
+                        items(run, key = { it.id }) { a -> RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
+                        at = end
+                    }
+                } else items(records, key = { it.id }) { a -> RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
             }
             "artists" -> LazyColumn(state = artistList, contentPadding = pad) {
+                item(key = "sort") { SortRow("artists", Sorts.ARTISTS) }
                 items(artists, key = { it.name }) { a -> ArtistRow(a) { pages.open(Page.Artist(a.name)) } }
             }
             // lists: the songs you love, your year, then your playlists (and "new >" for one more)
@@ -454,6 +526,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
                 }
             }
             else -> LazyColumn(state = songList, contentPadding = pad) {
+                item(key = "sort") { SortRow("songs", Sorts.SONGS) }
                 itemsIndexed(everySong, key = { _, s -> s.id }) { i, s -> SongRow(s, swipe = false, onClick = { Playback.play(everySong, i) }) }
             }
         }
@@ -497,8 +570,23 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
       }
       Box(Modifier.fillMaxWidth().height(BAND).softEdge(tabsFrost, towardBottom = false))
     }
+    // the records, with nothing open over them, follow the phone round (ink music is upright everywhere else, and
+    // Android's rotation lock is kept): turned sideways they're the covers to flick through, the whole screen;
+    // upright again, the grid as it was
+    val activity = LocalContext.current as? android.app.Activity
+    val onRecords = tab == "albums" && backHome
+    androidx.compose.runtime.DisposableEffect(onRecords) {
+        activity?.requestedOrientation = if (onRecords) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        onDispose { activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+    }
+    if (onRecords && sideways()) RecordFlow(records) { pages.open(Page.Record(it.id)) }
     }
 }
+
+/** The phone turned sideways (only the records can be: [RecordFlow]). */
+@Composable
+fun sideways() = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
 /**
  * The pager's fling, but none when it's still and on its page. A row of covers flung to its end hands the
@@ -541,7 +629,13 @@ fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry> {
 
 @Composable
 private fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
+    val src = remember { MutableInteractionSource() }
+    val ctx = LocalContext.current
+    // their page read from the finger landing, not from the page opening
+    LaunchedEffect(src, a.name) {
+        src.interactions.collect { if (it is androidx.compose.foundation.interaction.PressInteraction.Press) YouTubeAccount.warmNow(ctx, a.name) }
+    }
+    Column(Modifier.fillMaxWidth().clickable(src, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
         BasicText(a.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         BasicText(
             listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
@@ -690,7 +784,7 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
     }
     val yours = remember(a) { a.songs.map { it.id }.toSet() }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -753,7 +847,7 @@ private fun LovedPage(pages: Pages) {
         else all.sortedBy { Library.sortName(it.title) }
     }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -789,7 +883,7 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
     var sure by remember { mutableStateOf(false) }
     LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -838,6 +932,9 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         YouTubeAccount.artist(name, tubeId).collect { if (it != null || value == null) value = it }
     }
     val i = info
+    // who fans also like, read ahead (wifi), so the next tap opens at once
+    val ctx = LocalContext.current
+    LaunchedEffect(i?.id) { i?.like?.take(5)?.forEach { YouTubeAccount.warm(ctx, it.name, it.id) } }
     // their best-known songs, the library's own copy where there is one (it plays from the phone or the server)
     val top = remember(i, theirs) {
         i?.top.orEmpty().take(5).map { t -> theirs.firstOrNull { it.title.equals(t.title, ignoreCase = true) } ?: t }
@@ -848,7 +945,12 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
     val tubeAlbums = remember(i, records) { i?.albums.orEmpty().filter { t -> records.none { it.title.equals(t.title, ignoreCase = true) } } }
     var aboutOpen by remember(name) { mutableStateOf(false) }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top0 -> LazyColumn(
+    // opened the first time (nothing kept): the photo's room held and the rest kept back till YouTube Music answers, a
+    // second and a half at most, so it comes in once (it showed your songs, then pushed them down under all of it)
+    var patient by remember(name, tubeId) { mutableStateOf(true) }
+    LaunchedEffect(name, tubeId) { delay(1_500); patient = false }
+    val waiting = YouTubeAccount.available && info == null && patient
+    FrostedPage(onClose = { pages.close() }) { frost, top0 -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(top = top0, bottom = LocalFoot.current + 24.dp),
@@ -856,10 +958,11 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         item { Column(Modifier.cascade(0)) {
             // their photo across the page in the dither (the player's), developing as it opens, their name on it
             val photo = i?.photo
-            if (photo != null) BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
+            if (photo != null || waiting) BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
                 val side = minOf(maxWidth, 560.dp)
-                Dithered(remember(photo) { photoSong(name, photo) }, Modifier.size(side).align(Alignment.Center))
-                NameOn(i.name, Modifier.fillMaxWidth().padding(bottom = 6.dp))
+                if (photo != null) Dithered(remember(photo) { photoSong(name, photo) }, Modifier.size(side).align(Alignment.Center))
+                else Box(Modifier.size(side).align(Alignment.Center))
+                NameOn(i?.name ?: name, Modifier.fillMaxWidth().padding(bottom = 6.dp))
             } else Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
                 BasicText((i?.name ?: name).uppercase(), style = headline(52.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
@@ -894,6 +997,15 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 Spacer(Modifier.height(10.dp))
             }
         }}
+        if (waiting) return@LazyColumn
+        // the songs of theirs you have (the phone, your server) first, above all YouTube has: they're why you came
+        if (theirs.isNotEmpty()) {
+            item { Label("yours") }
+            itemsIndexed(theirs, key = { _, s -> s.id }) { n, s -> Box(Modifier.cascade(n + 1)) {
+                Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(theirs, n) } }
+            }}
+            item { Spacer(Modifier.height(18.dp)) }
+        }
         if (top.isNotEmpty()) {
             item { Label("top songs") }
             // a chart: the place big beside each
@@ -944,14 +1056,6 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 Spacer(Modifier.height(22.dp))
             }
         }
-        // the songs of theirs you have: on the phone, on your server
-        if (theirs.isNotEmpty()) {
-            item { Label("yours") }
-            itemsIndexed(theirs, key = { _, s -> s.id }) { n, s -> Box(Modifier.cascade(n + 1)) {
-                Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(theirs, n) } }
-            }}
-            item { Spacer(Modifier.height(18.dp)) }
-        }
         i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
             item {
                 Label("fans also like")
@@ -991,7 +1095,7 @@ private fun WeeklyPage(number: Int, pages: Pages) {
     val weeks by Weekly.weeks.collectAsState()
     val w = weeks.firstOrNull { it.week == number } ?: weeks.firstOrNull() ?: return
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(top = top, bottom = LocalFoot.current + 24.dp),
@@ -1075,7 +1179,7 @@ private fun ImportPage(pages: Pages) {
     }
     val who by YouTubeAccount.who.collectAsState()
     val account by Server.account.collectAsState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
@@ -1309,7 +1413,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                     keyboardActions = KeyboardActions(onGo = { foundSongs.firstOrNull()?.let { Playback.play(foundSongs, 0) } }),
                     modifier = Modifier.weight(1f).focusRequester(focus),
                 )
-                Word("close", pixel(12.sp, Ink.mid), touch = 10.dp) { pages.back() }
+                CloseArrow { pages.close() }
             }
             Spacer(Modifier.height(18.dp))
             // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
@@ -1368,10 +1472,13 @@ fun tubeFace(a: TubeAlbum) = Song(
 /** A YouTube Music record's page: its cover, name, play and shuffle, its songs. */
 @Composable
 private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
+    // its artist read ahead (their name's a way to their page)
+    val ctx = LocalContext.current
+    LaunchedEffect(a.artist) { YouTubeAccount.warm(ctx, a.artist) }
     val songs by androidx.compose.runtime.produceState<List<Song>?>(null, a.url) { value = YouTubeMusic.album(a) }
     LaunchedEffect(songs?.firstOrNull()?.id) { Playback.warm(songs?.firstOrNull()) }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -1383,7 +1490,7 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             Spacer(Modifier.height(18.dp))
             BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
-            BasicText(a.artist.lowercase(), style = pixel(13.sp, Ink.mid))
+            Word(a.artist.lowercase(), pixel(13.sp, Ink.mid), touch = 6.dp) { pages.open(Page.Artist(a.artist)) }
             Spacer(Modifier.height(4.dp))
             val all = songs
             BasicText(if (all == null) "reading it from youtube music" else "${all.size} songs   youtube music", style = pixel(12.sp, Ink.mid))
@@ -1417,7 +1524,7 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
     }
     LaunchedEffect(songs?.firstOrNull()?.id) { Playback.warm(songs?.firstOrNull()) }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -1465,7 +1572,7 @@ private fun AddToPage(s: Song, pages: Pages) {
     val scope = rememberCoroutineScope()
     var failed by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -1532,7 +1639,7 @@ private fun PathPage(from: Song, pages: Pages) {
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.back() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -1644,14 +1751,44 @@ val BAND = 16.dp
 /**
  * A page that scrolls on under the status bar, frosted there (its band below it). `content` gets
  * the frost its list is the source of, and how far down to start: below the status bar, and
- * below "close" when the page has one (kept at the top, on black, however far it's scrolled).
+ * below close when the page has one (kept at the top, on black, however far it's scrolled).
  */
 @Composable
 fun FrostedPage(onClose: (() -> Unit)? = null, content: @Composable (HazeState, Dp) -> Unit) {
     val frost = rememberHazeState()
     val bar = bars.asPaddingValues().calculateTopPadding()
     val top = bar + if (onClose != null) CLOSE_ROW else 0.dp
-    Box(Modifier.fillMaxSize().background(Ink.black)) {
+    // pulled down from its top (anywhere: an artist's photo, a list at its start), the page comes with the finger,
+    // as the player does; past a fifth of the screen or flung, it closes, else it settles back. Its close is a down
+    // arrow, so down is the way out
+    var pull by remember { mutableFloatStateOf(0f) }
+    var tall by remember { mutableIntStateOf(1) }
+    val close by androidx.compose.runtime.rememberUpdatedState(onClose)
+    val pulling = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): Offset {
+                if (pull <= 0f || available.y >= 0f) return Offset.Zero
+                val take = maxOf(available.y, -pull)
+                pull += take
+                return Offset(0f, take)
+            }
+            override fun onPostScroll(consumed: Offset, available: Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): Offset {
+                if (close == null || source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
+                pull += available.y
+                return Offset(0f, available.y)
+            }
+            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (pull <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+                if (pull > tall / 5f || available.y > 1800f) close?.invoke()
+                else androidx.compose.animation.core.animate(pull, 0f, animationSpec = tween(Motion.EXIT, easing = Motion.expo)) { v, _ -> pull = v }
+                return available
+            }
+        }
+    }
+    Box(
+        Modifier.fillMaxSize().onSizeChanged { tall = it.height }
+            .nestedScroll(pulling).graphicsLayer { translationY = pull }.background(Ink.black),
+    ) {
         content(frost, top)
         Column(Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().height(bar).background(Ink.black))
@@ -1661,7 +1798,7 @@ fun FrostedPage(onClose: (() -> Unit)? = null, content: @Composable (HazeState, 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Spacer(Modifier.weight(1f))
-                Word("close", pixel(12.sp, Ink.mid), touch = 10.dp, onClick = onClose)
+                CloseArrow(onClick = onClose)
             }
             Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = false))
         }
