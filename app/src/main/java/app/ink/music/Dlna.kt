@@ -89,12 +89,14 @@ object Dlna {
     }
 
     /** One receiver being played on: the song and the next handed to it, and where it is asked every second. */
-    class Link(private val to: Casting.Speaker, private val queue: List<Song>, private val at: Long) : Casting.Remote {
+    class Link(private val to: Casting.Speaker, first: List<Song>, private val at: Long) : Casting.Remote {
         @Volatile private var open = true
         private val io = Executors.newSingleThreadExecutor()
         // originals only where the maker says it plays them (HEOS: lossless to 24/192); else mp3 320
         private val lossless = Casting.hiRes(to) == true
-        private val urls = queue.map { Serve.url(it, lossless).orEmpty() }
+        // the queue and its links, longer when radio adds to its end ([extend])
+        @Volatile private var queue: List<Song> = first
+        @Volatile private var urls = first.map { Serve.url(it, lossless).orEmpty() }
         @Volatile private var index = 0
         @Volatile private var nextSet = -1
         @Volatile private var lastState = ""
@@ -190,6 +192,13 @@ object Dlna {
         override fun next() = io.execute { if (index + 1 in queue.indices) start(index + 1, 0) }.let { }
         override fun previous() = io.execute { if (position > 3_000 || index == 0) runCatching { soap("Seek", "<Unit>REL_TIME</Unit><Target>0:00:00</Target>") } else start(index - 1, 0) }.let { }
         override fun seek(ms: Long) = io.execute { timeFrom(ms); runCatching { soap("Seek", "<Unit>REL_TIME</Unit><Target>${clock(ms)}</Target>") } }.let { }
+        /** Radio's songs after the rest: the next one handed over, or, stopped at the end, played. */
+        override fun extend(songs: List<Song>) = io.execute {
+            val wasLast = index == queue.size - 1
+            urls = urls + songs.map { Serve.url(it, lossless).orEmpty() }
+            queue = queue + songs
+            if (wasLast && lastState == "STOPPED") start(index + 1, 0) else queueNext()
+        }.let { }
         override fun stopThere() { Thread { runCatching { soap("Stop", "") } }.start() }
         override fun volume(level: Float) {
             if (to.volumeControl.isEmpty()) return

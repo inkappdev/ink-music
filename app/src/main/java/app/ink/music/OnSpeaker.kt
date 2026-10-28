@@ -41,6 +41,9 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
     override fun addListener(listener: Player.Listener) { super.addListener(listener); told += listener }
     override fun removeListener(listener: Player.Listener) { super.removeListener(listener); told -= listener }
 
+    /** A speaker plays (the phone's player only follows it). */
+    val casting get() = said != null
+
     /** What the screens say the speaker does (null: casting's over). Main thread. */
     fun speaker(b: Bundle?) {
         val was = said
