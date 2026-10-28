@@ -71,12 +71,14 @@ compose.desktop {
                 bundleID = "app.ink.music"
                 appCategory = "public.app-category.music"
                 project.file("ink-music.icns").takeIf { it.exists() }?.let { iconFile.set(it) }
-                // macOS 15 asks before an app reaches the home network (the server on it); without this it never
-                // asks, and every connection to the server fails
+                // macOS 15 asks before an app reaches the home network (the server, the speakers); without this it
+                // never asks, and every connection there fails. The speakers are found as Cast services
                 infoPlist {
                     extraKeysRawXml = """
                         <key>NSLocalNetworkUsageDescription</key>
-                        <string>ink music plays the music on your own server, on your network.</string>
+                        <string>ink music plays the music on your own server, and on your speakers, on your network.</string>
+                        <key>NSBonjourServices</key>
+                        <array><string>_googlecast._tcp</string></array>
                     """.trimIndent()
                 }
             }
