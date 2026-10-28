@@ -26,6 +26,8 @@ object Player {
     val queue: StateFlow<List<Song>> = _queue
     private val _now = MutableStateFlow<Now?>(null)
     val now: StateFlow<Now?> = _now
+    /** What the station playing says it's playing (null: nothing said, or not a station). */
+    val onAir = MutableStateFlow<OnAir.Said?>(null)
     /** Where in the song (ms), apart from [now] so its ticking redraws only what shows it. */
     val position = MutableStateFlow(0L)
     /** Why it won't play, said once (no libmpv). */
@@ -60,6 +62,8 @@ object Player {
         m.observe("playlist-pos", Mpv.INT64)
         m.observe("duration", Mpv.DOUBLE)
         m.observe("time-pos", Mpv.DOUBLE)
+        // a station's stream says what it's playing (ICY), as its title
+        m.observe("media-title", Mpv.STRING)
         // a YouTube song's stream found as it opens (they expire: never ahead of time)
         m.hook("on_load")
         Thread({ listen(m) }, "mpv").apply { isDaemon = true }.start()
@@ -75,7 +79,7 @@ object Player {
         val ids = o.optJSONArray("ids") ?: return
         val whole = o.optJSONArray("songs")
         val songs = (0 until ids.length()).mapNotNull { i ->
-            Library.song(ids.optString(i)) ?: whole?.optJSONObject(i)?.let(::songOf)?.also { if (it.tube) YouTube.remember(it) }
+            Library.song(ids.optString(i)) ?: whole?.optJSONObject(i)?.let(::songOf)?.also { if (it.tube) YouTube.remember(it); if (it.station) Stations.remember(it) }
         }
         if (songs.isEmpty() || _queue.value.isNotEmpty()) return
         val at = songs.indexOfFirst { it.id == o.optString("id") }.takeIf { it >= 0 } ?: 0
@@ -94,13 +98,17 @@ object Player {
 
     /** The queue as kept: its ids, each song whole (YouTube's aren't in the library), the one playing and where. */
     private fun written(q: List<Song>, s: Song?) = JSONObject().put("ids", JSONArray(q.map { it.id }))
-        .put("songs", JSONArray(q.map { if (it.tube) it.json() else JSONObject() })).put("id", s?.id ?: "").put("position", position.value).toString()
+        .put("songs", JSONArray(q.map { if (it.tube || it.station) it.json() else JSONObject() })).put("id", s?.id ?: "").put("position", position.value).toString()
 
     private fun listen(m: Mpv) {
         while (true) {
             when (val e = m.next()) {
                 is Mpv.Changed -> when (e.name) {
                     "pause" -> { paused = e.value as? Boolean ?: true; tell() }
+                    "media-title" -> {
+                        val s = _queue.value.getOrNull(index)
+                        onAir.value = if (s?.station == true) (e.value as? String)?.takeIf { it != s.title && "://" !in it }?.let { OnAir.parse(it, s.title) } else null
+                    }
                     "playlist-pos" -> { index = (e.value as? Long)?.toInt() ?: -1; tell() }
                     "duration" -> { duration = ((e.value as? Double) ?: 0.0).times(1000).toLong(); tell() }
                     "time-pos" -> {
@@ -139,7 +147,7 @@ object Player {
     private fun heard(ms: Long) {
         val n = _now.value ?: return
         val s = n.song
-        if (counted == s.id || n.duration <= 0) return
+        if (counted == s.id || n.duration <= 0 || s.station) return
         if (ms >= n.duration / 2 || ms >= 240_000) {
             counted = s.id
             if (s.server) Server.scrobble(s.id, true)
@@ -161,7 +169,7 @@ object Player {
     /** The song before written down as heard (30 s or more), and the clock started for this one. */
     private fun timeSong(s: Song?) {
         if (s?.id == timing?.id) return
-        timing?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
+        timing?.takeIf { !it.station }?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
         timing = s; timingAt = System.currentTimeMillis(); playedMs = 0; lastMs = 0
     }
 
@@ -182,6 +190,8 @@ object Player {
         val q = _queue.value
         if (!radio.value || q.isEmpty() || index < 0 || index < q.size - 2) return
         val last = q.last()
+        // a station plays on forever: nothing to follow it
+        if (last.station) return
         if (radioFrom == last.id) return
         radioFrom = last.id
         fun seed(s: Song) = Radio.Seed(s.id, s.title, s.artist)
@@ -206,7 +216,7 @@ object Player {
         timeSong(s)
         topUp()
         _now.value = s?.let { Now(it, index, !paused, duration.takeIf { d -> d > 0 } ?: it.duration) }
-        if (s != null && toldNow != "${s.id}/$index" && !paused) {
+        if (s != null && !s.station && toldNow != "${s.id}/$index" && !paused) {
             toldNow = "${s.id}/$index"; counted = null
             if (s.server) Server.scrobble(s.id, false)
             val said = said(s, duration.takeIf { it > 0 } ?: s.duration)
@@ -269,6 +279,7 @@ object Player {
     private fun where(s: Song) = when {
         s.server -> Server.stream(s).orEmpty()
         s.tube -> "ytm://" + s.id.removePrefix("y")
+        s.station -> s.path
         else -> s.path
     }
 
