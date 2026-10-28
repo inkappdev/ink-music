@@ -267,7 +267,7 @@ private fun App() {
         CompositionLocalProvider(LocalFoot provides foot) {
             Box(Modifier.fillMaxSize().hazeSource(frost)) {
                 // the library stays built under the pages (never thrown away to show one)
-                LibraryPage(pages)
+                LibraryPage(pages, backHome = pages.stack.isEmpty() && !playerUp)
                 androidx.compose.animation.SharedTransitionLayout { val shared = this
                 AnimatedContent(
                     targetState = pages.stack.lastOrNull(),
@@ -349,7 +349,7 @@ private fun App() {
  * covers scrolling keeps its own.
  */
 @Composable
-private fun LibraryPage(pages: Pages) {
+private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     val albums by Library.albums.collectAsState()
     val songs by Library.songs.collectAsState()
     val read by Library.read.collectAsState()
@@ -361,6 +361,10 @@ private fun LibraryPage(pages: Pages) {
     LaunchedEffect(pager, tabs) { snapshotFlow { pager.currentPage }.collect { tab = tabs.getOrElse(it) { "listen" } } }
     LaunchedEffect(tabs) { pager.scrollToPage(tabs.indexOf(tab).coerceAtLeast(0)) }
     val scope = rememberCoroutineScope()
+    // back on another tab goes to listen, as a home; back on listen leaves (a tester's back left the app from albums)
+    BackHandler(backHome && pager.currentPage != 0) {
+        scope.launch { pager.animateScrollToPage(0, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
+    }
     val listenList = rememberLazyListState()
     val grid = rememberLazyGridState()
     val artistList = rememberLazyListState()

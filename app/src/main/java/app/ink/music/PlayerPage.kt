@@ -123,15 +123,32 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
     val close by rememberUpdatedState(onClose)
     val scrub = remember { Scrub() }
     androidx.activity.compose.BackHandler(queueUp) { queueUp = false }
+    // pulled down, the player comes with the finger: past a fifth of the screen (or flung) it goes, else it settles
+    // back (it had closed on a pull without moving, and a tester found no pull at all)
+    val pull = remember { androidx.compose.animation.core.Animatable(0f) }
+    val pullScope = androidx.compose.runtime.rememberCoroutineScope()
     Box(
-        Modifier.fillMaxSize().background(Ink.black)
-            .clickable(remember { MutableInteractionSource() }, indication = null) {}   // nothing under it takes a tap
+        // read before the layer that moves, so the finger's place is the screen's, not the sliding page's
+        Modifier.fillMaxSize()
             .pointerInput(Unit) {
-                var pulled = 0f
-                detectVerticalDragGestures(onDragStart = { pulled = 0f }, onDragEnd = { if (pulled > 120.dp.toPx()) close() }) { c, dy ->
-                    pulled += dy; c.consume()
+                val speed = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                detectVerticalDragGestures(
+                    onDragStart = { speed.resetTracking() },
+                    onDragEnd = {
+                        val flung = speed.calculateVelocity().y > 1_800f
+                        if (pull.value > size.height / 5f || (flung && pull.value > 0f)) close()
+                        else pullScope.launch { pull.animateTo(0f, tween(Motion.EXIT, easing = Motion.expo)) }
+                    },
+                    onDragCancel = { pullScope.launch { pull.animateTo(0f, tween(Motion.EXIT, easing = Motion.expo)) } },
+                ) { c, dy ->
+                    c.consume()
+                    speed.addPosition(c.uptimeMillis, c.position)
+                    pullScope.launch { pull.snapTo((pull.value + dy).coerceAtLeast(0f)) }
                 }
-            },
+            }
+            .graphicsLayer { translationY = pull.value }
+            .background(Ink.black)
+            .clickable(remember { MutableInteractionSource() }, indication = null) {},   // nothing under it takes a tap
     ) {
         if (n == null) {
             Column(Modifier.windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).padding(20.dp)) {
