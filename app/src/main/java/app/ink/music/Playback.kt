@@ -56,8 +56,26 @@ object Playback {
         override fun onEvents(player: Player, events: Player.Events) {
             // the queue read again only when it changed (a long one is a thousand items)
             if (events.contains(Player.EVENT_TIMELINE_CHANGED)) readQueue()
+            if (casting) steered(player, events)
             update()
         }
+    }
+
+    /**
+     * While a speaker plays, the phone's own player stays still: asked to play or to move from somewhere that
+     * doesn't know of the speaker (the notification, the lock screen, a headset), it's paused at once (before a
+     * sound: a play rises from nothing) and the ask goes to the speaker: a play its play, a new song the speaker's
+     * queue from there. A tester heard the phone start under the speaker.
+     */
+    private fun steered(p: Player, events: Player.Events) {
+        val speaker = Casting.on.value ?: return
+        val moved = events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
+        val started = events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED) && p.playWhenReady
+        if (!moved && !started) return
+        if (p.playWhenReady) p.pause()
+        android.util.Log.d("ink-cast", "the phone asked to ${if (moved) "go to ${p.currentMediaItemIndex}" else "play"}: to the speaker")
+        if (moved) handover()?.let { (songs, index, _) -> app?.let { Casting.play(it, speaker, songs, index, 0L) } }
+        else if (now.value?.playing != true) Casting.toggle()
     }
 
     private fun readQueue() {
@@ -275,7 +293,12 @@ object Playback {
     fun levelling(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("levelling", true)
 
     /** The queue's `index`th song, from its start. */
-    fun jump(index: Int) { controller?.run { if (index in 0 until mediaItemCount) { seekTo(index, 0); play() } } }
+    fun jump(index: Int) {
+        // on a speaker: the speaker's queue from there (the phone's own player had started under it)
+        val speaker = Casting.on.value
+        if (casting && speaker != null) { handover()?.let { (songs, _, _) -> if (index in songs.indices) app?.let { Casting.play(it, speaker, songs, index, 0L) } }; return }
+        controller?.run { if (index in 0 until mediaItemCount) { seekTo(index, 0); play() } }
+    }
     fun move(from: Int, to: Int) { controller?.run { if (from in 0 until mediaItemCount && to in 0 until mediaItemCount) moveMediaItem(from, to) } }
     fun remove(index: Int) { controller?.run { if (index in 0 until mediaItemCount) removeMediaItem(index) } }
 
