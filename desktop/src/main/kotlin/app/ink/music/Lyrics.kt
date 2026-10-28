@@ -13,9 +13,6 @@ import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
 
-/** lrclib asks every app to say who it is. */
-const val AGENT = "ink music/0.1 (+https://inkhome.app; hello@inkhome.app)"
-
 /** One sung line: when it starts (ms into the song) and its words. */
 data class Line(val at: Long, val words: String)
 

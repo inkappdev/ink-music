@@ -34,6 +34,10 @@ jobs:
 
       - name: dmg
         run: ./gradlew :desktop:packageDmg -PdesktopOnly --no-daemon
+        # ink music's Last.fm key and secret (the repository's secrets; without them, no Last.fm)
+        env:
+          LASTFM_KEY: ${{ secrets.LASTFM_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
 
       - uses: actions/upload-artifact@v4
         with:
