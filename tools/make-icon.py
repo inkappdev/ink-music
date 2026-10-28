@@ -3,7 +3,8 @@ as ink tv's is INK with TV (one family: ink's word, the product's name in the pi
 bundled fonts' own outlines. Adapted from ink's tools/make-icon.py.
 
 Writes the adaptive icon's foreground (also its monochrome layer, for themed icons), the store's
-512 px icon and its 1024 x 500 feature graphic (fastlane's, which IzzyOnDroid and F-Droid read).
+512 px icon and its 1024 x 500 feature graphic (fastlane's, which IzzyOnDroid and F-Droid read), and
+the Mac app's icon (desktop/ink-music.icns).
 Needs fontTools and Pillow:
     python3 tools/make-icon.py
 """
@@ -145,6 +146,35 @@ def feature(path, big_words="free", small_words="your music in ink's look. no ad
     im.save(path)
 
 
+def mac(path):
+    """The Mac's icon: the words on black, in the rounded square every Mac icon sits in (Apple's grid: 824 of
+    1024, corners 185; macOS 26 greys out an icon without it), at each size an .icns holds, as PNGs."""
+    import io, struct
+    big = 1024
+    box, r = 824, 185
+    off = (big - box) // 2
+    ss = 4
+    shape = Image.new("L", (big * ss, big * ss), 0)
+    ImageDraw.Draw(shape).rounded_rectangle([off * ss, off * ss, (off + box) * ss, (off + box) * ss], r * ss, fill=255)
+    shape = shape.resize((big, big), Image.LANCZOS)
+    words = os.path.join(os.path.dirname(path), "icon-words.png")
+    # the words as large on the square as on the store's icon
+    png(words, box, box, stacked(box, CAP * 108 / 72 * box))
+    im = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    im.paste(Image.new("RGBA", (big, big), (0, 0, 0, 255)), mask=shape)
+    im.paste(Image.open(words).convert("RGBA"), (off, off), mask=shape.crop((off, off, off + box, off + box)))
+    os.remove(words)
+    entries = b""
+    for kind, px in [(b"icp4", 16), (b"icp5", 32), (b"ic11", 32), (b"icp6", 64), (b"ic12", 64), (b"ic07", 128),
+                     (b"ic08", 256), (b"ic13", 256), (b"ic09", 512), (b"ic14", 512), (b"ic10", 1024)]:
+        buf = io.BytesIO(); im.resize((px, px), Image.LANCZOS).save(buf, "PNG")
+        entries += kind + struct.pack(">I", 8 + len(buf.getvalue())) + buf.getvalue()
+    with open(path, "wb") as f:
+        f.write(b"icns" + struct.pack(">I", 8 + len(entries)) + entries)
+    # the same, for the window while it runs (the app bundle shows the .icns)
+    im.save(os.path.join(ROOT, "desktop/src/main/resources/ink-music.png"))
+
+
 def main():
     vector(os.path.join(ROOT, "app/src/main/res/drawable/icon_word.xml"), stacked(108, CAP * 108), "INK in Archivo Black, MUSIC in Silkscreen under it")
     images = os.path.join(ROOT, "fastlane/metadata/android/en-US/images")
@@ -152,6 +182,7 @@ def main():
     # the store's icon is the whole square (stores round it): as large as in the 72 dp a launcher shows
     png(os.path.join(images, "icon.png"), 512, 512, stacked(512, CAP * 108 / 72 * 512))
     feature(os.path.join(images, "featureGraphic.png"))
+    mac(os.path.join(ROOT, "desktop/ink-music.icns"))
 
 
 if __name__ == "__main__":

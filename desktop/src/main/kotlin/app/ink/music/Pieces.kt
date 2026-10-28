@@ -14,7 +14,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -176,15 +178,19 @@ private object Drawn {
     fun keepLaid(key: String, l: androidx.compose.ui.text.TextLayoutResult) { layouts.put(key, l) }
 }
 
-/** A word you can press: brightness is the feedback (ink, 55% while held). `touch`: its press reaches that far past it (half across). */
+/**
+ * A word you can press: brightness is the feedback (ink, 55% while held). `touch`: its press reaches that far past it (half across).
+ * The desktop's: a step brighter under the mouse, too (the phone's and ink's have no mouse to follow).
+ */
 @Composable
 fun Word(text: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier, touch: Dp = 0.dp, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
-    val c by animateColorAsState(if (pressed) Ink.mid else style.color, tween(Motion.FADE), label = "word")
+    val over by src.collectIsHoveredAsState()
+    val c by animateColorAsState(if (pressed) Ink.mid else if (over) brighter(style.color) else style.color, tween(Motion.FADE), label = "word")
     BasicText(
         text, style = style.copy(color = c), maxLines = 1, overflow = TextOverflow.Ellipsis,
-        modifier = modifier.clickable(src, indication = null, onClick = felt(then = onClick)).padding(vertical = touch, horizontal = touch / 2),
+        modifier = modifier.hoverable(src).clickable(src, indication = null, onClick = felt(then = onClick)).padding(vertical = touch, horizontal = touch / 2),
     )
 }
 
