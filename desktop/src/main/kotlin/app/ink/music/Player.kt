@@ -1,12 +1,22 @@
 package app.ink.music
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 /**
  * What plays, and the queue: mpv's own playlist holds the same songs in the same order, so one
  * song runs into the next with no gap (a live record stays one). The phone's player is a service
- * behind a session; here it's this, in the app.
+ * behind a session; here it's this, in the app. The queue, its song and the place in it are kept
+ * (queue.json), so the app opens where it was, paused.
  */
 object Player {
     /** What's playing: the song, whether it moves, how long it is (ms; 0 while not known). */
@@ -25,6 +35,11 @@ object Player {
     @Volatile private var paused = true
     @Volatile private var index = -1
     @Volatile private var duration = 0L
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val kept = File(Home.dir, "queue.json")
+    /** A place to go to once the song it's in has loaded (the queue brought back). */
+    @Volatile private var pendingSeek = 0L
 
     fun start() {
         mpv = try {
@@ -46,7 +61,31 @@ object Player {
         m.observe("duration", Mpv.DOUBLE)
         m.observe("time-pos", Mpv.DOUBLE)
         Thread({ listen(m) }, "mpv").apply { isDaemon = true }.start()
+        // the queue as it was, once the library knows its songs (a server's come from disk in a moment)
+        scope.launch {
+            withTimeoutOrNull(10_000) { Library.songs.first { it.isNotEmpty() } } ?: return@launch
+            restore()
+        }
     }
+
+    private fun restore() {
+        val o = runCatching { JSONObject(kept.readText()) }.getOrNull() ?: return
+        val ids = o.optJSONArray("ids") ?: return
+        val songs = (0 until ids.length()).mapNotNull { Library.song(ids.optString(it)) }
+        if (songs.isEmpty() || _queue.value.isNotEmpty()) return
+        val at = songs.indexOfFirst { it.id == o.optString("id") }.takeIf { it >= 0 } ?: 0
+        pendingSeek = if (at >= 0) o.optLong("position") else 0
+        load(songs, at, go = false)
+    }
+
+    /** The queue, its song and where in it, written down (on a change, and every ten seconds playing). */
+    private fun keep() {
+        val q = _queue.value
+        val s = q.getOrNull(index)
+        val text = JSONObject().put("ids", JSONArray(q.map { it.id })).put("id", s?.id ?: "").put("position", position.value).toString()
+        scope.launch { runCatching { Home.write(kept, text) } }
+    }
+    private var keptAt = 0L
 
     private fun listen(m: Mpv) {
         while (true) {
@@ -60,8 +99,10 @@ object Player {
                         // a few times a second is plenty for a line and a clock
                         if (kotlin.math.abs(ms - position.value) >= 200 || ms < position.value) position.value = ms
                         heard(ms)
+                        if (!paused && System.currentTimeMillis() - keptAt > 10_000) { keptAt = System.currentTimeMillis(); keep() }
                     }
                 }
+                is Mpv.Loaded -> if (pendingSeek > 0) { val ms = pendingSeek; pendingSeek = 0; seek(ms) }
                 is Mpv.Shutdown -> return
                 else -> {}
             }
@@ -85,19 +126,57 @@ object Player {
         val s = q.getOrNull(index)
         _now.value = s?.let { Now(it, index, !paused, duration.takeIf { d -> d > 0 } ?: it.duration) }
         if (s != null && s.server && toldNow != "${s.id}/$index" && !paused) { toldNow = "${s.id}/$index"; counted = null; Server.scrobble(s.id, false) }
+        if (s != null) keep()
     }
 
     /** These songs, from `start`: the queue they become. */
-    fun play(songs: List<Song>, start: Int = 0) {
+    fun play(songs: List<Song>, start: Int = 0) { pendingSeek = 0; load(songs, start, go = true) }
+
+    private fun load(songs: List<Song>, start: Int, go: Boolean) {
         val m = mpv ?: return
         if (songs.isEmpty()) return
         _queue.value = songs
         m.command("stop")
         m.command("playlist-clear")
+        m.set("pause", if (go) "no" else "yes")
         songs.forEach { m.command("loadfile", where(it), "append") }
         position.value = 0
-        m.set("playlist-pos", start.toString())
+        m.set("playlist-pos", start.coerceIn(songs.indices).toString())
+    }
+
+    /** After the song playing (nothing playing: plays it). */
+    fun playNext(s: Song) {
+        val m = mpv ?: return
+        if (_queue.value.isEmpty() || index < 0) return play(listOf(s))
+        _queue.value = _queue.value.toMutableList().apply { add(index + 1, s) }
+        m.command("loadfile", where(s), "insert-next")
+        keep()
+    }
+
+    /** At the queue's end (nothing playing: plays it). */
+    fun add(s: Song) {
+        val m = mpv ?: return
+        if (_queue.value.isEmpty() || index < 0) return play(listOf(s))
+        _queue.value = _queue.value + s
+        m.command("loadfile", where(s), "append")
+        keep()
+    }
+
+    /** The queue's `i`th song, from its start. */
+    fun jump(i: Int) {
+        val m = mpv ?: return
+        if (i !in _queue.value.indices) return
+        m.set("playlist-pos", i.toString())
         m.set("pause", "no")
+    }
+
+    /** The queue's `i`th song out of it (the one playing: on to the next). */
+    fun remove(i: Int) {
+        val m = mpv ?: return
+        if (i !in _queue.value.indices) return
+        _queue.value = _queue.value.toMutableList().apply { removeAt(i) }
+        m.command("playlist-remove", i.toString())
+        keep()
     }
 
     /** Where a song plays from: its file, or the server's stream. */
@@ -123,5 +202,11 @@ object Player {
         _queue.value = emptyList()
     }
 
-    fun close() { mpv?.close(); mpv = null }
+    fun close() {
+        // where it was, written now (not on another thread: the app's about to go)
+        _queue.value.getOrNull(index)?.let { s ->
+            runCatching { Home.write(kept, JSONObject().put("ids", JSONArray(_queue.value.map { it.id })).put("id", s.id).put("position", position.value).toString()) }
+        }
+        mpv?.close(); mpv = null
+    }
 }

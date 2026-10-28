@@ -58,6 +58,7 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,6 +99,7 @@ sealed interface Page {
     data class Artist(val name: String) : Page
     data object Playing : Page
     data object Settings : Page
+    data object Queue : Page
 }
 
 /** Clear of the Mac's traffic lights (the title bar is gone, its buttons stay). */
@@ -141,10 +143,11 @@ private fun App() {
                         is Page.Artist -> ArtistPage(page.name, { pages += it }) { pages.removeLast() }
                         Page.Playing -> PlayerPage({ pages += it }) { pages.removeLast() }
                         Page.Settings -> SettingsPage { pages.removeLast() }
+                        Page.Queue -> QueuePage({ pages += it }) { pages.removeLast() }
                     }
                 }
             }
-            if (pages.lastOrNull() != Page.Playing) MiniPlayer { if (pages.lastOrNull() != Page.Playing) pages += Page.Playing }
+            if (pages.lastOrNull() != Page.Playing) MiniPlayer({ if (pages.lastOrNull() != Page.Queue) pages += Page.Queue }) { if (pages.lastOrNull() != Page.Playing) pages += Page.Playing }
         }
     }
 }
@@ -180,7 +183,7 @@ private fun LibraryPage(open: (Page) -> Unit) {
         when (tab) {
             "albums" -> Records(albums, open)
             "artists" -> Artists(albums, songs, open)
-            else -> Songs(songs)
+            else -> Songs(songs, open)
         }
     }
 }
@@ -225,28 +228,58 @@ private fun Artists(albums: List<Album>, songs: List<Song>, open: (Page) -> Unit
 }
 
 @Composable
-private fun Songs(songs: List<Song>) {
+private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
-        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase()) { Player.play(songs, i) } }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(songs, i) } }
     }
 }
 
 /** A song as words: its title, and under it who and where; lit while it plays. A click plays it, in its list. */
 @Composable
-private fun SongRow(s: Song, number: String? = null, said: String? = null, onClick: () -> Unit) {
+fun SongRow(
+    s: Song, number: String? = null, said: String? = null, open: ((Page) -> Unit)? = null,
+    lit: Boolean? = null, dim: Boolean = false, onRemove: (() -> Unit)? = null, onClick: () -> Unit,
+) {
     val now by Player.now.collectAsState()
-    val on = now?.song?.id == s.id
-    Row(
-        Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (number != null) BasicText(number, style = pixel(12.sp, if (on) Ink.ink else Ink.mid), modifier = Modifier.width(36.dp))
-        Column(Modifier.weight(1f)) {
-            BasicText(s.title.uppercase(), style = headline(17.sp, if (on) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (said != null) BasicText(said, style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val on = lit ?: (now?.song?.id == s.id)
+    var options by remember { mutableStateOf(false) }
+    val color = if (on) Ink.ink else if (dim) Ink.dim else Ink.mid
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { options = false; onClick() })
+                // a right click (the phone's hold): its options open under it
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val e = awaitPointerEvent()
+                            if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isSecondaryPressed) {
+                                options = !options; e.changes.forEach { it.consume() }
+                            }
+                        }
+                    }
+                }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (number != null) BasicText(number, style = pixel(12.sp, color), modifier = Modifier.width(36.dp))
+            Column(Modifier.weight(1f)) {
+                BasicText(s.title.uppercase(), style = headline(17.sp, color), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (said != null) BasicText(said, style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            BasicText(clock(s.duration), style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), modifier = Modifier.padding(start = 16.dp))
         }
-        BasicText(clock(s.duration), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 16.dp))
+        if (options) Row(
+            Modifier.padding(start = if (number != null) 36.dp else 0.dp, bottom = 10.dp).fadeUp(),
+            horizontalArrangement = Arrangement.spacedBy(22.dp),
+        ) {
+            val o = pixel(13.sp)
+            Word("play next", o, touch = 6.dp) { options = false; Player.playNext(s) }
+            Word("add to queue", o, touch = 6.dp) { options = false; Player.add(s) }
+            if (open != null && s.album.isNotEmpty()) Word("record", o, touch = 6.dp) { options = false; open(Page.Record(s.albumId)) }
+            if (open != null) Word("artist", o, touch = 6.dp) { options = false; open(Page.Artist(s.albumArtist)) }
+            if (onRemove != null) Word("remove", o, touch = 6.dp) { options = false; onRemove() }
+        }
     }
 }
 
@@ -322,7 +355,7 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
             LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
                 itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s ->
                     val n = if (s.track > 0) (if (discs) "${s.disc}.${s.track}" else "${s.track}") else "${i + 1}"
-                    SongRow(s, number = n, said = s.artist.takeIf { it != a.artist }?.lowercase()) { Player.play(a.songs, i) }
+                    SongRow(s, number = n, said = s.artist.takeIf { it != a.artist }?.lowercase(), open = open) { Player.play(a.songs, i) }
                 }
             }
         }
@@ -342,7 +375,7 @@ private fun ArtistPage(name: String, open: (Page) -> Unit, onClose: () -> Unit) 
                 BasicText(name.uppercase(), style = headline(64.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(10.dp))
                 Word("play all", pixel(14.sp), touch = 8.dp) { Player.play(theirs.flatMap { it.songs } + loose) }
-                loose.forEachIndexed { i, s -> SongRow(s) { Player.play(loose, i) } }
+                loose.forEachIndexed { i, s -> SongRow(s, open = open) { Player.play(loose, i) } }
             }
         }
     }
@@ -353,7 +386,7 @@ private fun ArtistPage(name: String, open: (Page) -> Unit, onClose: () -> Unit) 
  * song in its colour, the cover, the song, back / play / next and the times. A click opens the player.
  */
 @Composable
-private fun MiniPlayer(onOpen: () -> Unit) {
+private fun MiniPlayer(onQueue: () -> Unit, onOpen: () -> Unit) {
     val now by Player.now.collectAsState()
     val trouble by Player.trouble.collectAsState()
     trouble?.let {
@@ -380,6 +413,7 @@ private fun MiniPlayer(onOpen: () -> Unit) {
             Controls(n)
             Spacer(Modifier.width(24.dp))
             Times(n, Modifier.widthIn(min = 96.dp))
+            Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
         }
     }
 }
@@ -468,10 +502,37 @@ private fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         Spacer(Modifier.height(20.dp))
                         val q by Player.queue.collectAsState()
                         q.getOrNull(n.index + 1)?.let { up ->
-                            BasicText("next: ${up.title.lowercase()}", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Word("up next: ${up.title.lowercase()}", pixel(12.sp, Ink.mid), touch = 6.dp) { open(Page.Queue) }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** The queue, as words: played dim, the one playing lit, the rest as they come. A click plays from there. */
+@Composable
+private fun QueuePage(open: (Page) -> Unit, onClose: () -> Unit) {
+    val queue by Player.queue.collectAsState()
+    val now by Player.now.collectAsState()
+    val at = now?.index ?: -1
+    val list = rememberLazyListState()
+    // opened at the song playing, a few before it showing
+    LaunchedEffect(Unit) { if (at > 2) list.scrollToItem(at - 2) }
+    Column(Modifier.fillMaxSize()) {
+        Close(onClose)
+        Column(Modifier.padding(start = SIDE, end = SIDE, top = 16.dp)) {
+            BasicText("UP NEXT", style = headline(64.sp))
+            Spacer(Modifier.height(6.dp))
+            BasicText(if (queue.isEmpty()) "nothing queued" else "${queue.size} ${if (queue.size == 1) "song" else "songs"}   right click one for more",
+                style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(16.dp))
+        }
+        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, bottom = 32.dp)) {
+            // no keys: one song can be queued twice
+            itemsIndexed(queue) { i, s ->
+                SongRow(s, said = s.artist.lowercase(), open = open, lit = i == at, dim = i < at, onRemove = { Player.remove(i) }) { Player.jump(i) }
             }
         }
     }
