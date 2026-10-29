@@ -143,7 +143,8 @@ tasks.withType<AbstractJPackageTask>().configureEach {
 // Windows: the msi made here rather than by Compose's packageMsi, so it carries ink's own wizard (desktop/windows/:
 // jpackage's main.wxs with ink's pictures, type and an "open ink music" at the end; the wizard's words): jpackage reads
 // those from --resource-dir, which Compose fills and empties itself. jpackage makes Compose's finished app
-// (createDistributable) into the msi, with the WiX Compose fetched; no license or folder pages (welcome, ready, done)
+// (createDistributable) into the msi, with the WiX Compose fetched; no license or folder pages (welcome, shortcuts,
+// ready, done)
 tasks.register<Exec>("packageInkMsi") {
     dependsOn("createDistributable")
     if (System.getProperty("os.name").startsWith("Windows")) dependsOn(":unzipWix")   // Compose keeps WiX on the root project
@@ -157,7 +158,10 @@ tasks.register<Exec>("packageInkMsi") {
         "--type", "msi", "--app-image", app.path, "--dest", out.path,
         "--name", "ink music", "--app-version", project.version.toString(), "--vendor", "ink",
         "--description", "A music player in ink's look", "--resource-dir", res.path,
-        "--win-per-user-install", "--win-menu", "--win-menu-group", "ink", "--win-shortcut",
+        // the shortcuts page: jpackage makes WiX's wizard only with one of its own pages in it (without, a bare msi
+        // with no welcome or done), and choosing the start menu and desktop is the one worth asking
+        "--win-per-user-install", "--win-menu", "--win-menu-group", "ink", "--win-shortcut", "--win-shortcut-prompt",
+        "--verbose",   // WiX's own messages in the log when it fails
         "--win-upgrade-uuid", "6f1c2a9e-3b7d-4e55-9a41-1c0d8e2f7b63",
     )
     doFirst {

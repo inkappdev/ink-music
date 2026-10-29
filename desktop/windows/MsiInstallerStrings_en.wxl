@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   jpackage's own English strings (JDK 21), and WiX's wizard's words in ink's (WiX lets these be overridden): the
-  pages' type (Segoe UI; main.wxs's Ink_Headline and Ink_Title for the headings), welcome, ready, installing, done.
+  pages' type (Segoe UI; main.wxs's Ink_Headline and Ink_Title for the headings), welcome, shortcuts, ready,
+  installing, done.
 -->
 <WixLocalization Culture="en-us" xmlns="http://schemas.microsoft.com/wix/2006/localization" Codepage="1252">
   <String Id="message.install.dir.exist">The folder [INSTALLDIR] already exist. Would you like to install to that folder anyway?</String>
@@ -10,11 +11,11 @@
   <String Id="DisallowUpgradeErrorMessage">An older ink music is already here, and this one can't replace it.</String>
 
   <String Id="ShortcutPromptDlg_Title">[ProductName]</String>
-  <String Id="ShortcutPromptDlgTitle">{\WixUI_Font_Title}Shortcuts</String>
+  <String Id="ShortcutPromptDlgTitle">{\Ink_Title}WHERE IT GOES</String>
   <String Id="ShortcutPromptDlgBannerBitmap">WixUI_Bmp_Banner</String>
-  <String Id="ShortcutPromptDlgDescription">Select shortcuts to create.</String>
-  <String Id="ShortcutPromptDlgDesktopShortcutControlLabel">Create desktop shortcut(s)</String>
-  <String Id="ShortcutPromptDlgStartMenuShortcutControlLabel">Create start menu shortcut(s)</String>
+  <String Id="ShortcutPromptDlgDescription">Your start menu, your desktop, or both.</String>
+  <String Id="ShortcutPromptDlgDesktopShortcutControlLabel">On the desktop</String>
+  <String Id="ShortcutPromptDlgStartMenuShortcutControlLabel">In the start menu</String>
   <String Id="InstallDirNotEmptyDlg_Title">[ProductName]</String>
   <String Id="ContextMenuCommandLabel">Open with [ProductName]</String>
 
@@ -32,7 +33,7 @@ Free, and it always will be.</String>
 
   <String Id="VerifyReadyDlg_Title">[ProductName]</String>
   <String Id="VerifyReadyDlgInstallTitle">{\Ink_Title}READY</String>
-  <String Id="VerifyReadyDlgInstallText">ink music goes in your start menu and on your desktop. Nothing else changes, and it needs no administrator.</String>
+  <String Id="VerifyReadyDlgInstallText">Install, and that's it: nothing else on this computer changes, and it needs no administrator.</String>
 
   <String Id="ProgressDlg_Title">[ProductName]</String>
   <String Id="ProgressDlgTitleInstalling">{\Ink_Title}INSTALLING</String>
