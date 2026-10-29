@@ -203,7 +203,8 @@ private fun androidx.compose.ui.window.FrameWindowScope.Menus() {
             Item("Quieter", shortcut = cmd(Key.DirectionDown)) { Player.volume(Player.volume.value - 5) }
             CheckboxItem("Mute", muted, shortcut = cmd(Key.DirectionDown, alt = true)) { Player.mute() }
             Separator()
-            CheckboxItem("Lyrics", lyrics, shortcut = cmd(Key.L)) { Lyrics.toggle() }
+            // the lyrics are the player's: on, it opens to them; off, they go
+            CheckboxItem("Lyrics", lyrics, shortcut = cmd(Key.L)) { Lyrics.toggle(); if (Lyrics.on.value && now != null) Nav.player() }
             Item("Up Next", shortcut = cmd(Key.U)) { Nav.open(Page.Queue) }
             Item("Play On", shortcut = cmd(Key.P)) { Nav.open(Page.PlayOn) }
         }
