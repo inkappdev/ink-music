@@ -30,11 +30,15 @@ object Covers {
     private val kept = Lru<String, Cover>(256 * 1024 * 1024) { it.image.width * it.image.height * 4 }
     private val none = java.util.Collections.synchronizedSet(HashSet<String>())   // records with no picture, not asked again
     private val whole = java.util.Collections.synchronizedSet(HashSet<String>())  // records whose picture is smaller than asked: as big as it gets
+    /** From this size up a YouTube song's cover is looked for on iTunes (what's playing: the now column's, the player's). */
+    const val SHARP = 700
     private val beside = listOf("cover", "folder", "front", "album", "artwork")
 
     fun kept(album: String): Cover? = kept.get(album)
 
     suspend fun of(song: Song, px: Int = 640): Cover? {
+        // a YouTube song big (the player): the label's own art where Apple has it
+        if (song.tube && px >= SHARP) sharp(song)?.let { return it }
         kept.get(song.albumId)?.takeIf { it.image.width >= px * 9 / 10 || song.albumId in whole }?.let { return it }
         if (song.albumId in none) return null
         return withContext(Dispatchers.IO) {
@@ -49,6 +53,45 @@ object Covers {
             Cover(sq.toComposeImageBitmap(), accentOf(sq)).also { kept.put(song.albumId, it) }
         }
     }
+
+    /**
+     * A YouTube song's cover as its label made it: YouTube's are often 226 px, or a video's frame; Apple's iTunes
+     * search (no key) has the studio art at 3000 px. Matched by artist and title, only for the player's big cover
+     * (a list keeps YouTube's own, so a live version never shows the studio record's art). Kept on disk, a miss too.
+     */
+    private suspend fun sharp(song: Song): Cover? {
+        val key = "sharp:" + song.id
+        kept.get(key)?.let { return it }
+        if (key in none) return null
+        return withContext(Dispatchers.IO) {
+            val link = File(File(Home.cache, "covers"), "itunes-" + song.id.removePrefix("y"))
+            val url = if (link.exists()) link.readText().ifEmpty { null } else itunes(song).also { u ->
+                runCatching { link.parentFile.mkdirs(); link.writeText(u.orEmpty()) }
+            }
+            val bytes = url?.let { fromDisk(it, 0) ?: fetch(it, 0)?.also { b -> toDisk(it, 0, b) } }
+            val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() } ?: run { none += key; return@withContext null }
+            val sq = square(img, minOf(img.width, 1600))
+            Cover(sq.toComposeImageBitmap(), accentOf(sq)).also { kept.put(key, it) }
+        }
+    }
+
+    /** The song on Apple's iTunes search: its art's link at the largest it's kept, or null for no match. */
+    private fun itunes(song: Song): String? = runCatching {
+        fun plain(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
+        val artist = song.artist.substringBefore(", ")
+        val term = java.net.URLEncoder.encode("$artist ${song.title}", "UTF-8")
+        val c = java.net.URL("https://itunes.apple.com/search?term=$term&entity=song&limit=8").openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 5_000; c.readTimeout = 8_000
+        val text = try { if (c.responseCode == 200) c.inputStream.bufferedReader().readText() else return null } finally { c.disconnect() }
+        val results = org.json.JSONObject(text).optJSONArray("results") ?: return null
+        // the same artist and the same song (versions in brackets aside: a remix's art isn't the record's)
+        (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
+            plain(r.optString("artistName")).let { a -> a.isNotEmpty() && (a.contains(plain(artist)) || plain(artist).contains(a)) } &&
+                plain(r.optString("trackName")) == plain(song.title)
+        }?.optString("artworkUrl100")?.takeIf { it.isNotEmpty() }
+            // the art at its largest: the size in its link asked as big as it goes
+            ?.replace(Regex("""/\d+x\d+[a-z-]*\.(jpg|png)$"""), "/3000x3000bb.$1")
+    }.getOrNull()
 
     /** A server's or YouTube's cover, from the computer if it's been fetched before. */
     private fun remote(song: Song, px: Int): ByteArray? {

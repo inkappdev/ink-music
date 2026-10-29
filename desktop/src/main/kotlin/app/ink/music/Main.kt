@@ -94,12 +94,12 @@ fun main() {
     Player.start()
     application {
         Window(
-            onCloseRequest = { Player.close(); exitApplication() },
+            onCloseRequest = { Win.state?.let(Placed::keep); Player.close(); exitApplication() },
             title = "ink music",
             icon = androidx.compose.ui.graphics.painter.BitmapPainter(
                 org.jetbrains.skia.Image.makeFromEncoded(Ink::class.java.getResourceAsStream("/ink-music.png")!!.readBytes()).toComposeImageBitmap(),
             ),
-            state = rememberWindowState(size = DpSize(1440.dp, 900.dp)).also { Win.state = it },
+            state = Placed.remember().also { Win.state = it },
         ) {
             LaunchedEffect(Unit) {
                 window.minimumSize = java.awt.Dimension(720, 520)
@@ -108,11 +108,21 @@ fun main() {
                 window.rootPane.putClientProperty("apple.awt.fullWindowContent", true)
                 window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
                 window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
+                // back to the front: the music folder read again (a song added meanwhile shows)
+                window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
+                    override fun windowGainedFocus(e: java.awt.event.WindowEvent?) = Library.freshen()
+                })
+            }
+            // where the window is, written down as it's moved or sized (and on closing)
+            LaunchedEffect(Unit) {
+                androidx.compose.runtime.snapshotFlow { Win.state?.let { it.size to it.position } }
+                    .collect { kotlinx.coroutines.delay(800); Win.state?.let(Placed::keep) }
             }
             // the menus in the Mac's own bar along the top of the screen (elsewhere, the keys alone)
             if (Home.mac) Menus()
             App()
         }
+        MiniWindow()
     }
 }
 
@@ -187,6 +197,7 @@ private fun androidx.compose.ui.window.FrameWindowScope.Menus() {
         Menu("View") {
             Item("Player", shortcut = cmd(Key.Zero), enabled = now != null) { Nav.player() }
             Item("Player, Full Screen", shortcut = cmd(Key.F, shift = true), enabled = now != null) { Nav.player(full = true) }
+            Item("Mini Player", shortcut = cmd(Key.M, shift = true)) { Mini.open() }
             CheckboxItem("Now Playing Beside", !tucked, shortcut = cmd(Key.Backslash)) { Tuck.set(!Tuck.on.value) }
         }
     }
@@ -201,9 +212,10 @@ private fun App() {
     val pages = Nav.pages
     var place by Nav::place
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    // the keys the window's: given back to it as pages change (find's field had them, and closing it left them nowhere)
+    LaunchedEffect(pages.lastOrNull()) { if (pages.lastOrNull() != Page.Find) runCatching { focus.requestFocus() } }
     Box(
-        Modifier.fillMaxSize().background(Ink.black).focusRequester(focus).focusable()
+        Modifier.fillMaxSize().background(Ink.black).takesDrops().focusRequester(focus).focusable()
             .onKeyEvent { k ->
                 if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when {
@@ -271,6 +283,7 @@ private fun App() {
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 12 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 16 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) { PlayerPage({ pages += it }) { Win.full(false); pages.remove(Page.Playing) } }
+        DropHint()
       }
     }
 }

@@ -83,8 +83,19 @@ object Library {
     private val kept = File(Home.dir, "library.json")
     private val sounds = setOf("mp3", "flac", "m4a", "aac", "ogg", "oga", "opus", "wav", "aif", "aiff", "wv", "ape", "alac")
 
-    /** ~/Music (-Dink.folder=... another, to try it on another library). */
-    val folder: File get() = File(System.getProperty("ink.folder") ?: (System.getProperty("user.home") + "/Music"))
+    /** ~/Music, or the folder chosen in settings (-Dink.folder=... another, to try it on another library). */
+    private val chosen = File(Home.dir, "folder")
+    val folder: File get() = File(System.getProperty("ink.folder") ?: runCatching { chosen.readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+        ?: (System.getProperty("user.home") + "/Music"))
+    /** Bumped when the folder changes, so what shows it says the new one. */
+    val folderAt = MutableStateFlow(0)
+
+    /** Another folder for your files: read anew. */
+    fun choose(f: File) {
+        runCatching { Home.write(chosen, f.path) }
+        folderAt.value++
+        scan(fresh = true)
+    }
     /** The folder as said: ~/music. */
     val said: String get() = folder.path.replaceFirst(System.getProperty("user.home"), "~").lowercase()
 
@@ -97,12 +108,27 @@ object Library {
     // jaudiotagger says a great deal about every file it reads; held, or the logger (and its quiet) is collected
     private val quiet = java.util.logging.Logger.getLogger("org.jaudiotagger").apply { level = java.util.logging.Level.OFF }
 
-    fun start() {
-        scope.launch {
-            val before = runCatching { JSONArray(kept.readText()).let { a -> (0 until a.length()).map { songOf(a.getJSONObject(it)) } } }
+    fun start() = scan()
+
+    private var scanning: kotlinx.coroutines.Job? = null
+    private var scannedAt = 0L
+
+    /** Read again when the app comes back to the front (a song added, a folder moved in), at most once a minute. */
+    fun freshen() { if (System.currentTimeMillis() - scannedAt > 60_000) scan() }
+
+    /**
+     * The folder walked: what's kept shown at once, a file read again only when it's new or changed. `fresh`: a new
+     * folder, nothing kept from the last.
+     */
+    fun scan(fresh: Boolean = false) {
+        if (scanning?.isActive == true && !fresh) return
+        scanning?.cancel()
+        scannedAt = System.currentTimeMillis()
+        scanning = scope.launch {
+            val before = if (fresh) emptyList() else runCatching { JSONArray(kept.readText()).let { a -> (0 until a.length()).map { songOf(a.getJSONObject(it)) } } }
                 .getOrDefault(emptyList())
-            if (before.isNotEmpty()) { putLocal(before); read.value = true }
-            val known = before.associateBy { it.path }
+            if (before.isNotEmpty() && local.isEmpty()) { putLocal(before); read.value = true }
+            val known = (before + local).associateBy { it.path }
             val now = folder.walkTopDown().filter { it.isFile && it.extension.lowercase() in sounds && !it.name.startsWith("._") }
                 .mapNotNull { f -> known[f.path]?.takeIf { it.modified == f.lastModified() } ?: tags(f) }.toList()
             putLocal(now)
@@ -111,6 +137,12 @@ object Library {
                 Home.write(kept, JSONArray().apply { now.forEach { put(it.json()) } }.toString())
             }
         }
+    }
+
+    /** These files as songs (dropped on the window: anywhere, in the library or not); what isn't a sound is passed over. */
+    fun read(files: List<File>): List<Song> {
+        val known = local.associateBy { it.path }
+        return files.filter { it.extension.lowercase() in sounds && !it.name.startsWith("._") }.mapNotNull { known[it.path] ?: tags(it) }
     }
 
     /** A file as a song, by its tags; its name for its title when it has none. */

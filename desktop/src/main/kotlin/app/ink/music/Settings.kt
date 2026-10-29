@@ -71,7 +71,15 @@ fun SettingsPage(onClose: () -> Unit) {
             Spacer(Modifier.height(36.dp))
             BasicText("YOUR FILES", style = headline(24.sp))
             Spacer(Modifier.height(6.dp))
-            BasicText("every song in ${Library.said}", style = pixel(12.sp, Ink.mid))
+            val at by Library.folderAt.collectAsState()
+            val local = Library.songs.collectAsState().value.count { !it.server }
+            BasicText(remember(at, local) { "every song in ${Library.said} · $local songs" }, style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(12.dp))
+            Word("choose another folder", pixel(14.sp), touch = 8.dp) { chooseFolder()?.let(Library::choose) }
+            Word("read again", pixel(14.sp, Ink.mid), touch = 8.dp) { Library.scan() }
+
+            Spacer(Modifier.height(36.dp))
+            SoundSetting()
 
             Spacer(Modifier.height(48.dp))
             BasicText("made by ink · free and open, gpl-3.0", style = pixel(12.sp, Ink.mid))
@@ -217,4 +225,61 @@ private fun LastFmSetting() {
 /** A page in the browser. */
 fun browse(url: String) {
     runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }
+}
+
+/**
+ * Where the sound goes: each output there is (lit is chosen; "this mac's choice" follows what the Mac's set to), and
+ * alone or shared. Alone (exclusive), nothing else plays through it and a Mac sets it to the file's own sample rate.
+ */
+@Composable
+private fun SoundSetting() {
+    val sound by Player.sound.collectAsState()
+    val outputs = remember { Player.outputs() }
+    BasicText("SOUND", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("where it plays, and whether it has it alone", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    outputs.forEach { (name, said) ->
+        val label = if (name == "auto") "the ${if (Home.mac) "mac" else "computer"}'s choice" else said.lowercase().ifEmpty { name }
+        Word(label, pixel(14.sp, if (sound.device == name) Ink.ink else Ink.dim), touch = 6.dp) { Player.sound(sound.copy(device = name)) }
+    }
+    Spacer(Modifier.height(16.dp))
+    androidx.compose.foundation.layout.Row {
+        Word("shared", pixel(14.sp, if (!sound.exclusive) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
+            Player.sound(sound.copy(exclusive = false))
+        }
+        Word("alone", pixel(14.sp, if (sound.exclusive) Ink.ink else Ink.dim), touch = 8.dp) { Player.sound(sound.copy(exclusive = true)) }
+    }
+    Spacer(Modifier.height(6.dp))
+    BasicText(
+        if (sound.exclusive) "nothing else plays through it meanwhile; it runs at each file's own sample rate"
+        else "mixed with everything else the ${if (Home.mac) "mac" else "computer"} plays, at its own sample rate",
+        style = pixel(12.sp, Ink.mid),
+    )
+    Spacer(Modifier.height(16.dp))
+    androidx.compose.foundation.layout.Row {
+        Word("even volume", pixel(14.sp, if (sound.even) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
+            Player.sound(sound.copy(even = true))
+        }
+        Word("as recorded", pixel(14.sp, if (!sound.even) Ink.ink else Ink.dim), touch = 8.dp) { Player.sound(sound.copy(even = false)) }
+    }
+    Spacer(Modifier.height(6.dp))
+    BasicText(
+        if (sound.even) "every record as loud as the next, by the files' own replaygain tags" else "each file at the level it was made",
+        style = pixel(12.sp, Ink.mid),
+    )
+    Spacer(Modifier.height(6.dp))
+    BasicText("alone, as recorded, at volume 100: the file's samples reach the output unchanged", style = pixel(12.sp, Ink.mid))
+}
+
+/** A folder picked in the system's own way (the Mac's: its open panel, folders only); null if it's cancelled. */
+private fun chooseFolder(): java.io.File? = if (Home.mac) {
+    System.setProperty("apple.awt.fileDialogForDirectories", "true")
+    val d = java.awt.FileDialog(null as java.awt.Frame?, "Your music", java.awt.FileDialog.LOAD)
+    d.isVisible = true
+    System.setProperty("apple.awt.fileDialogForDirectories", "false")
+    d.file?.let { java.io.File(d.directory, it) }
+} else {
+    val c = javax.swing.JFileChooser(Library.folder).apply { fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY; dialogTitle = "Your music" }
+    if (c.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) c.selectedFile else null
 }

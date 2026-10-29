@@ -40,6 +40,35 @@ object Player {
     /** Shuffle (the songs after the one playing, in another order) and repeat (0 off, 1 all, 2 one); kept. */
     val shuffle = MutableStateFlow(File(Home.dir, "shuffle").exists())
     val repeat = MutableStateFlow(runCatching { File(Home.dir, "repeat").readText().trim().toInt() }.getOrDefault(0).coerceIn(0, 2))
+    /**
+     * Where the sound goes: an output (mpv's name for it; "auto", the Mac's own choice) and whether it's had alone
+     * (exclusive: nothing else on the computer plays through it meanwhile, and on a Mac it's set to the file's own
+     * sample rate, not mixed at the system's). Kept.
+     */
+    data class Sound(val device: String = "auto", val exclusive: Boolean = false, val even: Boolean = true)
+    private val soundFile = File(Home.dir, "sound.json")
+    val sound = MutableStateFlow(runCatching { JSONObject(soundFile.readText()).let { Sound(it.optString("device", "auto"), it.optBoolean("exclusive"), it.optBoolean("even", true)) } }.getOrDefault(Sound()))
+
+    /** The outputs there are now, as mpv names them and as they're called ("auto" first). */
+    fun outputs(): List<Pair<String, String>> {
+        val list = mpv?.get("audio-device-list") ?: return emptyList()
+        return runCatching {
+            val a = JSONArray(list)
+            (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("name") to it.optString("description") }
+        }.getOrDefault(emptyList())
+    }
+
+    fun sound(to: Sound) {
+        val was = sound.value
+        sound.value = to
+        mpv?.let { m ->
+            if (to.device != was.device) m.set("audio-device", to.device)
+            if (to.exclusive != was.exclusive) { m.set("audio-exclusive", if (to.exclusive) "yes" else "no"); m.command("ao-reload") }
+            if (to.even != was.even) m.set("replaygain", if (to.even) "album" else "no")
+        }
+        scope.launch { runCatching { Home.write(soundFile, JSONObject().put("device", to.device).put("exclusive", to.exclusive).put("even", to.even).toString()) } }
+    }
+
     /** The queue in its own order while shuffled (back to it when shuffle's off). */
     private var unshuffled: List<Song>? = null
 
@@ -59,12 +88,13 @@ object Player {
                 "vid" to "no", "audio-display" to "no", "terminal" to "no", "idle" to "yes",
                 "gapless-audio" to "yes",
                 // even volume from the files' own tags: a record's level, a song's when it has none
-                "replaygain" to "album", "replaygain-clip" to "no",
+                "replaygain" to if (sound.value.even) "album" else "no", "replaygain-clip" to "no",
                 // the Mac's media keys and Now Playing (mpv does both, asked to even as a library)
                 "media-controls" to "yes", "input-media-keys" to "yes",
                 "audio-client-name" to "ink music", "title" to "ink music",
                 "ytdl" to "no", "cache" to "yes",
                 "volume" to volume.value.toString(), "volume-max" to "100",
+                "audio-device" to sound.value.device, "audio-exclusive" to if (sound.value.exclusive) "yes" else "no",
                 "loop-playlist" to if (repeat.value == 1) "inf" else "no", "loop-file" to if (repeat.value == 2) "inf" else "no",
                 // -Dink.ao=null: silent, to try it without playing out loud
             ) + listOfNotNull(System.getProperty("ink.ao")?.let { "ao" to it }))
@@ -81,7 +111,8 @@ object Player {
         Thread({ listen(m) }, "mpv").apply { isDaemon = true }.start()
         // the queue as it was, once the library knows its songs (a server's come from disk in a moment)
         scope.launch {
-            withTimeoutOrNull(10_000) { Library.songs.first { it.isNotEmpty() } } ?: return@launch
+            // (a queue of songs dropped from elsewhere comes back whole, the library or no)
+            withTimeoutOrNull(10_000) { Library.songs.first { it.isNotEmpty() } }
             restore()
         }
     }
@@ -110,7 +141,7 @@ object Player {
 
     /** The queue as kept: its ids, each song whole (YouTube's aren't in the library), the one playing and where. */
     private fun written(q: List<Song>, s: Song?) = JSONObject().put("ids", JSONArray(q.map { it.id }))
-        .put("songs", JSONArray(q.map { if (it.tube || it.station) it.json() else JSONObject() })).put("id", s?.id ?: "").put("position", position.value).toString()
+        .put("songs", JSONArray(q.map { if (it.tube || it.station || Library.song(it.id) == null) it.json() else JSONObject() })).put("id", s?.id ?: "").put("position", position.value).toString()
 
     private fun listen(m: Mpv) {
         while (true) {

@@ -118,7 +118,11 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
             for (w in listOf("up next", "lyrics", "play on")) Word(w, pixel(13.sp, if (w == shows) Ink.ink else Ink.dim), touch = 6.dp) { shows = w }
             Spacer(Modifier.weight(1f))
             // the player, the whole screen
-            Pixel(FULL, "full screen", Ink.mid, Modifier.offset(x = 8.dp)) { Win.full(true); open(Page.Playing) }
+            // the mini player, over every window; the player, the whole screen
+            Row(Modifier.offset(x = 8.dp)) {
+                Pixel(SHRINK, "mini player", Ink.mid) { Mini.open() }
+                Pixel(FULL, "full screen", Ink.mid) { Win.full(true); open(Page.Playing) }
+            }
         }
         Spacer(Modifier.height(8.dp))
         Box(Modifier.weight(1f).fillMaxWidth()) {
