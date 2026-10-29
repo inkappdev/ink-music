@@ -10,6 +10,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
@@ -27,7 +28,7 @@ import java.time.temporal.TemporalAdjusters
 object Picks {
     data class Shown(val pick: Curation.Pick, val art: String?, val by: List<String>) {
         val face: Song get() = Song(id = "ypick:" + Curation.key(pick), uri = android.net.Uri.EMPTY, title = pick.title, artist = pick.artist, album = pick.title,
-            albumId = "pick:" + Curation.key(pick), albumArtist = pick.artist, duration = 0, disc = 1, track = 0, year = 0, art = art)
+            albumId = "pick:" + Curation.key(pick) + (art ?: ""), albumArtist = pick.artist, duration = 0, disc = 1, track = 0, year = 0, art = art)
     }
 
     val records = MutableStateFlow<List<Shown>>(emptyList())
@@ -89,6 +90,37 @@ object Picks {
         fun list(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { shown(a.getJSONObject(it)) } }.orEmpty()
         records.value = list("records"); songs.value = list("songs"); today.value = o.optJSONObject("today")?.let(::shown)
     }
+
+    // ---- out this friday ----
+
+    /** This week's records (r/indieheads' New Music Friday), read with the rest; null till read, or when Reddit won't say. */
+    val friday = MutableStateFlow<Curation.Week?>(null)
+    @Volatile private var fridayAt = 0L
+
+    /** Read again when it's half a day old. */
+    fun startFriday() {
+        if (System.currentTimeMillis() - fridayAt < 12 * 3_600_000L) return
+        fridayAt = System.currentTimeMillis()
+        scope.launch { Curation.outThisFriday()?.let { friday.value = it } }
+    }
+
+    private val arts = java.util.concurrent.ConcurrentHashMap<String, java.util.Optional<String>>()
+    private val asking = kotlinx.coroutines.sync.Semaphore(3)
+
+    /** A record's cover: the thread's own (when its link is one), else its Bandcamp or Apple Music page's, else iTunes', asked as its tile comes into sight, kept. */
+    suspend fun art(r: Curation.Release): String? {
+        if (Regex("\\.(jpe?g|png)$", RegexOption.IGNORE_CASE).containsMatchIn(r.link)) return r.link
+        val k = (r.artist + "/" + r.title).lowercase()
+        arts[k]?.let { return it.orElse(null) }
+        return asking.withPermit {
+            arts[k]?.let { return@withPermit it.orElse(null) }
+            withContext(Dispatchers.IO) { Curation.coverAt(r.link) ?: Curation.itunes(r.title, r.artist, true) }.also { arts[k] = java.util.Optional.ofNullable(it) }
+        }
+    }
+
+    /** A week's record as a pick (its genres where a critic's name would be), to show and find as picks are. */
+    fun shown(r: Curation.Release, art: String?) = Shown(Curation.Pick(true, r.title, r.artist, "r/indieheads", "", r.link, 0, art), art,
+        listOf(r.genres.take(2).joinToString(", ").lowercase()))
 
     suspend fun air() { val a = withContext(Dispatchers.IO) { Curation.onAir() }; if (a.isNotEmpty()) onAir.value = a }
 

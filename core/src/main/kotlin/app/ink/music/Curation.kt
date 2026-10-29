@@ -47,7 +47,7 @@ object Curation {
     private val QUOTES = "\"“”‘’'"
 
     /** Every pick from every feed, the newest first (a feed that won't answer is passed over). */
-    fun picks(): List<Pick> = listOf(::pitchforkRecords, ::pitchforkSongs, ::stereogum, ::bandcamp, ::nme, ::quietus, ::aquarium, ::gorilla, ::npr, ::dusted)
+    fun picks(): List<Pick> = listOf(::pitchforkRecords, ::pitchforkSongs, ::stereogum, ::bandcamp, ::nme, ::quietus, ::aquarium, ::gorilla, ::npr, ::dusted, ::stereofox, ::fader)
         .flatMap { f -> runCatching { f() }.getOrDefault(emptyList()) }
         .filter { it.title.isNotBlank() && it.artist.isNotBlank() }
         .sortedByDescending { it.at }
@@ -132,12 +132,92 @@ object Curation {
             quick.map { (a, t) -> Pick(true, t, a.trim(), "npr music", "", i.link, i.at, null) })
     }
 
+    /** Stereofox's songs, a few a day (electronic, r&b, dream pop, uk garage...): "Logic1000 – The Girl (feat. yunè pinku)". */
+    private fun stereofox() = items("https://www.stereofox.com/feed/").filter { "Songs" in it.tags }.mapNotNull { i ->
+        val (a, t) = i.title.split(" – ").takeIf { it.size == 2 } ?: return@mapNotNull null
+        Pick(false, t.replace(Regex("\\s*\\((ft|feat)\\.?[^)]*\\)", RegexOption.IGNORE_CASE), "").trim(), a.trim(), "stereofox", i.text, i.link, i.at, null)
+    }
+
+    /** The FADER's songs you need right now, each Wednesday: the list is on its page ("Lambrini Girls, “Spilt”"), the feed says only that it's up. */
+    private fun fader() = items("https://www.thefader.com/feed/").filter { it.title.contains("songs you need", true) }.take(2).flatMap { i ->
+        // each song its own headline: <h5 class="headline">Dead Man's Bones, “Lost In The Night”</h5>
+        Regex("""<h5 class="headline"[^>]*>(.*?)</h5>""", RegexOption.DOT_MATCHES_ALL).findAll(get(i.link))
+            .mapNotNull { m -> Regex("^(.{1,80}?),\\s*[“\"](.{1,100})[”\"]$").find(plain(m.groupValues[1])) }
+            .mapIndexed { n, m -> Pick(false, m.groupValues[2], m.groupValues[1], "the fader", "", i.link, i.at - 60_000L * n, null) }.toList()
+    }
+
     /** Dusted, the independent and experimental reviews: "Imperial Teen — All Over You (Merge)", a review a day. */
     private fun dusted() = items("https://dustedmagazine.tumblr.com/rss").mapNotNull { i ->
         // its titles come escaped twice ("&amp;mdash;")
         val m = Regex("^(.+?)\\s+[—–]\\s+(.+?)(?:\\s+\\(([^()]*)\\))?$").find(plain(i.title)) ?: return@mapNotNull null
         Pick(true, m.groupValues[2], m.groupValues[1], "dusted", i.text, i.link, i.at, null)
     }
+
+    // ---- out this friday ----
+
+    /** A record out this week: who, what, its label and genres, where it's heard (Bandcamp, Apple Music), the thread's mark. */
+    data class Release(val title: String, val artist: String, val label: String, val genres: List<String>, val link: String, val mark: String)
+
+    /** This week's releases: the week's day ("october 23rd"), the thread, the records; null when Reddit won't say. */
+    data class Week(val day: String, val thread: String, val releases: List<Release>)
+
+    /**
+     * Every record out this week, from r/indieheads' New Music Friday thread (Bronson, 2026-10-29): its newest one,
+     * read from Reddit's search feed (its JSON turns apps away), each record "<strong>Artist - <a>Title</a></strong>",
+     * then "Label: ..." and "Genre: ...". One person types it by hand each Friday, so a record that strays from that
+     * shape is passed over; Reddit may close the feed to apps, and then the shelf isn't shown.
+     */
+    fun outThisFriday(): Week? = runCatching {
+        val feed = get("https://www.reddit.com/r/indieheads/search.rss?q=title%3A%22new+music+friday%22&restrict_sr=1&sort=new")
+        val entry = Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL).findAll(feed).map { it.groupValues[1] }
+            .firstOrNull { Regex("<title>New Music Friday", RegexOption.IGNORE_CASE).containsMatchIn(it) } ?: return null
+        val title = plain(Regex("<title>(.*?)</title>").find(entry)?.groupValues?.get(1).orEmpty())
+        val thread = Regex("<link href=\"([^\"]+)\"").find(entry)?.groupValues?.get(1).orEmpty()
+        val body = Regex("<content[^>]*>(.*?)</content>", RegexOption.DOT_MATCHES_ALL).find(entry)?.groupValues?.get(1).orEmpty()
+            .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&")
+        val one = Regex("""<p>\s*([^<]*?)\s*<strong>(.+?)\s+[-–]\s+(?:<a href="([^"]*)">)?(.+?)(?:</a>)?\s*</strong>\s*</p>\s*<p>\s*Label:\s*(.*?)</p>\s*<p>\s*Genres?:\s*(.*?)</p>""",
+            RegexOption.DOT_MATCHES_ALL)
+        val releases = one.findAll(body).map { m ->
+            val g = m.groupValues
+            Release(plain(g[4]), plain(g[2]), plain(g[5]).takeUnless { it.equals("n/a", true) }.orEmpty(),
+                plain(g[6]).split(",").map { it.trim() }.filter { it.isNotEmpty() }, g[3], plain(g[1]))
+        }.filter { it.title.isNotBlank() && it.artist.isNotBlank() }.distinctBy { key(Pick(true, it.title, it.artist, "", "", "", 0, null)) }.toList()
+        if (releases.isEmpty()) null
+        else Week(title.substringAfter(":").substringBefore(",").substringBefore("(").trim().lowercase(), thread, releases)
+    }.getOrNull()
+
+    /** The kinds a week's records are filtered by: a broad name, and the words in their genres that put a record in it. */
+    private val KINDS = listOf(
+        "indie and rock" to listOf("indie", "rock", "punk", "shoegaze", "post-", "slowcore", "emo", "grunge", "power pop", "dream pop", "jangle"),
+        "folk and songwriters" to listOf("folk", "singer-songwriter", "singer/songwriter", "country", "americana", "bluegrass"),
+        "pop" to listOf("pop"),
+        "hip hop and r&b" to listOf("hip hop", "hip-hop", "rap", "r&b", "soul", "funk", "trap"),
+        "electronic" to listOf("electronic", "house", "techno", "idm", "electro", "dance", "synth", "club", "uk garage", "breakbeat"),
+        "ambient and out there" to listOf("ambient", "experimental", "drone", "minimal", "classical", "industrial", "noise", "musique"),
+        "jazz" to listOf("jazz"),
+        "metal and heavy" to listOf("metal", "hardcore", "doom", "sludge", "grind"),
+    )
+
+    /**
+     * The cover a record's link shows: a Bandcamp page's own (its og:image, made 700 across), an Apple Music link's
+     * (iTunes looked up by its id); null for anything else.
+     */
+    fun coverAt(link: String): String? = runCatching {
+        when {
+            "bandcamp.com" in link -> Regex("""<meta property="og:image" content="([^"]+)"""").find(get(link))?.groupValues?.get(1)
+                ?.replace(Regex("_\\d+\\.jpg$"), "_16.jpg")
+            "music.apple.com" in link -> Regex("/(\\d{6,})").findAll(link.substringBefore("?")).lastOrNull()?.groupValues?.get(1)?.let { id ->
+                org.json.JSONObject(get("https://itunes.apple.com/lookup?id=$id")).optJSONArray("results")?.optJSONObject(0)
+                    ?.optString("artworkUrl100")?.takeIf { it.isNotEmpty() }?.replace(Regex("/\\d+x\\d+[a-z-]*\\.(jpg|png)$"), "/1200x1200bb.$1")
+            }
+            else -> null
+        }
+    }.getOrNull()
+
+    /** A week's records by kind (a record can be in several), the kinds with three or more, the most first. */
+    fun kinds(releases: List<Release>): List<Pair<String, List<Release>>> = KINDS.map { (name, words) ->
+        name to releases.filter { r -> r.genres.any { g -> words.any { w -> w in g.lowercase() } } }
+    }.filter { it.second.size >= 3 }.sortedByDescending { it.second.size }
 
     /**
      * Picks shown fairly: the publications taking turns, each one's newest first, so one that reviews five records a day

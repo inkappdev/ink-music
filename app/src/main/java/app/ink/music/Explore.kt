@@ -65,7 +65,8 @@ import java.io.File
 @Composable
 fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val ctx = LocalContext.current
-    LaunchedEffect(Unit) { Picks.start(ctx) }
+    LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday() }
+    val friday by Picks.friday.collectAsState()
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
     val records by Picks.records.collectAsState()
     val songs by Picks.songs.collectAsState()
@@ -99,6 +100,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             Spacer(Modifier.height(10.dp))
             ShelfIndexed(records.take(30)) { _, s -> PickTile(s, pages) }
         }
+        friday?.let { w -> item(key = "friday") { OutThisFriday(w, pages) } }
         if (chart.isNotEmpty()) item(key = "artist") { ArtistOfTheWeek(chart, pages) }
         if (songs.isNotEmpty()) item(key = "songs") {
             var said by remember { mutableStateOf<String?>(null) }
@@ -216,7 +218,7 @@ private fun PickTile(s: Picks.Shown, pages: Pages) {
     // not on YouTube Music (often reviewed before it's streaming, or only on Bandcamp): a second tap reads the review
     var missing by remember(s) { mutableStateOf(false) }
     Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null) {
-        if (missing && s.pick.link.isNotBlank()) runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.pick.link))) }
+        if ((missing || !YouTubeMusic.available) && s.pick.link.isNotBlank()) runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.pick.link))) }
         else if (YouTubeMusic.available) scope.launch {
             said = "finding it"; val a = Picks.record(s.pick)
             missing = a == null
@@ -232,6 +234,38 @@ private fun PickTile(s: Picks.Shown, pages: Pages) {
 }
 
 /** The artist of the week: from the indie chart's top fifteen, the very famous passed over; their photo dithered, a line, play. */
+/**
+ * Out this Friday: every record out this week (r/indieheads' New Music Friday thread, typed up by one of them each
+ * Friday), filtered by kind, a shelf to slide through; each cover found as it comes into sight.
+ */
+@Composable
+private fun OutThisFriday(w: Curation.Week, pages: Pages) {
+    val ctx = LocalContext.current
+    val kinds = remember(w) { Curation.kinds(w.releases) }
+    var kind by remember(w) { mutableStateOf<String?>(null) }
+    val shown = kind?.let { k -> kinds.firstOrNull { it.first == k }?.second } ?: w.releases
+    Label("out this friday")
+    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+        BasicText("every record out ${w.day}, from r/indieheads", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+        Word("thread", pixel(13.sp, Ink.mid), touch = 8.dp) {
+            runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(w.thread)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        item { Word("all", pixel(13.sp, if (kind == null) Ink.ink else Ink.dim), touch = 8.dp) { kind = null } }
+        items(kinds, key = { it.first }) { (k, l) -> Word("$k ${l.size}", pixel(13.sp, if (kind == k) Ink.ink else Ink.dim), touch = 8.dp) { kind = k } }
+    }
+    Spacer(Modifier.height(10.dp))
+    androidx.compose.runtime.key(kind) {
+        Shelf(shown) { r ->
+            val art by produceState<String?>(null, r) { value = Picks.art(r) }
+            PickTile(remember(r, art) { Picks.shown(r, art) }, pages)
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+}
+
 @Composable
 private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, pages: Pages) {
     // the chart's artists and the critics' picks', the week's turn through them; someone with under a million and a half
