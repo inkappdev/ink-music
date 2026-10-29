@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.key
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -73,7 +74,8 @@ fun ExplorePage(open: (Page) -> Unit) {
         }
     }
     val moods by produceState<List<InnerTube.Mood>?>(Moods.kept()) { value = Moods.read() ?: value }
-    LaunchedEffect(Unit) { Picks.start() }
+    LaunchedEffect(Unit) { Picks.start(); Picks.startFriday() }
+    val friday by Picks.friday.collectAsState()
     // what's on the air, asked again each minute while explore is up
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
     val records by Picks.records.collectAsState()
@@ -100,6 +102,7 @@ fun ExplorePage(open: (Page) -> Unit) {
                     records.take(across * 2).chunked(across).forEach { row -> TileRow(row, across) { s -> PickTile(s, open) } }
                 }
             }
+            friday?.let { w -> item(key = "friday") { OutThisFriday(w, open) } }
             chart.orEmpty().takeIf { it.isNotEmpty() }?.let { c -> item(key = "artist") { ArtistOfTheWeek(c, open) } }
             item(key = "songs") {
                 // the songs the critics picked, beside the stations' chart: side by side wide, one above the other narrow
@@ -229,6 +232,35 @@ private fun OnTheAir(air: List<Curation.Aired>) {
     }
 }
 
+/**
+ * Out this Friday: every record out this week (r/indieheads' New Music Friday thread, typed up by one of them each
+ * Friday), filtered by kind, in two rows to slide through; each cover found as it comes into sight.
+ */
+@Composable
+private fun OutThisFriday(w: Curation.Week, open: (Page) -> Unit) {
+    val kinds = remember(w) { Curation.kinds(w.releases) }
+    var kind by remember(w) { mutableStateOf<String?>(null) }
+    val shown = kind?.let { k -> kinds.firstOrNull { it.first == k }?.second } ?: w.releases
+    Column {
+        Section("OUT THIS FRIDAY", "every record out ${w.day}, ${w.releases.size} of them, from r/indieheads") {
+            Word("the thread", pixel(14.sp, Ink.mid), touch = 8.dp) { browse(w.thread) }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(bottom = 14.dp)) {
+            item { Word("all", pixel(13.sp, if (kind == null) Ink.ink else Ink.dim), touch = 8.dp) { kind = null } }
+            items(kinds, key = { it.first }) { (k, l) -> Word("$k ${l.size}", pixel(13.sp, if (kind == k) Ink.ink else Ink.dim), touch = 8.dp) { kind = k } }
+        }
+        key(kind) {
+            androidx.compose.foundation.lazy.grid.LazyHorizontalGrid(androidx.compose.foundation.lazy.grid.GridCells.Fixed(2), Modifier.height(492.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(shown, key = { it.artist + "/" + it.title }) { r ->
+                    val art by produceState<String?>(null, r) { value = Picks.art(r) }
+                    Box(Modifier.width(160.dp)) { PickTile(remember(r, art) { Picks.shown(r, art) }, open) }
+                }
+            }
+        }
+    }
+}
+
 /** A record someone picked: its cover, its name, who picked it; a click opens it on YouTube Music. */
 @Composable
 private fun PickTile(s: Picks.Shown, open: (Page) -> Unit) {
@@ -292,7 +324,7 @@ private fun PickedSongs(songs: List<Picks.Shown>, modifier: Modifier) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
     Column(modifier) {
-        Section("PICKED BY CRITICS", said ?: "pitchfork's and gorilla vs. bear's newest") {
+        Section("PICKED BY CRITICS", said ?: "the newest from pitchfork, the fader, stereofox and gorilla vs. bear") {
             Word("play all", pixel(14.sp), touch = 8.dp) { scope.launch { said = "finding them on youtube music"; Picks.playSongs(songs); said = null } }
         }
         songs.take(10).forEach { s ->
