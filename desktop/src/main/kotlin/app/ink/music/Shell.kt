@@ -119,7 +119,7 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         if (n == null) {
             BasicText("NOTHING PLAYING", style = headline(22.sp, Ink.dim))
             Spacer(Modifier.height(6.dp))
-            BasicText(trouble ?: "a record, a song or a station: what you play shows here", style = pixel(12.sp, Ink.mid))
+            trouble?.let { NoSound(it) } ?: BasicText("a record, a song or a station: what you play shows here", style = pixel(12.sp, Ink.mid))
             return@Column
         }
         val cover = rememberCover(n.song, 720)

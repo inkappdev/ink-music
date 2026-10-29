@@ -1,6 +1,7 @@
 import java.time.LocalDate
 import java.util.Properties
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 
 // ink music on a Mac (Linux and Windows later): the same look, the library from a folder and the
 // server, sound by libmpv (bundled into the app by the GitHub Action: native/macos-arm64)
@@ -108,5 +109,16 @@ compose.desktop {
                 }
             }
         }
+    }
+}
+
+// Linux plays through the system's libmpv (it isn't carried in the app): the packages ask for it, so dnf, apt or the
+// software store brings it with ink music (Compose's linux {} has no word for this; jpackage's own flag does).
+// rpm by what it provides (Fedora's mpv-libs, openSUSE's libmpv2); deb by name (libmpv1 on Ubuntu 22.04 and older)
+tasks.withType<AbstractJPackageTask>().configureEach {
+    when (targetFormat) {
+        TargetFormat.Rpm -> freeArgs.addAll("--linux-package-deps", "libmpv.so.2()(64bit)")
+        TargetFormat.Deb -> freeArgs.addAll("--linux-package-deps", "libmpv2 | libmpv1")
+        else -> {}
     }
 }
