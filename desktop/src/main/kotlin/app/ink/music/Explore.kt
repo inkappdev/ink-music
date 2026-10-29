@@ -189,7 +189,7 @@ private fun OnTheAir(air: List<Curation.Aired>) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column(Modifier.padding(bottom = 28.dp)) {
         BasicText("ON THE AIR NOW", style = headline(30.sp))
-        BasicText("what the djs are playing this minute: a click plays the song, tune in plays the station", style = pixel(12.sp, Ink.mid))
+        BasicText("what the djs are playing this minute: a click tunes in", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(12.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             items(air, key = { it.station }) { a ->
@@ -199,15 +199,15 @@ private fun OnTheAir(air: List<Curation.Aired>) {
                     val art by produceState(a.art, a) { if (value == null) value = withContext(Dispatchers.IO) { Curation.itunes(a.title, a.artist, false) } }
                     val face = remember(a, art) { Song(id = "yair:" + a.station + a.title, path = "", title = a.title, artist = a.artist, album = a.title,
                         albumId = "air:" + a.station + a.title + (art ?: ""), albumArtist = a.artist, duration = 0, disc = 1, track = 0, year = 0, art = art) }
+                    // a click tunes in to the station (its song, if the station's not one ink keeps)
+                    val station = remember(a) { Stations.known(a.station) }
                     Box(Modifier.fillMaxWidth().aspectRatio(1f).clickable(remember { MutableInteractionSource() }, indication = null) {
-                        scope.launch { said = "finding it"; val s = Picks.song(a.title, a.artist); said = if (s == null) "not on youtube music" else null; s?.let { Player.play(listOf(it)) } }
+                        if (station != null) Player.play(listOf(station))
+                        else scope.launch { said = "finding it"; val s = Picks.song(a.title, a.artist); said = if (s == null) "not on youtube music" else null; s?.let { Player.play(listOf(it)) } }
                     }) { CoverOf(face, a.title, Modifier.fillMaxSize(), px = 340) }
                     Spacer(Modifier.height(8.dp))
                     UnderCover(a.title, a.artist)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        BasicText("on ${a.name}", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
-                        Stations.known(a.station)?.let { st -> Word("tune in", pixel(12.sp), touch = 4.dp) { Player.play(listOf(st)) } }
-                    }
+                    BasicText("on ${a.name}", style = pixel(12.sp, Ink.mid))
                     said?.let { BasicText(it, style = pixel(12.sp, Ink.dim)) }
                 }
             }
@@ -301,21 +301,30 @@ private fun Chart(chart: List<IndieChart.Entry>?, before: Map<String, Int?>?, op
 @Composable
 private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit) {
     // the week's turn through the chart's top fifteen, passing over the very famous (a discovery, not the Rolling Stones)
-    val names = remember(chart) { chart.take(15).map { it.artist.substringBefore(",").trim() }.distinct() }
+    // the chart's artists and the critics' picks', the week's turn through them; someone with under a million and a half
+    // listeners a month (Bronson, 2026-10-28: "a bit more niche"), with a photo to show
+    val picked by Picks.records.collectAsState()
+    val names = remember(chart, picked) {
+        (chart.map { it.artist } + picked.map { it.pick.artist }).map { it.substringBefore(",").substringBefore(" & ").trim() }
+            .filter { it.isNotBlank() && !it.equals("various artists", true) }.distinctBy { it.lowercase() }
+    }
     val week = java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toEpochDay() / 7
     val info by produceState<ArtistInfo?>(null, names) {
         if (names.isEmpty()) return@produceState
         val from = (week % names.size).toInt()
-        for (k in names.indices) {
+        for (k in 0 until minOf(names.size, 20)) {
             val name = names[(from + k) % names.size]
             val a = withContext(Dispatchers.IO) { kotlinx.coroutines.withTimeoutOrNull(8_000) { Artists.of(name, "").firstOrNull { it != null } } } ?: continue
-            if (audience(a.audience) < 10_000_000 && a.photo != null) { value = a; return@produceState }
+            val n = audience(a.audience)
+            // and new-ish: a bio whose story starts before 2005 ("born 1948", "formed in 1968") is a legend's, small page or not
+            val veteran = Regex("\\b(19\\d\\d|200[0-4])\\b").containsMatchIn(a.about.take(400))
+            if (n in 1..1_500_000 && a.photo != null && !veteran) { value = a; return@produceState }
         }
     }
     val i = info ?: return
     Column(Modifier.padding(top = 18.dp, bottom = 18.dp)) {
         BasicText("ARTIST OF THE WEEK", style = headline(18.sp, Ink.mid))
-        BasicText("from the indie chart's top, a new one each monday", style = pixel(12.sp, Ink.mid))
+        BasicText("someone the djs and critics are into, a new one each monday", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(14.dp))
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val side = minOf(maxWidth * .42f, 380.dp)

@@ -2,6 +2,7 @@ package app.ink.music
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -93,18 +95,16 @@ object StationSleeve {
 /** A station's sleeve on screen; `moving`, its rings travel (the player's, while it plays). */
 @Composable
 fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean = false) {
-    BoxWithConstraints(modifier.background(Ink.black)) {
+    // a white frame round it, the rings filling it all, the name big on a black tab at its lower left, over the rings
+    // where they begin (Bronson, 2026-10-28: "a white box around the radio dither", the name "spilling into" it)
+    BoxWithConstraints(modifier.background(Ink.black).border(1.dp, Ink.ink)) {
         val side = maxWidth
         val density = LocalDensity.current.density
         val px = side.value * density
-        // where the name starts, once it's laid out: the rings end just above it
-        var nameTop by remember(station.id, px) { mutableStateOf<Float?>(null) }
-        val frames by produceState<List<ImageBitmap>?>(null, station.id, px, nameTop, moving) {
-            val top = nameTop ?: return@produceState
-            val clear = (top - side.value / 11 * .4f * density) / px
+        val frames by produceState<List<ImageBitmap>?>(null, station.id, px, moving) {
             val n = StationSleeve.cells(px, density)
             value = withContext(Dispatchers.Default) {
-                (0 until if (moving) StationSleeve.FRAMES else 1).map { StationSleeve.rings(station.id, n, clear, it) }
+                (0 until if (moving) StationSleeve.FRAMES else 1).map { StationSleeve.rings(station.id, n, .96f, it) }
             }
         }
         var frame by remember { mutableIntStateOf(0) }
@@ -113,12 +113,16 @@ fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean =
             while (moving && count > 1) { delay(220); frame = (frame + 1) % count }
         }
         frames?.let { f ->
-            Image(f[frame % f.size], null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
+            Image(f[frame % f.size], null, Modifier.fillMaxSize().padding(1.dp), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
         }
-        Box(Modifier.fillMaxSize().padding(side / 11), contentAlignment = Alignment.BottomStart) {
+        Box(Modifier.fillMaxSize().padding(start = 1.dp, bottom = side / 12), contentAlignment = Alignment.BottomStart) {
+            // as big as the sleeve allows, but its longest word whole on a line (CASHMERE broke as CASHME / RE)
+            val longest = station.title.split(' ').maxOfOrNull { it.length } ?: 1
+            val size = minOf(side.value / 5.6f, side.value * .84f / (longest * .74f))
             BasicText(
-                station.title.uppercase(), style = headline((side.value / 7f).sp), maxLines = 4, overflow = TextOverflow.Ellipsis,
-                onTextLayout = { l -> nameTop = px - side.value / 11 * density - l.size.height },
+                station.title.uppercase(), style = headline(size.sp).copy(lineHeight = (size * 1.02f).sp),
+                maxLines = 3, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.background(Ink.black).padding(start = side / 14, end = side / 20, top = side / 40),
             )
         }
     }
