@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- keeping itself up to date from GitHub (Updates): the play build's store does it for it -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application>
         <!-- signing in to YouTube Music on Google's own page: a screen of its own, sized above the keyboard -->
         <activity
@@ -7,5 +9,7 @@
             android:screenOrientation="portrait"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+        <!-- what the phone's installer says about an update: ask, done, refused -->
+        <receiver android:name=".Updates$Installed" android:exported="false" />
     </application>
 </manifest>

@@ -154,7 +154,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val seed by Order.seed.collectAsState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(seeds.map { it.name }) { Listen.load(ctx); Weekly.load(ctx) }
-    LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday(); Picks.startElectronic() }
+    LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday(); Picks.startElectronic(); Updates.check(ctx) }
+    val update by Updates.offer.collectAsState()
     // the computer's offer: newer than what played here, and nothing playing here
     val offer by SyncPhone.theirs.collectAsState()
     val nowHere by Playback.now.collectAsState()
@@ -233,6 +234,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 Cog { pages.open(Page.Settings) }
             }
         }}
+        // a newer ink music (the full build: GitHub's), first after the greeting
+        update?.let { u -> item(key = "update") { Column(Modifier.cascade(1)) { UpdateCard(u) } } }
         // a year in (or two...): your first song here, on the day (an easter egg)
         firstHeard?.takeIf { Eggs.anniversary(it.at) > 0 }?.let { f -> item(key = "anniversary") { Column(Modifier.cascade(1)) { Anniversary(f) } } }
         // what the computer was playing, to carry on with here (Sync)

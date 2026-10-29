@@ -23,6 +23,10 @@
 </p>
 
 <p align="center">
+  <img src=".github/ink-music.gif" width="300" alt="ink music moving: listen's shelves, the places dropping down, INK's weekly cover in dither, then the player and a song pushed on to the next" />
+</p>
+
+<p align="center">
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="18.5%" alt="A lossless song's moment: LOSSLESS, 16 bit, 44.1 kHz across the cover" />&nbsp;
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="18.5%" alt="Welcome: INK MUSIC over records developing in dither" />&nbsp;
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/9.png" width="18.5%" alt="The player in the dither look: Madvillainy" />&nbsp;
@@ -38,6 +42,24 @@
 </p>
 
 ---
+
+## New in 1.4.10
+
+- **INK**, a place of its own: ink weekly as its cover, the record of the day, what critics and DJs are
+  picking (Pitchfork, Bandcamp Daily, NPR, the Quietus and more), what's out this Friday, festivals
+  coming up, and moods made by ink.
+- **Made for you**, from your listening and nothing else: fresh finds, deep cuts, loved long ago, a
+  year ago today, new to you.
+- **New from your artists** at the top of listen.
+- **YouTube Music kept offline**: a song, a record or a whole playlist.
+- **Private listening**: while it's on, nothing you play is kept or sent.
+- **A playlist from the player**, and play next really comes next.
+- **ink music keeps itself up to date**: a new version shows on listen, with what's new in it; one
+  tap, and the phone's installer checks it's ink music's before it goes in.
+- Easter eggs. We said we wouldn't tell.
+
+Every version's changes are in [the releases](https://github.com/inkappdev/ink-music/releases).
+Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues): what goes in says who asked.
 
 ## Your music, from wherever it lives
 

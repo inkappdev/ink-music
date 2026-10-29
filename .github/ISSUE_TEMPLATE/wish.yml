@@ -1,0 +1,20 @@
+name: I wish it would
+description: Something you'd like ink music to do. What goes in says who asked.
+labels: [wish]
+body:
+  - type: textarea
+    attributes:
+      label: I wish ink music would
+      description: What you'd do with it, and when. The moment matters more than the button.
+      placeholder: Let me keep a whole record offline before a flight
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Anything it should look or feel like
+      description: Another app that does it well, a picture, a sketch. ink's look stays ink's (black, two typefaces, words before icons), but the idea is yours.
+  - type: dropdown
+    attributes:
+      label: Where your music comes from
+      multiple: true
+      options: [The phone's files, Navidrome / Subsonic, YouTube Music, ink radio, A station by genre]
