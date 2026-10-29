@@ -1592,7 +1592,22 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
 
 /** Where a held song goes into a playlist: a new one ("new >", named there), or one of yours. */
 @Composable
-private fun AddToPage(s: Song, pages: Pages) {
+private fun AddToPage(s: Song, pages: Pages) = AddToList(s, onDone = { pages.back() }, onClose = { pages.close() })
+
+/** Whether a song can go into one of your playlists: the server has it, or you're signed in to YouTube Music. */
+@Composable
+fun canAddToList(s: Song?): Boolean {
+    val account by Server.account.collectAsState()
+    val who by YouTubeAccount.who.collectAsState()
+    return s != null && ((account != null && Server.idOf(s) != null) || (who != null && !s.station))
+}
+
+/**
+ * The playlists a song can go into, as a page over what's below (the held song's, or the player's): a new one, or one
+ * of yours on your server or YouTube Music; `onDone` with the list's name once it's in.
+ */
+@Composable
+fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) {
     val lists by Server.playlists.collectAsState()
     val account by Server.account.collectAsState()
     val server = account != null && Server.idOf(s) != null
@@ -1602,7 +1617,7 @@ private fun AddToPage(s: Song, pages: Pages) {
     val scope = rememberCoroutineScope()
     var failed by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
+    FrostedPage(onClose = onClose) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -1615,13 +1630,13 @@ private fun AddToPage(s: Song, pages: Pages) {
             if (failed) BasicText("that didn't take", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 8.dp))
             if (server) {
                 if (who != null) Label("on your server")
-                NewPlaylist(s, focused = mine.isEmpty() && who == null) { ok -> if (ok) pages.back() else failed = true }
+                NewPlaylist(s, focused = mine.isEmpty() && who == null) { ok -> if (ok) onDone("a new playlist") else failed = true }
                 Spacer(Modifier.height(14.dp))
             }
         }
         items(mine, key = { it.id }) { pl ->
             Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
-                onClick = felt { scope.launch { if (Server.addTo(pl.id, s)) pages.back() else failed = true } }).padding(vertical = 9.dp)) {
+                onClick = felt { scope.launch { if (Server.addTo(pl.id, s)) onDone(pl.name) else failed = true } }).padding(vertical = 9.dp)) {
                 BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
             }
@@ -1631,12 +1646,12 @@ private fun AddToPage(s: Song, pages: Pages) {
             item {
                 Spacer(Modifier.height(10.dp))
                 Label("on youtube music")
-                NewPlaylist(s, focused = !server, make = { YouTubeAccount.makePlaylist(it, s) }) { ok -> if (ok) pages.back() else failed = true }
+                NewPlaylist(s, focused = !server, make = { YouTubeAccount.makePlaylist(it, s) }) { ok -> if (ok) onDone("a new playlist") else failed = true }
                 Spacer(Modifier.height(14.dp))
             }
             items(tubeLists, key = { "y" + it.id }) { pl ->
                 Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
-                    onClick = felt { scope.launch { if (YouTubeAccount.addTo(pl, s)) pages.back() else failed = true } }).padding(vertical = 9.dp)) {
+                    onClick = felt { scope.launch { if (YouTubeAccount.addTo(pl, s)) onDone(pl.name) else failed = true } }).padding(vertical = 9.dp)) {
                     BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (pl.said.isNotEmpty()) BasicText(pl.said.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1)
                 }
