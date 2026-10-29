@@ -55,7 +55,10 @@ class InnerTube(
     fun tracks(browseId: String, max: Int = 2_000, each: ((List<Track>) -> Unit)? = null): List<Track> {
         val out = ArrayList<Track>()
         pages(browseId, max) { page ->
-            all(page, "musicResponsiveListItemRenderer").mapNotNullTo(out, ::track)
+            // your own playlist's last page is YouTube Music's "Suggestions" shelf, songs it picks: not the list's
+            val suggested = all(page, "musicShelfRenderer").filter { text(it.optJSONObject("title")) == "Suggestions" }
+                .flatMap { all(it, "musicResponsiveListItemRenderer") }.toSet()
+            all(page, "musicResponsiveListItemRenderer").filter { it !in suggested }.mapNotNullTo(out, ::track)
             each?.invoke(out.distinctBy { it.videoId }.take(max))
             out.size
         }

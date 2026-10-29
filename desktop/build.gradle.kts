@@ -117,9 +117,24 @@ compose.desktop {
 // rpm by what it provides (Fedora's mpv-libs, openSUSE's libmpv2); deb by name (libmpv1 on Ubuntu 22.04 and older)
 tasks.withType<AbstractJPackageTask>().configureEach {
     when (targetFormat) {
-        // and its own spec (linux/ink-music.spec: the menu entry kept through an upgrade); Compose's resource dir is
-        // empty on Linux, and the last one given is the one jpackage reads
-        TargetFormat.Rpm -> freeArgs.addAll("--linux-package-deps", "libmpv.so.2()(64bit)", "--resource-dir", project.file("linux").path)
+        TargetFormat.Rpm -> {
+            freeArgs.addAll("--linux-package-deps", "libmpv.so.2()(64bit)")
+            // and its own spec (linux/ink-music.spec: the menu entry kept through an upgrade), read from the resource
+            // dir Compose hands jpackage. Compose empties that dir just before it runs jpackage (and a second
+            // --resource-dir is ignored), so jpackage is run through a stand-in that puts the spec there first
+            val spec = project.file("linux/ink-music.spec")
+            val resources = layout.buildDirectory.dir("compose/tmp/resources").get().asFile
+            val real = compose.desktop.application.javaHome
+            val stand = layout.buildDirectory.dir("jpackage-rpm").get().asFile
+            doFirst {
+                javaHome.set(stand.path)   // here, as Compose sets its own after this script
+                File(stand, "bin").mkdirs()
+                File(stand, "bin/jpackage").apply {
+                    writeText("#!/bin/sh\nmkdir -p '$resources' && cp '$spec' '$resources/' && exec '$real/bin/jpackage' \"\$@\"\n")
+                    setExecutable(true)
+                }
+            }
+        }
         TargetFormat.Deb -> freeArgs.addAll("--linux-package-deps", "libmpv2|libmpv1")   // no spaces: Compose hands jpackage its arguments unquoted
         else -> {}
     }
