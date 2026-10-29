@@ -2,6 +2,7 @@ package app.ink.music
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -118,7 +119,8 @@ fun InkMoodsShelf() {
         BasicText("RIGHT NOW", style = headline(30.sp))
         BasicText(said ?: "picked for ${Moods.said()}", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(12.dp))
-        InkMoods.now().forEach { m ->
+        val now = remember { InkMoods.now() }
+        now.forEach { m ->
             Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
                     Word(m.name.uppercase(), headline(40.sp), touch = 4.dp) { go(m) }
@@ -128,9 +130,10 @@ fun InkMoodsShelf() {
             }
         }
         Spacer(Modifier.height(22.dp))
-        Label("ink's moods, from what listeners tag their songs")
+        // the rest of them (right now's three aren't shown twice)
+        Label("more moods")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            items(InkMoods.ALL, key = { it.key }) { m -> MoodTile(m, kept[m.key]?.art) { go(m) } }
+            items(InkMoods.ALL.filter { it !in now }, key = { it.key }) { m -> MoodTile(m, kept[m.key]?.art) { go(m) } }
         }
     }
 }
@@ -171,30 +174,74 @@ object Fests {
     }
 }
 
-/** Festivals soon: each on now or within two months, how soon and where, its lineup as faces, a station of them. */
+/**
+ * Festivals soon: one row of posters, each a festival on now or within two months, set as a festival's poster is (its
+ * name, when and where, the lineup as type, the first names biggest); a click opens the festival (Bronson, 2026-10-28:
+ * a row of faces each took too much of the page).
+ */
 @Composable
 fun FestivalsShelf(open: (Page) -> Unit) {
     val soon = remember { Festivals.soon(Fests.all) }
     if (soon.isEmpty()) return
+    Column(Modifier.padding(bottom = 26.dp)) {
+        BasicText("FESTIVALS SOON", style = headline(30.sp))
+        BasicText("who's playing, to know before you go", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(12.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            items(soon, key = { it.name }) { f -> FestivalPoster(f, Modifier.width(250.dp)) { open(Page.Festival(f.name)) } }
+        }
+    }
+}
+
+/** A festival as its poster: when and where small, its name big, the lineup in type that shrinks down the bill, its dates at the foot. */
+@Composable
+fun FestivalPoster(f: Festivals.Festival, modifier: Modifier, onClick: () -> Unit) {
+    Column(modifier.aspectRatio(.8f).border(1.dp, Ink.line).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(16.dp)) {
+        BasicText("${f.when_()} · ${f.city}", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(6.dp))
+        BasicText(f.name.uppercase(), style = headline(26.sp).copy(lineHeight = 28.sp), maxLines = 2)
+        Spacer(Modifier.height(14.dp))
+        // the bill: the first two big, the next four smaller, the rest counted
+        f.artists.take(2).forEach { BasicText(it.uppercase(), style = headline(17.sp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
+        Spacer(Modifier.height(4.dp))
+        f.artists.drop(2).take(4).forEach { BasicText(it.uppercase(), style = headline(12.sp, Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
+        if (f.artists.size > 6) BasicText("and ${f.artists.size - 6} more", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(top = 4.dp))
+        Spacer(Modifier.weight(1f))
+        BasicText(dates(f), style = pixel(12.sp, Ink.mid))
+    }
+}
+
+/** "nov 2 – 8", "dec 11 – 12", "nov 30 – dec 2". */
+fun dates(f: Festivals.Festival): String {
+    val m = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.ENGLISH)
+    return (if (f.start.month == f.end.month) "${m.format(f.start)} – ${f.end.dayOfMonth}" else "${m.format(f.start)} – ${m.format(f.end)}").lowercase()
+}
+
+/** A festival's page: its name and when, its whole lineup as faces in a grid, a station of them, the lineup's source. */
+@Composable
+fun FestivalPage(name: String, open: (Page) -> Unit, onClose: () -> Unit) {
+    val f = remember(name) { Fests.all.firstOrNull { it.name == name } } ?: return Close(onClose)
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.padding(bottom = 24.dp)) {
-        BasicText("FESTIVALS SOON", style = headline(30.sp))
-        BasicText(said ?: "who's playing, to know before you go (or wish you were)", style = pixel(12.sp, Ink.mid))
-        soon.forEach { f ->
-            Spacer(Modifier.height(18.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    BasicText(f.name.uppercase(), style = headline(26.sp))
-                    BasicText("${f.when_()} · ${f.city} · ${f.artists.size} artists", style = pixel(12.sp, Ink.mid))
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    Column(Modifier.fillMaxSize()) {
+        Close(onClose)
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(androidx.compose.foundation.lazy.grid.GridCells.Adaptive(150.dp), Modifier.fillMaxSize().feather(grid), grid,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = SIDE, end = SIDE, top = 10.dp, bottom = 32.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                Column {
+                    BasicText(f.name.uppercase(), style = headline(64.sp))
+                    BasicText("${dates(f)} · ${f.city} · ${f.when_()} · ${f.artists.size} artists", style = pixel(13.sp, Ink.mid))
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                        Word("station", pixel(14.sp), touch = 8.dp) { scope.launch { said = "finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" } }
+                        if (f.link.isNotBlank()) Word("the lineup, announced", pixel(14.sp, Ink.mid), touch = 8.dp) { browse(f.link) }
+                    }
+                    said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp)) }
                 }
-                Word("station", pixel(14.sp), touch = 8.dp) { scope.launch { said = "${f.name.lowercase()}: finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" } }
-                if (f.link.isNotBlank()) Word("lineup", pixel(14.sp, Ink.mid), Modifier.padding(start = 22.dp), touch = 8.dp) { browse(f.link) }
             }
-            Spacer(Modifier.height(10.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(f.artists, key = { f.name + it }) { name -> LineupTile(name, open) }
-            }
+            items(f.artists.size, key = { f.artists[it] }) { i -> LineupTile(f.artists[i], open) }
         }
     }
 }
@@ -203,9 +250,9 @@ fun FestivalsShelf(open: (Page) -> Unit) {
 @Composable
 private fun LineupTile(name: String, open: (Page) -> Unit) {
     val info by androidx.compose.runtime.produceState<ArtistInfo?>(null, name) { Artists.of(name, "").collect { if (it != null) value = it } }
-    Column(Modifier.width(130.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Artist(info?.name ?: name, info?.id ?: "")) })) {
+    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Artist(info?.name ?: name, info?.id ?: "")) })) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            info?.photo?.let { Dithered(remember(it) { faceSong(name, it, photo = true) }, Modifier.fillMaxSize(), px = 260) } ?: NameCover(name, 130.dp)
+            info?.photo?.let { Dithered(remember(it) { faceSong(name, it, photo = true) }, Modifier.fillMaxSize(), px = 260) } ?: NameCover(name, 150.dp)
         }
         Spacer(Modifier.height(6.dp))
         BasicText(name.uppercase(), style = headline(13.sp), maxLines = 2)

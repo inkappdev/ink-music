@@ -138,6 +138,7 @@ sealed interface Page {
     data object Playing : Page
     data object Settings : Page
     data object Year : Page
+    data class Festival(val name: String) : Page
     data class Mood(val mood: InnerTube.Mood) : Page
     data object Queue : Page
     data object PlayOn : Page
@@ -281,6 +282,7 @@ private fun App() {
                         Page.Playing -> {}
                         Page.Settings -> SettingsPage { Nav.close() }
                         Page.Year -> YearPage({ pages += it }) { Nav.close() }
+                        is Page.Festival -> FestivalPage(page.name, { pages += it }) { Nav.close() }
                         is Page.Mood -> MoodPage(page.mood, { pages += it }) { Nav.close() }
                         Page.Queue -> QueuePage({ pages += it }) { Nav.close() }
                         Page.PlayOn -> PlayOnPage { Nav.close() }
