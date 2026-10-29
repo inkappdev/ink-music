@@ -31,7 +31,7 @@ jobs:
           ls -la desktop/native/windows-x64
 
       - name: msi
-        run: ./gradlew :desktop:packageMsi -PdesktopOnly --no-daemon
+        run: ./gradlew :desktop:packageInkMsi -PdesktopOnly --no-daemon
         env:
           LASTFM_KEY: ${{ secrets.LASTFM_KEY }}
           LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
