@@ -49,6 +49,19 @@ object Finding {
     val asked = MutableStateFlow(0)
     /** What was typed, kept while the app runs (back from a result, it's there). */
     var query by mutableStateOf("")
+
+    /** What was looked for lately, the latest first (kept as find closes, and as enter plays), eight at most. */
+    private val file = java.io.File(Home.dir, "searches.json")
+    val recent = MutableStateFlow(runCatching { org.json.JSONArray(file.readText()).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList()))
+
+    fun keep(q: String) {
+        val t = q.trim()
+        if (t.length < 2) return
+        recent.value = (listOf(t) + recent.value.filterNot { it.equals(t, true) }).take(8)
+        runCatching { Home.write(file, org.json.JSONArray(recent.value).toString()) }
+    }
+
+    fun forget() { recent.value = emptyList(); file.delete() }
 }
 
 /**
@@ -74,12 +87,16 @@ fun FindTab(open: (Page) -> Unit) {
         value = YouTube.search(q)
     }
     val focus = remember { FocusRequester() }
+    // what was looked for, kept as find closes
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Finding.keep(Finding.query) } }
     // what's typed, big, the cursor at the end of what's there (ready to type in: asked once it's laid out)
     val field = @Composable { big: Boolean ->
         LaunchedEffect(asked, big) { runCatching { focus.requestFocus() } }
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (!big) BasicText("find > ", style = pixel(14.sp, Ink.dim))
             var value by remember { mutableStateOf(TextFieldValue(Finding.query, TextRange(Finding.query.length))) }
+            // a recent search chosen: in the field, the cursor at its end
+            LaunchedEffect(Finding.query) { if (value.text != Finding.query) value = TextFieldValue(Finding.query, TextRange(Finding.query.length)) }
             Box(Modifier.weight(1f)) {
                 if (big && value.text.isEmpty()) BasicText("FIND", style = headline(44.sp, Ink.dim))
                 BasicTextField(
@@ -87,7 +104,9 @@ fun FindTab(open: (Page) -> Unit) {
                     textStyle = if (big) headline(44.sp) else pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
                     visualTransformation = if (big) Upper else androidx.compose.ui.text.input.VisualTransformation.None,
                     modifier = Modifier.fillMaxWidth().focusRequester(focus).onPreviewKeyEvent { k ->
-                        if (k.type == KeyEventType.KeyDown && k.key == Key.Enter && foundSongs.isNotEmpty()) { Player.play(foundSongs, 0); true } else false
+                        // esc leaves find from its field too (the field had kept it)
+                        if (k.type == KeyEventType.KeyDown && k.key == Key.Escape) { Nav.back(); true } else
+                        if (k.type == KeyEventType.KeyDown && k.key == Key.Enter && foundSongs.isNotEmpty()) { Finding.keep(Finding.query); Player.play(foundSongs, 0); true } else false
                     },
                 )
             }
@@ -98,6 +117,16 @@ fun FindTab(open: (Page) -> Unit) {
             BasicText("nothing called that", style = pixel(12.sp, Ink.mid))
         else if (big) BasicText(if (q.isEmpty()) "your artists, records and songs, and youtube music's; enter plays the songs found" else "enter plays your songs found",
             style = pixel(12.sp, Ink.mid))
+        // what you looked for lately, a click to look again
+        val recent by Finding.recent.collectAsState()
+        if (q.isEmpty() && recent.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                BasicText("recent", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(top = 3.dp))
+                recent.forEach { r -> Word(r.lowercase(), pixel(14.sp, Ink.mid), touch = 4.dp) { Finding.query = r } }
+                Word("clear", pixel(12.sp, Ink.dim), Modifier.padding(top = 2.dp), touch = 4.dp) { Finding.forget() }
+            }
+        }
     }
     val (tubeSongs, tubeRecords) = tube ?: (emptyList<Song>() to emptyList())
     val records = @Composable { rs: List<Album>, ts: List<TubeAlbum> ->

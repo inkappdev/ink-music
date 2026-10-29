@@ -86,6 +86,32 @@ class InnerTube(
         return out
     }
 
+    /** A mood or a genre on YouTube Music's own page of them (its `params` open it). */
+    data class Mood(val title: String, val params: String, val genre: Boolean)
+
+    /** YouTube Music's moods & moments and genres (chill, focus, workout...; african to soundtracks), signed out the same. */
+    fun moods(): List<Mood> = runCatching {
+        val page = post("browse", JSONObject().put("browseId", "FEmusic_moods_and_genres"))
+        all(page, "gridRenderer").flatMap { grid ->
+            val head = all(grid.optJSONObject("header"), "gridHeaderRenderer").firstOrNull()?.let { text(it.optJSONObject("title")) }.orEmpty()
+            all(grid, "musicNavigationButtonRenderer").mapNotNull { b ->
+                val params = b.optJSONObject("clickCommand")?.optJSONObject("browseEndpoint")?.optString("params")?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
+                Mood(text(b.optJSONObject("buttonText")), params, genre = head.lowercase().startsWith("genre"))
+            }
+        }.distinctBy { it.title }
+    }.getOrDefault(emptyList())
+
+    /** A mood's (or genre's) flavors: shelves of YouTube Music's playlists for it ("coffee shop blends", "chilled"...). */
+    fun mood(params: String): List<Shelf> = runCatching {
+        val page = post("browse", JSONObject().put("browseId", "FEmusic_moods_and_genres_category").put("params", params))
+        (all(page, "musicCarouselShelfRenderer") + all(page, "gridRenderer")).mapNotNull { shelf ->
+            val head = (all(shelf.optJSONObject("header"), "musicCarouselShelfBasicHeaderRenderer") + all(shelf.optJSONObject("header"), "gridHeaderRenderer"))
+                .firstOrNull()?.let { text(it.optJSONObject("title")) }.orEmpty()
+            val items = all(shelf, "musicTwoRowItemRenderer").mapNotNull(::tile)
+            if (items.isEmpty()) null else Shelf(head, items)
+        }
+    }.getOrDefault(emptyList())
+
     /**
      * A mix's songs as its player queue (a mix may have no page of its own to browse); with [videoId], the radio
      * from that song ("RDAMVM<id>"), as you if signed in (YouTube builds it from what you listen to).

@@ -232,6 +232,22 @@ object Server {
         }.getOrDefault(emptyList())
     }
 
+    data class Played(val face: Song, val plays: Int)
+
+    /** The records played most on the server, all time (Navidrome counts every app's plays). */
+    suspend fun mostPlayed(n: Int): List<Played> = withContext(Dispatchers.IO) {
+        val a = _account.value ?: return@withContext emptyList()
+        val list = runCatching { call(a, "getAlbumList2", "type" to "frequent", "size" to n)?.optJSONObject("albumList2")?.optJSONArray("album") }
+            .getOrNull() ?: return@withContext emptyList()
+        (0 until list.length()).mapNotNull { list.optJSONObject(it) }.filter { it.optInt("playCount") > 0 }.map { o ->
+            // a record's face: enough of a song to show its cover and its name
+            val face = Song(id = "na" + o.optString("id"), path = "", title = o.optString("name"), artist = o.optString("artist"),
+                album = o.optString("name"), albumId = "na" + o.optString("id"), albumArtist = o.optString("artist"),
+                duration = 0, disc = 1, track = 0, year = o.optInt("year"), art = o.optString("coverArt").ifEmpty { null })
+            Played(face, o.optInt("playCount"))
+        }
+    }
+
     /** A song's star on the server, on or off (a love). */
     fun star(songId: String, on: Boolean) {
         val a = _account.value ?: return

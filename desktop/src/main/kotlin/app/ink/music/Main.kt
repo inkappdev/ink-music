@@ -135,6 +135,8 @@ sealed interface Page {
     data object Find : Page
     data object Playing : Page
     data object Settings : Page
+    data object Year : Page
+    data class Mood(val mood: InnerTube.Mood) : Page
     data object Queue : Page
     data object PlayOn : Page
     data class Tube(val album: TubeAlbum) : Page
@@ -149,7 +151,13 @@ object Nav {
     /** A page on top (not twice over itself). */
     fun open(p: Page) { if (pages.lastOrNull() != p) pages += p }
     fun go(to: String) { place = to; pages.clear() }
-    fun back() { if (pages.isEmpty()) return; if (pages.last() == Page.Playing) Win.full(false); pages.removeLast() }
+    fun back() {
+        if (pages.isEmpty()) return
+        if (pages.last() == Page.Playing) Win.full(false)
+        // find closed: what was typed kept among the recent, the field empty for next time
+        if (pages.last() == Page.Find) { Finding.keep(Finding.query); Finding.query = "" }
+        pages.removeLast()
+    }
     fun find() { open(Page.Find); Finding.asked.value++ }
     /** The player over the window; `full`, the whole screen. */
     fun player(full: Boolean = false) { if (full) Win.full(true); open(Page.Playing) }
@@ -192,6 +200,7 @@ private fun androidx.compose.ui.window.FrameWindowScope.Menus() {
             }
             Separator()
             Item("Find", shortcut = cmd(Key.F)) { Nav.find() }
+            Item("Your Year", shortcut = cmd(Key.Y)) { Nav.open(Page.Year) }
             Item("Settings", shortcut = cmd(Key.Comma)) { Nav.open(Page.Settings) }
             Item("Back", shortcut = cmd(Key.LeftBracket)) { Nav.back() }
         }
@@ -254,9 +263,11 @@ private fun App() {
                         null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
                         is Page.Record -> RecordPage(page.id, { pages += it }) { pages.removeLast() }
                         is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { pages.removeLast() }
-                        Page.Find -> Column(Modifier.fillMaxSize()) { Close { pages.removeLast() }; FindTab { pages += it } }
+                        Page.Find -> Column(Modifier.fillMaxSize()) { Close { Nav.back() }; FindTab { pages += it } }
                         Page.Playing -> {}
                         Page.Settings -> SettingsPage { pages.removeLast() }
+                        Page.Year -> YearPage({ pages += it }) { pages.removeLast() }
+                        is Page.Mood -> MoodPage(page.mood, { pages += it }) { pages.removeLast() }
                         Page.Queue -> QueuePage({ pages += it }) { pages.removeLast() }
                         Page.PlayOn -> PlayOnPage { pages.removeLast() }
                         is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { pages.removeLast() }
@@ -299,6 +310,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
         if (words) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (t in PLACES) Word(t.uppercase(), headline(26.sp, if (t == tab) Ink.ink else Ink.dim)) { onPlace(t) }
             Pixel(SEARCH, "find", Ink.mid, Modifier.padding(top = 4.dp)) { open(Page.Find) }
+            Word("your year", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Year) }
             Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Settings) }
         }
         // beside the rail: the place's own name, big

@@ -57,6 +57,7 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
         Spacer(Modifier.height(28.dp))
         // find, the lens (⌘F)
         Pixel(SEARCH, "find", Ink.mid, Modifier.offset(x = (-8).dp), cell = 3.dp, onClick = onFind)
+        Word("your year", pixel(13.sp, Ink.mid), touch = 6.dp) { Nav.open(Page.Year) }
         Word("settings", pixel(13.sp, Ink.mid), touch = 6.dp, onClick = onSettings)
         Spacer(Modifier.weight(1f))
         BasicText("made by ink", style = pixel(12.sp, Ink.dim))
