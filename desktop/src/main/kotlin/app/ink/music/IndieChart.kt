@@ -26,6 +26,32 @@ object IndieChart {
     private const val DAY = 24 * 3_600_000L
 
     private val file = File(Home.dir, "indie-chart.json")
+    /** Each day's places (the chart's songs in order), the last fortnight's: how a song moved over the week. */
+    private val days = File(Home.dir, "indie-chart-days.json")
+
+    /**
+     * Where each song was a week ago (or as near to a week as is kept): its place then (1 is the top), or null for a song
+     * not on it then: new. Empty while there's no day before today kept.
+     */
+    fun before(): Map<String, Int?>? = runCatching {
+        val o = JSONObject(days.readText())
+        val today = LocalDate.now()
+        val then = o.keys().asSequence().map { LocalDate.parse(it) }.filter { it < today }
+            .minByOrNull { kotlin.math.abs(java.time.temporal.ChronoUnit.DAYS.between(it, today.minusDays(7))) } ?: return null
+        val a = o.getJSONArray(then.toString())
+        (0 until a.length()).associate { a.getString(it) to (it + 1) }
+    }.getOrNull()
+
+    /** A song's key among the days' places. */
+    fun key(e: Entry) = (e.artist + "/" + e.title).lowercase().filter { it.isLetterOrDigit() || it == '/' }
+
+    private fun note(entries: List<Entry>) = runCatching {
+        val o = runCatching { JSONObject(days.readText()) }.getOrDefault(JSONObject())
+        o.put(LocalDate.now().toString(), JSONArray(entries.map(::key)))
+        val old = LocalDate.now().minusDays(15)
+        o.keys().asSequence().toList().filter { LocalDate.parse(it) < old }.forEach(o::remove)
+        Home.write(days, o.toString())
+    }
 
     /** This week's chart: kept if counted in the last day, else counted anew (blocking network; call off the main thread). */
     suspend fun week(): List<Entry> = withContext(Dispatchers.IO) {
@@ -34,6 +60,7 @@ object IndieChart {
         if (counted.isEmpty()) return@withContext kept()?.second.orEmpty()
         val played = resolve(counted.take(SIZE))
         keep(played)
+        note(played)
         played
     }
 

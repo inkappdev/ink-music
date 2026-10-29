@@ -123,6 +123,8 @@ fun ListenPage(open: (Page) -> Unit) {
                         if (w.note.isNotEmpty()) BasicText(w.note.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     Word("play the week", pixel(14.sp), touch = 8.dp) { Player.play(w.songs) }
+                    // the others on INK, ink's own place
+                    Word("every volume", pixel(14.sp, Ink.mid), Modifier.padding(start = 22.dp), touch = 8.dp) { Nav.go("ink") }
                 }
                 Spacer(Modifier.height(12.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
