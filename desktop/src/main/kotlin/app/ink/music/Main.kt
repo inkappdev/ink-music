@@ -585,6 +585,12 @@ fun SongRow(
             if (!s.station) Word(if (s.id in loved) "unlove" else "love", o, touch = 6.dp) { options = false; Loved.toggle(s) }
             if (open != null && s.album.isNotEmpty()) Word("record", o, touch = 6.dp) { options = false; open(Page.Record(s.albumId)) }
             if (open != null) Word("artist", o, touch = 6.dp) { options = false; open(Page.Artist(s.albumArtist)) }
+            // kept on the computer, to play with no signal (your server's, YouTube's)
+            if (Offline.keepable(s)) {
+                val kept by Offline.kept.collectAsState()
+                if (s.id in kept) Word("not offline", o, touch = 6.dp) { options = false; Offline.remove(listOf(s.id)) }
+                else Word("keep offline", o, touch = 6.dp) { options = false; Offline.keep(listOf(s)) }
+            }
             if (onRemove != null) Word("remove", o, touch = 6.dp) { options = false; onRemove() }
         }
     }
@@ -665,7 +671,10 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                     style = pixel(12.sp, Ink.mid),
                 )
                 Spacer(Modifier.height(16.dp))
-                Word("play", pixel(14.sp), touch = 8.dp) { Player.play(a.songs) }
+                Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                    Word("play", pixel(14.sp), touch = 8.dp) { Player.play(a.songs) }
+                    KeepOffline(a.songs)
+                }
             }
             Spacer(Modifier.width(40.dp))
             val list = rememberLazyListState()

@@ -394,6 +394,9 @@ class PlayerService : MediaLibraryService() {
                     return Quality.now(this).also { chosen[key] = Chosen(it, now, metered) }
                 }
                 when {
+                    // a YouTube song kept on the phone plays from there, no signal needed (Offline)
+                    spec.uri.scheme == "ytm" && Offline.file(this, "y" + spec.uri.host) != null ->
+                        spec.withUri(Uri.fromFile(Offline.file(this, "y" + spec.uri.host)!!)).also { android.util.Log.d("ink-offline", "kept: y${spec.uri.host}") }
                     spec.uri.scheme == "ytm" -> spec.withUri(Uri.parse(
                         YouTubeMusic.stream("y" + spec.uri.host, false, small = quality() == Quality.SAVER)?.first
                             ?: throw java.io.IOException("no stream")))

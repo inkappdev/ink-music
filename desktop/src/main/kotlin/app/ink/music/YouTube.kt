@@ -98,11 +98,11 @@ object YouTube {
     }.getOrNull()
 
     /** A song's audio stream (blocking: the player's load hook, a speaker's ask): the best there is, or for a speaker the m4a. */
-    fun stream(id: String, forSpeaker: Boolean = false): String? {
-        val key = id + if (forSpeaker) ":s" else ""
+    fun stream(id: String, forSpeaker: Boolean = false, small: Boolean = false): String? {
+        val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.second > System.currentTimeMillis() }?.let { return it.first }
         val info = Pipe.streamInfo(id.removePrefix("y")) ?: return null
-        val (url, _, _) = Pipe.audio(info, forSpeaker = forSpeaker, small = false) ?: return null
+        val (url, _, _) = Pipe.audio(info, forSpeaker = forSpeaker, small = small) ?: return null
         streams[key] = url to System.currentTimeMillis() + 4 * 3_600_000L
         return url
     }

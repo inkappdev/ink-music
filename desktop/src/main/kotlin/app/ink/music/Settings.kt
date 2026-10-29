@@ -1,6 +1,7 @@
 package app.ink.music
 
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.width
@@ -74,7 +75,7 @@ fun SettingsPage(onClose: () -> Unit) {
                             Spacer(Modifier.height(36.dp)); YouTubeSetting()
                             Spacer(Modifier.height(36.dp)); FilesSetting()
                         }
-                        "sound" -> SoundSetting()
+                        "sound" -> { SoundSetting(); Spacer(Modifier.height(36.dp)); KeptSetting() }
                         "listening" -> {
                             PrivateSetting()
                             Spacer(Modifier.height(36.dp)); ListenBrainzSetting()
@@ -108,8 +109,9 @@ object Settings {
         }
         "sound" -> {
             val sound by Player.sound.collectAsState()
+            val kept by Offline.kept.collectAsState()
             listOfNotNull(if (sound.device == "auto") "the ${if (Home.mac) "mac" else "computer"}'s choice" else "its own output",
-                if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded").joinToString(" · ")
+                if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded", kept.size.takeIf { it > 0 }?.let { "$it kept" }).joinToString(" · ")
         }
         "listening" -> {
             val hidden by Private.on.collectAsState()
@@ -468,6 +470,32 @@ fun ago(ms: Long): String = when {
     ms < 3_600_000 -> (ms / 60_000).let { "$it ${if (it == 1L) "minute" else "minutes"} ago" }
     ms < 86_400_000 -> (ms / 3_600_000).let { "$it ${if (it == 1L) "hour" else "hours"} ago" }
     else -> (ms / 86_400_000).let { "$it ${if (it == 1L) "day" else "days"} ago" }
+}
+
+/** Kept offline: how many, how much room; kept as they are or smaller; let them all go. */
+@Composable
+private fun KeptSetting() {
+    val kept by Offline.kept.collectAsState()
+    val small by Offline.small.collectAsState()
+    BasicText("KEPT OFFLINE", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    val mb = remember(kept) { Offline.bytes() / 1_048_576 }
+    BasicText(if (kept.isEmpty()) "keep a song, a record or a playlist on this computer (keep offline: on its page, or a song's right click) to play it with no signal"
+        else "${kept.size} ${if (kept.size == 1) "song" else "songs"} on this computer, $mb mb", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    BasicText("kept as: your server's original file (lossless if it is) and youtube's best, or smaller (mp3 320, and youtube's lighter stream)", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        Word("as they are", pixel(14.sp, if (!small) Ink.ink else Ink.dim), touch = 8.dp) { Offline.small(false) }
+        Word("smaller", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { Offline.small(true) }
+    }
+    if (kept.isNotEmpty()) {
+        var sure by remember { mutableStateOf(false) }
+        LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
+        Word(if (sure) "remove them all" else "remove all", pixel(14.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
+            if (!sure) sure = true else { sure = false; Offline.remove(kept) }
+        }
+    }
 }
 
 /** Private listening: a switch; while it's on, nothing kept or told. */

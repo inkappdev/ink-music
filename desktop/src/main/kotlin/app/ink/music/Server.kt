@@ -158,7 +158,9 @@ object Server {
     }
 
     /** Where a server song streams from, signed as whoever's signed in now. */
-    fun stream(s: Song): String? = _account.value?.let { url(it, "stream", "id" to s.id.removePrefix("n")) }
+    fun stream(s: Song, mp3: Boolean = false): String? = _account.value?.let {
+        if (mp3) url(it, "stream", "id" to s.id.removePrefix("n"), "format" to "mp3", "maxBitRate" to 320) else url(it, "stream", "id" to s.id.removePrefix("n"))
+    }
 
     /** A record's cover from the server, at about `px` a side, as the server sends it (a JPEG, a PNG); null if there's none. */
     fun cover(art: String, px: Int): ByteArray? {

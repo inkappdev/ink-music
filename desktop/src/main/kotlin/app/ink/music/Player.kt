@@ -516,6 +516,8 @@ object Player {
 
     /** Where a song plays from: its file, or the server's stream. */
     private fun where(s: Song) = when {
+        // kept on the computer: from there, no signal needed (Offline)
+        Offline.file(s.id) != null -> Offline.file(s.id)!!.path
         s.server -> Server.stream(s).orEmpty()
         s.tube -> "ytm://" + s.id.removePrefix("y")
         s.station -> s.path

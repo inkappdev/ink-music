@@ -1,6 +1,10 @@
 package app.ink.music
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -218,11 +222,14 @@ fun ListsPage(open: (Page) -> Unit) {
     val lists by Server.playlists.collectAsState()
     val account by Server.account.collectAsState()
     val loved = lovedSongs()
+    val keptIds by Offline.kept.collectAsState()
     val tubeListsNow by TubeAccount.playlists.collectAsState()
     LaunchedEffect(account) { Server.readPlaylists() }
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
+        // what's on the computer to play with no signal (your server's, YouTube's)
+        if (keptIds.isNotEmpty()) item { ListRow(Server.Playlist(KEPT, "kept on this computer", keptIds.size, true)) { open(Page.List(KEPT, "kept on this computer")) } }
         if (lists.isEmpty()) item {
             BasicText(if (account == null) "your server's playlists show here once you're signed in to it" else "no playlists on your server yet",
                 style = pixel(12.sp, Ink.mid))
@@ -246,7 +253,8 @@ fun ListsPage(open: (Page) -> Unit) {
 @Composable
 fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit) {
     val loved = lovedSongs()
-    val songs by produceState<List<Song>?>(null, id, loved) { value = if (id == LOVED) loved else Server.playlist(id) }
+    val keptNow by Offline.kept.collectAsState()
+    val songs by produceState<List<Song>?>(null, id, loved, keptNow) { value = if (id == LOVED) loved else if (id == KEPT) Offline.songs() else Server.playlist(id) }
     val list = rememberLazyListState()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
@@ -260,6 +268,7 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 if (!s.isNullOrEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                     Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
                     Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(s.shuffled()) }
+                    KeepOffline(s)
                 }
                 Spacer(Modifier.height(14.dp))
             }
@@ -340,5 +349,38 @@ private fun Anniversary(f: History.Heard) {
             }
             song?.let { s -> Word("PLAY IT AGAIN", headline(18.sp), touch = 8.dp) { Player.play(listOf(s)) } }
         }
+    }
+}
+
+/** The list of what's kept on the computer ([Offline]), as a list's id. */
+const val KEPT = "ink:kept"
+
+/**
+ * Songs kept on the computer, to play with no signal: "keep offline"; while they come, "keeping 4 of 12" filling in;
+ * all here, "offline" (a click then "remove it", a second lets them go). Nothing for songs that can't be kept.
+ */
+@Composable
+fun KeepOffline(songs: List<Song>) {
+    val keepable = remember(songs) { songs.filter { Offline.keepable(it) } }
+    if (keepable.isEmpty()) return
+    val kept by Offline.kept.collectAsState()
+    val keeping by Offline.keeping.collectAsState()
+    val here = keepable.count { it.id in kept }
+    val coming = keepable.filter { it.id in keeping }
+    var sure by remember { mutableStateOf(false) }
+    LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
+    when {
+        coming.isNotEmpty() -> {
+            val done = (here + coming.sumOf { (keeping[it.id] ?: 0f).toDouble() }.toFloat()) / keepable.size
+            Box {
+                val text = "keeping $here of ${keepable.size}"
+                BasicText(text, style = pixel(14.sp, Ink.dim))
+                BasicText(text, style = pixel(14.sp), modifier = Modifier.drawWithContent { clipRect(right = size.width * done) { this@drawWithContent.drawContent() } })
+            }
+        }
+        here == keepable.size -> Word(if (sure) "remove it" else "offline", pixel(14.sp), touch = 8.dp) {
+            if (!sure) sure = true else { sure = false; Offline.remove(keepable.map { it.id }) }
+        }
+        else -> Word("keep offline", pixel(14.sp, Ink.mid), touch = 8.dp) { Offline.keep(keepable) }
     }
 }
