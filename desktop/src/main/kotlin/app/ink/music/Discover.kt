@@ -178,7 +178,7 @@ object Discover {
     /** A loved song's radio, only what you've never played; a different love each day. */
     private suspend fun becauseYouLoved(library: List<Song>, heard: Set<String>, mine: Set<String>): Pair<Song, List<Song>>? {
         val ids = Loved.ids.value
-        val loved = (library.filter { it.id in ids } + Loved.tube.value).distinctBy { it.id }.sortedBy { it.id }
+        val loved = (library.filter { it.id in ids } + Loved.tubeSongs()).distinctBy { it.id }.sortedBy { it.id }
         if (loved.isEmpty()) return null
         // today's love; one with no radio to be found (not on YouTube Music, say) passes to the next
         val from = (LocalDate.now().toEpochDay() % loved.size).toInt()
@@ -223,7 +223,7 @@ object Discover {
     private fun lovedLongAgo(all: List<History.Heard>, library: List<Song>): Mix? {
         val ids = Loved.ids.value
         val lately = all.filter { it.at >= System.currentTimeMillis() - 60L * 86_400_000 }.map { it.id }.toHashSet()
-        val songs = (library.filter { it.id in ids } + Loved.tube.value).distinctBy { it.id }.filter { it.id !in lately }
+        val songs = (library.filter { it.id in ids } + Loved.tubeSongs()).distinctBy { it.id }.filter { it.id !in lately }
             .shuffled(java.util.Random(day().hashCode().toLong())).take(25)
         if (songs.size < 4) return null
         return Mix("loved", "loved, long ago", "songs you love that you haven't played in two months", songs, "${songs.size} songs, new each day")

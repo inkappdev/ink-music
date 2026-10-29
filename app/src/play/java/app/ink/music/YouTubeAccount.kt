@@ -38,4 +38,5 @@ object YouTubeAccount {
     fun warmLibrary(ctx: android.content.Context, names: List<String>) {}
     fun warmNow(ctx: android.content.Context, name: String) {}
     fun openSignIn(c: android.content.Context) {}
+    fun handover(c: android.content.Context): String? = null
 }

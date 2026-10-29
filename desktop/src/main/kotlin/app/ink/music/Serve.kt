@@ -77,6 +77,9 @@ object Serve {
         java.net.DatagramSocket().use { it.connect(there, 9); (it.localAddress as? Inet4Address)?.takeIf { a -> !a.isAnyLocalAddress }?.hostAddress }
     }.getOrNull()
 
+    /** This computer's address on the network as an address (for announcing it, mDNS). */
+    fun local(): java.net.InetAddress? = address()?.let { java.net.InetAddress.getByName(it) }
+
     /** This computer's address on the network (IPv4, a home network's: the speakers dial it). */
     fun address(): String? = runCatching {
         NetworkInterface.getNetworkInterfaces().toList()

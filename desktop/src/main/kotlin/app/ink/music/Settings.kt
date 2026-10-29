@@ -65,6 +65,9 @@ fun SettingsPage(onClose: () -> Unit) {
             }
 
             Spacer(Modifier.height(36.dp))
+            YouTubeSetting()
+
+            Spacer(Modifier.height(36.dp))
             ListenBrainzSetting()
             if (LastFm.available) { Spacer(Modifier.height(36.dp)); LastFmSetting() }
 
@@ -282,4 +285,47 @@ private fun chooseFolder(): java.io.File? = if (Home.mac) {
 } else {
     val c = javax.swing.JFileChooser(Library.folder).apply { fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY; dialogTitle = "Your music" }
     if (c.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) c.selectedFile else null
+}
+
+/**
+ * YouTube Music: signed in from the phone (the computer has no browser of its own to sign in with). Waiting, the code
+ * to type on the phone, big; signed in, who, how much was read, read again or sign out.
+ */
+@Composable
+private fun YouTubeSetting() {
+    val who by TubeAccount.who.collectAsState()
+    val code by TubeAccount.code.collectAsState()
+    val said by TubeAccount.said.collectAsState()
+    val lists by TubeAccount.playlists.collectAsState()
+    val liked by TubeAccount.liked.collectAsState()
+    BasicText("YOUTUBE MUSIC", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    val w = who
+    val c = code
+    when {
+        c != null -> {
+            BasicText("on your phone: settings, youtube music, sign in a computer. pick ${TubeAccount.name.lowercase()}, and type", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(8.dp))
+            BasicText(c, style = headline(64.sp))
+            BasicText("the phone hands its sign-in over, sealed: only this computer can open it. both on the same wifi", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(10.dp))
+            Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
+        }
+        w == null -> {
+            BasicText("your playlists, liked songs and mixes, and radio made as you, from your own account. " +
+                "signed in from your phone: a computer has no youtube sign-in page of its own here. " +
+                "ink music isn't youtube's own app, and google could, rarely, mind one being used", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(10.dp))
+            Word("SIGN IN FROM YOUR PHONE", headline(36.sp), touch = 10.dp) { TubeAccount.await() }
+        }
+        else -> {
+            BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
+            BasicText("${lists.size} ${if (lists.size == 1) "playlist" else "playlists"}   ${liked.size} liked songs", style = pixel(12.sp, Ink.mid))
+            BasicText("youtube songs you play here go in your history there, as in its own app", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(10.dp))
+            Word("read again", pixel(14.sp), touch = 8.dp) { TubeAccount.sync() }
+            Word("sign out", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.signOut() }
+        }
+    }
+    said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
 }

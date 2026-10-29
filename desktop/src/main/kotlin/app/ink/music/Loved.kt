@@ -42,6 +42,8 @@ object Loved {
     /** The YouTube songs loved, to list and play though no search found them this run. */
     val tube: StateFlow<List<Song>> = _tube
     private var local: Set<String> = emptySet()
+    /** Your liked songs on YouTube Music (signed in): loved here too. */
+    private var liked: List<Song> = emptyList()
     private var server: Set<String> = emptySet()
     /** When each was loved (ms), where it's known: loved here, or a star's date on the server. */
     private var dates: Map<String, Long> = emptyMap()
@@ -66,7 +68,13 @@ object Loved {
     /** When the song was loved, if known. */
     fun lovedAt(s: Song): Long? = dates[s.id]
 
-    @Synchronized private fun publish() { _ids.value = local + server + _tube.value.map { it.id } }
+    /** Your liked songs on YouTube Music, as last read (signed in; empty signed out). */
+    fun putTube(songs: List<Song>) { liked = songs; songs.forEach(YouTube::remember); publish() }
+
+    /** Every YouTube song loved: kept here, and liked there. */
+    fun tubeSongs(): List<Song> = (_tube.value + liked).distinctBy { it.id }
+
+    @Synchronized private fun publish() { _ids.value = local + server + _tube.value.map { it.id } + liked.map { it.id } }
 
     fun toggle(s: Song) {
         if (s.station) return
@@ -74,6 +82,12 @@ object Loved {
         dates = if (on) dates + (s.id to System.currentTimeMillis()) else dates - s.id
         when {
             s.server -> { server = if (on) server + s.id else server - s.id; scope.launch { Server.star(s.id, on) } }
+            // signed in, a like there (and among your liked); else kept here
+            s.tube && TubeAccount.who.value != null -> {
+                TubeAccount.like(s, on)
+                liked = if (on) listOf(s) + liked else liked.filter { it.id != s.id }
+                _tube.value = _tube.value.filter { it.id != s.id }
+            }
             s.tube -> _tube.value = if (on) _tube.value + s else _tube.value.filter { it.id != s.id }
             else -> local = if (on) local + s.id else local - s.id
         }

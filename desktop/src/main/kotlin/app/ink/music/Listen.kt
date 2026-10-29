@@ -68,6 +68,7 @@ fun ListenPage(open: (Page) -> Unit) {
     // your artists' mixes: who you play most, each their best-known song and YouTube Music's radio from it
     val mixes by produceState(emptyList<Mixes.Mix>(), songs.size > 0) { Mixes.of(songs).collect { value = it } }
     val mixScope = androidx.compose.runtime.rememberCoroutineScope()
+    val tubeMixes by TubeAccount.mixes.collectAsState()
     LaunchedEffect(songs.isNotEmpty()) { Discover.start(songs) }
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
@@ -87,6 +88,14 @@ fun ListenPage(open: (Page) -> Unit) {
         }
         // made from your listening: fresh finds, deep cuts and the rest (Discover.kt)
         item { MadeForYou() }
+        // YouTube Music's own mixes for you (signed in): supermix, discover, new release, replay
+        if (tubeMixes.isNotEmpty()) item {
+            Label("your mixes on youtube music")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(tubeMixes, key = { it.url }) { a -> TubeTile(a, Modifier.width(150.dp)) { open(Page.Tube(a)) } }
+            }
+            Spacer(Modifier.height(26.dp))
+        }
         if (mixes.isNotEmpty()) item {
             Label("mixes for you")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -184,6 +193,7 @@ fun ListsPage(open: (Page) -> Unit) {
     val lists by Server.playlists.collectAsState()
     val account by Server.account.collectAsState()
     val loved = lovedSongs()
+    val tubeListsNow by TubeAccount.playlists.collectAsState()
     LaunchedEffect(account) { Server.readPlaylists() }
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
@@ -193,6 +203,17 @@ fun ListsPage(open: (Page) -> Unit) {
                 style = pixel(12.sp, Ink.mid))
         }
         items(lists, key = { it.id }) { p -> ListRow(p) { open(Page.List(p.id, p.name)) } }
+        // yours on YouTube Music (signed in from the phone)
+        val tubeLists = tubeListsNow
+        if (tubeLists.isNotEmpty()) {
+            item { Label("on youtube music") }
+            items(tubeLists, key = { it.url }) { t ->
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Tube(t)) }).padding(vertical = 8.dp)) {
+                    BasicText(t.title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
     }
 }
 
@@ -232,8 +253,10 @@ fun lovedSongs(): List<Song> {
     val ids by Loved.ids.collectAsState()
     val songs by Library.songs.collectAsState()
     val tube by Loved.tube.collectAsState()
-    return remember(ids, songs, tube) {
-        (songs.filter { it.id in ids } + tube.filter { it.id in ids }).distinctBy { it.id }.sortedByDescending { Loved.lovedAt(it) ?: 0L }
+    val liked by TubeAccount.liked.collectAsState()
+    return remember(ids, songs, tube, liked) {
+        (songs.filter { it.id in ids } + tube.filter { it.id in ids } + liked.filter { it.id in ids }).distinctBy { it.id }
+            .sortedByDescending { Loved.lovedAt(it) ?: 0L }
     }
 }
 
