@@ -95,7 +95,7 @@ fun ExplorePage(open: (Page) -> Unit) {
                         BasicText("the critics' favorites lately", style = pixel(12.sp, Ink.mid))
                     }
                 }
-                records.take(across * 4).chunked(across).forEachIndexed { r, row ->
+                records.take(across * 2).chunked(across).forEachIndexed { r, row ->
                     item(key = "pr$r") { TileRow(row, across) { s -> PickTile(s, open) } }
                 }
             }

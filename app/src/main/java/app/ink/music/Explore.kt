@@ -502,11 +502,12 @@ fun InkMoodsShelf() {
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
     fun go(m: InkMoods.Mood) = scope.launch { said = "${m.name}: finding its songs"; said = if (Moodboard.play(m)) null else "${m.name}: couldn't find its songs" }
+    val now = remember { InkMoods.now() }
     Column(Modifier.padding(horizontal = 20.dp)) {
         BasicText("RIGHT NOW", style = headline(28.sp))
         BasicText(said ?: "picked for ${Moods.said()}", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(8.dp))
-        InkMoods.now().forEach { m ->
+        now.forEach { m ->
             Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
                     Word(m.name.uppercase(), headline(32.sp), touch = 4.dp) { go(m) }
@@ -517,8 +518,9 @@ fun InkMoodsShelf() {
         }
     }
     Spacer(Modifier.height(4.dp))
-    Label("ink's moods")
-    Shelf(InkMoods.ALL) { m ->
+    // the rest of them (right now's three aren't shown twice)
+    Label("more moods")
+    Shelf(InkMoods.ALL.filter { it !in now }) { m ->
         Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { go(m) })) {
             Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.BottomStart) {
                 kept[m.key]?.art?.let { art -> Dithered(remember(art) { faceSong("mood " + m.key, art) }, Modifier.fillMaxSize(), px = 300) }
@@ -555,41 +557,82 @@ object Fests {
     }
 }
 
-/** Festivals soon: each on now or within two months, how soon and where, its lineup as faces, a station of them. */
+/** Festivals soon: one row of posters (a festival's name, when and where, its lineup as type); a tap opens the festival. */
 @Composable
 fun FestivalsShelf(pages: Pages) {
     val ctx = LocalContext.current
     val soon = remember { Festivals.soon(Fests.all(ctx)) }
     if (soon.isEmpty() || !YouTubeMusic.available) return
+    Label("festivals soon")
+    Shelf(soon) { f -> FestivalPoster(f) { pages.open(Page.Festival(f.name)) } }
+    Spacer(Modifier.height(8.dp))
+}
+
+/** A festival as its poster: when and where small, its name big, the lineup in type that shrinks down the bill, its dates. */
+@Composable
+private fun FestivalPoster(f: Festivals.Festival, onClick: () -> Unit) {
+    Column(Modifier.width(200.dp).aspectRatio(.78f).border(1.dp, Ink.line).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(14.dp)) {
+        BasicText("${f.when_()} · ${f.city}", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(4.dp))
+        BasicText(f.name.uppercase(), style = headline(22.sp).copy(lineHeight = 24.sp), maxLines = 2)
+        Spacer(Modifier.height(10.dp))
+        f.artists.take(2).forEach { BasicText(it.uppercase(), style = headline(15.sp), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        Spacer(Modifier.height(3.dp))
+        f.artists.drop(2).take(4).forEach { BasicText(it.uppercase(), style = headline(11.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        if (f.artists.size > 6) BasicText("and ${f.artists.size - 6} more", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(top = 3.dp))
+        Spacer(Modifier.weight(1f))
+        BasicText(dates(f), style = pixel(12.sp, Ink.mid))
+    }
+}
+
+/** "nov 2 – 8", "nov 30 – dec 2". */
+private fun dates(f: Festivals.Festival): String {
+    val m = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.ENGLISH)
+    return (if (f.start.month == f.end.month) "${m.format(f.start)} – ${f.end.dayOfMonth}" else "${m.format(f.start)} – ${m.format(f.end)}").lowercase()
+}
+
+/** A festival's page: its name and when, a station, its whole lineup as faces, two across. */
+@Composable
+fun FestivalPage(name: String, pages: Pages) {
+    val ctx = LocalContext.current
+    val f = remember(name) { Fests.all(ctx).firstOrNull { it.name == name } } ?: return
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.padding(bottom = 18.dp)) {
-        Column(Modifier.padding(horizontal = 20.dp)) {
-            BasicText("FESTIVALS SOON", style = headline(28.sp))
-            BasicText(said ?: "who's playing, to know before you go", style = pixel(12.sp, Ink.mid))
-        }
-        soon.forEach { f ->
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    BasicText(f.name.uppercase(), style = headline(22.sp))
-                    BasicText("${f.when_()} · ${f.city}", style = pixel(12.sp, Ink.mid))
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BasicText(f.name.uppercase(), style = headline(44.sp))
+            BasicText("${dates(f)} · ${f.city} · ${f.when_()}", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                Word("station", pixel(14.sp), touch = 8.dp) { scope.launch { said = "finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" } }
+                if (f.link.isNotBlank()) Word("the lineup", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                    runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 }
-                Word("station", pixel(13.sp), touch = 8.dp) { scope.launch { said = "${f.name.lowercase()}: finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" } }
             }
-            Spacer(Modifier.height(8.dp))
-            Shelf(f.artists) { name -> LineupTile(name, pages) }
+            said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp)) }
+            Spacer(Modifier.height(16.dp))
         }
-    }
+        items(f.artists.chunked(2)) { pair ->
+            Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                pair.forEach { n -> Box(Modifier.weight(1f)) { LineupTile(n, pages) } }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    } }
 }
 
 /** An artist on a lineup: their photo in the dither (read from YouTube Music, kept), their name; a tap opens their page. */
 @Composable
 private fun LineupTile(name: String, pages: Pages) {
     val info by produceState<ArtistInfo?>(null, name) { YouTubeAccount.artist(name, "").collect { if (it != null) value = it } }
-    Column(Modifier.width(120.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Artist(info?.name ?: name)) })) {
+    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Artist(info?.name ?: name)) })) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            info?.photo?.let { Dithered(remember(it) { faceSong(name, it) }, Modifier.fillMaxSize(), px = 240) } ?: NameCover(name, 120.dp)
+            info?.photo?.let { Dithered(remember(it) { faceSong(name, it) }, Modifier.fillMaxSize(), px = 240) } ?: NameCover(name, 160.dp)
         }
         Spacer(Modifier.height(6.dp))
         BasicText(name.uppercase(), style = headline(13.sp), maxLines = 2)

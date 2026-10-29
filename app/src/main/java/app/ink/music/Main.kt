@@ -235,6 +235,7 @@ sealed interface Page {
     data object Equalizer : Page
     data object HandOver : Page
     data class Mood(val mood: TubeMood) : Page
+    data class Festival(val name: String) : Page
     data class SettingsPart(val part: String) : Page
 }
 
@@ -354,6 +355,7 @@ private fun App() {
                         Page.Equalizer -> EqualizerPage(pages)
                         Page.HandOver -> HandOverPage(pages)
                         is Page.Mood -> MoodPage(p.mood, pages)
+                        is Page.Festival -> FestivalPage(p.name, pages)
                         is Page.SettingsPart -> SettingsPage(pages, p.part)
                     }
                     }
