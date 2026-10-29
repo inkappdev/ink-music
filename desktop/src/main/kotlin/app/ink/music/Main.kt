@@ -84,6 +84,8 @@ import androidx.compose.ui.window.rememberWindowState
 
 fun main() {
     System.setProperty("apple.laf.useScreenMenuBar", "true")
+    // ⌘Q (the app menu's Quit, the Dock's): the same whole quit as closing the window
+    runCatching { java.awt.Desktop.getDesktop().setQuitHandler { _, response -> runCatching { quit() }; response.performQuit() } }
     Library.start()
     Server.start()
     Sorts.start()
@@ -101,7 +103,7 @@ fun main() {
     Player.start()
     application {
         Window(
-            onCloseRequest = { Win.state?.let(Placed::keep); Player.close(); exitApplication() },
+            onCloseRequest = { quit() },
             title = "ink music",
             icon = androidx.compose.ui.graphics.painter.BitmapPainter(
                 org.jetbrains.skia.Image.makeFromEncoded(Ink::class.java.getResourceAsStream("/ink-music.png")!!.readBytes()).toComposeImageBitmap(),
@@ -133,6 +135,19 @@ fun main() {
         }
         MiniWindow()
     }
+    // the window's closed: gone, wholly (Bronson, 2026-10-29: after quitting, the Dock still had it "running in the
+    // background": a thread the Mac's media buttons had started kept the Java process alive)
+    quit()
+}
+
+/** Everything let go (the player, Now Playing, the wifi announcements) and the process ended, however it was quit. */
+fun quit(): Nothing {
+    runCatching { Win.state?.let(Placed::keep) }
+    runCatching { Player.close() }
+    runCatching { NowPlaying.stop() }
+    runCatching { SyncHub.close() }
+    runCatching { TubeAccount.stop() }
+    kotlin.system.exitProcess(0)
 }
 
 /** What's over the library: a record, an artist, the player. */
