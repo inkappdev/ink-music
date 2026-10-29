@@ -90,9 +90,8 @@ fun ExplorePage(open: (Page) -> Unit) {
             if (records.isNotEmpty()) {
                 item(key = "picked") {
                     Column(Modifier.padding(top = 8.dp, bottom = 12.dp)) {
-                        BasicText("NEW RECORDS, PICKED BY PEOPLE", style = headline(30.sp))
-                        BasicText("what pitchfork, stereogum, bandcamp daily, nme, the quietus, aquarium drunkard and gorilla vs. bear chose lately; " +
-                            "the ones more than one named first", style = pixel(12.sp, Ink.mid))
+                        BasicText("NEW RECORDS, PICKED BY CRITICS", style = headline(30.sp))
+                        BasicText("the critics' favorites lately", style = pixel(12.sp, Ink.mid))
                     }
                 }
                 records.take(across * 4).chunked(across).forEachIndexed { r, row ->
@@ -239,7 +238,7 @@ private fun PickedSongs(songs: List<Picks.Shown>, modifier: Modifier) {
     Column(modifier) {
         Row(verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f)) {
-                BasicText("SONGS, PICKED BY PEOPLE", style = headline(30.sp))
+                BasicText("SONGS, PICKED BY CRITICS", style = headline(30.sp))
                 BasicText(said ?: "pitchfork's and gorilla vs. bear's, the newest first", style = pixel(12.sp, Ink.mid))
             }
             Word("play all", pixel(14.sp), touch = 8.dp) { scope.launch { said = "finding them on youtube music"; Picks.playSongs(songs); said = null } }
