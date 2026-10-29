@@ -76,6 +76,8 @@ object Player {
     private var unshuffled: List<Song>? = null
 
     private var mpv: Mpv? = null
+    /** The thread reading mpv's events (Player.listen), waited for before mpv is let go. */
+    private var listener: Thread? = null
     /** Even volume's level for a song that has none in its tags (dB). */
     const val UNTAGGED = -7f
     @Volatile private var paused = true
@@ -122,7 +124,7 @@ object Player {
         m.observe("media-title", Mpv.STRING)
         // a YouTube song's stream found as it opens (they expire: never ahead of time)
         m.hook("on_load")
-        Thread({ listen(m) }, "mpv").apply { isDaemon = true }.start()
+        listener = Thread({ listen(m) }, "mpv").apply { isDaemon = true; start() }
         // the queue as it was, once the library knows its songs (a server's come from disk in a moment)
         scope.launch {
             // (a queue of songs dropped from elsewhere comes back whole, the library or no)
@@ -554,6 +556,13 @@ object Player {
         _queue.value.getOrNull(index)?.let { s ->
             runCatching { Home.write(kept, written(_queue.value, s)) }
         }
-        mpv?.close(); mpv = null
+        // mpv let go only once the listener's out of mpv_wait_event: destroying it meanwhile hung for good (Linux, Win+Q,
+        // 2026-10-29). Told to quit, it says shutdown and the listener returns; if it never does, the process ends anyway
+        mpv?.let { m ->
+            runCatching { m.command("quit") }
+            listener?.join(2000)
+            if (listener?.isAlive == false) m.close()
+        }
+        mpv = null
     }
 }
