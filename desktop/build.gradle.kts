@@ -146,7 +146,7 @@ tasks.withType<AbstractJPackageTask>().configureEach {
 // (createDistributable) into the msi, with the WiX Compose fetched; no license or folder pages (welcome, ready, done)
 tasks.register<Exec>("packageInkMsi") {
     dependsOn("createDistributable")
-    if (System.getProperty("os.name").startsWith("Windows")) dependsOn("unzipWix")
+    if (System.getProperty("os.name").startsWith("Windows")) dependsOn(":unzipWix")   // Compose keeps WiX on the root project
     val app = layout.buildDirectory.dir("compose/binaries/main/app/ink music").get().asFile
     val out = layout.buildDirectory.dir("compose/binaries/main/msi").get().asFile
     val res = layout.buildDirectory.dir("msi-resources").get().asFile
