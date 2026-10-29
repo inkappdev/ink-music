@@ -79,7 +79,7 @@ compose.desktop {
                         <key>NSLocalNetworkUsageDescription</key>
                         <string>ink music plays the music on your own server, and on your speakers, on your network.</string>
                         <key>NSBonjourServices</key>
-                        <array><string>_googlecast._tcp</string></array>
+                        <array><string>_googlecast._tcp</string><string>_inkmusic._tcp</string></array>
                     """.trimIndent()
                 }
             }

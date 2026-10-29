@@ -58,7 +58,8 @@ object YouTube {
      */
     suspend fun album(record: TubeAlbum): List<Song> = withContext(Dispatchers.IO) {
         albums[record.url]?.let { return@withContext it }
-        val tube = InnerTube()
+        // as you when signed in (your own playlists are private)
+        val tube = TubeAccount.tube() ?: InnerTube()
         val list = Regex("[?&]list=([^&]+)").find(record.url)?.groupValues?.get(1)
         val (own, tracks) = runCatching {
             if ("/browse/" in record.url) tube.album(record.url.substringAfterLast('/'))
@@ -76,7 +77,8 @@ object YouTube {
         mixes[id]?.let { return it }
         val vid = id.removePrefix("y")
         val mix = runCatching {
-            InnerTube().queue("RDAMVM$vid", videoId = vid).filter { it.videoId != vid && (it.seconds == 0 || it.seconds in 60..900) }.map { trackSong(it) }
+            // as you, signed in: YouTube makes the radio from what you listen to
+            (TubeAccount.tube() ?: InnerTube()).queue("RDAMVM$vid", videoId = vid).filter { it.videoId != vid && (it.seconds == 0 || it.seconds in 60..900) }.map { trackSong(it) }
         }.getOrDefault(emptyList()).ifEmpty {
             runCatching {
                 Pipe.init()

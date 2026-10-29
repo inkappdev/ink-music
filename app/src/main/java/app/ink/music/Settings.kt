@@ -172,6 +172,11 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                                 Word("tell youtube", pixel(14.sp, if (tells) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { tells = true; YouTubeAccount.tell(ctx, true) }
                                 Word("don't", pixel(14.sp, if (!tells) Ink.ink else Ink.dim), touch = 8.dp) { tells = false; YouTubeAccount.tell(ctx, false) }
                             }
+                            // the Mac app signs in from here: it has no youtube sign-in page of its own
+                            Spacer(Modifier.height(18.dp))
+                            BasicText("ink music on a computer signs in from this phone", style = pixel(12.sp, Ink.mid))
+                            Spacer(Modifier.height(6.dp))
+                            Word("sign in a computer", pixel(14.sp), touch = 8.dp) { pages.open(Page.HandOver) }
                         }
                         Spacer(Modifier.height(40.dp))
                     }
@@ -571,7 +576,7 @@ private fun LastFmSetting() {
 
 /** A line to type on: its name small and dim, what's typed in ink, a hairline under it. */
 @Composable
-private fun Field(name: String, value: String, onValue: (String) -> Unit, hint: String, type: KeyboardType, secret: Boolean = false) {
+internal fun Field(name: String, value: String, onValue: (String) -> Unit, hint: String, type: KeyboardType, secret: Boolean = false) {
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         BasicText(name, style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(6.dp))

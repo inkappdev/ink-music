@@ -119,6 +119,9 @@ object YouTubeAccount {
         true
     }
 
+    /** The sign-in as kept (cookies, visitor, account), for a computer signing in from this phone ([HandOverPage]). */
+    fun handover(c: Context): String? = prefs(c).getString("auth", null)?.let { runCatching { open(it) }.getOrNull() }
+
     fun signOut(c: Context) {
         prefs(c).edit().clear().apply()
         tube = null; _who.value = null

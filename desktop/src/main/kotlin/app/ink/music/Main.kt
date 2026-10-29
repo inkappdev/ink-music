@@ -91,6 +91,7 @@ fun main() {
     LastFm.start(Home.dir)
     Listened.read()
     Loved.start()
+    TubeAccount.start()
     Colours.start()
     Player.start()
     application {

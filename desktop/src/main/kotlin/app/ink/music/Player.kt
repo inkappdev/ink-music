@@ -279,10 +279,13 @@ object Player {
     // (as the phone does, and Last.fm counts); Navidrome passes it on to its own scrobbling
     private var toldNow: String? = null
     private var counted: String? = null
+    private var toldTube: String? = null
 
     private fun heard(ms: Long) {
         val n = _now.value ?: return
         val s = n.song
+        // a YouTube song 30 s in: told to your history there, signed in (as its own app does)
+        if (s.tube && ms >= 30_000 && toldTube != s.id) { toldTube = s.id; TubeAccount.played(s) }
         if (counted == s.id || n.duration <= 0 || s.station) return
         if (ms >= n.duration / 2 || ms >= 240_000) {
             counted = s.id

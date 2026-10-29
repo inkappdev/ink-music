@@ -232,6 +232,7 @@ sealed interface Page {
     data class Weekly(val week: Int) : Page
     data object Import : Page
     data object Equalizer : Page
+    data object HandOver : Page
     data class SettingsPart(val part: String) : Page
 }
 
@@ -349,6 +350,7 @@ private fun App() {
                         is Page.Weekly -> WeeklyPage(p.week, pages)
                         Page.Import -> ImportPage(pages)
                         Page.Equalizer -> EqualizerPage(pages)
+                        Page.HandOver -> HandOverPage(pages)
                         is Page.SettingsPart -> SettingsPage(pages, p.part)
                     }
                     }
