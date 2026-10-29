@@ -86,6 +86,7 @@ fun ExplorePage(open: (Page) -> Unit) {
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 40.dp)) {
             today?.let { d -> item(key = "today") { RecordOfTheDay(d, open) } }
             if (air.isNotEmpty()) item(key = "air") { OnTheAir(air) }
+            item(key = "festivals") { FestivalsShelf(open) }
             item(key = "moods") { MoodsAndGenres(moods, open) }
             if (records.isNotEmpty()) {
                 item(key = "picked") {
