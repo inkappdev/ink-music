@@ -25,7 +25,7 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
     /** What the speaker says: meant to play, actually moving, where (ms at `at`, elapsedRealtime), how long, its volume (0 to 1, null not heard). */
     private data class Said(
         val playing: Boolean, val moving: Boolean, val position: Long, val at: Long, val duration: Long, val volume: Float?,
-        val seekable: Boolean = true,
+        val seekable: Boolean = true, val device: String = "",
     )
     private var said: Said? = null
     private val main = Handler(Looper.getMainLooper())
@@ -44,12 +44,15 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
     /** A speaker plays (the phone's player only follows it). */
     val casting get() = said != null
 
+    /** The speaker's name while casting ("" for the phone's own). */
+    val device get() = said?.device.orEmpty()
+
     /** What the screens say the speaker does (null: casting's over). Main thread. */
     fun speaker(b: Bundle?) {
         val was = said
         said = b?.let {
             Said(it.getBoolean("playing"), it.getBoolean("moving"), it.getLong("position"), SystemClock.elapsedRealtime(),
-                it.getLong("duration"), it.getFloat("volume", -1f).takeIf { v -> v >= 0f }, it.getBoolean("seekable", true))
+                it.getLong("duration"), it.getFloat("volume", -1f).takeIf { v -> v >= 0f }, it.getBoolean("seekable", true), it.getString("device").orEmpty())
         }
         android.util.Log.d("ink-cast", "player: ${said?.let { "the speaker's, ${if (it.moving) "playing" else if (it.playing) "starting" else "paused"} at ${it.position / 1000}s, volume ${it.volume}" } ?: "the phone's own"}")
         // casting begins: the phone's own player paused (faded) here, not asked separately by the screens (an ask

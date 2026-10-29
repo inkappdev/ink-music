@@ -295,37 +295,82 @@ object SyncPhone {
 }
 
 /**
- * The player's side of "continue here" (the player's own process, playing with the app closed): every 20 seconds while
- * it plays, it asks the computers paired whether one has carried on with what plays here since play was pressed, and
- * pauses if so. When play's pressed is kept (sync-resumed) for the screens' calls too.
+ * The player's side of [Sync], live (its own process: the app closed, playing, or casting): on each change (a song,
+ * play, pause, the speaker's) it tells the computers paired what plays now and where (`/now`), so the computer offers
+ * it to continue there at once; while it plays it waits on each (`/wait`), which answers the moment the computer
+ * carries on with it, and pauses here (the speaker, if it's casting). When play's pressed is kept (sync-resumed).
  */
-class HandedCheck(private val c: Context, private val pause: () -> Unit) {
+class Live(private val c: Context, private val player: () -> androidx.media3.common.Player?, private val device: () -> String) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var job: Job? = null
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private var telling: Job? = null
+    private var waiting: Job? = null
+    private var wasPlaying = false
     private val resumed get() = File(c.filesDir, "sync-resumed")
+    private val kept by lazy { Sync.Kept(c.filesDir) }
 
-    fun playing(on: Boolean) {
-        job?.cancel(); job = null
-        if (!on) return
-        runCatching { resumed.writeText(System.currentTimeMillis().toString()) }
-        val kept = Sync.Kept(c.filesDir)
-        if (kept.peers().isEmpty()) return
-        job = scope.launch {
-            while (true) {
-                delay(20_000)
-                val since = runCatching { resumed.readText().trim().toLong() }.getOrDefault(0L)
-                for (p in kept.peers()) {
-                    val at = p.at.takeIf { ':' in it } ?: continue
-                    val handed = runCatching { ask(at, Sync.askHanded(kept, p))?.let { Sync.handed(p, it) } }.getOrNull() ?: continue
-                    if (handed > since) { kotlinx.coroutines.withContext(Dispatchers.Main) { pause() }; return@launch }
-                }
+    /** Something changed (main thread): told soon, a burst of changes as one; waiting on the computer while it plays. */
+    fun changed() {
+        val p = player() ?: return
+        val playing = p.playWhenReady
+        if (playing && !wasPlaying) runCatching { resumed.writeText(System.currentTimeMillis().toString()) }
+        wasPlaying = playing
+        val now = runCatching { now(p) }.getOrNull()
+        telling?.cancel()
+        telling = scope.launch { delay(400); tell(now) }
+        if (playing && waiting?.isActive != true) waiting = scope.launch { waitAll() }
+        if (!playing) { waiting?.cancel(); waiting = null }
+    }
+
+    /** What plays, as the computer's told it (read on the main thread, the player's). */
+    private fun now(p: androidx.media3.common.Player): JSONObject? {
+        if (p.mediaItemCount == 0) return null
+        val index = p.currentMediaItemIndex
+        val from = (index - 50).coerceAtLeast(0)
+        val queue = JSONArray()
+        for (i in from until minOf(p.mediaItemCount, index + 250)) {
+            val item = p.getMediaItemAt(i); val md = item.mediaMetadata
+            queue.put(Sync.song(item.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(), md.albumTitle?.toString().orEmpty(),
+                "", md.albumArtist?.toString() ?: md.artist?.toString().orEmpty(), (md.durationMs ?: 0L), md.artworkUri?.toString()))
+        }
+        return JSONObject().put("queue", queue).put("index", index - from).put("position", p.currentPosition).put("positionAt", System.currentTimeMillis())
+            .put("playing", p.playWhenReady).put("at", System.currentTimeMillis()).put("device", device())
+    }
+
+    private fun peers() = kept.peers().filter { ':' in it.at }
+
+    private fun tell(now: JSONObject?) {
+        for (p in peers()) runCatching {
+            val r = post(p.at, "/now", Sync.sealed(kept, p, JSONObject().put("now", now ?: JSONObject.NULL)), 4_000) ?: return@runCatching
+            stopIfHanded(Sync.replied(p, r).optLong("handed"))
+        }
+    }
+
+    /** Waiting on each computer to carry on with it, again and again while it plays. */
+    private suspend fun waitAll() {
+        while (true) {
+            val since = runCatching { resumed.readText().trim().toLong() }.getOrDefault(0L)
+            val list = peers()
+            if (list.isEmpty()) return
+            for (p in list) {
+                val r = runCatching { post(p.at, "/wait", Sync.sealed(kept, p, JSONObject().put("since", since)), 30_000) }.getOrNull()
+                if (r == null) { delay(10_000); continue }
+                if (stopIfHanded(runCatching { Sync.replied(p, r).optLong("handed") }.getOrDefault(0L))) return
             }
         }
     }
 
-    private fun ask(at: String, body: String): String? {
-        val conn = URL("http://$at/handed").openConnection() as HttpURLConnection
-        conn.connectTimeout = 3_000; conn.readTimeout = 8_000; conn.requestMethod = "POST"; conn.doOutput = true
+    /** Carried on with there since play was last pressed here: paused (the speaker, casting). */
+    private fun stopIfHanded(handed: Long): Boolean {
+        val since = runCatching { resumed.readText().trim().toLong() }.getOrDefault(0L)
+        if (handed <= since) return false
+        main.post { player()?.takeIf { it.playWhenReady }?.pause() }
+        return true
+    }
+
+    private fun post(at: String, path: String, body: String, read: Int): String? {
+        val conn = URL("http://$at$path").openConnection() as HttpURLConnection
+        conn.connectTimeout = 3_000; conn.readTimeout = read; conn.requestMethod = "POST"; conn.doOutput = true
         return try {
             conn.outputStream.use { it.write(body.toByteArray()) }
             if (conn.responseCode == 200) conn.inputStream.bufferedReader().readText() else null

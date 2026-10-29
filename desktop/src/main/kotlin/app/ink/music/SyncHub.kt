@@ -83,6 +83,15 @@ object SyncHub {
         if (peers.value.isNotEmpty()) listen()
     }
 
+    /** Woken when this computer carries on with a phone's playing, so its player's waiting call answers at once. */
+    val handing = Object()
+
+    /** What a phone's player says it plays now (null: nothing, it stopped). */
+    private fun live(peer: Sync.Peer, now: JSONObject?) {
+        if (now == null) { if (theirs.value?.peer == peer.id) theirs.value = null; return }
+        Continue.offer(peer.name, now, ::resolve, peer.id)?.let { theirs.value = it }
+    }
+
     /** A phone paired (from the pairing's sealed hello): kept, and listened for from now on. */
     fun paired(id: String, name: String, key: String) {
         kept.put(Sync.Peer(id, name, key, seen = System.currentTimeMillis(), at = "paired"))
@@ -144,8 +153,24 @@ object SyncHub {
         while (true) { val h = line(); if (h.isEmpty()) break; if (h.lowercase().startsWith("content-length:")) length = h.substringAfter(":").trim().toIntOrNull() ?: 0 }
         val body = String(input.readNBytes(length.coerceIn(0, 64 shl 20)))
         val (status, reply) = when (first.getOrNull(0) to first.getOrNull(1)) {
-            // the phone's player, playing with the app closed: has this computer carried on with it?
-            "POST" to "/handed" -> runCatching { Sync.answerHanded(kept, body)?.let { 200 to it } ?: (403 to "{}") }.getOrElse { 400 to "{}" }
+            // the phone's player (the app closed too): what it plays now, as it changes
+            "POST" to "/now" -> runCatching {
+                Sync.unsealed(kept, body)?.let { (peer, m) ->
+                    live(peer, m.optJSONObject("now"))
+                    200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)))
+                } ?: (403 to "{}")
+            }.getOrElse { 400 to "{}" }
+            // and while it plays, waiting here to be told this computer's carried on with it (answered the moment it is)
+            "POST" to "/wait" -> runCatching {
+                Sync.unsealed(kept, body)?.let { (peer, m) ->
+                    val since = m.optLong("since")
+                    val until = System.currentTimeMillis() + 25_000
+                    synchronized(handing) {
+                        while (kept.handedAt(peer.id) <= since && System.currentTimeMillis() < until) handing.wait(maxOf(1L, until - System.currentTimeMillis()))
+                    }
+                    200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)))
+                } ?: (403 to "{}")
+            }.getOrElse { 400 to "{}" }
             "POST" to "/sync" -> runCatching {
                 val r = Sync.answer(side, kept, body, k.inetAddress.hostAddress + ":" + (server?.localPort ?: Sync.PORT))
                 peers.value = kept.peers()
@@ -240,8 +265,13 @@ object SyncHub {
 
 /** What the other device was playing, offered here: "on your phone: … continue here". */
 object Continue {
-    data class Offer(val from: String, val songs: List<Song>, val index: Int, val position: Long, val playing: Boolean, val at: Long, val peer: String = "") {
+    data class Offer(val from: String, val songs: List<Song>, val index: Int, val position: Long, val playing: Boolean, val at: Long, val peer: String = "",
+                     val device: String = "", val positionAt: Long = 0L, val seen: Long = System.currentTimeMillis()) {
         val song: Song get() = songs[index]
+        /** Where it is now: where it was said to be, and on since, if it's playing. */
+        fun positionNow(): Long = if (playing && positionAt > 0) position + (System.currentTimeMillis() - positionAt).coerceIn(0, 10 * 60_000L) else position
+        /** Playing there now (said in the last few minutes): offered whatever played here before. */
+        val live: Boolean get() = playing && System.currentTimeMillis() - seen < 3 * 60_000L
     }
 
     /** Its queue found here; null if none of it could be, or nothing played there. */
@@ -255,15 +285,21 @@ object Continue {
             songs += s
         }
         if (songs.isEmpty() || at < 0) return null
-        return Offer(from.lowercase(), songs, at, o.optLong("position"), o.optBoolean("playing"), o.optLong("at"), peer)
+        return Offer(from.lowercase(), songs, at, o.optLong("position"), o.optBoolean("playing"), o.optLong("at"), peer,
+            o.optString("device"), o.optLong("positionAt"))
     }
 
     /** Carried on with here, where it was; the phone told to stop (at its next call, or its player's next ask). */
     fun take(o: Offer) {
-        val at = if (o.position > 5_000 && !o.song.station) o.position else 0L
+        val p = o.positionNow()
+        val at = if (p > 5_000 && !o.song.station) p else 0L
+        // the phone (or its speaker) told to stop first, so the two don't play over each other
+        if (o.peer.isNotEmpty()) {
+            SyncHub.kept.handed(o.peer, System.currentTimeMillis())
+            synchronized(SyncHub.handing) { SyncHub.handing.notifyAll() }
+        }
         Casting.on.value?.let { to -> Casting.play(to, o.songs, o.index, at) } ?: Player.takeBack(o.songs, o.index, at, go = true)
         dismissed.value = o.at
-        if (o.peer.isNotEmpty()) SyncHub.kept.handed(o.peer, System.currentTimeMillis())
     }
 
     /** The offer last put aside ("not now"), by when it was. */
@@ -280,7 +316,9 @@ fun continueOffer(): Continue.Offer? {
     val now by Player.now.collectAsState()
     val dismissed by Continue.dismissed.collectAsState()
     val o = offer ?: return null
-    return o.takeUnless { it.at <= SyncHub.playedAt || it.at <= dismissed || now?.playing == true }
+    if (now?.playing == true || o.at <= dismissed) return null
+    // playing there now: always offered; else only when it's newer than what played here
+    return o.takeIf { it.live || it.at > SyncHub.playedAt }
 }
 
 @androidx.compose.runtime.Composable
@@ -291,7 +329,7 @@ fun ContinueHere(o: Continue.Offer) {
         }
         Spacer(Modifier.width(18.dp))
         Column(Modifier.weight(1f)) {
-            BasicText((if (o.playing) "playing on " else "on ") + o.from, style = pixel(12.sp, Ink.mid))
+            BasicText((if (o.playing) "playing now on " else "on ") + o.from + (if (o.device.isNotEmpty()) " · on ${o.device.lowercase()}" else ""), style = pixel(12.sp, Ink.mid))
             BasicText(o.song.title.uppercase(), style = headline(22.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             BasicText(o.song.artist.lowercase(), style = pixel(13.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
