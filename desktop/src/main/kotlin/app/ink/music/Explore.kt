@@ -51,7 +51,8 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 
 /**
- * Explore, what isn't yours yet, picked by people (Bronson, 2026-10-28: "as cool and curated as possible, even signed
+ * INK (explore and ink's own place, one since 2026-10-29: Bronson), what isn't yours yet, picked by people: ink weekly
+ * on top, ink radio after what's on the air; (Bronson, 2026-10-28: "as cool and curated as possible, even signed
  * out"): the record of the day; what DJs are playing this minute; right now's moods and every mood and genre;
  * new records the critics picked; an artist of the week from the indie chart; the songs the critics picked beside the
  * chart, each song's move over the week; YouTube Music's own new records and shelves only as you, signed in (signed
@@ -92,8 +93,11 @@ fun ExplorePage(open: (Page) -> Unit) {
         // one rhythm down the page: the same room between every section (Bronson, 2026-10-29)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(GAP)) {
+            // ink weekly, the cover: ours, new each Friday
+            item(key = "weekly") { InkWeekly() }
             today?.let { d -> item(key = "today") { RecordOfTheDay(d, open) } }
             if (air.isNotEmpty()) item(key = "air") { OnTheAir(air) }
+            item(key = "radio") { InkRadio(air) }
             item(key = "festivals") { FestivalsShelf(open) }
             item(key = "moods") { InkMoodsShelf() }
             if (!moods.isNullOrEmpty()) item(key = "genres") { Genres(moods.orEmpty(), open) }

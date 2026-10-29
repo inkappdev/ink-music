@@ -417,9 +417,9 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
                 key(ac, seed) { Artists(artists, open) }
             }
             "radio" -> RadioTab()
-            "ink" -> InkPage(open)
             "listen" -> ListenPage(open)
-            "explore" -> ExplorePage(open)
+            // ink weekly, ink radio and everything people picked: one place (explore was its own till 2026-10-29)
+            "ink", "explore" -> ExplorePage(open)
             "lists" -> ListsPage(open)
             else -> {
                 val every = remember(songs, sc, seed, heard, minute) {
