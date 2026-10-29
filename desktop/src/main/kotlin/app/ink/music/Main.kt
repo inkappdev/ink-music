@@ -866,15 +866,27 @@ fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyL
     }
 }
 
-/** A song's lines, read as it plays (null while there are none to show; lrclib busy is asked again each minute). */
+/**
+ * A song's lines, read as it plays: null while they're being found (lrclib busy is asked again each minute) or lyrics
+ * are off, empty when there are none (a station too). "None" and "still finding" were one null, so a song without
+ * words said "finding the words" for ever (Bronson's Mac, 2026-10-29).
+ */
 @Composable
 fun rememberLyrics(song: Song): List<Line>? {
     val on by Lyrics.on.collectAsState()
     val lines by androidx.compose.runtime.produceState<List<Line>?>(null, song.id, on) {
         value = null
-        while (on && !song.station) { Lyrics.of(song)?.let { value = it; return@produceState }; kotlinx.coroutines.delay(61_000) }
+        if (on && song.station) { value = emptyList(); return@produceState }
+        while (on) { Lyrics.of(song)?.let { value = it; return@produceState }; kotlinx.coroutines.delay(61_000) }
     }
-    return lines?.takeIf { on && it.isNotEmpty() }
+    return lines?.takeIf { on }
+}
+
+/** What the lyrics' place says when there are no lines to show: off, still finding them, or none. */
+fun lyricsSaid(lines: List<Line>?): String = when {
+    !Lyrics.on.value -> "lyrics are off: " + (if (Home.mac) "⌘L" else "ctrl+l") + " turns them on"
+    lines == null -> "finding the words"
+    else -> "no words found for this one"
 }
 
 /** The words: the line before dim, the sung one big (lit word by word), the next three dim; a new line rises in. */
