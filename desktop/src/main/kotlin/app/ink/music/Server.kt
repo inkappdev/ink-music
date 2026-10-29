@@ -163,16 +163,35 @@ object Server {
     }
 
     /** A record's cover from the server, at about `px` a side, as the server sends it (a JPEG, a PNG); null if there's none. */
+    /**
+     * A record's cover at about `px`. A few at a time: Navidrome turns away covers asked for all at once ("429 Too
+     * Many Requests"; Bronson's Mac, 2026-10-29, the albums page after a rescan changed every cover's link: 271 of
+     * 1,941 refused), so a turned-away one waits and asks again. Null for no picture; [Busy] when the server couldn't
+     * say (away, slow, still busy), so it's asked again later rather than taken as none.
+     */
     fun cover(art: String, px: Int): ByteArray? {
         val a = _account.value ?: return null
-        val c = URL(url(a, "getCoverArt", "id" to art, "size" to px)).openConnection() as HttpURLConnection
-        c.connectTimeout = 10_000; c.readTimeout = 15_000
-        c.setRequestProperty("User-Agent", AGENT)
-        return try {
-            if (c.responseCode != 200 || c.contentType?.startsWith("image") != true) null
-            else c.inputStream.use { it.readBytes() }
-        } catch (e: java.io.IOException) { null } finally { c.disconnect() }
+        covering.acquire()
+        try {
+            repeat(4) { i ->
+                val c = URL(url(a, "getCoverArt", "id" to art, "size" to px)).openConnection() as HttpURLConnection
+                c.connectTimeout = 10_000; c.readTimeout = 15_000
+                c.setRequestProperty("User-Agent", AGENT)
+                try {
+                    val code = c.responseCode
+                    if (code == 429 || code == 503) { Thread.sleep(400L shl i); return@repeat }
+                    return if (code != 200 || c.contentType?.startsWith("image") != true) null else c.inputStream.use { it.readBytes() }
+                } catch (e: java.io.IOException) {
+                    if (i >= 1) throw Busy()
+                } finally { c.disconnect() }
+            }
+            throw Busy()
+        } finally { covering.release() }
     }
+
+    /** The server couldn't say whether there's a cover: asked again later. */
+    class Busy : java.io.IOException("the server's busy or away")
+    private val covering = java.util.concurrent.Semaphore(4)
 
     /** The records added to the server last (the library's own, by its record ids). */
     suspend fun newest(n: Int): List<String> = withContext(Dispatchers.IO) {

@@ -29,20 +29,27 @@ class Cover(val image: ImageBitmap, val accent: Color)
 object Covers {
     private val kept = Lru<String, Cover>(256 * 1024 * 1024) { it.image.width * it.image.height * 4 }
     private val none = java.util.Collections.synchronizedSet(HashSet<String>())   // records with no picture, not asked again
+    private val missed = java.util.concurrent.ConcurrentHashMap<String, Long>()   // the server couldn't say: when, asked again a minute on
     private val whole = java.util.Collections.synchronizedSet(HashSet<String>())  // records whose picture is smaller than asked: as big as it gets
     /** From this size up a YouTube song's cover is looked for on iTunes (what's playing: the now column's, the player's). */
     const val SHARP = 700
     private val beside = listOf("cover", "folder", "front", "album", "artwork")
 
     fun kept(album: String): Cover? = kept.get(album)
+    /** Whether the server couldn't say for this record, so it's to be asked again. */
+    fun waiting(album: String) = missed.containsKey(album)
 
     suspend fun of(song: Song, px: Int = 640): Cover? {
         // a YouTube song big (the player): the label's own art where Apple has it
         if (song.tube && px >= SHARP) sharp(song)?.let { return it }
         kept.get(song.albumId)?.takeIf { it.image.width >= px * 9 / 10 || song.albumId in whole }?.let { return it }
         if (song.albumId in none) return null
+        missed[song.albumId]?.let { if (System.currentTimeMillis() - it < 60_000) return kept.get(song.albumId) }
         return withContext(Dispatchers.IO) {
-            val bytes = remote(song, px) ?: if (song.server || song.tube) null else picture(File(song.path))
+            val bytes = try { remote(song, px) } catch (e: Server.Busy) {
+                missed[song.albumId] = System.currentTimeMillis(); return@withContext kept.get(song.albumId)
+            } ?: if (song.server || song.tube) null else picture(File(song.path))
+            missed -= song.albumId
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
             if (img == null) {
                 kept.get(song.albumId)?.let { return@withContext it }
@@ -141,7 +148,7 @@ object Covers {
     /** A record's colour from a small copy of its cover (the color order; blocking); null with no cover. */
     fun accentOf(song: Song): Color? {
         kept.get(song.albumId)?.let { return it.accent }
-        val bytes = remote(song, 64) ?: if (song.server || song.tube) null else picture(File(song.path))
+        val bytes = runCatching { remote(song, 64) }.getOrNull() ?: if (song.server || song.tube) null else picture(File(song.path))
         val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() } ?: return null
         return accentOf(square(img, 64))
     }
@@ -205,5 +212,10 @@ object Covers {
 fun rememberCover(song: Song?, px: Int = 640): Cover? =
     produceState(song?.let { Covers.kept(it.albumId) }, song?.albumId, px) {
         value = song?.let { Covers.kept(it.albumId) }
-        if (song != null && (value?.image?.width ?: 0) < px * 9 / 10) value = Covers.of(song, px) ?: value
+        // the server busy or away: asked again each minute while it's on screen
+        while (song != null && (value?.image?.width ?: 0) < px * 9 / 10) {
+            value = Covers.of(song, px) ?: value
+            if (!Covers.waiting(song.albumId)) break
+            kotlinx.coroutines.delay(61_000)
+        }
     }.value
