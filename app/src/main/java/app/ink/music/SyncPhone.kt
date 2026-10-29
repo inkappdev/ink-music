@@ -306,6 +306,7 @@ class Live(private val c: Context, private val player: () -> androidx.media3.com
     private var telling: Job? = null
     private var waiting: Job? = null
     private var wasPlaying = false
+    @Volatile private var pausedAt = 0L
     private val resumed get() = File(c.filesDir, "sync-resumed")
     private val kept by lazy { Sync.Kept(c.filesDir) }
 
@@ -318,8 +319,9 @@ class Live(private val c: Context, private val player: () -> androidx.media3.com
         val now = runCatching { now(p) }.getOrNull()
         telling?.cancel()
         telling = scope.launch { delay(400); tell(now) }
-        if (playing && waiting?.isActive != true) waiting = scope.launch { waitAll() }
-        if (!playing) { waiting?.cancel(); waiting = null }
+        // waiting on the computer while it plays, and a while after a pause (play pressed there brings it back)
+        if (!playing) pausedAt = System.currentTimeMillis()
+        if (waiting?.isActive != true && (playing || p.mediaItemCount > 0)) waiting = scope.launch { waitAll() }
     }
 
     /** What plays, as the computer's told it (read on the main thread, the player's). */
@@ -346,16 +348,26 @@ class Live(private val c: Context, private val player: () -> androidx.media3.com
         }
     }
 
-    /** Waiting on each computer to carry on with it, again and again while it plays. */
+    /** Waiting on each computer to carry on with it or steer it, again and again while it plays (and a quarter hour after). */
     private suspend fun waitAll() {
         while (true) {
+            if (!wasPlaying && System.currentTimeMillis() - pausedAt > 15 * 60_000L) return
             val since = runCatching { resumed.readText().trim().toLong() }.getOrDefault(0L)
             val list = peers()
             if (list.isEmpty()) return
             for (p in list) {
                 val r = runCatching { post(p.at, "/wait", Sync.sealed(kept, p, JSONObject().put("since", since)), 30_000) }.getOrNull()
                 if (r == null) { delay(10_000); continue }
-                if (stopIfHanded(runCatching { Sync.replied(p, r).optLong("handed") }.getOrDefault(0L))) return
+                val m = runCatching { Sync.replied(p, r) }.getOrNull() ?: continue
+                // steered from the computer's bottom bar: done here (the speaker, if it's casting)
+                m.optString("do").takeIf { it.isNotEmpty() }?.let { what ->
+                    main.post {
+                        player()?.run {
+                            when (what) { "play" -> play(); "pause" -> pause(); "next" -> seekToNextMediaItem(); "previous" -> seekToPrevious() }
+                        }
+                    }
+                }
+                if (stopIfHanded(m.optLong("handed"))) return
             }
         }
     }
