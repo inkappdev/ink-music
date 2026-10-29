@@ -3,6 +3,7 @@ package app.ink.music
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -86,6 +88,8 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             }
             Spacer(Modifier.height(14.dp))
         }
+        // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: Bronson, 2026-10-28)
+        item(key = "inkmoods") { InkMoodsShelf() }
         moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
         if (records.isNotEmpty()) item(key = "picked") {
             Label("new records, picked by critics")
@@ -265,6 +269,11 @@ private fun audience(said: String): Long {
  * the genres you open most come first; a region's flavors after the rest on a mood's page.
  */
 object Moods {
+    /** ink's own order for the genres (Bronson, 2026-10-28: alphabetical put the odd ones first): the ones you open most still lead. */
+    val GENRES = listOf("Indie & alternative", "Dance & electronic", "Hip-hop", "R&B & soul", "Jazz", "Rock", "Folk & acoustic", "Pop",
+        "Soundtracks & musicals", "Reggae & caribbean", "Blues", "Latin", "Brazilian", "African", "Classical", "Metal", "Country & Americana",
+        "K-Pop", "J-Pop", "Decades", "Songwriters & producers")
+    fun rank(title: String) = GENRES.indexOfFirst { it.equals(title, true) }.let { if (it < 0) GENRES.size else it }
     val counts = MutableStateFlow<Map<String, Int>>(emptyMap())
     val REGIONAL = listOf("latin", "bollywood", "indian", "k-pop", "kpop", "j-pop", "arab", "turk", "african", "brazil", "mandopop", "cantopop", "opm",
         "punjabi", "tamil", "telugu", "desi", "afro", "reggaeton", "mexican", "french", "german", "italian", "spanish", "korean", "japanese", "chinese")
@@ -326,28 +335,12 @@ private fun MoodsAndGenres(all: List<TubeMood>, pages: Pages) {
     val counts by Moods.counts.collectAsState()
     val scope = rememberCoroutineScope()
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 22.dp)) {
-        BasicText("RIGHT NOW", style = headline(28.sp))
-        BasicText("picked for ${Moods.said()}", style = pixel(12.sp, Ink.mid))
-        Spacer(Modifier.height(8.dp))
-        Moods.now(all).forEach { m ->
-            Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.Bottom) {
-                Word(m.title.uppercase(), headline(34.sp), Modifier.weight(1f), touch = 4.dp) { Moods.open(ctx, m); pages.open(Page.Mood(m)) }
-                Word("station", pixel(13.sp), Modifier.padding(bottom = 6.dp), touch = 8.dp) { scope.launch { Moods.station(m) } }
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        BasicText("moods & moments", style = pixel(12.sp, Ink.mid))
-        Spacer(Modifier.height(6.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            all.filter { !it.genre }.forEach { m -> Word(m.title.uppercase(), headline(20.sp, Ink.mid)) { Moods.open(ctx, m); pages.open(Page.Mood(m)) } }
-        }
-        Spacer(Modifier.height(14.dp))
         // the genres as a row of tiles to slide through, the ones you open most first (as words they were a wall of
         // text on a phone: Bronson, 2026-10-28)
         BasicText("genres, the ones you open most first", style = pixel(12.sp, Ink.mid))
     }
     Spacer(Modifier.height(8.dp))
-    Shelf(all.filter { it.genre }.sortedByDescending { counts[it.title] ?: 0 }) { m ->
+    Shelf(all.filter { it.genre }.sortedWith(compareByDescending<TubeMood> { counts[it.title] ?: 0 }.thenBy { Moods.rank(it.title) })) { m ->
         GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(ctx, m); pages.open(Page.Mood(m)) }
     }
     Spacer(Modifier.height(12.dp))
@@ -439,4 +432,102 @@ fun NewToYouShelf(pages: Pages) {
         Word("station", pixel(12.sp), Modifier.padding(end = 20.dp), touch = 8.dp) { Discover.station() }
     }
     Shelf(list) { n -> Tile(null, n.artist.name, "via ${n.via.lowercase()}", face = n.artist.face, dither = true) { pages.open(Page.TubeArtist(n.artist)) } }
+}
+
+/** ink's moods here ([InkMoods]): each mood's songs and its tile's cover kept for the week; its station. */
+object Moodboard {
+    data class Kept(val songs: List<Pair<String, String>>, val art: String?)
+
+    val kept = MutableStateFlow<Map<String, Kept>>(emptyMap())
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    private var started = false
+    private fun week() = java.time.LocalDate.now().toEpochDay() / 7
+
+    fun start(c: Context) {
+        if (started) return
+        started = true
+        val file = File(c.cacheDir, "ink-moods.json")
+        scope.launch {
+            val o = runCatching { JSONObject(file.readText()) }.getOrNull()
+            if (o != null) kept.value = InkMoods.ALL.mapNotNull { m ->
+                val k = o.optJSONObject(m.key) ?: return@mapNotNull null
+                val a = k.optJSONArray("songs") ?: return@mapNotNull null
+                m.key to Kept((0 until a.length()).map { a.getJSONArray(it).let { p -> p.getString(0) to p.getString(1) } }, k.optString("art").ifEmpty { null })
+            }.toMap()
+            if (o?.optLong("week") == week() && kept.value.size == InkMoods.ALL.size) return@launch
+            val made = HashMap<String, Kept>()
+            for (m in InkMoods.ALL) {
+                val songs = InkMoods.songs(m, LastFm.key, week())
+                if (songs.isEmpty()) continue
+                val art = songs.take(4).firstNotNullOfOrNull { (t, a) -> Curation.itunes(t, a, false).also { kotlinx.coroutines.delay(400) } }
+                made[m.key] = Kept(songs, art)
+                kept.value = kept.value + (m.key to made.getValue(m.key))
+            }
+            if (made.isNotEmpty()) runCatching {
+                file.writeText(JSONObject().put("week", week()).apply {
+                    made.forEach { (key, k) -> put(key, JSONObject().put("art", k.art ?: "").put("songs", JSONArray(k.songs.map { JSONArray(listOf(it.first, it.second)) }))) }
+                }.toString())
+            }
+        }
+    }
+
+    /** The mood as a station: its songs in a new order, the first few found at once, the rest after. */
+    suspend fun play(m: InkMoods.Mood): Boolean {
+        val songs = (kept.value[m.key]?.songs ?: withContext(Dispatchers.IO) { InkMoods.songs(m, LastFm.key, week()) }).shuffled()
+        if (songs.isEmpty()) return false
+        val first = find(songs.take(8))
+        if (first.isEmpty()) return false
+        Playback.radio(true)
+        Playback.play(first, 0)
+        scope.launch {
+            songs.drop(8).take(40).chunked(8).forEach { group ->
+                find(group).takeIf { it.isNotEmpty() }?.let { more -> withContext(Dispatchers.Main) { Playback.follow(first.first(), more) } }
+            }
+        }
+        return true
+    }
+
+    private suspend fun find(group: List<Pair<String, String>>): List<Song> = withContext(Dispatchers.IO) {
+        kotlinx.coroutines.coroutineScope { group.map { (t, a) -> async { YouTubeMusic.find(t, a) } }.map { it.await() }.filterNotNull() }
+    }
+}
+
+/** Right now: three of ink's moods for the hour, big, each a station; then all of them as tiles to slide through. */
+@Composable
+fun InkMoodsShelf() {
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) { Moodboard.start(ctx) }
+    val kept by Moodboard.kept.collectAsState()
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<String?>(null) }
+    fun go(m: InkMoods.Mood) = scope.launch { said = "${m.name}: finding its songs"; said = if (Moodboard.play(m)) null else "${m.name}: couldn't find its songs" }
+    Column(Modifier.padding(horizontal = 20.dp)) {
+        BasicText("RIGHT NOW", style = headline(28.sp))
+        BasicText(said ?: "picked for ${Moods.said()}", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(8.dp))
+        InkMoods.now().forEach { m ->
+            Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Word(m.name.uppercase(), headline(32.sp), touch = 4.dp) { go(m) }
+                    BasicText(m.line, style = pixel(12.sp, Ink.mid))
+                }
+                Word("station", pixel(13.sp), Modifier.padding(bottom = 6.dp), touch = 8.dp) { go(m) }
+            }
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    Label("ink's moods")
+    Shelf(InkMoods.ALL) { m ->
+        Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { go(m) })) {
+            Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.BottomStart) {
+                kept[m.key]?.art?.let { art -> Dithered(remember(art) { faceSong("mood " + m.key, art) }, Modifier.fillMaxSize(), px = 300) }
+                // its name on a black tab in the corner (pale dithers swallowed it)
+                BasicText(m.name.uppercase(), style = headline(20.sp), maxLines = 2,
+                    modifier = Modifier.background(Ink.black).padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 2.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            BasicText(m.line, style = pixel(12.sp, Ink.mid), maxLines = 2)
+        }
+    }
+    Spacer(Modifier.height(8.dp))
 }
