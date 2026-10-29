@@ -119,8 +119,11 @@
     <CustomAction Id="InkOpen" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes"/>
     <UI>
       <!-- the headings: Archivo Black isn't on the computer yet; Segoe UI Black is on every Windows -->
-      <TextStyle Id="Ink_Headline" FaceName="Segoe UI Black" Size="20"/>
-      <TextStyle Id="Ink_Title" FaceName="Segoe UI Black" Size="11"/>
+      <!-- their colour given: the words over ink's black pictures (welcome, done, the strip) stay ink's white,
+           where Windows would draw them black in light mode and white in dark (and the pictures can't be both) -->
+      <TextStyle Id="Ink_Headline" FaceName="Segoe UI Black" Size="20" Red="241" Green="240" Blue="236"/>
+      <TextStyle Id="Ink_Title" FaceName="Segoe UI Black" Size="11" Red="241" Green="240" Blue="236"/>
+      <TextStyle Id="Ink_Words" FaceName="Segoe UI" Size="9" Red="169" Green="168" Blue="165"/>
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="InkOpen">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
     </UI>
 
