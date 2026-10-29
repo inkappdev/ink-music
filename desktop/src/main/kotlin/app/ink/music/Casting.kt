@@ -391,11 +391,13 @@ object Casting {
         @Synchronized private fun load(t: String, songs: List<Song>, from: Long) {
             pending = songs
             handedOver = queue.size - songs.size   // songs is the queue from some song on (all, or from one refused)
-            val first = chunk()
-            Log.d("${to.name}: queue of ${first.length()} of ${songs.size}, the first ${first.optJSONObject(0)?.optJSONObject("media")?.let { it.optString("contentType") + " " + it.optString("contentId").substringBefore('?').take(80) }}")
             // a station from now: it has no 78 s in to start at (KEXP to the bedroom speaker sat buffering, or the speaker
             // closed; Bronson, 2026-10-29)
             val live = songs.firstOrNull()?.station == true
+            // a station alone first, the others added once it's going: the speaker sat 2 to 5 s over all of them
+            // (57 stations, each with its picture) before it fetched a byte of the one asked for
+            val first = chunk(if (live) 1 else Int.MAX_VALUE)
+            Log.d("${to.name}: queue of ${first.length()} of ${songs.size}, the first ${first.optJSONObject(0)?.optJSONObject("media")?.let { it.optString("contentType") + " " + it.optString("contentId").substringBefore('?').take(80) }}")
             send(t, MEDIA, JSONObject().put("type", "QUEUE_LOAD").put("requestId", ++requests).put("items", first)
                 .put("startIndex", 0).put("currentTime", if (live) 0.0 else from / 1000.0).put("repeatMode", "REPEAT_OFF"))
         }
@@ -484,11 +486,11 @@ object Casting {
                 .put("customData", JSONObject().put("id", s.id)))
         }
 
-        /** The next songs as Cast items, as many as fit in about 40 KB (taken from [pending]). */
-        private fun chunk(): JSONArray {
+        /** The next songs as Cast items, as many as fit in about 40 KB, `most` at most (taken from [pending]). */
+        private fun chunk(most: Int = Int.MAX_VALUE): JSONArray {
             val items = JSONArray()
             var size = 0
-            while (pending.isNotEmpty()) {
+            while (pending.isNotEmpty() && items.length() < most) {
                 val s = pending.first()
                 val item = item(s)
                 if (item != null) {
