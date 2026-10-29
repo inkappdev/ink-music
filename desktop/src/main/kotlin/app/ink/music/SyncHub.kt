@@ -19,6 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.Composable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -83,8 +90,16 @@ object SyncHub {
         if (peers.value.isNotEmpty()) listen()
     }
 
-    /** Woken when this computer carries on with a phone's playing, so its player's waiting call answers at once. */
+    /** Woken when this computer carries on with a phone's playing, or steers it, so its player's waiting call answers at once. */
     val handing = Object()
+    /** A press made here for a phone's player ("play", "pause", "next", "previous"), handed over on its waiting call. */
+    private val asked = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** The phone's playing, steered from here (the bottom bar): told it on its waiting call, at once. */
+    fun steer(peer: String, what: String) {
+        asked[peer] = what
+        synchronized(handing) { handing.notifyAll() }
+    }
 
     /** What a phone's player says it plays now (null: nothing, it stopped). */
     private fun live(peer: Sync.Peer, now: JSONObject?) {
@@ -166,9 +181,9 @@ object SyncHub {
                     val since = m.optLong("since")
                     val until = System.currentTimeMillis() + 25_000
                     synchronized(handing) {
-                        while (kept.handedAt(peer.id) <= since && System.currentTimeMillis() < until) handing.wait(maxOf(1L, until - System.currentTimeMillis()))
+                        while (kept.handedAt(peer.id) <= since && asked[peer.id] == null && System.currentTimeMillis() < until) handing.wait(maxOf(1L, until - System.currentTimeMillis()))
                     }
-                    200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)))
+                    200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)).put("do", asked.remove(peer.id) ?: ""))
                 } ?: (403 to "{}")
             }.getOrElse { 400 to "{}" }
             "POST" to "/sync" -> runCatching {
@@ -316,9 +331,10 @@ fun continueOffer(): Continue.Offer? {
     val now by Player.now.collectAsState()
     val dismissed by Continue.dismissed.collectAsState()
     val o = offer ?: return null
+    // a phone's is the bottom bar's now ([RemoteBar]): here only the queue left on your server, away from home
+    if (o.peer.isNotEmpty()) return null
     if (now?.playing == true || o.at <= dismissed) return null
-    // playing there now: always offered; else only when it's newer than what played here
-    return o.takeIf { it.live || it.at > SyncHub.playedAt }
+    return o.takeIf { it.at > SyncHub.playedAt }
 }
 
 @androidx.compose.runtime.Composable
@@ -337,5 +353,58 @@ fun ContinueHere(o: Continue.Offer) {
         Word("CONTINUE HERE", headline(20.sp), touch = 8.dp) { Continue.take(o) }
         Spacer(Modifier.width(24.dp))
         Word("not now", pixel(13.sp, Ink.mid), touch = 8.dp) { Continue.dismissed.value = o.at }
+    }
+}
+
+/**
+ * What a phone plays, to show in the bottom bar when nothing plays here (Bronson, 2026-10-29: "show up on the bottom
+ * player in real time ... and takeover options"): playing there, or paused there since this computer last played.
+ */
+@Composable
+fun remoteNow(): Continue.Offer? {
+    val offer by SyncHub.theirs.collectAsState()
+    val now by Player.now.collectAsState()
+    val o = offer ?: return null
+    if (now?.playing == true || o.peer.isEmpty()) return null
+    // playing there now, or the last thing played anywhere (paused there since this computer last played)
+    return o.takeIf { it.live || it.at > SyncHub.playedAt }?.let { if (it.playing && !it.live) it.copy(playing = false) else it }
+}
+
+/**
+ * The bottom bar for a phone's playing: the line moving with it, its cover and song, where ("on <phone> · on <speaker>"),
+ * back, play or pause, next steering it there; continue here taking it over at the second it's at.
+ */
+@Composable
+fun RemoteBar(o: Continue.Offer, onArtist: (String) -> Unit) {
+    val cover = rememberCover(o.song, 300)
+    val pos by produceState(o.positionNow(), o) { while (true) { value = o.positionNow(); kotlinx.coroutines.delay(500) } }
+    val length = o.song.duration
+    Column(Modifier.fillMaxWidth().background(Ink.black).padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
+        // the line, in the cover's colour, filling as it plays there
+        Box(Modifier.fillMaxWidth().padding(bottom = 8.dp).height(1.dp).background(Ink.line)) {
+            if (length > 0 && !o.song.station) Box(Modifier.fillMaxWidth((pos.toFloat() / length).coerceIn(0f, 1f)).height(1.dp).background(cover?.accent ?: Ink.ink))
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            CoverOf(o.song, o.song.album.ifEmpty { o.song.title }, Modifier.size(72.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                BasicText(o.song.title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                Word(o.song.artist.lowercase(), pixel(12.sp, Ink.mid)) { if (!o.song.station) onArtist(o.song.albumArtist.ifBlank { o.song.artist.substringBefore(", ") }) }
+                BasicText((if (o.playing) "playing on " else "paused on ") + o.from + (if (o.device.isNotEmpty()) " · on ${o.device.lowercase()}" else ""),
+                    style = pixel(12.sp, Ink.ink), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            // steering it there
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Pixel(BACK, "back, there", Ink.mid, cell = 3.dp) { SyncHub.steer(o.peer, "previous") }
+                Pixel(if (o.playing) PAUSE else PLAY, if (o.playing) "pause, there" else "play, there", Ink.ink, cell = 3.dp) {
+                    SyncHub.steer(o.peer, if (o.playing) "pause" else "play")
+                }
+                Pixel(NEXT, "next, there", Ink.mid, cell = 3.dp) { SyncHub.steer(o.peer, "next") }
+            }
+            Spacer(Modifier.width(24.dp))
+            BasicText(if (o.song.station) "live" else "${clock(pos)} / ${clock(length)}", style = pixel(12.sp, Ink.mid), modifier = Modifier.widthIn(min = 96.dp))
+            Word("CONTINUE HERE", headline(16.sp), Modifier.padding(start = 12.dp), touch = 10.dp) { Continue.take(o) }
+        }
     }
 }

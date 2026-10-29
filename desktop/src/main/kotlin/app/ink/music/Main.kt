@@ -342,7 +342,8 @@ private fun App() {
                 }
             }
             // the bar along the foot where there's no room for the now column
-            if ((frame != Frame.WIDE || tucked || finding) && pages.lastOrNull() != Page.Playing) MiniPlayer(
+            val remote = remoteNow()
+            if ((frame != Frame.WIDE || tucked || finding || remote != null) && pages.lastOrNull() != Page.Playing) MiniPlayer(
                 if (frame == Frame.WIDE && !finding) ({ Tuck.set(false) }) else null,
                 { if (pages.lastOrNull() != Page.Queue) pages += Page.Queue },
                 { if (pages.lastOrNull() != Page.PlayOn) pages += Page.PlayOn },
@@ -687,6 +688,8 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
         BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = SIDE, vertical = 14.dp))
         return
     }
+    // nothing playing here and the phone is: its playing, steered from here, to take over (Sync)
+    remoteNow()?.let { return RemoteBar(it, onArtist) }
     val n = now ?: return
     val cover = rememberCover(n.song)
     Column(Modifier.fillMaxWidth().background(Ink.black).padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
