@@ -81,6 +81,8 @@ class PlayerService : MediaLibraryService() {
     private var tubeTold: String? = null
 
     private fun heard(p: Player) {
+        // private listening: nothing told, anywhere
+        if (Private.on(this)) return
         val item = p.currentMediaItem ?: return
         val id = item.mediaId
         // a YouTube song 30 s in: told to YouTube Music, signed in (its history, its mixes)
@@ -464,10 +466,10 @@ class PlayerService : MediaLibraryService() {
                 }
                 if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
                     told = null; startedAt = System.currentTimeMillis(); nowSaid = null; tubeTold = null
-                    p.currentMediaItem?.mediaId?.takeIf { it.startsWith("n") }?.let { id -> net.execute { Server.scrobble(this@PlayerService, id, done = false) } }
+                    p.currentMediaItem?.mediaId?.takeIf { it.startsWith("n") && !Private.on(this@PlayerService) }?.let { id -> net.execute { Server.scrobble(this@PlayerService, id, done = false) } }
                 }
                 // playing now, on ListenBrainz: once a song is actually playing (its length known by then)
-                if (p.isPlaying) p.currentMediaItem?.takeIf { !it.mediaId.startsWith("s") && it.mediaId != nowSaid }?.let { item ->
+                if (p.isPlaying && !Private.on(this@PlayerService)) p.currentMediaItem?.takeIf { !it.mediaId.startsWith("s") && it.mediaId != nowSaid }?.let { item ->
                     nowSaid = item.mediaId
                     val said = said(item, p.duration.coerceAtLeast(0))
                     net.execute { ListenBrainz.playingNow(this@PlayerService, said); LastFm.playingNow(this@PlayerService, said) }

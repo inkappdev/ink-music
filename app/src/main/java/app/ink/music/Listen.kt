@@ -214,6 +214,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                     BasicText(Listen.greeting(), style = headline(40.sp), maxLines = 2)
                     BasicText(java.text.SimpleDateFormat("EEEE d MMMM", java.util.Locale.getDefault()).format(java.util.Date()).lowercase(),
                         style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
+                    // private listening on: said here, so it isn't left on unawares
+                    if (Private.on(ctx)) BasicText("private listening: nothing kept", style = pixel(12.sp), modifier = Modifier.padding(top = 4.dp))
                 }
                 Cog { pages.open(Page.Settings) }
             }
