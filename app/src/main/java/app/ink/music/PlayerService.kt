@@ -232,6 +232,8 @@ class PlayerService : MediaLibraryService() {
 
     // radio: on, the queue's last songs bring more like them (Radio); asked once per seed
     private var radio = true
+    /** The songs being added were asked to play next (the screens mark them): read once by [Shuffle]. */
+    private var playNext = false
     private var radioFrom: String? = null
     /** Songs radio added (this run): not seeds for the next round while there are songs you chose. */
     private val fromRadio = HashSet<String>()
@@ -414,6 +416,8 @@ class PlayerService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)   // headphones out: pause
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+        // what's added with shuffle on comes next or last, not anywhere
+        player.setShuffleOrder(Shuffle(IntArray(0), next = { playNext.also { playNext = false } }))
         // the queue as it was left: there, paused, ready to go on
         // the queue as it was left; stopped (stop pressed) it stays stopped, the mini player away till something's chosen
         // (it came back paused whenever ink music started again)
@@ -622,7 +626,10 @@ class PlayerService : MediaLibraryService() {
                 // over): it rides in the request's metadata, put back here
                 override fun onAddMediaItems(
                     session: MediaSession, controller: MediaSession.ControllerInfo, items: MutableList<MediaItem>,
-                ): ListenableFuture<MutableList<MediaItem>> = later { resolve(items) }
+                ): ListenableFuture<MutableList<MediaItem>> {
+                    playNext = items.any { it.requestMetadata.extras?.getBoolean(NEXT) == true }
+                    return later { resolve(items) }
+                }
 
                 // a headset's play, the system's resume card after a restart: the queue as it was left
                 override fun onPlaybackResumption(
@@ -643,6 +650,8 @@ class PlayerService : MediaLibraryService() {
         const val SLEEP_AT = "sleepAt"
         const val SLEEP_END_OF_SONG = -1L
         const val LEVEL = "app.ink.music.LEVEL"
+        /** In an item's request extras: it was asked to play next (for [Shuffle]). */
+        const val NEXT = "app.ink.music.NEXT"
         const val RADIO = "app.ink.music.RADIO"
         const val WARM = "app.ink.music.WARM"
         const val HEARD = "heard"

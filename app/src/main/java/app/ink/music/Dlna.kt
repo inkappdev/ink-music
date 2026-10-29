@@ -199,6 +199,14 @@ object Dlna {
             queue = queue + songs
             if (wasLast && lastState == "STOPPED") start(index + 1, 0) else queueNext()
         }.let { }
+        /** Right after the song playing, handed over as its next (or, stopped at the end, played). */
+        override fun playNext(s: Song) = io.execute {
+            val wasLast = index == queue.size - 1
+            urls = urls.take(index + 1) + Serve.url(s, lossless).orEmpty() + urls.drop(index + 1)
+            queue = queue.take(index + 1) + s + queue.drop(index + 1)
+            nextSet = -1
+            if (wasLast && lastState == "STOPPED") start(index + 1, 0) else queueNext()
+        }.let { }
         override fun stopThere() { Thread { runCatching { soap("Stop", "") } }.start() }
         override fun volume(level: Float) {
             if (to.volumeControl.isEmpty()) return

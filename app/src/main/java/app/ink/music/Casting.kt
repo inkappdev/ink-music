@@ -63,6 +63,8 @@ object Casting {
         fun volume(level: Float) {}
         /** More songs at the queue's end (radio's, found while it plays). */
         fun extend(songs: List<Song>) {}
+        /** A song right after the one playing (play next). */
+        fun playNext(s: Song) {}
     }
 
     // ---- what a speaker can play ----
@@ -350,6 +352,20 @@ object Casting {
         android.util.Log.d("ink-cast", "${to.name}: ${more.size} from radio for the queue's end")
         l.extend(more)
     }
+    /**
+     * Play next on the speaker: the song right after the one playing there. It had gone into the phone's queue,
+     * which the speaker takes from only at its end, so it never came (2026-10-29). Main thread.
+     */
+    fun playNext(ctx: Context, s: Song) {
+        val l = link ?: return
+        val to = _on.value ?: return
+        val playing = Playback.now.value?.song?.id?.let { id -> handed.indexOfFirst { it.id == id } } ?: -1
+        handed = handed.take(playing + 1) + s + handed.drop(playing + 1)
+        Playback.showCastQueue(handed)
+        Playback.mirror(handed)
+        keep(ctx, to, handed)
+        l.playNext(s)
+    }
     fun next() { link?.next() }
     fun previous() { link?.previous() }
     fun seek(ms: Long) { link?.seek(ms) }
@@ -446,6 +462,7 @@ object Casting {
                     "PING" -> send("receiver-0", BEAT, JSONObject().put("type", "PONG"))
                     "RECEIVER_STATUS" -> receiver(m.optJSONObject("status"))
                     "MEDIA_STATUS" -> if (ns == MEDIA) media(m.optJSONArray("status")?.optJSONObject(0))
+                    "QUEUE_ITEM_IDS" -> inserted(m.optJSONArray("itemIds"))
                     "LOAD_FAILED", "LOAD_CANCELLED" -> { android.util.Log.d("ink-cast", "${to.name}: ${m.optString("type")} ${body.take(300)}"); if (!loaded) { over = true; return } }
                     "LAUNCH_ERROR", "INVALID_REQUEST" -> android.util.Log.d("ink-cast", "${to.name}: ${body.take(300)}")
                     "CLOSE" -> if (m.optString("sourceId") == transport) { android.util.Log.d("ink-cast", "${to.name}: closed"); over = true; forget(); return }
@@ -517,21 +534,76 @@ object Casting {
         private var pending: List<Song> = emptyList()
         private var handedOver = 0
 
+        /** The speaker's item playing (its own id for it), and play next's songs waiting for its list of ids. */
+        @Volatile private var currentItem = 0
+        @Volatile private var waiting: List<JSONObject> = emptyList()
+
+        /**
+         * Right after the song playing: nothing after it handed over yet, it's the first of what's still to come,
+         * handed over at once; else put in before the speaker's next item (its ids asked for: [inserted]).
+         */
+        @Synchronized override fun playNext(s: Song) {
+            val at = current?.let { queue.indexOf(it) } ?: -1
+            queue = queue.take(at + 1) + s + queue.drop(at + 1)
+            if (!loaded) return   // the load takes the whole queue
+            if (finished) {
+                val t = transport ?: return
+                finished = false
+                current = s
+                io.execute { runCatching { load(t, queue.drop(at + 1), 0L) } }
+                return
+            }
+            if (at + 1 >= handedOver) {
+                pending = listOf(s) + pending
+                handedOver = at + 1
+                io.execute { runCatching { more() } }
+                return
+            }
+            val item = item(s) ?: return
+            handedOver++
+            waiting = listOf(item) + waiting
+            if (session != 0) io.execute { runCatching { askIds() } }   // else once the speaker says its session ([media])
+        }
+
+        private fun askIds() {
+            val t = transport ?: return
+            send(t, MEDIA, JSONObject().put("type", "QUEUE_GET_ITEM_IDS").put("mediaSessionId", session).put("requestId", ++requests))
+        }
+
+        /** The speaker's item ids, in order: play next's songs put in before the one after the playing item. */
+        @Synchronized private fun inserted(ids: JSONArray?) {
+            val t = transport ?: return
+            if (waiting.isEmpty() || ids == null) return
+            val list = (0 until ids.length()).map { ids.optInt(it) }
+            val before = list.indexOf(currentItem).takeIf { it >= 0 }?.let { list.getOrNull(it + 1) }
+            val body = JSONObject().put("type", "QUEUE_INSERT").put("requestId", ++requests).put("mediaSessionId", session)
+                .put("items", JSONArray(waiting))
+            before?.let { body.put("insertBefore", it) }
+            waiting = emptyList()
+            android.util.Log.d("ink-cast", "${to.name}: play next, before item $before")
+            send(t, MEDIA, body)
+        }
+
+        /** A song as a Cast queue item (none for one with no link to it). */
+        private fun item(s: Song): JSONObject? {
+            val url = Serve.url(s, lossless) ?: return null
+            val meta = JSONObject().put("metadataType", 3).put("title", s.title).put("artist", s.artist)
+                .put("albumName", s.album).put("albumArtist", s.albumArtist)
+            Serve.art(s)?.let { meta.put("images", JSONArray().put(JSONObject().put("url", it))) }
+            return JSONObject().put("autoplay", true).put("preloadTime", 8).put("media", JSONObject()
+                .put("contentId", url).put("streamType", "BUFFERED")
+                .put("contentType", Serve.type(s, lossless)).put("metadata", meta)
+                .put("customData", JSONObject().put("id", s.id)))
+        }
+
         /** The next songs as Cast items, as many as fit in about 40 KB (taken from [pending]). */
         private fun chunk(): JSONArray {
             val items = JSONArray()
             var size = 0
             while (pending.isNotEmpty()) {
                 val s = pending.first()
-                val url = Serve.url(s, lossless)
-                if (url != null) {
-                    val meta = JSONObject().put("metadataType", 3).put("title", s.title).put("artist", s.artist)
-                        .put("albumName", s.album).put("albumArtist", s.albumArtist)
-                    Serve.art(s)?.let { meta.put("images", JSONArray().put(JSONObject().put("url", it))) }
-                    val item = JSONObject().put("autoplay", true).put("preloadTime", 8).put("media", JSONObject()
-                        .put("contentId", url).put("streamType", "BUFFERED")
-                        .put("contentType", Serve.type(s, lossless)).put("metadata", meta)
-                        .put("customData", JSONObject().put("id", s.id)))
+                val item = item(s)
+                if (item != null) {
                     val n = item.toString().length
                     if (items.length() > 0 && size + n > 40_000) break
                     items.put(item); size += n
@@ -555,6 +627,8 @@ object Casting {
         private fun media(st: JSONObject?) {
             st ?: return
             session = st.optInt("mediaSessionId", session)
+            currentItem = st.optInt("currentItemId", currentItem)
+            if (waiting.isNotEmpty() && session != 0) askIds()
             st.optJSONObject("media")?.let { m ->
                 m.optJSONObject("customData")?.optString("id")?.let { id -> queue.firstOrNull { it.id == id }?.let { current = it } }
                 duration = (m.optDouble("duration", 0.0) * 1000).toLong()
