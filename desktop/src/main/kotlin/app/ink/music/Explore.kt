@@ -311,7 +311,7 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
 
 /** A record someone picked: its cover, its name, who picked it; a click opens it on YouTube Music. */
 @Composable
-private fun PickTile(s: Picks.Shown, open: (Page) -> Unit) {
+internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember(s) { mutableStateOf<String?>(null) }
     // not on YouTube Music (often reviewed before it's streaming, or only on Bandcamp): a second click reads the review

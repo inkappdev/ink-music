@@ -73,12 +73,20 @@ fun ListenPage(open: (Page) -> Unit) {
     val tubeMixes by TubeAccount.mixes.collectAsState()
     LaunchedEffect(songs.isNotEmpty()) { Discover.start(songs) }
     val list = rememberLazyListState()
+    LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic() }
+    val pickedRecords by Picks.records.collectAsState()
+    val pickedSongs by Picks.songs.collectAsState()
+    val friday by Picks.friday.collectAsState()
+    val electronic by Picks.electronic.collectAsState()
+    val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, heard, songs) { Picks.yours(heard, songs) }
     val made by Discover.mixes.collectAsState()
     val because by Discover.because.collectAsState()
     val newTo by Discover.newToYou.collectAsState()
     // one rhythm down the page: the same room between every shelf, each with a head of its own (Bronson, 2026-10-29)
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(GAP)) {
+        // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: that's INK's)
+        if (fromYours.isNotEmpty()) item { NewFromYours(fromYours, open) }
         if (first.isNotEmpty()) item {
             Column {
             val play = hourSongs.ifEmpty { first.flatMap { it.songs } }
@@ -130,35 +138,6 @@ fun ListenPage(open: (Page) -> Unit) {
         records("lately", "the records you've played lately", lately, open)
         records("forgotten favorites", "ones you loved, quiet for a while", forgotten, open)
         records("new on your server", "the newest there", newest, open)
-        // this week's ink weekly: its mosaic (the phone's), its name and note, play; every volume on INK
-        weeks.firstOrNull()?.let { w ->
-            item {
-                Column {
-                Section("INK WEEKLY", "vol ${w.week}" + Weekly.day(w.date).takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty() + " · what we're listening to at ink") {
-                    Word("every volume", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("ink") }
-                }
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Box(Modifier.size(220.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Nav.go("ink") }),
-                        contentAlignment = Alignment.BottomStart) {
-                        Mosaic(w.songs, Modifier.fillMaxSize())
-                    }
-                    Spacer(Modifier.width(24.dp))
-                    Column(Modifier.weight(1f)) {
-                        BasicText(w.title.uppercase(), style = headline(40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (w.note.isNotEmpty()) {
-                            Spacer(Modifier.height(8.dp))
-                            BasicText(w.note.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 21.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
-                        }
-                        Spacer(Modifier.height(14.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                            Word("play the week", pixel(14.sp), touch = 8.dp) { Player.play(w.songs) }
-                            Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(w.songs.shuffled()) }
-                        }
-                    }
-                }
-                }
-            }
-        }
         if (stars.isNotEmpty()) item {
             Column {
             Section("INK RADIO", "the stations we keep") { Word("all of them", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("ink") } }
@@ -178,6 +157,20 @@ fun ListenPage(open: (Page) -> Unit) {
             Column {
                 Section("YOUR LISTS", "on your server")
                 lists.take(8).forEach { p -> ListRow(p) { open(Page.List(p.id, p.name)) } }
+            }
+        }
+    }
+}
+
+/** New from your artists: each pick by someone you play, its cover, why it's here (out friday, or who picked it, and how often you've played them). */
+@Composable
+private fun NewFromYours(list: List<Picks.Shown>, open: (Page) -> Unit) {
+    Column {
+        Section("NEW FROM YOUR ARTISTS", "out this week or picked by critics, by artists you play")
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            items(list, key = { it.pick.from + it.pick.artist + it.pick.title }) { s ->
+                val art by produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+                Box(Modifier.width(176.dp)) { PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, open) }
             }
         }
     }

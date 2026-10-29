@@ -216,6 +216,30 @@ object Curation {
         Pick(false, t.trim(), a.trim(), "inverted audio", i.text, i.link, i.at, null)
     }
 
+    // ---- new from your artists ----
+
+    /** A pick by an artist you know: the pick, the artist as you know them, how often you've played them (0: only kept). */
+    data class Yours(val pick: Pick, val artist: String, val plays: Int)
+
+    /** An artist's name as compared: lower case, "the" off its front, letters and digits only. */
+    private fun bare(name: String) = name.lowercase().removePrefix("the ").filter { it.isLetterOrDigit() }
+
+    /**
+     * New from your artists (Bronson, 2026-10-29, listen's top): the picks (out this Friday, the critics', electronic's)
+     * by an artist you've played or keep, the most played first. `known` is every artist of yours (lower case) and how
+     * often you've played them; a pick's artists are split where several share it ("Axel Boman & Superpitcher") and
+     * matched whole, so "Air" isn't "Air Supply". One a record.
+     */
+    fun yours(picks: List<Pick>, known: Map<String, Int>): List<Yours> {
+        val byBare = HashMap<String, Pair<String, Int>>()
+        known.forEach { (name, n) -> bare(name).takeIf { it.length >= 2 }?.let { k -> if ((byBare[k]?.second ?: -1) < n) byBare[k] = name to n } }
+        val split = Regex("""\s*(?:,|&|/|\+|\bx\b|\band\b|\bwith\b|\bfeat\.?|\bft\.?|\bvs\.?)\s*""", RegexOption.IGNORE_CASE)
+        return picks.mapNotNull { p ->
+            (listOf(p.artist) + p.artist.split(split)).map { it.trim() }.filter { it.isNotEmpty() }
+                .mapNotNull { a -> byBare[bare(a)] }.maxByOrNull { it.second }?.let { (name, n) -> Yours(p, name, n) }
+        }.distinctBy { key(it.pick) }.sortedByDescending { it.plays }
+    }
+
     // ---- out this friday ----
 
     /** A record out this week: who, what, its label and genres, where it's heard (Bandcamp, Apple Music), the thread's mark. */
