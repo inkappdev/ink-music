@@ -702,6 +702,33 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
 }
 
 /**
+ * Why nothing can play; on Linux with no libmpv, the line that installs it on this system, to copy into a
+ * terminal, and try again once it's in (no restart).
+ */
+@Composable
+internal fun NoSound(trouble: String, modifier: Modifier = Modifier) {
+    val missing by Player.missing.collectAsState()
+    var copied by remember { mutableStateOf(false) }
+    Column(modifier) {
+        BasicText(trouble, style = pixel(12.sp, Ink.mid))
+        val line = missing ?: return@Column
+        Spacer(Modifier.height(8.dp))
+        BasicText(line, style = pixel(12.sp))
+        Spacer(Modifier.height(8.dp))
+        Row {
+            if (line.startsWith("sudo ")) {
+                Word(if (copied) "copied" else "copy", pixel(12.sp, if (copied) Ink.mid else Ink.ink)) {
+                    java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(line), null)
+                    copied = true
+                }
+                Spacer(Modifier.width(24.dp))
+            }
+            Word("try again", pixel(12.sp)) { Player.retry() }
+        }
+    }
+}
+
+/**
  * What's playing, along the foot of the window: the line along the cover's top edge filling with the
  * song in its colour, the cover, the song, back / play / next and the times. A click opens the player.
  */
@@ -710,7 +737,7 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
     val now by Player.now.collectAsState()
     val trouble by Player.trouble.collectAsState()
     trouble?.let {
-        BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = SIDE, vertical = 14.dp))
+        NoSound(it, Modifier.padding(horizontal = SIDE, vertical = 14.dp))
         return
     }
     // nothing playing here and the phone is: its playing, steered from here, to take over (Sync)

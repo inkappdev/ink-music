@@ -35,6 +35,8 @@ object Player {
     val position = MutableStateFlow(0L)
     /** Why it won't play, said once (no libmpv). */
     val trouble = MutableStateFlow<String?>(null)
+    /** On Linux with no libmpv: the line that installs it on this system ([NoSound] shows it, then [retry]). */
+    val missing = MutableStateFlow<String?>(null)
     /** What's heard of the song playing: its format, depth and rate, where it came from (null till it's opened). */
     val heard = MutableStateFlow<Heard?>(null)
     /** The app's own volume, 0 to 100 (the Mac's is apart from it), and whether it's muted; kept. */
@@ -89,6 +91,23 @@ object Player {
     /** A place to go to once the song it's in has loaded (the queue brought back). */
     @Volatile private var pendingSeek = 0L
 
+    /** Once libmpv's been installed: tried again, no restart. */
+    fun retry() { if (mpv == null) start() }
+
+    /** This system's way to install libmpv, from /etc/os-release's ID and ID_LIKE (Debian's name is Ubuntu's too). */
+    private fun install(): String {
+        val os = runCatching { File("/etc/os-release").readLines() }.getOrDefault(emptyList())
+            .filter { it.startsWith("ID=") || it.startsWith("ID_LIKE=") }
+            .flatMap { it.substringAfter('=').trim('"').split(' ') }
+        return when {
+            os.any { it == "fedora" || it == "rhel" } -> "sudo dnf install mpv-libs"
+            os.any { it.startsWith("opensuse") || it == "suse" } -> "sudo zypper install libmpv2"
+            os.any { it == "arch" } -> "sudo pacman -S mpv"
+            os.any { it == "debian" || it == "ubuntu" } -> "sudo apt install libmpv2"
+            else -> "install libmpv (often called libmpv2 or mpv-libs)"
+        }
+    }
+
     fun start() {
         mpv = try {
             Mpv(mapOf(
@@ -109,12 +128,16 @@ object Player {
                 // -Dink.ao=null: silent, to try it without playing out loud
             ) + listOfNotNull(System.getProperty("ink.ao")?.let { "ao" to it }))
         } catch (e: Throwable) {
-            // on Linux the system's libmpv plays (it isn't carried in the app): said how to get it
-            trouble.value = if (!Home.mac && !Home.windows) "can't play: mpv's library isn't here. install libmpv2 (debian, ubuntu) or mpv-libs (fedora)"
+            // on Linux the system's libmpv plays (it isn't carried in the app; its package asks for it, but a
+            // package opened some other way may not have): said how to get it on this system
+            if (!Home.mac && !Home.windows) missing.value = install()
+            trouble.value = if (!Home.mac && !Home.windows) "can't play yet: ink music plays through mpv's library, and this computer hasn't it"
                 else "can't play: ${e.message?.lowercase()}"
             null
         }
         val m = mpv ?: return
+        trouble.value = null
+        missing.value = null
         NowPlaying.start()
         m.observe("pause", Mpv.FLAG)
         m.observe("playlist-pos", Mpv.INT64)
