@@ -66,7 +66,18 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
         Word("your year", pixel(13.sp, Ink.mid), touch = 6.dp) { Nav.open(Page.Year) }
         Word("settings", pixel(13.sp, Ink.mid), touch = 6.dp, onClick = onSettings)
         Spacer(Modifier.weight(1f))
-        BasicText("made by ink", style = pixel(12.sp, Ink.dim))
+        // made by ink, a small pixel heart after it; ink its own website (the quiet funnel, never a nag)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BasicText("made by ", style = pixel(12.sp, Ink.dim))
+            Word("ink", pixel(12.sp, Ink.mid)) { browse("https://inkhome.app") }
+            Spacer(Modifier.width(6.dp))
+            androidx.compose.foundation.Canvas(Modifier.size(10.5.dp, 9.dp)) {
+                val cell = size.width / 7
+                HEART.forEachIndexed { r, row -> row.forEachIndexed { c, ch ->
+                    if (ch == '#') drawRect(Ink.dim, androidx.compose.ui.geometry.Offset(c * cell, r * cell), androidx.compose.ui.geometry.Size(cell, cell))
+                } }
+            }
+        }
     }
 }
 

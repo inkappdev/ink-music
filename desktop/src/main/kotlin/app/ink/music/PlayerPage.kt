@@ -1,5 +1,9 @@
 package app.ink.music
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -154,24 +158,43 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     style = pixel(12.sp, Ink.mid))
                             }
                         }
-                        Spacer(Modifier.height(24.dp))
-                        Controls(n, Modifier.width(320.dp))
-                        Spacer(Modifier.height(10.dp))
-                        // the words everyone reads, stop last (it ends everything and closes the player)
-                        val sing by Lyrics.on.collectAsState()
+                        Spacer(Modifier.height(22.dp))
+                        // the controls, the volume beside them
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Controls(n, Modifier.width(320.dp))
+                            Spacer(Modifier.width(32.dp))
+                            Volume(line = 140.dp)
+                        }
+                        Spacer(Modifier.height(18.dp))
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+                        Spacer(Modifier.height(14.dp))
+                        // the inner sleeve (Bronson, 2026-10-29: "a really killer design" for the room beside the cover):
+                        // the record, its lyrics, up next, its notes, chosen by a word; stop at the row's end
                         val lines = rememberLyrics(n.song)
-                        Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                            Word("up next", pixel(14.sp, Ink.mid), touch = 10.dp) { open(Page.Queue) }
-                            Word("lyrics", pixel(14.sp, if (sing) Ink.ink else Ink.dim), touch = 10.dp) { Lyrics.toggle() }
+                        var shows by remember(n.song.albumId) { mutableStateOf<String?>(null) }
+                        val panel = shows ?: if (!lines.isNullOrEmpty()) "lyrics" else if (n.song.station) "up next" else "record"
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            for (w in listOfNotNull("record".takeUnless { n.song.station }, "lyrics", "up next", "notes"))
+                                Word(w, pixel(14.sp, if (w == panel) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 10.dp) { shows = w }
+                            Spacer(Modifier.weight(1f))
                             Word("stop", pixel(14.sp, if (n.playing) Ink.mid else Ink.dim), touch = 10.dp) { Player.stop(); onClose() }
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Volume(line = 180.dp)
-                        // the song's words, the sung line lit, as it plays
-                        val pos by Player.position.collectAsState()
-                        lines?.let { all ->
-                            Spacer(Modifier.height(24.dp))
-                            LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.weight(1f).fillMaxWidth())
+                        Spacer(Modifier.height(14.dp))
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            when (panel) {
+                                "record" -> RecordSide(n, open)
+                                "lyrics" -> {
+                                    val pos by Player.position.collectAsState()
+                                    val all = lines
+                                    if (all.isNullOrEmpty()) BasicText(if (all == null) "finding the words" else "no words found for this one", style = pixel(13.sp, Ink.mid))
+                                    else LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.fillMaxSize(), big = true)
+                                }
+                                "up next" -> Column {
+                                    RadioWord()
+                                    QueueList(open, rememberLazyListState(), PaddingValues(bottom = 16.dp), Modifier.fillMaxSize())
+                                }
+                                else -> Notes(n, heard?.takeIf { it.id == n.song.id }, on?.name)
+                            }
                         }
                     }
                 }
@@ -320,6 +343,71 @@ private fun HeardPage(h: Heard, onClose: () -> Unit) {
                     BasicText(label, style = pixel(12.sp, Ink.mid), modifier = Modifier.width(160.dp).padding(top = 2.dp))
                     BasicText(value, style = pixel(14.sp))
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The record, on the inner sleeve: its songs in order, numbered, this one lit (and marked), each its length; a click
+ * plays the record from there. A song whose record isn't here says so, and offers its page.
+ */
+@Composable
+private fun RecordSide(n: Player.Now, open: (Page) -> Unit) {
+    val albums by Library.albums.collectAsState()
+    val queue by Player.queue.collectAsState()
+    val record = remember(albums, n.song.albumId) { albums.firstOrNull { it.id == n.song.albumId }?.songs }
+        // a YouTube record played whole: its songs as the queue has them
+        ?: queue.filter { it.albumId == n.song.albumId && it.album.isNotEmpty() }.takeIf { it.size > 1 }
+    if (record == null) {
+        Column {
+            BasicText("just this song from ${n.song.album.ifEmpty { "its record" }.lowercase()} is here", style = pixel(13.sp, Ink.mid))
+            if (n.song.album.isNotEmpty()) Word("its record", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Record(n.song.albumId)) }
+        }
+        return
+    }
+    val list = rememberLazyListState()
+    val at = record.indexOfFirst { it.id == n.song.id }
+    LaunchedEffect(n.song.id) { if (at > 3) list.animateScrollToItem(at - 3) }
+    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) {
+        itemsIndexed(record, key = { _, s -> s.id }) { i, s ->
+            val on = s.id == n.song.id
+            Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(record, i) })
+                .padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText((if (s.track > 0) s.track else i + 1).toString().padStart(2, '0'), style = headline(18.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(44.dp))
+                BasicText(s.title.uppercase(), style = headline(20.sp, if (on) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.padding(start = 16.dp))
+            }
+        }
+    }
+}
+
+/**
+ * The song's notes, on the inner sleeve, as a record's liner notes: what it is (format, its moment), its record and
+ * year, where it plays, and you with it (how many times, first and last heard, when you loved it).
+ */
+@Composable
+private fun Notes(n: Player.Now, heard: Heard?, speaker: String?) {
+    val listened by Listened.now.collectAsState()
+    val s = n.song
+    val plays = listened.most(s.id)?.toInt() ?: 0
+    val history = remember(s.id) { History.read().filter { it.id == s.id || (it.title.equals(s.title, true) && it.artist.equals(s.artist, true)) } }
+    val day = java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale.ENGLISH)
+    val rows = listOfNotNull(
+        "what it is" to listOfNotNull(heard?.word ?: s.quality.ifEmpty { if (s.tube) "youtube music" else if (s.station) "radio" else null },
+            heard?.from?.let { when (it) { "computer" -> "from this computer"; "server" -> "from your server"; "youtube" -> "from youtube music"; else -> "on the air" } }, heard?.let { if (it.hires) "hi-res" else if (it.lossless) "lossless" else null }).joinToString(" · ").ifEmpty { "a song" },
+        s.album.takeIf { it.isNotEmpty() }?.let { "from" to (it + (s.year.takeIf { y -> y > 0 }?.let { y -> ", $y" } ?: "")) },
+        speaker?.let { "playing on" to it },
+        "you've played it" to when (plays) { 0 -> "not yet, till this one's done"; 1 -> "once"; else -> "$plays times" },
+        history.firstOrNull()?.let { "first heard" to day.format(java.util.Date(it.at)) },
+        history.lastOrNull()?.takeIf { history.size > 1 }?.let { "last heard" to day.format(java.util.Date(it.at)) },
+        Loved.lovedAt(s)?.let { "loved" to day.format(java.util.Date(it)) },
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        rows.forEach { (k, v) ->
+            Column {
+                BasicText(k, style = pixel(12.sp, Ink.dim))
+                BasicText(v.uppercase(), style = headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
