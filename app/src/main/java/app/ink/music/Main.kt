@@ -1616,6 +1616,8 @@ fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) {
     val tubeLists by YouTubeAccount.playlists.collectAsState()
     val scope = rememberCoroutineScope()
     var failed by remember { mutableStateOf(false) }
+    // your server's lists as they are now (one made in another app since)
+    LaunchedEffect(Unit) { Server.readPlaylists() }
     val list = rememberLazyListState()
     FrostedPage(onClose = onClose) { frost, top -> LazyColumn(
         state = list,
@@ -1631,6 +1633,8 @@ fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) {
             if (server) {
                 if (who != null) Label("on your server")
                 NewPlaylist(s, focused = mine.isEmpty() && who == null) { ok -> if (ok) onDone("a new playlist") else failed = true }
+                if (mine.isEmpty()) BasicText("no playlists of yours on your server yet: new > makes one, named as you type", style = pixel(12.sp, Ink.mid),
+                    modifier = Modifier.padding(top = 6.dp))
                 Spacer(Modifier.height(14.dp))
             }
         }
