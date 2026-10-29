@@ -500,8 +500,8 @@ object Player {
 
     /** After the song playing (nothing playing: plays it). */
     fun playNext(s: Song) {
-        // a speaker's queue grows only at its end
-        if (casting) return Casting.extend(listOf(s))
+        // on a speaker: after the speaker's song
+        if (casting) return Casting.playNext(s)
         val m = mpv ?: return
         if (_queue.value.isEmpty() || index < 0) return play(listOf(s))
         _queue.value = _queue.value.toMutableList().apply { add(index + 1, s) }
