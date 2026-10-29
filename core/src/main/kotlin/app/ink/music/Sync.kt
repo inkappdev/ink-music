@@ -231,29 +231,6 @@ object Sync {
         if (handed > 0 && handed > side.resumedAt()) runCatching { side.stop() }
     }
 
-    // ---- "should I stop?": the phone's player asking, while it plays with the app closed ----
-
-    /** The question, sealed for `peer` (nothing in it but who's asking). */
-    fun askHanded(kept: Kept, peer: Peer): String {
-        val (iv, data) = seal(peer.key, JSONObject().put("at", System.currentTimeMillis()).toString())
-        return JSONObject().put("id", kept.id()).put("iv", iv).put("data", data).toString()
-    }
-
-    /** The computer's answer: when it carried on with this phone's playing, sealed; null for a phone it doesn't know. */
-    fun answerHanded(kept: Kept, body: String): String? {
-        val o = JSONObject(body)
-        val peer = kept.peers().firstOrNull { it.id == o.optString("id") } ?: return null
-        open(peer.key, o.getString("iv"), o.getString("data"))   // it's that phone
-        val (iv, data) = seal(peer.key, JSONObject().put("handed", kept.handedAt(peer.id)).toString())
-        return JSONObject().put("iv", iv).put("data", data).toString()
-    }
-
-    /** When the computer carried on with this phone's playing (0: it hasn't). */
-    fun handed(peer: Peer, body: String): Long {
-        val o = JSONObject(body)
-        return JSONObject(open(peer.key, o.getString("iv"), o.getString("data"))).optLong("handed")
-    }
-
     /** The phone's call: its part, sealed for `peer`, as sent. */
     fun ask(side: Side, kept: Kept, peer: Peer): String {
         val (iv, data) = seal(peer.key, message(side, kept, peer, peer.gotHeard).toString())
@@ -283,5 +260,32 @@ object Sync {
         val h = m.optJSONObject("heard") ?: JSONObject()
         kept.put(peer.copy(name = m.optString("name").ifEmpty { peer.name }, gotHeard = h.optInt("upto"), sentHeard = h.optInt("want"),
             seen = System.currentTimeMillis(), at = at))
+    }
+
+    // ---- the phone's player, live (playing with the app closed too) ----
+
+    /** A short message for `peer`, sealed: what plays now (`/now`), or waiting for a stop (`/wait`). */
+    fun sealed(kept: Kept, peer: Peer, m: JSONObject): String {
+        val (iv, data) = seal(peer.key, m.toString())
+        return JSONObject().put("id", kept.id()).put("iv", iv).put("data", data).toString()
+    }
+
+    /** One opened on the computer: which phone, and what it said; null for a phone it doesn't know. */
+    fun unsealed(kept: Kept, body: String): Pair<Peer, JSONObject>? {
+        val o = JSONObject(body)
+        val peer = kept.peers().firstOrNull { it.id == o.optString("id") } ?: return null
+        return peer to JSONObject(open(peer.key, o.getString("iv"), o.getString("data")))
+    }
+
+    /** The computer's answer to one, sealed. */
+    fun reply(peer: Peer, m: JSONObject): String {
+        val (iv, data) = seal(peer.key, m.toString())
+        return JSONObject().put("iv", iv).put("data", data).toString()
+    }
+
+    /** That answer opened on the phone. */
+    fun replied(peer: Peer, body: String): JSONObject {
+        val o = JSONObject(body)
+        return JSONObject(open(peer.key, o.getString("iv"), o.getString("data")))
     }
 }

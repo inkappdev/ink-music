@@ -42,7 +42,7 @@ class PlayerService : MediaLibraryService() {
     // the screens' controller telling us what a speaker does (its asks go back to it; gone, casting's over here)
     private var caster: MediaSession.ControllerInfo? = null
     private val work = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private lateinit var handed: HandedCheck
+    private lateinit var live: Live
     private var clock: History.Clock? = null
     private var onAir: OnAir? = null
 
@@ -437,7 +437,8 @@ class PlayerService : MediaLibraryService() {
         player.currentMediaItem?.let { Widget.show(this, it.mediaId, it.mediaMetadata.title?.toString().orEmpty(), it.mediaMetadata.artist?.toString().orEmpty(), false) }
         radio = prefs.getBoolean("radio", true)
         onAir = OnAir(player, main, net)
-        handed = HandedCheck(this) { player.pause() }
+        // a paired computer told what plays (Sync): the session's player, so a speaker's what's told and paused
+        live = Live(this, { onSpeaker }, { onSpeaker?.device.orEmpty() })
         player.addListener(object : Player.Listener {
             // a station's song, as its stream says it
             override fun onMetadata(metadata: androidx.media3.common.Metadata) { onAir?.metadata(metadata) }
@@ -458,6 +459,7 @@ class PlayerService : MediaLibraryService() {
             }
 
             override fun onEvents(p: Player, events: Player.Events) {
+                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_TIMELINE_CHANGED)) live.changed()
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) onAir?.changed()
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) keep(p)
                 if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) tell()   // the new song's format, if it's read
@@ -497,8 +499,6 @@ class PlayerService : MediaLibraryService() {
 
             // sleeping at the song's end: it paused there, so the timer's done
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                // a paired computer that carries on with this stops it here (Sync)
-                handed.playing(playWhenReady)
                 if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAt == SLEEP_END_OF_SONG)
                     session?.player?.let { setSleep(it, 0) }
             }
@@ -592,6 +592,7 @@ class PlayerService : MediaLibraryService() {
                         // (and radio looked at again: the speaker's song may be the list's last, no song change here)
                         if (args.getBoolean("on")) { caster = controller; onSpeaker?.speaker(args); topUp(session.player) }
                         else { caster = null; onSpeaker?.speaker(null) }
+                        live.changed()
                     }
                     // the equalizer changed on the screens: read again and applied
                     if (customCommand.customAction == EQ) { equalize(); tell() }
