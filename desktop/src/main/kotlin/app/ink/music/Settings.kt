@@ -86,6 +86,7 @@ fun SettingsPage(onClose: () -> Unit) {
 
             Spacer(Modifier.height(48.dp))
             BasicText("made by ink · free and open, gpl-3.0", style = pixel(12.sp, Ink.mid))
+            if (Keys.build.isNotEmpty()) BasicText("build ${Keys.build}", style = pixel(12.sp, Ink.dim))
           }
         }
     }
