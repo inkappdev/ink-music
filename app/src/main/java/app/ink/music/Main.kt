@@ -1768,6 +1768,21 @@ fun Label(text: String) {
     BasicText(text, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp))
 }
 
+/**
+ * A section's head on INK (Bronson, 2026-10-29: the small labels were hard to read): its name in Archivo Black, a short
+ * line under it, a word at its right (play all); the Mac's [Section], phone-sized.
+ */
+@Composable
+fun Heading(title: String, line: String? = null, action: (@Composable () -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 10.dp), verticalAlignment = Alignment.Bottom) {
+        Column(Modifier.weight(1f)) {
+            BasicText(title.uppercase(), style = headline(22.sp), maxLines = 2)
+            if (line != null) BasicText(line, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 3.dp))
+        }
+        action?.let { Box(Modifier.padding(start = 12.dp)) { it() } }
+    }
+}
+
 /** How tall the soft edge beside a bar is: sharp at its far side, slightly out of focus at the bar. */
 val BAND = 16.dp
 

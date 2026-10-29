@@ -85,9 +85,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         item(key = "weekly") { InkWeeklyCover(pages) }
         today?.let { d -> item(key = "today") { RecordOfTheDay(d, pages) } }
         if (air.isNotEmpty()) item(key = "air") {
-            Label("on the air now")
-            BasicText("what the djs are playing this minute: a tap tunes in", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp))
-            Spacer(Modifier.height(10.dp))
+            Heading("on the air now", "what the djs are playing this minute: a tap tunes in")
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(air, key = { it.station }) { a -> AiredTile(a) }
             }
@@ -99,10 +97,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         item(key = "inkmoods") { InkMoodsShelf() }
         moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
         if (records.isNotEmpty()) item(key = "picked") {
-            Label("new records, picked by critics")
-            BasicText("the critics' favorites lately",
-                style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp))
-            Spacer(Modifier.height(10.dp))
+            Heading("new records, picked by critics", "the critics' favorites lately")
             ShelfIndexed(records.take(30)) { _, s -> PickTile(s, pages) }
         }
         friday?.let { w -> item(key = "friday") { OutThisFriday(w, pages) } }
@@ -110,10 +105,8 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (chart.isNotEmpty()) item(key = "artist") { ArtistOfTheWeek(chart, pages) }
         if (songs.isNotEmpty()) item(key = "songs") {
             var said by remember { mutableStateOf<String?>(null) }
-            Row(verticalAlignment = Alignment.Bottom) {
-                Label("songs, picked by critics")
-                Spacer(Modifier.weight(1f))
-                Word("play all", pixel(12.sp), Modifier.padding(end = 20.dp), touch = 8.dp) { scope.launch { said = "finding them"; Picks.playSongs(songs); said = null } }
+            Heading("songs, picked by critics", "the newest from pitchfork, the fader, stereofox and gorilla vs. bear") {
+                Word("play all", pixel(13.sp), touch = 8.dp) { scope.launch { said = "finding them"; Picks.playSongs(songs); said = null } }
             }
             said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp)) }
             ShelfIndexed(songs.take(20)) { _, s ->
@@ -124,9 +117,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         }
         if (chart.isNotEmpty()) {
             item(key = "chart") {
-                Label("the indie chart")
-                BasicText("this week on kexp, kcrw and wxpn, the songs they played most", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp))
-                Spacer(Modifier.height(6.dp))
+                Heading("the indie chart", "what kexp, kcrw and wxpn played most this week")
             }
             val playable = chart.mapNotNull { it.song }
             chart.forEachIndexed { i, e ->
@@ -164,7 +155,7 @@ private fun RecordOfTheDay(d: Picks.Shown, pages: Pages) {
         if (play) Playback.play(YouTubeMusic.album(a), 0) else pages.open(Page.Tube(a))
     }
     Column(Modifier.padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 22.dp)) {
-        BasicText("RECORD OF THE DAY", style = headline(18.sp, Ink.mid))
+        BasicText("RECORD OF THE DAY", style = headline(22.sp))
         BasicText("picked by ${d.by.joinToString(", ")}", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clickable(remember { MutableInteractionSource() }, indication = null) { go(false) }) {
@@ -217,7 +208,7 @@ private fun AiredTile(a: Curation.Aired) {
 
 /** A record someone picked: its cover, name, who picked it; a tap opens it on YouTube Music. */
 @Composable
-private fun PickTile(s: Picks.Shown, pages: Pages) {
+internal fun PickTile(s: Picks.Shown, pages: Pages) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     var said by remember(s) { mutableStateOf<String?>(null) }
@@ -293,13 +284,9 @@ private fun InkRadioShelf(pages: Pages) {
     val now by Playback.now.collectAsState()
     val ink = remember { Stations.curated(ctx).sortedByDescending { it.star } }
     if (ink.isEmpty()) return
-    Row(verticalAlignment = Alignment.Bottom) {
-        Label("ink radio")
-        Spacer(Modifier.weight(1f))
-        Word("all", pixel(12.sp, Ink.mid), Modifier.padding(end = 20.dp), touch = 8.dp) { pages.open(Page.InkRadio) }
+    Heading("ink radio", "the stations we keep: real djs, picked by people") {
+        Word("all", pixel(13.sp, Ink.mid), touch = 8.dp) { pages.open(Page.InkRadio) }
     }
-    BasicText("the stations we keep: real djs, picked by people", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp))
-    Spacer(Modifier.height(10.dp))
     ShelfIndexed(ink) { i, st ->
         val on = now?.song?.id == st.song.id
         StationTile(st.song, on, now?.playing == true, said = if (on) "on now" else st.city) { Playback.play(ink.drop(i).map { it.song }, 0) }
@@ -317,9 +304,7 @@ private fun OutThisFriday(w: Curation.Week, pages: Pages) {
     val kinds = remember(w) { Curation.kinds(w.releases) }
     var kind by remember(w) { mutableStateOf<String?>(null) }
     val shown = kind?.let { k -> kinds.firstOrNull { it.first == k }?.second } ?: w.releases
-    Label("out this friday")
-    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-        BasicText("every record out ${w.day}, from r/indieheads", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+    Heading("out this friday", "every record out ${w.day}, from r/indieheads") {
         Word("thread", pixel(13.sp, Ink.mid), touch = 8.dp) {
             runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(w.thread)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
@@ -349,19 +334,14 @@ private fun Electronic(all: List<Curation.Pick>, pages: Pages) {
     var said by remember { mutableStateOf<String?>(null) }
     val records = remember(all) { Curation.fair(all.filter { it.record }) { it.from }.take(24) }
     val tracks = remember(all) { all.filter { !it.record }.take(10) }
-    Label("electronic")
-    BasicText(said ?: "picked by bandcamp daily, a closer listen, igloo and headphone commute", style = pixel(12.sp, Ink.mid),
-        modifier = Modifier.padding(horizontal = 20.dp))
-    Spacer(Modifier.height(10.dp))
+    Heading("electronic", said ?: "picked by bandcamp daily, a closer listen, igloo and headphone commute")
     Shelf(records) { p ->
         val art by produceState<String?>(null, p) { value = Picks.art(p.title, p.artist, p.link, true) }
         PickTile(remember(p, art) { Picks.Shown(p.copy(art = art), art, listOf(p.from)) }, pages)
     }
     if (tracks.isNotEmpty()) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Label("club tracks")
-            Spacer(Modifier.weight(1f))
-            if (YouTubeMusic.available) Word("play all", pixel(12.sp), Modifier.padding(end = 20.dp), touch = 8.dp) {
+        Heading("club tracks", "premiered by inverted audio and headphone commute") {
+            if (YouTubeMusic.available) Word("play all", pixel(13.sp), touch = 8.dp) {
                 scope.launch { said = "finding them"; Picks.playSongs(tracks.map { Picks.Shown(it, null, listOf(it.from)) }); said = null }
             }
         }
@@ -399,7 +379,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, pages: Pages) {
     }
     val i = info ?: return
     Column(Modifier.padding(horizontal = 20.dp).padding(top = 18.dp, bottom = 20.dp)) {
-        BasicText("ARTIST OF THE WEEK", style = headline(18.sp, Ink.mid))
+        BasicText("ARTIST OF THE WEEK", style = headline(22.sp))
         BasicText("someone the djs and critics are into, a new one each monday", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(12.dp))
         i.photo?.let { Dithered(remember(it) { faceSong(i.name, it) }, Modifier.fillMaxWidth().aspectRatio(1f)) }
@@ -496,12 +476,9 @@ private fun MoodsAndGenres(all: List<TubeMood>, pages: Pages) {
     val ctx = LocalContext.current
     val counts by Moods.counts.collectAsState()
     val scope = rememberCoroutineScope()
-    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 22.dp)) {
-        // the genres as a row of tiles to slide through, the ones you open most first (as words they were a wall of
-        // text on a phone: Bronson, 2026-10-28)
-        BasicText("genres, the ones you open most first", style = pixel(12.sp, Ink.mid))
-    }
-    Spacer(Modifier.height(8.dp))
+    // the genres as a row of tiles to slide through, the ones you open most first (as words they were a wall of
+    // text on a phone: Bronson, 2026-10-28)
+    Heading("genres", "youtube music's editors' playlists, the ones you open most first")
     Shelf(all.filter { it.genre }.sortedWith(compareByDescending<TubeMood> { counts[it.title] ?: 0 }.thenBy { Moods.rank(it.title) })) { m ->
         GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(ctx, m); pages.open(Page.Mood(m)) }
     }
@@ -654,7 +631,7 @@ object Moodboard {
     }
 }
 
-/** Right now: three of ink's moods for the hour, big, each a station; then all of them as tiles to slide through. */
+/** Right now: ink's moods as tiles to slide through, the hour's three first and bigger, each a station. */
 @Composable
 fun InkMoodsShelf() {
     val ctx = LocalContext.current
@@ -664,29 +641,16 @@ fun InkMoodsShelf() {
     var said by remember { mutableStateOf<String?>(null) }
     fun go(m: InkMoods.Mood) = scope.launch { said = "${m.name}: finding its songs"; said = if (Moodboard.play(m)) null else "${m.name}: couldn't find its songs" }
     val now = remember { InkMoods.now() }
-    Column(Modifier.padding(horizontal = 20.dp)) {
-        BasicText("RIGHT NOW", style = headline(28.sp))
-        BasicText(said ?: "picked for ${Moods.said()}", style = pixel(12.sp, Ink.mid))
-        Spacer(Modifier.height(8.dp))
-        now.forEach { m ->
-            Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    Word(m.name.uppercase(), headline(32.sp), touch = 4.dp) { go(m) }
-                    BasicText(m.line, style = pixel(12.sp, Ink.mid))
-                }
-                Word("station", pixel(13.sp), Modifier.padding(bottom = 6.dp), touch = 8.dp) { go(m) }
-            }
-        }
-    }
-    Spacer(Modifier.height(4.dp))
-    // the rest of them (right now's three aren't shown twice)
-    Label("more moods")
-    Shelf(InkMoods.ALL.filter { it !in now }) { m ->
-        Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { go(m) })) {
+    // one row of tiles, right now's three bigger, then the rest (as the Mac's: the three as words and the rest as
+    // tiles didn't belong together)
+    Heading("right now", said ?: "moods for ${Moods.said()}, then the rest")
+    Shelf(now + InkMoods.ALL.filter { it !in now }) { m ->
+        val big = m in now
+        Column(Modifier.width(if (big) 200.dp else 150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { go(m) })) {
             Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.BottomStart) {
-                kept[m.key]?.art?.let { art -> Dithered(remember(art) { faceSong("mood " + m.key, art) }, Modifier.fillMaxSize(), px = 300) }
+                kept[m.key]?.art?.let { art -> Dithered(remember(art) { faceSong("mood " + m.key, art) }, Modifier.fillMaxSize(), px = 400) }
                 // its name on a black tab in the corner (pale dithers swallowed it)
-                BasicText(m.name.uppercase(), style = headline(20.sp), maxLines = 2,
+                BasicText(m.name.uppercase(), style = headline(if (big) 26.sp else 20.sp), maxLines = 2,
                     modifier = Modifier.background(Ink.black).padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 2.dp))
             }
             Spacer(Modifier.height(8.dp))
@@ -724,7 +688,7 @@ fun FestivalsShelf(pages: Pages) {
     val ctx = LocalContext.current
     val soon = remember { Festivals.soon(Fests.all(ctx)) }
     if (soon.isEmpty() || !YouTubeMusic.available) return
-    Label("festivals soon")
+    Heading("festivals soon", "who's playing, to know before you go")
     Shelf(soon) { f -> FestivalPoster(f) { pages.open(Page.Festival(f.name)) } }
     Spacer(Modifier.height(8.dp))
 }

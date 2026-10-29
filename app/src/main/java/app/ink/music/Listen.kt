@@ -154,7 +154,14 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val seed by Order.seed.collectAsState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(seeds.map { it.name }) { Listen.load(ctx); Weekly.load(ctx) }
-    val weekly by Weekly.weeks.collectAsState()
+    LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday(); Picks.startElectronic() }
+    val pickedRecords by Picks.records.collectAsState()
+    val pickedSongs by Picks.songs.collectAsState()
+    val friday by Picks.friday.collectAsState()
+    val electronic by Picks.electronic.collectAsState()
+    val listened by Listened.now.collectAsState()
+    val allSongs by Library.songs.collectAsState()
+    val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, listened, allSongs) { Picks.yours(listened, allSongs) }
     // your server's records kept on the phone: with no signal they come first, "no data? no problem"
     val kept by Offline.kept.collectAsState()
     val keptRecords = remember(kept, albums) { albums.filter { a -> a.songs.any { it.id in kept } } }
@@ -221,10 +228,14 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             }
         }}
         if (!online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(1)) { KeptShelf(keptRecords, "no data? no problem", pages) }}
-        // ink weekly: this week's songs, picked by hand (a new week Friday nights)
-        weekly.firstOrNull()?.let { w ->
-            item { Column(Modifier.cascade(2)) { WeeklyBlock(w) { pages.open(Page.Weekly(w.week)) } }}
-        }
+        // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: it's INK's cover now)
+        if (fromYours.isNotEmpty()) item { Column(Modifier.cascade(2)) {
+            Heading("new from your artists", "out this week or picked by critics, by artists you play")
+            Shelf(fromYours) { s ->
+                val art by androidx.compose.runtime.produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+                PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, pages)
+            }
+        }}
         // made from your listening (Discover): fresh finds, deep cuts and the rest
         item { Column(Modifier.cascade(3)) { MadeForYouShelf() } }
         if (recentSongs.isNotEmpty() || tubeRecent.isNotEmpty()) item { Column(Modifier.cascade(3)) {
@@ -462,35 +473,6 @@ private fun KeptShelf(records: List<Album>, label: String, pages: Pages) {
         items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
     }
     Spacer(Modifier.height(10.dp))
-}
-
-/** This week's ink weekly on listen: its mosaic, its name big, its note, play, shuffle; a tap opens the week. */
-@Composable
-private fun WeeklyBlock(w: Weekly.Week, onOpen: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onOpen))
-        .padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 22.dp)) {
-        BasicText(listOf("ink weekly", Weekly.day(w.date)).filter { it.isNotEmpty() }.joinToString("   "), style = pixel(12.sp, Ink.mid))
-        Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
-            Box(Modifier.size(140.dp), contentAlignment = Alignment.BottomStart) {
-                Mosaic(w.songs, Modifier.fillMaxSize())
-                BasicText(w.title.uppercase(), style = headline(24.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.background(Ink.black).padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 2.dp))
-            }
-            if (w.note.isNotEmpty()) {
-                Spacer(Modifier.width(16.dp))
-                BasicText(w.note, style = pixel(12.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 19.sp), maxLines = 5,
-                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row {
-            Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
-            Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
-            Word("${w.songs.size} songs", pixel(14.sp, Ink.mid), touch = 8.dp, onClick = onOpen)
-        }
-    }
 }
 
 /** A tile: a cover (or an artist's photo), a name big, a word small; numbered on a chart. */
