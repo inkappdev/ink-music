@@ -110,6 +110,8 @@ fun main() {
             ),
             state = Placed.remember().also { Win.state = it },
         ) {
+            // never dragged smaller than the rail, a page and the now column
+            window.minimumSize = java.awt.Dimension(Placed.LEAST.width.value.toInt(), Placed.LEAST.height.value.toInt())
             LaunchedEffect(Unit) {
                 window.minimumSize = java.awt.Dimension(720, 520)
                 window.background = java.awt.Color.BLACK

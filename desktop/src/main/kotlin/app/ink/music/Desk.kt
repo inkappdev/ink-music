@@ -48,25 +48,43 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 
-/** The window's size and place, kept from one run to the next. */
+/**
+ * The window's size and place, kept from one run to the next, and whether it was zoomed big (Bronson, 2026-10-29: it
+ * always opened tiny: a zoomed window kept nothing, so the size before came back). Never smaller than [LEAST], nor
+ * bigger than the screen.
+ */
 object Placed {
     private val file = File(Home.dir, "window.json")
+    /** The smallest the window is let be (the rail, a page, the now column). */
+    val LEAST = DpSize(960.dp, 640.dp)
+    private val FIRST = DpSize(1440.dp, 900.dp)
 
     @Composable
     fun remember(): WindowState {
         val o = runCatching { JSONObject(file.readText()) }.getOrNull()
-        val size = o?.let { DpSize(it.optDouble("w", 1440.0).toFloat().dp, it.optDouble("h", 900.0).toFloat().dp) } ?: DpSize(1440.dp, 900.dp)
+        val screen = runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds }.getOrNull()
+        val w = o?.optDouble("w", FIRST.width.value.toDouble())?.toFloat() ?: FIRST.width.value
+        val h = o?.optDouble("h", FIRST.height.value.toDouble())?.toFloat() ?: FIRST.height.value
+        val size = DpSize(
+            w.coerceAtLeast(LEAST.width.value).let { v -> screen?.let { minOf(v, it.width.toFloat()) } ?: v }.dp,
+            h.coerceAtLeast(LEAST.height.value).let { v -> screen?.let { minOf(v, it.height.toFloat()) } ?: v }.dp,
+        )
         val at = o?.takeIf { it.has("x") }?.let { WindowPosition(it.optDouble("x").toFloat().dp, it.optDouble("y").toFloat().dp) }
             ?: WindowPosition.PlatformDefault
-        return rememberWindowState(size = size, position = at)
+        val zoomed = o?.optBoolean("zoomed") == true
+        return rememberWindowState(placement = if (zoomed) WindowPlacement.Maximized else WindowPlacement.Floating, size = size, position = at)
     }
 
-    /** Written down as it is now (not while it's the whole screen: then as it was before). */
+    /** Written down as it is now: its plain size (as it was before, while full screen), and whether it's zoomed. */
     fun keep(s: WindowState) {
-        if (s.placement != WindowPlacement.Floating || s.isMinimized) return
-        val p = s.position
+        if (s.isMinimized) return
+        val floating = s.placement == WindowPlacement.Floating
+        val size = if (floating) s.size else Win.before ?: s.size
+        val p = if (floating) s.position else Win.beforeAt ?: s.position
+        if (!size.width.value.isFinite() || size.width < LEAST.width || size.height < LEAST.height) return
         runCatching {
-            Home.write(file, JSONObject().put("w", s.size.width.value.toDouble()).put("h", s.size.height.value.toDouble())
+            Home.write(file, JSONObject().put("w", size.width.value.toDouble()).put("h", size.height.value.toDouble())
+                .put("zoomed", s.placement == WindowPlacement.Maximized)
                 .apply { if (p.isSpecified) put("x", p.x.value.toDouble()).put("y", p.y.value.toDouble()) }.toString())
         }
     }
@@ -79,7 +97,8 @@ object Placed {
 object Mini {
     val on = MutableStateFlow(false)
 
-    fun open() { on.value = true; Win.state?.isMinimized = true }
+    /** Only with something to show (with nothing playing it was a small black window, the main one gone to the Dock). */
+    fun open() { if (Player.now.value == null) return; on.value = true; Win.state?.isMinimized = true }
     fun close() { on.value = false; Win.state?.isMinimized = false }
 }
 
@@ -98,7 +117,9 @@ fun MiniWindow() {
         WindowDraggableArea {
             Box(Modifier.fillMaxSize().background(Ink.black)) {
                 if (n == null) {
+                    // stopped while it was up: said, and the way back
                     BasicText("NOTHING PLAYING", style = headline(18.sp, Ink.dim), modifier = Modifier.align(Alignment.CenterStart).padding(start = 16.dp))
+                    Pixel(OPEN, "back to the window", Ink.mid, Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)) { Mini.close() }
                 } else Row(Modifier.fillMaxSize().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.width(88.dp)) {
                         CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.size(88.dp), px = 240, moving = n.playing)
