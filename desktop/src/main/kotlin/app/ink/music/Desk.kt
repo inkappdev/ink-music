@@ -221,3 +221,32 @@ fun darkTitleBar(window: java.awt.Window) {
         set(34, 0x00000000)     // DWMWA_BORDER_COLOR: black
     }
 }
+
+/**
+ * Linux, before the first window: what a JVM gets wrong there on its own (tried on Fedora with niri, 2026-10-29).
+ * Its size: Java takes the screen's scale only from GDK_SCALE, which most desktops don't set, so on a 2x screen
+ * everything was half size; the desktop's own Xft.dpi says it (192 is 2x). A tiling desktop that doesn't frame its
+ * windows (niri, sway, Hyprland): AWT believes every window is framed, and the page stayed the size it was first
+ * drawn in a corner of a bigger window; _JAVA_AWT_WM_NONREPARENTING tells it, set here on its field (the variable
+ * can't be set from inside). And its name, the .desktop file's, so the dock and launcher show ink music's icon for it.
+ */
+fun linuxWindow() {
+    if (Home.mac || Home.windows) return
+    if (System.getenv("GDK_SCALE") == null && System.getenv("J2D_UISCALE") == null && System.getProperty("sun.java2d.uiScale") == null) {
+        val dpi = runCatching {
+            ProcessBuilder("xrdb", "-query").redirectErrorStream(true).start().inputStream.bufferedReader().readLines()
+                .firstOrNull { it.startsWith("Xft.dpi:") }?.substringAfter(':')?.trim()?.toFloat()
+        }.getOrNull()
+        if (dpi != null && dpi >= 144) System.setProperty("sun.java2d.uiScale", Math.round(dpi / 96).toString())
+    }
+    // the desktops whose window managers frame their windows; anything else is taken as one that doesn't
+    val framed = listOf("GNOME", "KDE", "XFCE", "CINNAMON", "MATE", "UNITY", "BUDGIE", "LXQT", "LXDE", "PANTHEON", "DEEPIN")
+    val desktop = (System.getenv("XDG_CURRENT_DESKTOP") ?: "").uppercase()
+    runCatching {
+        val toolkit = java.awt.Toolkit.getDefaultToolkit()
+        if (toolkit.javaClass.name != "sun.awt.X11.XToolkit") return
+        toolkit.javaClass.getDeclaredField("awtAppClassName").apply { isAccessible = true }.set(null, "ink-music-ink_music")
+        if (System.getenv("_JAVA_AWT_WM_NONREPARENTING") == null && desktop.isNotEmpty() && framed.none { it in desktop })
+            Class.forName("sun.awt.X11.XWM").getDeclaredField("awtWMNonReparenting").apply { isAccessible = true }.setInt(null, 1)
+    }
+}

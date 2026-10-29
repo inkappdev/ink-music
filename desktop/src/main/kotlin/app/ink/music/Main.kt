@@ -84,6 +84,7 @@ import androidx.compose.ui.window.rememberWindowState
 
 fun main() {
     System.setProperty("apple.laf.useScreenMenuBar", "true")
+    linuxWindow()
     // ⌘Q (the app menu's Quit, the Dock's): the same whole quit as closing the window
     runCatching { java.awt.Desktop.getDesktop().setQuitHandler { _, response -> runCatching { quit() }; response.performQuit() } }
     Library.start()
