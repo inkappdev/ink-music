@@ -172,14 +172,38 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                                 Word("tell youtube", pixel(14.sp, if (tells) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { tells = true; YouTubeAccount.tell(ctx, true) }
                                 Word("don't", pixel(14.sp, if (!tells) Ink.ink else Ink.dim), touch = 8.dp) { tells = false; YouTubeAccount.tell(ctx, false) }
                             }
-                            // the Mac app signs in from here: it has no youtube sign-in page of its own
-                            Spacer(Modifier.height(22.dp))
-                            BasicText("ink music on your mac signs in from this phone", style = pixel(12.sp, Ink.mid))
-                            Spacer(Modifier.height(4.dp))
-                            Word("SIGN IN A COMPUTER", headline(32.sp), touch = 10.dp) { pages.open(Page.HandOver) }
+                            // the Mac app signs in from here (it has no youtube sign-in page of its own): shown only while
+                            // one on this wifi is waiting for it, so no one sees it before there's a Mac app to sign in
+                            val waiting = remember { androidx.compose.runtime.mutableStateListOf<Computer>() }
+                            androidx.compose.runtime.DisposableEffect(Unit) {
+                                val stop = Computers.find(ctx) { c -> if (waiting.none { it.name == c.name }) waiting += c }
+                                onDispose { stop() }
+                            }
+                            if (waiting.isNotEmpty()) {
+                                Spacer(Modifier.height(22.dp))
+                                BasicText("${waiting.first().name.lowercase()} is waiting to sign in from this phone", style = pixel(12.sp, Ink.mid))
+                                Spacer(Modifier.height(4.dp))
+                                Word("SIGN IN A COMPUTER", headline(32.sp), touch = 10.dp) { pages.open(Page.HandOver) }
+                            }
                         }
                         Spacer(Modifier.height(40.dp))
                     }
+                }
+
+                // private listening: a switch, nothing kept or told while it's on
+                Column(Modifier.cascade(3)) {
+                    var hidden by remember { mutableStateOf(Private.on(ctx)) }
+                    BasicText("PRIVATE LISTENING", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText(if (hidden) "on: nothing you play is kept or told. it's okay, we know you like taylor swift"
+                        else "while it's on, what you play isn't kept here or told anywhere: no history, no scrobbles, not in your year",
+                        style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    Row {
+                        Word("on", pixel(14.sp, if (hidden) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { hidden = true; Private.set(ctx, true) }
+                        Word("off", pixel(14.sp, if (!hidden) Ink.ink else Ink.dim), touch = 8.dp) { hidden = false; Private.set(ctx, false) }
+                    }
+                    Spacer(Modifier.height(40.dp))
                 }
 
                 Column(Modifier.cascade(3)) {

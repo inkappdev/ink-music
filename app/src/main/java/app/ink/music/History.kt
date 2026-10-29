@@ -21,6 +21,8 @@ object History {
     @Synchronized fun add(c: Context, h: Heard) {
         // a station isn't a song heard (it would top "your songs" by the hour)
         if (h.ms < ENOUGH || h.title.isEmpty() || h.id.startsWith("s")) return
+        // private listening: not kept
+        if (Private.on(c)) return
         runCatching {
             file(c).appendText(JSONObject().put("at", h.at).put("id", h.id).put("title", h.title).put("artist", h.artist)
                 .put("album", h.album).put("record", h.record).put("ms", h.ms).toString() + "\n")

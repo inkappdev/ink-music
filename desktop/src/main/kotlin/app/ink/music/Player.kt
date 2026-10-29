@@ -282,6 +282,8 @@ object Player {
     private var toldTube: String? = null
 
     private fun heard(ms: Long) {
+        // private listening: nothing told
+        if (Private.on.value) return
         val n = _now.value ?: return
         val s = n.song
         // a YouTube song 30 s in: told to your history there, signed in (as its own app does)
@@ -308,7 +310,7 @@ object Player {
     /** The song before written down as heard (30 s or more), and the clock started for this one. */
     private fun timeSong(s: Song?) {
         if (s?.id == timing?.id) return
-        timing?.takeIf { !it.station }?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
+        timing?.takeIf { !it.station && !Private.on.value }?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
         timing = s; timingAt = System.currentTimeMillis(); playedMs = 0; lastMs = 0
     }
 
@@ -360,7 +362,7 @@ object Player {
         timeSong(s)
         topUp()
         _now.value = s?.let { Now(it, index, !paused, duration.takeIf { d -> d > 0 } ?: it.duration) }
-        if (s != null && !s.station && toldNow != "${s.id}/$index" && !paused) {
+        if (s != null && !s.station && toldNow != "${s.id}/$index" && !paused && !Private.on.value) {
             toldNow = "${s.id}/$index"; counted = null
             if (s.server) Server.scrobble(s.id, false)
             val said = said(s, duration.takeIf { it > 0 } ?: s.duration)

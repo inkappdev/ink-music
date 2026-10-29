@@ -68,6 +68,9 @@ fun SettingsPage(onClose: () -> Unit) {
             YouTubeSetting()
 
             Spacer(Modifier.height(36.dp))
+            PrivateSetting()
+
+            Spacer(Modifier.height(36.dp))
             ListenBrainzSetting()
             if (LastFm.available) { Spacer(Modifier.height(36.dp)); LastFmSetting() }
 
@@ -332,4 +335,19 @@ private fun YouTubeSetting() {
         }
     }
     said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
+}
+
+/** Private listening: a switch; while it's on, nothing kept or told. */
+@Composable
+private fun PrivateSetting() {
+    val on by Private.on.collectAsState()
+    BasicText("PRIVATE LISTENING", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText(if (on) "on: nothing you play is kept or told. it's okay, we know you like taylor swift"
+        else "while it's on, what you play isn't kept here or told anywhere: no history, no scrobbles, not in your year", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    androidx.compose.foundation.layout.Row {
+        Word("on", pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Private.set(true) }
+        Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { Private.set(false) }
+    }
 }
