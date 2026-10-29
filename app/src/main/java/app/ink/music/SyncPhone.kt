@@ -44,7 +44,7 @@ object SyncPhone {
     /** A love the computer made, being done here: not one to tell it about again. */
     @Volatile private var applying = false
 
-    data class Offer(val from: String, val songs: List<Song>, val index: Int, val position: Long, val playing: Boolean, val at: Long) {
+    data class Offer(val from: String, val songs: List<Song>, val index: Int, val position: Long, val playing: Boolean, val at: Long, val peer: String = "") {
         val song: Song get() = songs[index]
     }
     val dismissed = MutableStateFlow(0L)
@@ -227,7 +227,13 @@ object SyncPhone {
         override fun heardChanged() { Listened.read(c) }
 
         override fun theirs(peer: Sync.Peer, now: JSONObject?) {
-            theirs.value = now?.let { offer(peer.name, it) }
+            theirs.value = now?.let { offer(peer.name, it, peer.id) }
+        }
+
+        override fun resumedAt(): Long = runCatching { File(c.filesDir, "sync-resumed").readText().trim().toLong() }.getOrDefault(0L)
+
+        override fun stop() {
+            kotlinx.coroutines.runBlocking(Dispatchers.Main) { if (Playback.now.value?.playing == true) Playback.toggle() }
         }
     } }
 
@@ -261,7 +267,7 @@ object SyncPhone {
         if (!k.second) soon(3_000)
     }
 
-    private fun offer(from: String, o: JSONObject): Offer? {
+    private fun offer(from: String, o: JSONObject, peer: String = ""): Offer? {
         val q = o.optJSONArray("queue") ?: return null
         val index = o.optInt("index")
         val songs = ArrayList<Song>(); var at = -1
@@ -271,17 +277,58 @@ object SyncPhone {
             songs += s
         }
         if (songs.isEmpty() || at < 0) return null
-        return Offer(from.lowercase(), songs, at, o.optLong("position"), o.optBoolean("playing"), o.optLong("at"))
+        return Offer(from.lowercase(), songs, at, o.optLong("position"), o.optBoolean("playing"), o.optLong("at"), peer)
     }
 
     /** Carried on with here, where it was. */
     fun take(o: Offer) {
         Playback.play(o.songs, o.index, if (o.position > 5_000 && !o.song.station) o.position else 0L)
         dismissed.value = o.at
+        // the computer told to stop, at once
+        if (o.peer.isNotEmpty()) { kept.handed(o.peer, System.currentTimeMillis()); soon(500) }
     }
 
     /** The phone as the computer lists it: its own name (settings, about), else its model. */
     fun deviceName(c: Context): String =
         runCatching { android.provider.Settings.Global.getString(c.contentResolver, android.provider.Settings.Global.DEVICE_NAME) }.getOrNull()
             ?.takeIf { it.isNotBlank() } ?: Build.MODEL
+}
+
+/**
+ * The player's side of "continue here" (the player's own process, playing with the app closed): every 20 seconds while
+ * it plays, it asks the computers paired whether one has carried on with what plays here since play was pressed, and
+ * pauses if so. When play's pressed is kept (sync-resumed) for the screens' calls too.
+ */
+class HandedCheck(private val c: Context, private val pause: () -> Unit) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var job: Job? = null
+    private val resumed get() = File(c.filesDir, "sync-resumed")
+
+    fun playing(on: Boolean) {
+        job?.cancel(); job = null
+        if (!on) return
+        runCatching { resumed.writeText(System.currentTimeMillis().toString()) }
+        val kept = Sync.Kept(c.filesDir)
+        if (kept.peers().isEmpty()) return
+        job = scope.launch {
+            while (true) {
+                delay(20_000)
+                val since = runCatching { resumed.readText().trim().toLong() }.getOrDefault(0L)
+                for (p in kept.peers()) {
+                    val at = p.at.takeIf { ':' in it } ?: continue
+                    val handed = runCatching { ask(at, Sync.askHanded(kept, p))?.let { Sync.handed(p, it) } }.getOrNull() ?: continue
+                    if (handed > since) { kotlinx.coroutines.withContext(Dispatchers.Main) { pause() }; return@launch }
+                }
+            }
+        }
+    }
+
+    private fun ask(at: String, body: String): String? {
+        val conn = URL("http://$at/handed").openConnection() as HttpURLConnection
+        conn.connectTimeout = 3_000; conn.readTimeout = 8_000; conn.requestMethod = "POST"; conn.doOutput = true
+        return try {
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            if (conn.responseCode == 200) conn.inputStream.bufferedReader().readText() else null
+        } finally { conn.disconnect() }
+    }
 }

@@ -401,7 +401,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     var tab by rememberSaveable { mutableStateOf("listen") }
     // nothing on the phone or a server: no records, artists or songs to show
     // INK: ink weekly, ink radio and everything people picked, one place (explore till 2026-10-29: Bronson)
-    val tabs = if (songs.isEmpty()) listOf("listen", "ink", "lists") else listOf("listen", "ink", "albums", "artists", "songs", "lists")
+    val tabs = if (songs.isEmpty()) listOf("listen", "ink", "radio", "lists") else listOf("listen", "ink", "albums", "artists", "songs", "radio", "lists")
     val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
     // the places' menu, dropped down from the place's word
     var menu by remember { mutableStateOf(false) }
@@ -415,6 +415,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     }
     val listenList = rememberLazyListState()
     val exploreList = rememberLazyListState()
+    val radioGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val grid = rememberLazyGridState()
     val artistList = rememberLazyListState()
     val listsList = rememberLazyListState()
@@ -484,6 +485,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
         when (tabs[page]) {
             "listen" -> ListenPage(pages, pad, listenList)
             "ink" -> ExplorePage(pages, pad, exploreList)
+            // radio, a place of its own: the tower, what's on, every station
+            "radio" -> RadioPlace(pages, pad, radioGrid)
             "albums" -> LazyVerticalGrid(
                 GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),

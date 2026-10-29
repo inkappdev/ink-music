@@ -73,6 +73,12 @@ object Sync {
             write(o.put("loves", l))
         }
 
+        /** When this device carried on with what `peer` was playing ("continue here"): that one stops, if it hasn't played since. */
+        fun handedAt(peer: String): Long = read().optJSONObject("handed")?.optLong(peer) ?: 0L
+        @Synchronized fun handed(peer: String, at: Long) {
+            val o = read(); write(o.put("handed", (o.optJSONObject("handed") ?: JSONObject()).put(peer, at)))
+        }
+
         /** When each sign-in last changed here ("server", "listenbrainz", "lastfm", "youtube"). */
         fun signedAt(what: String): Long = read().optJSONObject("signed")?.optLong(what) ?: 0L
         @Synchronized fun signed(what: String, at: Long) {
@@ -166,6 +172,10 @@ object Sync {
         fun heardChanged()
         /** What the other was playing, as it last said. */
         fun theirs(peer: Peer, now: JSONObject?)
+        /** When play was last pressed here (a queue begun, or carried on), so a stop asked for before it is passed over. */
+        fun resumedAt(): Long = 0L
+        /** The other carried on with what plays here: stop. */
+        fun stop() {}
     }
 
     /** The sign-ins that go across, each its file in the app's folder. */
@@ -184,7 +194,7 @@ object Sync {
         return JSONObject().put("id", kept.id()).put("name", side.name)
             .put("heard", JSONObject().put("lines", lines).put("upto", upto).put("want", want))
             .put("loves", kept.loves()).put("signed", signed).put("youtube", side.youtube() ?: "")
-            .put("now", side.now() ?: JSONObject.NULL)
+            .put("now", side.now() ?: JSONObject.NULL).put("handed", kept.handedAt(peer.id))
     }
 
     /** The other's part taken in here: its listens, the loves and sign-ins newer than these, what it's playing. */
@@ -216,6 +226,32 @@ object Sync {
         }
         m.optString("youtube").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeYoutube(it) } }
         side.theirs(peer, m.optJSONObject("now"))
+        // the other carried on with what plays here, since it was last pressed play: it stops here
+        val handed = m.optLong("handed")
+        if (handed > 0 && handed > side.resumedAt()) runCatching { side.stop() }
+    }
+
+    // ---- "should I stop?": the phone's player asking, while it plays with the app closed ----
+
+    /** The question, sealed for `peer` (nothing in it but who's asking). */
+    fun askHanded(kept: Kept, peer: Peer): String {
+        val (iv, data) = seal(peer.key, JSONObject().put("at", System.currentTimeMillis()).toString())
+        return JSONObject().put("id", kept.id()).put("iv", iv).put("data", data).toString()
+    }
+
+    /** The computer's answer: when it carried on with this phone's playing, sealed; null for a phone it doesn't know. */
+    fun answerHanded(kept: Kept, body: String): String? {
+        val o = JSONObject(body)
+        val peer = kept.peers().firstOrNull { it.id == o.optString("id") } ?: return null
+        open(peer.key, o.getString("iv"), o.getString("data"))   // it's that phone
+        val (iv, data) = seal(peer.key, JSONObject().put("handed", kept.handedAt(peer.id)).toString())
+        return JSONObject().put("iv", iv).put("data", data).toString()
+    }
+
+    /** When the computer carried on with this phone's playing (0: it hasn't). */
+    fun handed(peer: Peer, body: String): Long {
+        val o = JSONObject(body)
+        return JSONObject(open(peer.key, o.getString("iv"), o.getString("data"))).optLong("handed")
     }
 
     /** The phone's call: its part, sealed for `peer`, as sent. */

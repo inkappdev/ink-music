@@ -18,6 +18,9 @@ import java.io.File
  * behind a session; here it's this, in the app. The queue, its song and the place in it are kept
  * (queue.json), so the app opens where it was, paused.
  */
+/** A stream's own file name ("kexp160.aac"), what mpv calls a station before it says a song: not a song. */
+private val STREAM_FILE = Regex("""^[\w.-]+\.(aac|mp3|ogg|opus|flac|m3u8?|pls|aacp)$""", RegexOption.IGNORE_CASE)
+
 object Player {
     /** What's playing: the song, whether it moves, how long it is (ms; 0 while not known). */
     data class Now(val song: Song, val index: Int, val playing: Boolean, val duration: Long)
@@ -161,7 +164,7 @@ object Player {
                     "pause" -> { paused = e.value as? Boolean ?: true; tell() }
                     "media-title" -> {
                         val s = _queue.value.getOrNull(index)
-                        onAir.value = if (s?.station == true) (e.value as? String)?.takeIf { it != s.title && "://" !in it }?.let { OnAir.parse(it, s.title) } else null
+                        onAir.value = if (s?.station == true) (e.value as? String)?.takeIf { it != s.title && "://" !in it && !STREAM_FILE.containsMatchIn(it) }?.let { OnAir.parse(it, s.title) } else null
                     }
                     "playlist-pos" -> { index = (e.value as? Long)?.toInt() ?: -1; heard.value = heard.value?.takeIf { it.id == _queue.value.getOrNull(index)?.id }; tell() }
                     "duration" -> { duration = ((e.value as? Double) ?: 0.0).times(1000).toLong(); tell() }

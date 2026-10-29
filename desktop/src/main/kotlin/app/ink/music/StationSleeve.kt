@@ -41,18 +41,20 @@ import kotlin.math.roundToInt
  * ink's own sleeve says a record's (Archivo at the plate's foot), and over it the name sending,
  * rings widening from just above its first letter and thinning toward the far corner, 1-bit in
  * the dither of the player's look (Bayer 4 x 4, 3 dp dots, 56 across at the least so a small one
- * still reads), in ink at 55% on black. The rings' spacing and start differ a little a station.
+ * still reads), in the station's own colour on black. The rings' spacing and start differ a little a station.
  * While it plays on the player the rings travel outward, a step at a time like an iPod screen.
  */
 object StationSleeve {
     /** Frames a ring's travel takes: the rings are periodic, so these are all there are. */
     const val FRAMES = 8
     private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
-    // ink at 55% over black, opaque: the dots are drawn up unfiltered, nothing to blend
-    private val DOT = Ink.ink.toArgb().let { c ->
-        fun k(v: Int) = (v * .55f).toInt()
-        (255 shl 24) or (k(c shr 16 and 255) shl 16) or (k(c shr 8 and 255) shl 8) or k(c and 255)
-    }
+    /**
+     * A station's own colour (it has no cover; Bronson, 2026-10-29: "the page needs color"): one of a dozen vivid ones,
+     * the same for it always, its rings dithered in it on black.
+     */
+    private val COLORS = longArrayOf(0xFFE8502A, 0xFFF2A93B, 0xFFE9D65B, 0xFF7BC86C, 0xFF3FB8AF, 0xFF4AA3F0,
+        0xFF7B6CF6, 0xFFC86DD7, 0xFFF26FA8, 0xFF9AD0EC, 0xFFEF7D57, 0xFF5BD6A0).map { it.toInt() }
+    fun colorOf(id: String): Int = COLORS[Math.floorMod(id.hashCode() * 31 + 7, COLORS.size)]
 
     /** Dots a side for a sleeve `px` across: 3 dp each, 56 to 160. */
     fun cells(px: Float, density: Float) = (px / (3 * density)).roundToInt().coerceIn(56, 160)
@@ -68,6 +70,7 @@ object StationSleeve {
         val oy = clear - .02f
         val lambda = .085f + .035f * r(1)
         val phase = frame.toFloat() / FRAMES
+        val dot = colorOf(id)
         val out = IntArray(cells * cells)
         for (j in 0 until cells) {
             val y = (j + .5f) / cells
@@ -79,7 +82,7 @@ object StationSleeve {
                 val band = (.5f + .5f * cos(2 * PI * (d / lambda - phase)).toFloat()).pow(1.6f)
                 val fall = (1 - d / 1.15f).coerceAtLeast(0f).pow(.8f)
                 val v = band * fall * open * smooth(.03f, .09f, d) * 1.25f
-                out[j * cells + i] = if (v > (BAYER[(j and 3) * 4 + (i and 3)] + .5f) / 16) DOT else 0xFF000000.toInt()
+                out[j * cells + i] = if (v > (BAYER[(j and 3) * 4 + (i and 3)] + .5f) / 16) dot else 0xFF000000.toInt()
             }
         }
         // ARGB ints as Skia's BGRA bytes (little-endian: the same memory)
