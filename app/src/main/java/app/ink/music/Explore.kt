@@ -65,7 +65,8 @@ import java.io.File
 @Composable
 fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val ctx = LocalContext.current
-    LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday() }
+    LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday(); Picks.startElectronic() }
+    val electronic by Picks.electronic.collectAsState()
     val friday by Picks.friday.collectAsState()
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
     val records by Picks.records.collectAsState()
@@ -101,6 +102,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             ShelfIndexed(records.take(30)) { _, s -> PickTile(s, pages) }
         }
         friday?.let { w -> item(key = "friday") { OutThisFriday(w, pages) } }
+        if (electronic.isNotEmpty()) item(key = "electronic") { Electronic(electronic, pages) }
         if (chart.isNotEmpty()) item(key = "artist") { ArtistOfTheWeek(chart, pages) }
         if (songs.isNotEmpty()) item(key = "songs") {
             var said by remember { mutableStateOf<String?>(null) }
@@ -261,6 +263,43 @@ private fun OutThisFriday(w: Curation.Week, pages: Pages) {
         Shelf(shown) { r ->
             val art by produceState<String?>(null, r) { value = Picks.art(r) }
             PickTile(remember(r, art) { Picks.shown(r, art) }, pages)
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+}
+
+/**
+ * Electronic, picked by its own writers: their records in turn (Bandcamp Daily's columns, A Closer Listen, Igloo,
+ * Headphone Commute), then the club tracks premiered (Inverted Audio's, Headphone Commute's).
+ */
+@Composable
+private fun Electronic(all: List<Curation.Pick>, pages: Pages) {
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<String?>(null) }
+    val records = remember(all) { Curation.fair(all.filter { it.record }) { it.from }.take(24) }
+    val tracks = remember(all) { all.filter { !it.record }.take(10) }
+    Label("electronic")
+    BasicText(said ?: "picked by bandcamp daily, a closer listen, igloo and headphone commute", style = pixel(12.sp, Ink.mid),
+        modifier = Modifier.padding(horizontal = 20.dp))
+    Spacer(Modifier.height(10.dp))
+    Shelf(records) { p ->
+        val art by produceState<String?>(null, p) { value = Picks.art(p.title, p.artist, p.link, true) }
+        PickTile(remember(p, art) { Picks.Shown(p.copy(art = art), art, listOf(p.from)) }, pages)
+    }
+    if (tracks.isNotEmpty()) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Label("club tracks")
+            Spacer(Modifier.weight(1f))
+            if (YouTubeMusic.available) Word("play all", pixel(12.sp), Modifier.padding(end = 20.dp), touch = 8.dp) {
+                scope.launch { said = "finding them"; Picks.playSongs(tracks.map { Picks.Shown(it, null, listOf(it.from)) }); said = null }
+            }
+        }
+        Shelf(tracks) { p ->
+            val art by produceState<String?>(null, p) { value = Picks.art(p.title, p.artist, p.link, false) }
+            val shown = remember(p, art) { Picks.Shown(p, art, listOf(p.from)) }
+            Tile(shown.face, p.title, "${p.artist.lowercase()} · ${p.from}") {
+                if (YouTubeMusic.available) scope.launch { Picks.song(p.title, p.artist)?.let { Playback.play(listOf(it), 0) } ?: run { said = "${p.title.lowercase()}: not on youtube music yet" } }
+            }
         }
     }
     Spacer(Modifier.height(12.dp))

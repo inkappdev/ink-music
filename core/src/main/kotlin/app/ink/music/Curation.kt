@@ -153,6 +153,69 @@ object Curation {
         Pick(true, m.groupValues[2], m.groupValues[1], "dusted", i.text, i.link, i.at, null)
     }
 
+    // ---- electronic ----
+
+    /**
+     * Electronic music, picked by its own writers (Bronson, 2026-10-29: "a good curation of electronic music like
+     * Resident Advisor", whose picks have no feed): Bandcamp Daily's monthly electronic and ambient columns, A Closer
+     * Listen, Igloo and Headphone Commute's reviews (records); Inverted Audio's and Headphone Commute's premieres
+     * (club tracks). Apart from the critics' picks, so those aren't made all ambient. The newest first.
+     */
+    fun electronic(): List<Pick> = listOf({ bandcampColumn("best-electronic") }, { bandcampColumn("best-ambient") }, ::closerListen, ::igloo, ::headphone, ::inverted)
+        .flatMap { f -> runCatching { f() }.getOrDefault(emptyList()) }
+        .filter { it.title.isNotBlank() && it.artist.isNotBlank() }
+        .sortedByDescending { it.at }
+
+    /**
+     * A Bandcamp Daily column's newest month: each record its heading, the artist and the record's own page (so its
+     * cover is the page's).
+     */
+    private fun bandcampColumn(slug: String): List<Pick> {
+        val post = Regex("""href="(/$slug/[^"]+)"""").find(get("https://daily.bandcamp.com/$slug"))?.groupValues?.get(1) ?: return emptyList()
+        val link = "https://daily.bandcamp.com$post"
+        val page = get(link)
+        val at = Regex(""""datePublished"\s*:\s*"([^"]+)"""").find(page)?.groupValues?.get(1)
+            ?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() } ?: (System.currentTimeMillis() - 14L * 86_400_000)
+        // each record a heading: the artist, then its link with its name ("<h3>claire rousay & Martyna Basta<br><a
+        // href=...><em>hotel room</em></a></h3>"; the player beside it names the label's page, not the artist)
+        val records = Regex("""<h3>\s*([^<]+?)<br\s*/?>\s*<a href="([^"]+)"[^>]*>(.*?)</a>\s*</h3>""", RegexOption.DOT_MATCHES_ALL).findAll(page).map { m ->
+            Pick(true, plain(m.groupValues[3]), plain(m.groupValues[1]), "bandcamp daily", "", m.groupValues[2], 0, null) to m.range.first
+        }
+        // a track: the artist, then its name in quotes ("<h3>Yazmin Lacey<a href=...>“Sweetest Season (Karen Nyame KG Remix)”</a>")
+        val tracks = Regex("""<h3>\s*([^<]+?)\s*<a href="([^"]+)"[^>]*>\s*[“"]([^”“"<]+)[”“"]""").findAll(page).map { m ->
+            Pick(false, plain(m.groupValues[3]), plain(m.groupValues[1]), "bandcamp daily", "", m.groupValues[2], 0, null) to m.range.first
+        }
+        // in the column's order
+        return (records + tracks).sortedBy { it.second }.mapIndexed { n, (p, _) -> p.copy(at = at - 60_000L * n) }.filter { it.artist.isNotBlank() }.toList()
+    }
+
+    /** A Closer Listen, ambient to modern composition, a review a day: "Carmen Villain ~ Memoria". */
+    private fun closerListen() = items("https://acloserlisten.com/feed/").mapNotNull { i ->
+        val (a, t) = i.title.split(" ~ ").takeIf { it.size == 2 } ?: return@mapNotNull null
+        Pick(true, t.trim(), a.trim(), "a closer listen", i.text, i.link, i.at, null)
+    }
+
+    /** Igloo's reviews: "Vigilant :: Thread of Memories (Glacial Movements)", the label left off; its splits ("[2View]") passed over. */
+    private fun igloo() = items("https://igloomag.com/feed").filter { "Reviews" in it.tags && "[2View]" !in it.title }.mapNotNull { i ->
+        val (a, t) = i.title.split(" :: ").takeIf { it.size == 2 } ?: return@mapNotNull null
+        Pick(true, t.replace(Regex("\\s*\\([^()]*\\)\\s*$"), "").trim(), a.trim(), "igloo", i.text, i.link, i.at, null)
+    }
+
+    /** Headphone Commute: its reviews of records ("Benoît Pioulard – Stanza IV") and its track premieres. */
+    private fun headphone() = items("https://headphonecommute.com/feed/").mapNotNull { i ->
+        val record = i.tags.any { it in setOf("Albums", "EPs", "Reviews") }
+        val song = "Track Premiere" in i.tags
+        if (!record && !song) return@mapNotNull null
+        val (a, t) = i.title.split(" – ").takeIf { it.size == 2 } ?: return@mapNotNull null
+        Pick(record, t.trim(), a.trim(), "headphone commute", i.text, i.link, i.at, null)
+    }
+
+    /** Inverted Audio's premieres, house and techno and the edges of both: "Premiere: Masaka Masaka – Say". */
+    private fun inverted() = items("https://inverted-audio.com/feed/").filter { it.title.startsWith("Premiere:") }.mapNotNull { i ->
+        val (a, t) = i.title.removePrefix("Premiere:").split(" – ").takeIf { it.size == 2 } ?: return@mapNotNull null
+        Pick(false, t.trim(), a.trim(), "inverted audio", i.text, i.link, i.at, null)
+    }
+
     // ---- out this friday ----
 
     /** A record out this week: who, what, its label and genres, where it's heard (Bandcamp, Apple Music), the thread's mark. */

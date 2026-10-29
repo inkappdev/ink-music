@@ -74,7 +74,8 @@ fun ExplorePage(open: (Page) -> Unit) {
         }
     }
     val moods by produceState<List<InnerTube.Mood>?>(Moods.kept()) { value = Moods.read() ?: value }
-    LaunchedEffect(Unit) { Picks.start(); Picks.startFriday() }
+    LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic() }
+    val electronic by Picks.electronic.collectAsState()
     val friday by Picks.friday.collectAsState()
     // what's on the air, asked again each minute while explore is up
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
@@ -103,6 +104,7 @@ fun ExplorePage(open: (Page) -> Unit) {
                 }
             }
             friday?.let { w -> item(key = "friday") { OutThisFriday(w, open) } }
+            if (electronic.isNotEmpty()) item(key = "electronic") { Electronic(electronic, open, wide) }
             chart.orEmpty().takeIf { it.isNotEmpty() }?.let { c -> item(key = "artist") { ArtistOfTheWeek(c, open) } }
             item(key = "songs") {
                 // the songs the critics picked, beside the stations' chart: side by side wide, one above the other narrow
@@ -257,6 +259,48 @@ private fun OutThisFriday(w: Curation.Week, open: (Page) -> Unit) {
                     Box(Modifier.width(160.dp)) { PickTile(remember(r, art) { Picks.shown(r, art) }, open) }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Electronic, picked by its own writers: their records in turn (Bandcamp Daily's columns, A Closer Listen, Igloo,
+ * Headphone Commute), and the club tracks premiered (Inverted Audio's, Headphone Commute's) beside them.
+ */
+@Composable
+private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boolean) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var said by remember { mutableStateOf<String?>(null) }
+    val records = remember(all) { Curation.fair(all.filter { it.record }) { it.from }.take(24) }
+    val tracks = remember(all) { all.filter { !it.record }.take(8) }
+    Column {
+        Section("ELECTRONIC", said ?: "picked by bandcamp daily, a closer listen, igloo and headphone commute")
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            items(records, key = { it.from + it.artist + it.title }) { p ->
+                val art by produceState<String?>(null, p) { value = Picks.art(p.title, p.artist, p.link, true) }
+                Box(Modifier.width(170.dp)) { PickTile(remember(p, art) { Picks.Shown(p.copy(art = art), art, listOf(p.from)) }, open) }
+            }
+        }
+        if (tracks.isNotEmpty()) {
+            Spacer(Modifier.height(26.dp))
+            Section("CLUB TRACKS", "premiered by inverted audio and headphone commute") {
+                Word("play all", pixel(14.sp), touch = 8.dp) {
+                    scope.launch { said = "finding them on youtube music"; Picks.playSongs(tracks.map { Picks.Shown(it, null, listOf(it.from)) }); said = null }
+                }
+            }
+            val rows = @Composable { l: List<Curation.Pick>, m: Modifier ->
+                Column(m) {
+                    l.forEach { p ->
+                        val art by produceState<String?>(null, p) { value = Picks.art(p.title, p.artist, p.link, false) }
+                        PickedRow(null, "", Picks.Shown(p, art, emptyList()).face, p.title, p.artist, p.from) {
+                            scope.launch { Picks.song(p.title, p.artist)?.let { Player.play(listOf(it)) } ?: run { said = "${p.title.lowercase()}: not on youtube music yet" } }
+                        }
+                    }
+                }
+            }
+            if (wide) Row(horizontalArrangement = Arrangement.spacedBy(56.dp)) {
+                rows(tracks.take((tracks.size + 1) / 2), Modifier.weight(1f)); rows(tracks.drop((tracks.size + 1) / 2), Modifier.weight(1f))
+            } else rows(tracks, Modifier.fillMaxWidth())
         }
     }
 }

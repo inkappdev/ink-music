@@ -108,14 +108,28 @@ object Picks {
     private val asking = kotlinx.coroutines.sync.Semaphore(3)
 
     /** A record's cover: the thread's own (when its link is one), else its Bandcamp or Apple Music page's, else iTunes', asked as its tile comes into sight, kept. */
-    suspend fun art(r: Curation.Release): String? {
-        if (Regex("\\.(jpe?g|png)$", RegexOption.IGNORE_CASE).containsMatchIn(r.link)) return r.link
-        val k = (r.artist + "/" + r.title).lowercase()
+    suspend fun art(r: Curation.Release): String? = art(r.title, r.artist, r.link, true)
+
+    suspend fun art(title: String, artist: String, link: String, record: Boolean): String? {
+        if (Regex("\\.(jpe?g|png)$", RegexOption.IGNORE_CASE).containsMatchIn(link)) return link
+        val k = (artist + "/" + title).lowercase()
         arts[k]?.let { return it.orElse(null) }
         return asking.withPermit {
             arts[k]?.let { return@withPermit it.orElse(null) }
-            withContext(Dispatchers.IO) { Curation.coverAt(r.link) ?: Curation.itunes(r.title, r.artist, true) }.also { arts[k] = java.util.Optional.ofNullable(it) }
+            withContext(Dispatchers.IO) { Curation.coverAt(link) ?: Curation.itunes(title, artist, record) }.also { arts[k] = java.util.Optional.ofNullable(it) }
         }
+    }
+
+    // ---- electronic ----
+
+    /** Electronic's own writers' picks (Curation.electronic): records, and club tracks; read with the rest. */
+    val electronic = MutableStateFlow<List<Curation.Pick>>(emptyList())
+    @Volatile private var electronicAt = 0L
+
+    fun startElectronic() {
+        if (System.currentTimeMillis() - electronicAt < 12 * 3_600_000L) return
+        electronicAt = System.currentTimeMillis()
+        scope.launch { Curation.electronic().takeIf { it.isNotEmpty() }?.let { electronic.value = it } }
     }
 
     /** A week's record as a pick (its genres where a critic's name would be), to show and find as picks are. */
