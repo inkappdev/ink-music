@@ -3,7 +3,9 @@ package app.ink.music
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -33,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -72,11 +75,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 
 fun main() {
+    System.setProperty("apple.laf.useScreenMenuBar", "true")
     Library.start()
     Server.start()
     Sorts.start()
@@ -104,6 +109,8 @@ fun main() {
                 window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
                 window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
             }
+            // the menus in the Mac's own bar along the top of the screen (elsewhere, the keys alone)
+            if (Home.mac) Menus()
             App()
         }
     }
@@ -123,14 +130,76 @@ sealed interface Page {
     data class List(val id: String, val name: String) : Page
 }
 
+/** Where you are: the place on the rail, and the pages over it (the menus and keys move them too). */
+object Nav {
+    val pages = androidx.compose.runtime.mutableStateListOf<Page>()
+    var place by mutableStateOf("listen")
+
+    /** A page on top (not twice over itself). */
+    fun open(p: Page) { if (pages.lastOrNull() != p) pages += p }
+    fun go(to: String) { place = to; pages.clear() }
+    fun back() { if (pages.isEmpty()) return; if (pages.last() == Page.Playing) Win.full(false); pages.removeLast() }
+    fun find() { open(Page.Find); Finding.asked.value++ }
+    /** The player over the window; `full`, the whole screen. */
+    fun player(full: Boolean = false) { if (full) Win.full(true); open(Page.Playing) }
+}
+
+/**
+ * The Mac's menu bar: play (the song's controls, volume, lyrics, up next, play on), go (the places, ⌘1 to ⌘7, find,
+ * settings, back) and view (the player, the whole screen, the now column tucked). The space bar stays the window's
+ * own (a menu's would take it from find's typing).
+ */
+@Composable
+private fun androidx.compose.ui.window.FrameWindowScope.Menus() {
+    val now by Player.now.collectAsState()
+    val shuffle by Player.shuffle.collectAsState()
+    val repeat by Player.repeat.collectAsState()
+    val lyrics by Lyrics.on.collectAsState()
+    val muted by Player.muted.collectAsState()
+    val tucked by Tuck.on.collectAsState()
+    fun cmd(k: Key, shift: Boolean = false, alt: Boolean = false) = androidx.compose.ui.input.key.KeyShortcut(k, meta = Home.mac, ctrl = !Home.mac, shift = shift, alt = alt)
+    MenuBar {
+        Menu("Play") {
+            Item(if (now?.playing == true) "Pause" else "Play", enabled = now != null) { Player.toggle() }
+            Item("Next", shortcut = cmd(Key.DirectionRight), enabled = now != null) { Player.next() }
+            Item("Back", shortcut = cmd(Key.DirectionLeft), enabled = now != null) { Player.previous() }
+            Separator()
+            CheckboxItem("Shuffle", shuffle, shortcut = cmd(Key.S)) { Player.shuffle() }
+            Item(when (repeat) { 1 -> "Repeat: All"; 2 -> "Repeat: One"; else -> "Repeat: Off" }, shortcut = cmd(Key.R)) { Player.repeat() }
+            Separator()
+            Item("Louder", shortcut = cmd(Key.DirectionUp)) { Player.volume(Player.volume.value + 5) }
+            Item("Quieter", shortcut = cmd(Key.DirectionDown)) { Player.volume(Player.volume.value - 5) }
+            CheckboxItem("Mute", muted, shortcut = cmd(Key.DirectionDown, alt = true)) { Player.mute() }
+            Separator()
+            CheckboxItem("Lyrics", lyrics, shortcut = cmd(Key.L)) { Lyrics.toggle() }
+            Item("Up Next", shortcut = cmd(Key.U)) { Nav.open(Page.Queue) }
+            Item("Play On", shortcut = cmd(Key.P)) { Nav.open(Page.PlayOn) }
+        }
+        Menu("Go") {
+            PLACES.forEachIndexed { i, p ->
+                Item(p.replaceFirstChar { it.uppercase() }, shortcut = cmd(listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven)[i])) { Nav.go(p) }
+            }
+            Separator()
+            Item("Find", shortcut = cmd(Key.F)) { Nav.find() }
+            Item("Settings", shortcut = cmd(Key.Comma)) { Nav.open(Page.Settings) }
+            Item("Back", shortcut = cmd(Key.LeftBracket)) { Nav.back() }
+        }
+        Menu("View") {
+            Item("Player", shortcut = cmd(Key.Zero), enabled = now != null) { Nav.player() }
+            Item("Player, Full Screen", shortcut = cmd(Key.F, shift = true), enabled = now != null) { Nav.player(full = true) }
+            CheckboxItem("Now Playing Beside", !tucked, shortcut = cmd(Key.Backslash)) { Tuck.set(!Tuck.on.value) }
+        }
+    }
+}
+
 /** Clear of the Mac's traffic lights (the title bar is gone, its buttons stay). */
 val TOP = if (Home.mac) 28.dp else 0.dp
 val SIDE = 32.dp
 
 @Composable
 private fun App() {
-    val pages = remember { mutableStateListOf<Page>() }
-    var place by remember { mutableStateOf("listen") }
+    val pages = Nav.pages
+    var place by Nav::place
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     Box(
@@ -139,20 +208,20 @@ private fun App() {
                 if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when {
                     k.key == Key.Spacebar -> { Player.toggle(); true }
-                    k.key == Key.DirectionRight && k.isMetaPressed -> { Player.next(); true }
-                    k.key == Key.DirectionLeft && k.isMetaPressed -> { Player.previous(); true }
                     k.key == Key.DirectionRight -> { Player.seek(Player.position.value + 10_000); true }
                     k.key == Key.DirectionLeft -> { Player.seek((Player.position.value - 10_000).coerceAtLeast(0)); true }
                     k.key == Key.DirectionUp -> { Player.volume(Player.volume.value + 5); true }
                     k.key == Key.DirectionDown -> { Player.volume(Player.volume.value - 5); true }
-                    k.key == Key.Escape && pages.isNotEmpty() -> { if (pages.last() == Page.Playing) Win.full(false); pages.removeLast(); true }
-                    k.key == Key.F && k.isMetaPressed -> { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++; true }
+                    k.key == Key.Escape && pages.isNotEmpty() -> { Nav.back(); true }
                     else -> false
                 }
             },
     ) {
       BoxWithConstraints(Modifier.fillMaxSize()) {
         val frame = frameOf(maxWidth)
+        val tucked by Tuck.on.collectAsState()
+        // find takes the now column's room too (its results in two columns), the bar along the foot meanwhile
+        val finding = pages.lastOrNull() == Page.Find
         Row(Modifier.fillMaxSize()) {
         if (frame != Frame.NARROW) Rail(place, { place = it; pages.clear() }, { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++ },
             { if (pages.lastOrNull() != Page.Settings) pages += Page.Settings })
@@ -183,13 +252,19 @@ private fun App() {
                 }
             }
             // the bar along the foot where there's no room for the now column
-            if (frame != Frame.WIDE && pages.lastOrNull() != Page.Playing) MiniPlayer(
+            if ((frame != Frame.WIDE || tucked || finding) && pages.lastOrNull() != Page.Playing) MiniPlayer(
+                if (frame == Frame.WIDE && !finding) ({ Tuck.set(false) }) else null,
                 { if (pages.lastOrNull() != Page.Queue) pages += Page.Queue },
                 { if (pages.lastOrNull() != Page.PlayOn) pages += Page.PlayOn },
                 { name -> pages += Page.Artist(name) },
             ) { if (pages.lastOrNull() != Page.Playing) pages += Page.Playing }
         }
-        if (frame == Frame.WIDE && pages.lastOrNull() != Page.Playing) NowColumn { pages += it }
+        // the now column, tucked away to the right (its arrow, or ⌘\): the bar along the foot instead
+        AnimatedVisibility(
+            frame == Frame.WIDE && !tucked && !finding && pages.lastOrNull() != Page.Playing,
+            enter = expandHorizontally(tween(Motion.ENTER, easing = Motion.expo)) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = shrinkHorizontally(tween(Motion.ENTER, easing = Motion.expo)) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { NowColumn({ Tuck.set(true) }) { pages += it } }
         }
         AnimatedVisibility(
             pages.lastOrNull() == Page.Playing,
@@ -471,6 +546,7 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                     val n = if (s.track > 0) (if (discs) "${s.disc}.${s.track}" else "${s.track}") else "${i + 1}"
                     SongRow(s, number = n, said = s.artist.takeIf { it != a.artist }?.lowercase(), open = open) { Player.play(a.songs, i) }
                 }
+                item { Around(a, albums, open) }
             }
         }
     }
@@ -481,7 +557,7 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
  * song in its colour, the cover, the song, back / play / next and the times. A click opens the player.
  */
 @Composable
-private fun MiniPlayer(onQueue: () -> Unit, onPlayOn: () -> Unit, onArtist: (String) -> Unit, onOpen: () -> Unit) {
+private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: () -> Unit, onArtist: (String) -> Unit, onOpen: () -> Unit) {
     val now by Player.now.collectAsState()
     val trouble by Player.trouble.collectAsState()
     trouble?.let {
@@ -519,6 +595,8 @@ private fun MiniPlayer(onQueue: () -> Unit, onPlayOn: () -> Unit, onArtist: (Str
             val on by Casting.on.collectAsState()
             Word("play on", pixel(14.sp, if (on != null) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onPlayOn)
             Pixel(FULL, "full screen", Ink.mid, Modifier.padding(start = 4.dp)) { Win.full(true); onOpen() }
+            // the now column, brought back out
+            onUntuck?.let { Pixel(UNTUCK, "show what's playing beside", Ink.mid, onClick = it) }
         }
     }
 }
@@ -642,3 +720,48 @@ fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolea
     }
 }
 
+
+/**
+ * Under a record's songs: more by them (your records of theirs, then YouTube Music's you don't have), and records
+ * like it (yours by the artists their fans also like, else those artists themselves). From their artist page, kept.
+ */
+@Composable
+private fun Around(a: Album, albums: List<Album>, open: (Page) -> Unit) {
+    val info by androidx.compose.runtime.produceState<ArtistInfo?>(null, a.artist) { Artists.of(a.artist, "").collect { if (it != null) value = it } }
+    val mine = remember(albums, a) { albums.filter { it.id != a.id && it.artist.equals(a.artist, ignoreCase = true) }.sortedBy { it.year } }
+    val i = info
+    val tube = remember(i, albums) { (i?.albums.orEmpty() + i?.singles.orEmpty().take(6)).filter { t -> albums.none { it.title.equals(t.title, ignoreCase = true) } && !t.title.equals(a.title, ignoreCase = true) } }
+    val like = i?.like.orEmpty()
+    val near = remember(like, albums) {
+        val names = like.map { it.name.lowercase() }.toSet()
+        albums.filter { it.artist.lowercase() in names }.shuffled(java.util.Random(a.id.hashCode().toLong())).take(12)
+    }
+    Column(Modifier.padding(top = 28.dp)) {
+        if (mine.isNotEmpty() || tube.isNotEmpty()) {
+            Label("more by them")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(mine, key = { it.id }) { r -> RecordTile(r, Modifier.width(150.dp)) { open(Page.Record(r.id)) } }
+                items(tube, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { open(Page.Tube(r)) } }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+        if (near.isNotEmpty()) {
+            Label("records like it")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(near, key = { it.id }) { r -> RecordTile(r, Modifier.width(150.dp)) { open(Page.Record(r.id)) } }
+            }
+        } else if (like.isNotEmpty()) {
+            Label("fans also like")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(like, key = { it.id.ifEmpty { it.name } }) { who ->
+                    Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = felt { open(Page.Artist(who.name, who.id)) })) {
+                        CoverOf(remember(who.face) { who.face?.let { faceSong(who.name, it) } }, who.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
+                        Spacer(Modifier.height(8.dp))
+                        UnderCover(who.name, "artist")
+                    }
+                }
+            }
+        }
+    }
+}

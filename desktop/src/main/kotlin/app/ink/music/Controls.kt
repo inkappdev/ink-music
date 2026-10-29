@@ -62,6 +62,10 @@ val SEARCH = listOf(".###...", "#...#..", "#...#..", "#...#..", ".####..", "....
 val FULL = listOf("###.###", "#.....#", "#.....#", ".......", "#.....#", "#.....#", "###.###")
 val UNFULL = listOf("#.....#", "##...##", ".......", ".......", ".......", "##...##", "#.....#")
 
+/** Tuck the now column away (out to the right), and bring it back. */
+val TUCK = listOf("#...", "##..", ".##.", "..##", ".##.", "##..", "#...")
+val UNTUCK = listOf("...#", "..##", ".##.", "##..", ".##.", "..##", "...#")
+
 /** The off things' brightness among the controls (shuffle, repeat off). */
 private val OFF get() = Ink.dim
 

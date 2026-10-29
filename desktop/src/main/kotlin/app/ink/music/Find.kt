@@ -74,66 +74,108 @@ fun FindTab(open: (Page) -> Unit) {
         value = YouTube.search(q)
     }
     val focus = remember { FocusRequester() }
-    LaunchedEffect(asked) { runCatching { focus.requestFocus() } }
-    val list = rememberLazyListState()
-    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BasicText("find > ", style = pixel(14.sp, Ink.dim))
-                // the cursor at the end of what's there
-                var field by remember { mutableStateOf(TextFieldValue(Finding.query, TextRange(Finding.query.length))) }
+    // what's typed, big, the cursor at the end of what's there (ready to type in: asked once it's laid out)
+    val field = @Composable { big: Boolean ->
+        LaunchedEffect(asked, big) { runCatching { focus.requestFocus() } }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!big) BasicText("find > ", style = pixel(14.sp, Ink.dim))
+            var value by remember { mutableStateOf(TextFieldValue(Finding.query, TextRange(Finding.query.length))) }
+            Box(Modifier.weight(1f)) {
+                if (big && value.text.isEmpty()) BasicText("FIND", style = headline(44.sp, Ink.dim))
                 BasicTextField(
-                    field, { field = it; Finding.query = it.text }, singleLine = true,
-                    textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
-                    modifier = Modifier.weight(1f).focusRequester(focus).onPreviewKeyEvent { k ->
+                    value, { value = it; Finding.query = it.text }, singleLine = true,
+                    textStyle = if (big) headline(44.sp) else pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
+                    visualTransformation = if (big) Upper else androidx.compose.ui.text.input.VisualTransformation.None,
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus).onPreviewKeyEvent { k ->
                         if (k.type == KeyEventType.KeyDown && k.key == Key.Enter && foundSongs.isNotEmpty()) { Player.play(foundSongs, 0); true } else false
                     },
                 )
             }
-            Spacer(Modifier.height(18.dp))
-            if (q.length >= 2 && tube == null) BasicText("couldn't reach youtube music", style = pixel(12.sp, Ink.mid))
-            else if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && tube?.first.isNullOrEmpty() && tube?.second.isNullOrEmpty())
-                BasicText("nothing called that", style = pixel(12.sp, Ink.mid))
         }
-        if (foundArtists.isNotEmpty()) {
-            item { Label("artists") }
-            items(foundArtists, key = { "a" + it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }
+        Spacer(Modifier.height(if (big) 8.dp else 18.dp))
+        if (q.length >= 2 && tube == null) BasicText("couldn't reach youtube music", style = pixel(12.sp, Ink.mid))
+        else if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && tube?.first.isNullOrEmpty() && tube?.second.isNullOrEmpty())
+            BasicText("nothing called that", style = pixel(12.sp, Ink.mid))
+        else if (big) BasicText(if (q.isEmpty()) "your artists, records and songs, and youtube music's; enter plays the songs found" else "enter plays your songs found",
+            style = pixel(12.sp, Ink.mid))
+    }
+    val (tubeSongs, tubeRecords) = tube ?: (emptyList<Song>() to emptyList())
+    val records = @Composable { rs: List<Album>, ts: List<TubeAlbum> ->
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            items(rs, key = { it.id }) { a -> RecordTile(a, Modifier.width(160.dp)) { open(Page.Record(a.id)) } }
+            items(ts, key = { "ta" + it.url }) { a -> TubeTile(a, Modifier.width(160.dp)) { open(Page.Tube(a)) } }
         }
-        if (foundRecords.isNotEmpty()) item {
-            Label("records")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                items(foundRecords, key = { it.id }) { a -> RecordTile(a, Modifier.width(160.dp)) { open(Page.Record(a.id)) } }
-            }
+        Spacer(Modifier.height(10.dp))
+    }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        // wide: yours in one column, YouTube Music's in the other, under the typing
+        if (maxWidth >= 900.dp) androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 6.dp)) {
+            field(true)
             Spacer(Modifier.height(10.dp))
-        }
-        // your songs, the first few; then YouTube Music's (below a whole library's worth of songs, it went unseen);
-        // then the rest of yours
-        val (first, rest) = foundSongs.take(10) to foundSongs.drop(10)
-        if (first.isNotEmpty()) {
-            item { Label("songs") }
-            itemsIndexed(first, key = { _, s -> "s" + s.id }) { i, s ->
-                SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i) }
+            Row(Modifier.fillMaxSize()) {
+                val mine = rememberLazyListState()
+                LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(mine), mine, contentPadding = PaddingValues(bottom = 32.dp)) {
+                    if (foundArtists.isNotEmpty()) {
+                        item { Label("artists") }
+                        items(foundArtists, key = { "a" + it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }
+                    }
+                    if (foundRecords.isNotEmpty()) item { Label("records"); records(foundRecords, emptyList()) }
+                    if (foundSongs.isNotEmpty()) {
+                        item { Label("songs") }
+                        itemsIndexed(foundSongs, key = { _, s -> "s" + s.id }) { i, s ->
+                            SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i) }
+                        }
+                    }
+                }
+                Spacer(Modifier.width(40.dp))
+                val theirs = rememberLazyListState()
+                LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(theirs), theirs, contentPadding = PaddingValues(bottom = 32.dp)) {
+                    if (tubeRecords.isNotEmpty()) item { Label("records on youtube music"); records(emptyList(), tubeRecords) }
+                    if (tubeSongs.isNotEmpty()) {
+                        item { Label("songs on youtube music") }
+                        itemsIndexed(tubeSongs, key = { _, s -> "t" + s.id }) { i, s -> SongRow(s, said = s.artist.lowercase()) { Player.play(tubeSongs, i) } }
+                    }
+                }
             }
-        }
-        // what YouTube Music has: its records, then its songs
-        val (tubeSongs, tubeRecords) = tube ?: (emptyList<Song>() to emptyList())
-        if (tubeSongs.isNotEmpty() || tubeRecords.isNotEmpty()) item { Label("on youtube music") }
-        if (tubeRecords.isNotEmpty()) item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                items(tubeRecords, key = { "ta" + it.url }) { a -> TubeTile(a, Modifier.width(160.dp)) { open(Page.Tube(a)) } }
-            }
-            Spacer(Modifier.height(10.dp))
-        }
-        itemsIndexed(tubeSongs, key = { _, s -> "t" + s.id }) { i, s ->
-            SongRow(s, said = s.artist.lowercase()) { Player.play(tubeSongs, i) }
-        }
-        if (rest.isNotEmpty()) {
-            item { Label("more of your songs") }
-            itemsIndexed(rest, key = { _, s -> "s" + s.id }) { i, s ->
-                SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i + first.size) }
+        } else {
+            val list = rememberLazyListState()
+            LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
+                item { field(false) }
+                if (foundArtists.isNotEmpty()) {
+                    item { Label("artists") }
+                    items(foundArtists, key = { "a" + it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }
+                }
+                if (foundRecords.isNotEmpty()) item { Label("records"); records(foundRecords, emptyList()) }
+                // your songs, the first few; then YouTube Music's (below a whole library's worth of songs, it went unseen);
+                // then the rest of yours
+                val (first, rest) = foundSongs.take(10) to foundSongs.drop(10)
+                if (first.isNotEmpty()) {
+                    item { Label("songs") }
+                    itemsIndexed(first, key = { _, s -> "s" + s.id }) { i, s ->
+                        SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i) }
+                    }
+                }
+                // what YouTube Music has: its records, then its songs
+                if (tubeSongs.isNotEmpty() || tubeRecords.isNotEmpty()) item { Label("on youtube music") }
+                if (tubeRecords.isNotEmpty()) item { records(emptyList(), tubeRecords) }
+                itemsIndexed(tubeSongs, key = { _, s -> "t" + s.id }) { i, s ->
+                    SongRow(s, said = s.artist.lowercase()) { Player.play(tubeSongs, i) }
+                }
+                if (rest.isNotEmpty()) {
+                    item { Label("more of your songs") }
+                    itemsIndexed(rest, key = { _, s -> "s" + s.id }) { i, s ->
+                        SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i + first.size) }
+                    }
+                }
             }
         }
     }
+}
+
+/** What's typed, shown in capitals (the headline's way), the text itself as typed. */
+private val Upper = androidx.compose.ui.text.input.VisualTransformation { t ->
+    androidx.compose.ui.text.input.TransformedText(androidx.compose.ui.text.AnnotatedString(t.text.uppercase().take(t.text.length).padEnd(t.text.length)),
+        androidx.compose.ui.text.input.OffsetMapping.Identity)
 }
 
 @Composable
