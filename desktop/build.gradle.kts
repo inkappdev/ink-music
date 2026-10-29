@@ -60,6 +60,8 @@ compose.desktop {
     application {
         mainClass = "app.ink.music.MainKt"
         jvmArgs += listOf("-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua")
+        // Linux: linuxWindow() sets AWT's own name and window-manager fields
+        jvmArgs += listOf("--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED")
         nativeDistributions {
             // each made on its own system (the Action's): the Mac's dmg, Windows' msi, Linux's deb and rpm
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
