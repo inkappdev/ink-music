@@ -134,7 +134,7 @@ fun main() {
             }
             // the menus in the Mac's own bar along the top of the screen (elsewhere, the keys alone)
             if (Home.mac) Menus()
-            App()
+            Sized { App() }
         }
         MiniWindow()
     }
@@ -248,6 +248,9 @@ private fun androidx.compose.ui.window.FrameWindowScope.Menus() {
             Item("Player, Full Screen", shortcut = cmd(Key.F, shift = true), enabled = now != null) { Nav.player(full = true) }
             Item("Mini Player", shortcut = cmd(Key.M, shift = true)) { Mini.open() }
             CheckboxItem("Now Playing Beside", !tucked, shortcut = cmd(Key.Backslash)) { Tuck.set(!Tuck.on.value) }
+            Separator()
+            Item("Bigger", shortcut = cmd(Key.Equals)) { Size.bigger() }
+            Item("Smaller", shortcut = cmd(Key.Minus)) { Size.smaller() }
         }
     }
 }
@@ -288,6 +291,8 @@ private fun App() {
                         k.key == Key.Comma -> { Nav.open(Page.Settings); true }
                         k.key == Key.LeftBracket -> { Nav.back(); true }
                         k.key == Key.Backslash -> { Tuck.set(!Tuck.on.value); true }
+                        k.key == Key.Equals || k.key == Key.Plus || k.key == Key.NumPadAdd -> { Size.bigger(); true }
+                        k.key == Key.Minus || k.key == Key.NumPadSubtract -> { Size.smaller(); true }
                         k.key == Key.DirectionRight -> { Player.next(); true }
                         k.key == Key.DirectionLeft -> { Player.previous(); true }
                         else -> false

@@ -91,6 +91,46 @@ object Placed {
 }
 
 /**
+ * How big everything's drawn, over the desktop's own scale (Bronson, 2026-10-29, GNOME on a 4K at 125%: "far too
+ * small for the window"). The desktop's scale was right; its screen just held 3072 points across, and ink's pages are
+ * made for a window of 1440 to 1920. "fit", the first choice: the screen made about 1920 across (a Mac's, under that,
+ * is as it is); or a size chosen in settings, or by ⌘/Ctrl = and -. Kept in a file.
+ */
+object Size {
+    private val file = File(Home.dir, "size")
+    /** null is fit; else the size chosen, 1 the desktop's own. */
+    val chosen = MutableStateFlow(runCatching { file.readText().trim().toFloat() }.getOrNull())
+    val CHOICES = listOf(1f, 1.25f, 1.5f, 1.75f, 2f)
+
+    /** The size fit gives this screen. */
+    val fit: Float by lazy {
+        val across = runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds.width }.getOrNull() ?: 0
+        (Math.round(across / 1920f * 20) / 20f).coerceIn(1f, 2f)
+    }
+
+    fun of(chosen: Float?) = chosen ?: fit
+
+    fun set(to: Float?) {
+        chosen.value = to?.let { Math.round(it.coerceIn(.75f, 2.5f) * 20) / 20f }
+        runCatching { if (to == null) file.delete() else Home.write(file, chosen.value.toString()) }
+    }
+
+    fun bigger() = set(of(chosen.value) + .1f)
+    fun smaller() = set(of(chosen.value) - .1f)
+}
+
+/** The window's content at [Size]'s size. */
+@Composable
+fun Sized(content: @Composable () -> Unit) {
+    val chosen by Size.chosen.collectAsState()
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density * Size.of(chosen), d.fontScale),
+        content = content,
+    )
+}
+
+/**
  * The mini player: what's playing in a small window kept over every other (the line along its cover's top, the cover,
  * the song, back / play / next), to be dragged anywhere. The main window goes to the dock meanwhile, back with ↗.
  */
