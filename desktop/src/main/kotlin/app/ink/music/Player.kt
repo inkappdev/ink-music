@@ -94,8 +94,8 @@ object Player {
                 // a song with no gain anywhere: about where most of a library sits (the phone's, ReplayGain's -18 LUFS
                 // from today's masters), so an untagged song isn't the odd loud one out
                 "replaygain-fallback" to UNTAGGED.toString(),
-                // the Mac's media keys and Now Playing (mpv does both, asked to even as a library)
-                "media-controls" to "yes", "input-media-keys" to "yes",
+                // the Mac's media keys and Now Playing are ink's own (NowPlaying.kt): mpv's, as a library, is never told the song
+                "media-controls" to if (NowPlaying.ours) "no" else "yes", "input-media-keys" to if (NowPlaying.ours) "no" else "yes",
                 "audio-client-name" to "ink music", "title" to "ink music",
                 "ytdl" to "no", "cache" to "yes",
                 "volume" to volume.value.toString(), "volume-max" to "100",
@@ -110,6 +110,7 @@ object Player {
             null
         }
         val m = mpv ?: return
+        NowPlaying.start()
         m.observe("pause", Mpv.FLAG)
         m.observe("playlist-pos", Mpv.INT64)
         m.observe("duration", Mpv.DOUBLE)
@@ -533,6 +534,7 @@ object Player {
         position.value = ms
         if (casting) { castPos = ms; castAt = SystemClock.elapsedRealtime(); return Casting.seek(ms) }
         mpv?.command("seek", "%.3f".format(java.util.Locale.ROOT, ms / 1000.0), "absolute")
+        NowPlaying.moved()
     }
 
     fun stop() {

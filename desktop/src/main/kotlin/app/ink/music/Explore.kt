@@ -234,8 +234,16 @@ private fun OnTheAir(air: List<Curation.Aired>) {
 private fun PickTile(s: Picks.Shown, open: (Page) -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember(s) { mutableStateOf<String?>(null) }
+    // not on YouTube Music (often reviewed before it's streaming, or only on Bandcamp): a second click reads the review
+    var missing by remember(s) { mutableStateOf(false) }
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null) {
-        scope.launch { said = "finding it"; val a = Picks.record(s.pick); said = if (a == null) "not on youtube music" else null; a?.let { open(Page.Tube(it)) } }
+        if (missing && s.pick.link.isNotBlank()) browse(s.pick.link)
+        else scope.launch {
+            said = "finding it"; val a = Picks.record(s.pick)
+            missing = a == null
+            said = if (a == null) (if (s.pick.link.isNotBlank()) "not streaming yet: click to read" else "not on youtube music yet") else null
+            a?.let { open(Page.Tube(it)) }
+        }
     }) {
         CoverOf(s.face, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))

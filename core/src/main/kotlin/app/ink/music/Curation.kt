@@ -47,7 +47,7 @@ object Curation {
     private val QUOTES = "\"“”‘’'"
 
     /** Every pick from every feed, the newest first (a feed that won't answer is passed over). */
-    fun picks(): List<Pick> = listOf(::pitchforkRecords, ::pitchforkSongs, ::stereogum, ::bandcamp, ::nme, ::quietus, ::aquarium, ::gorilla)
+    fun picks(): List<Pick> = listOf(::pitchforkRecords, ::pitchforkSongs, ::stereogum, ::bandcamp, ::nme, ::quietus, ::aquarium, ::gorilla, ::npr, ::dusted)
         .flatMap { f -> runCatching { f() }.getOrDefault(emptyList()) }
         .filter { it.title.isNotBlank() && it.artist.isNotBlank() }
         .sortedByDescending { it.at }
@@ -117,18 +117,58 @@ object Curation {
     }
 
     /**
+     * NPR Music's New Music Friday: each week public radio's DJs (KCRW, Radio Milwaukee, KUTX...) and NPR's critics on
+     * the week's best records, listed in the episode's notes: "Album No. 1 - Michael Kiwanuka, 'Fudge'", then the
+     * lightning round's "- Josh Johnson, 'Animative'". Added 2026-10-29 (Bronson: the picks were Pitchfork heavy).
+     */
+    private fun npr() = items("https://feeds.npr.org/510019/podcast.xml").filter { it.title.startsWith("New Music Friday") }.take(4).flatMap { i ->
+        val notes = plain(i.raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")).replace('\u00A0', ' ').replace(Regex("\\s+"), " ")
+        // a title can hold an apostrophe ('It's a Style Sport'): it ends at the quote before the next pick, a time or the end
+        val title = "'(.+?)'(?=\\s*(?:\\(|-\\s|•|Sample|Credits|$))"
+        val top = Regex("Album No\\.?\\s*\\d+\\s*-\\s*(.+?),\\s*$title").findAll(notes).map { it.groupValues[1] to it.groupValues[2] }.toList()
+        val quick = notes.substringAfter("Lightning Round", "").let { r -> Regex("(?:-|•)\\s*(.+?),\\s*$title").findAll(r).map { it.groupValues[1] to it.groupValues[2] }.toList() }
+        // the starting five first: a little newer than the lightning round, so they lead when the week's are shown
+        (top.mapIndexed { n, (a, t) -> Pick(true, t, a.trim(), "npr music", "", i.link, i.at + 60_000L * (10 - n), null) } +
+            quick.map { (a, t) -> Pick(true, t, a.trim(), "npr music", "", i.link, i.at, null) })
+    }
+
+    /** Dusted, the independent and experimental reviews: "Imperial Teen — All Over You (Merge)", a review a day. */
+    private fun dusted() = items("https://dustedmagazine.tumblr.com/rss").mapNotNull { i ->
+        // its titles come escaped twice ("&amp;mdash;")
+        val m = Regex("^(.+?)\\s+[—–]\\s+(.+?)(?:\\s+\\(([^()]*)\\))?$").find(plain(i.title)) ?: return@mapNotNull null
+        Pick(true, m.groupValues[2], m.groupValues[1], "dusted", i.text, i.link, i.at, null)
+    }
+
+    /**
+     * Picks shown fairly: the publications taking turns, each one's newest first, so one that reviews five records a day
+     * (Pitchfork) doesn't fill the shelf; `from` is a pick's publication.
+     */
+    fun <T> fair(items: List<T>, from: (T) -> String): List<T> {
+        val each = items.groupBy(from).values.toList()
+        return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { n -> each.mapNotNull { it.getOrNull(n) } }
+    }
+
+    /**
      * The record of the day: one picked by people, from the last fortnight, the same all day; one more than one critic
      * named first. Null with none.
      */
-    fun recordOfTheDay(picks: List<Pick>, day: LocalDate = LocalDate.now()): Pick? {
+    fun recordOfTheDay(picks: List<Pick>, day: LocalDate = LocalDate.now()): Pick? = recordsOfTheDay(picks, day).firstOrNull()
+
+    /**
+     * The day's record and the ones to fall back on, in turn: the most named of the last two weeks (today's turn through
+     * them first), then the rest of the fortnight's by how many named them, the newest first. The apps show the first
+     * that YouTube Music has (a record's often reviewed before it's on streaming, or sold only on Bandcamp: Josh
+     * Johnson's Animative, 2026-10-29).
+     */
+    fun recordsOfTheDay(picks: List<Pick>, day: LocalDate = LocalDate.now()): List<Pick> {
         val since = System.currentTimeMillis() - 14L * 86_400_000
         val records = picks.filter { it.record && it.at >= since }.ifEmpty { picks.filter { it.record } }
-        if (records.isEmpty()) return null
-        val named = records.groupBy { key(it) }.values.sortedByDescending { it.size }
+        if (records.isEmpty()) return emptyList()
+        val named = records.groupBy { key(it) }.values.sortedWith(compareByDescending<List<Pick>> { it.size }.thenByDescending { g -> g.maxOf { it.at } })
         val best = named.filter { it.size == named.first().size }
-        val pick = best[(day.toEpochDay() % best.size).toInt()]
-        // the first who picked it, with what was said (the line said, where any did)
-        return pick.firstOrNull { it.said.isNotBlank() } ?: pick.first()
+        val turn = (day.toEpochDay() % best.size).toInt()
+        // the first who picked each, with what was said (the line said, where any did)
+        return (best.drop(turn) + best.take(turn) + named.drop(best.size)).map { g -> g.firstOrNull { it.said.isNotBlank() } ?: g.first() }
     }
 
     /** Who else named the same record ("pitchfork, nme"). */
@@ -209,9 +249,15 @@ object Curation {
         .replace("&amp;", "&").replace("&#8217;", "’").replace("&#8216;", "‘").replace("&#8220;", "“").replace("&#8221;", "”")
         .replace("&#8211;", "–").replace("&#8212;", "—").replace("&#038;", "&").replace("&quot;", "\"").replace("&#039;", "'").replace("&#39;", "'")
         .replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ").replace(Regex("&#(\\d+);")) { it.groupValues[1].toInt().toChar().toString() }
+        // the named ones (Dusted's "&mdash;")
+        .replace(Regex("&([a-z]+);")) { NAMED[it.groupValues[1]] ?: it.value }
         // a feed that escaped its tags ("&lt;i&gt;"), read: the tags it then shows, gone too
         .replace(Regex("<[^>]+>"), "")
         .replace(Regex("\\s+"), " ").trim()
+
+    private val NAMED = mapOf("mdash" to "—", "ndash" to "–", "rsquo" to "’", "lsquo" to "‘", "rdquo" to "”", "ldquo" to "“", "hellip" to "…",
+        "eacute" to "é", "egrave" to "è", "aacute" to "á", "iacute" to "í", "oacute" to "ó", "uacute" to "ú", "ntilde" to "ñ", "ouml" to "ö",
+        "uuml" to "ü", "auml" to "ä", "ccedil" to "ç", "apos" to "'", "amp" to "&")
 
     /** A blurb's first sentence (what's said, short). */
     private fun sentence(s: String): String {
