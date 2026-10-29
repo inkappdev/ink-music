@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withPermit
 import org.jaudiotagger.audio.AudioFileIO
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
@@ -45,6 +46,15 @@ object Covers {
         kept.get(song.albumId)?.takeIf { it.image.width >= px * 9 / 10 || song.albumId in whole }?.let { return it }
         if (song.albumId in none) return null
         missed[song.albumId]?.let { if (System.currentTimeMillis() - it < 60_000) return kept.get(song.albumId) }
+        // the server's in turn, a few at a time, waited for in a way a tile scrolled away can leave: what's on screen
+        // isn't stuck behind every record scrolled past (the server turns a crowd away: Server.cover)
+        if (song.server && song.art != null && !onDisk(song.art, px)) return asking.withPermit { fetchOf(song, px) }
+        return fetchOf(song, px)
+    }
+
+    private val asking = kotlinx.coroutines.sync.Semaphore(4)
+
+    private suspend fun fetchOf(song: Song, px: Int): Cover? {
         return withContext(Dispatchers.IO) {
             val bytes = try { remote(song, px) } catch (e: Server.Busy) {
                 missed[song.albumId] = System.currentTimeMillis(); return@withContext kept.get(song.albumId)
@@ -136,6 +146,7 @@ object Covers {
         val key = java.security.MessageDigest.getInstance("SHA-1").digest("$art|$px".toByteArray()).joinToString("") { "%02x".format(it) }
         return File(File(Home.cache, "covers"), key)
     }
+    private fun onDisk(art: String, px: Int) = diskFile(art, px).exists()
     private fun fromDisk(art: String, px: Int): ByteArray? = diskFile(art, px).takeIf { it.exists() }?.readBytes()
     private fun toDisk(art: String, px: Int, bytes: ByteArray) = runCatching {
         val f = diskFile(art, px)
