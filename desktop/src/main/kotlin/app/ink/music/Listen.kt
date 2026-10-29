@@ -68,6 +68,7 @@ fun ListenPage(open: (Page) -> Unit) {
     // your artists' mixes: who you play most, each their best-known song and YouTube Music's radio from it
     val mixes by produceState(emptyList<Mixes.Mix>(), songs.size > 0) { Mixes.of(songs).collect { value = it } }
     val mixScope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(songs.isNotEmpty()) { Discover.start(songs) }
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
         if (first.isNotEmpty()) item {
@@ -84,6 +85,8 @@ fun ListenPage(open: (Page) -> Unit) {
             }
             Spacer(Modifier.height(30.dp))
         }
+        // made from your listening: fresh finds, deep cuts and the rest (Discover.kt)
+        item { MadeForYou() }
         if (mixes.isNotEmpty()) item {
             Label("mixes for you")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -97,6 +100,8 @@ fun ListenPage(open: (Page) -> Unit) {
             }
             Spacer(Modifier.height(26.dp))
         }
+        item { BecauseYouLoved(open) }
+        item { NewToYou(open) }
         records("lately", lately, open)
         records("forgotten favorites", forgotten, open)
         records("new on your server", newest, open)

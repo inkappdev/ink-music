@@ -55,6 +55,18 @@ object Pipe {
     fun videoId(url: String) = Regex("[?&]v=([^&]+)").find(url)?.groupValues?.get(1) ?: url.substringAfterLast('/')
 
     /**
+     * Whether a song found is the one asked for: its first artist the same (letters only, either holding the other:
+     * "Boy Romeo" and "boy romeo, x") and its title too, a version in brackets aside. A search's first answer alone
+     * was taken before, and a song's radio ran from someone else's song of that name.
+     */
+    fun same(foundTitle: String, foundArtist: String, title: String, artist: String): Boolean {
+        fun plain(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
+        val a = plain(artist.substringBefore(",")); val fa = plain(foundArtist.substringBefore(","))
+        val t = plain(title); val ft = plain(foundTitle)
+        return a.isNotEmpty() && fa.isNotEmpty() && (fa.contains(a) || a.contains(fa)) && t.isNotEmpty() && (ft.contains(t) || t.contains(ft))
+    }
+
+    /**
      * A song's words as a person would say them. A song's own upload ("X - Topic") is already
      * clean; a video's ("Shakira, Burna Boy - Dai Dai (Official Video)", by "Shakira and 2 more")
      * loses its "Official Video", its "| ..." tail, and gives up the artists it starts with.
