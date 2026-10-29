@@ -170,9 +170,13 @@ class Main : ComponentActivity() {
         Colours.start(this)
         Playback.connect(this)
         Order.opened()
+        // a paired computer: in step now, and every minute while open
+        SyncPhone.start(this)
+        SyncPhone.open()
     }
 
     override fun onStop() {
+        SyncPhone.closed()
         Playback.release()
         Order.left()
         super.onStop()

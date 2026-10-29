@@ -1,5 +1,6 @@
 package app.ink.music
 
+import androidx.compose.ui.Alignment
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.animateColorAsState
@@ -172,23 +173,13 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                                 Word("tell youtube", pixel(14.sp, if (tells) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { tells = true; YouTubeAccount.tell(ctx, true) }
                                 Word("don't", pixel(14.sp, if (!tells) Ink.ink else Ink.dim), touch = 8.dp) { tells = false; YouTubeAccount.tell(ctx, false) }
                             }
-                            // the Mac app signs in from here (it has no youtube sign-in page of its own): shown only while
-                            // one on this wifi is waiting for it, so no one sees it before there's a Mac app to sign in
-                            val waiting = remember { androidx.compose.runtime.mutableStateListOf<Computer>() }
-                            androidx.compose.runtime.DisposableEffect(Unit) {
-                                val stop = Computers.find(ctx) { c -> if (waiting.none { it.name == c.name }) waiting += c }
-                                onDispose { stop() }
-                            }
-                            if (waiting.isNotEmpty()) {
-                                Spacer(Modifier.height(22.dp))
-                                BasicText("${waiting.first().name.lowercase()} is waiting to sign in from this phone", style = pixel(12.sp, Ink.mid))
-                                Spacer(Modifier.height(4.dp))
-                                Word("SIGN IN A COMPUTER", headline(32.sp), touch = 10.dp) { pages.open(Page.HandOver) }
-                            }
                         }
                         Spacer(Modifier.height(40.dp))
                     }
                 }
+
+                // your computer: paired, kept in step on the wifi (Sync)
+                Column(Modifier.cascade(3)) { ComputerSetting(pages) }
 
                 // private listening: a switch, nothing kept or told while it's on
                 Column(Modifier.cascade(3)) {
@@ -544,7 +535,7 @@ private fun ListenBrainzSetting() {
         }
     } else {
         Column(Modifier.pointerInput(Unit) {
-            detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ListenBrainz.disconnect(ctx) })
+            detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ListenBrainz.disconnect(ctx); runCatching { SyncPhone.kept.signed("listenbrainz", System.currentTimeMillis()) } })
         }) {
             BasicText(a.user.lowercase(), style = pixel(13.sp))
             BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
@@ -588,7 +579,7 @@ private fun LastFmSetting() {
         }
     } else {
         Column(Modifier.pointerInput(Unit) {
-            detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); LastFm.disconnect(ctx) })
+            detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); LastFm.disconnect(ctx); runCatching { SyncPhone.kept.signed("lastfm", System.currentTimeMillis()) } })
         }) {
             BasicText(a.name.lowercase(), style = pixel(13.sp))
             BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
@@ -618,4 +609,59 @@ internal fun Field(name: String, value: String, onValue: (String) -> Unit, hint:
         Spacer(Modifier.height(8.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
     }
+}
+
+/**
+ * Your computer (Bronson, 2026-10-29: "make everything seamlessly sync"): the computers paired, each when it was last in
+ * step, sync now, forget; pairing one from here (shown, unpaired, only while one on this wifi is waiting for it, so no
+ * one sees it before there's a Mac app to pair).
+ */
+@Composable
+private fun ComputerSetting(pages: Pages) {
+    val ctx = LocalContext.current
+    SyncPhone.start(ctx)
+    val peers by SyncPhone.peers.collectAsState()
+    val said by SyncPhone.said.collectAsState()
+    val waiting = remember { androidx.compose.runtime.mutableStateListOf<Computer>() }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val stop = Computers.find(ctx) { c -> if (waiting.none { it.name == c.name }) waiting += c }
+        onDispose { stop() }
+    }
+    if (peers.isEmpty() && waiting.isEmpty()) return
+    val scope = rememberCoroutineScope()
+    BasicText("YOUR COMPUTER", style = headline(32.sp))
+    Spacer(Modifier.height(6.dp))
+    if (peers.isEmpty()) {
+        BasicText("${waiting.first().name.lowercase()} is waiting to pair with this phone: it's signed in to what this phone is, and the two keep in step " +
+            "on your wifi from then on (what you've heard, what you love, what you were playing). nothing goes through anyone else", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(10.dp))
+        Word("SYNC WITH A COMPUTER", headline(28.sp), touch = 10.dp) { pages.open(Page.HandOver) }
+    } else {
+        val tick by androidx.compose.runtime.produceState(System.currentTimeMillis()) { while (true) { kotlinx.coroutines.delay(30_000); value = System.currentTimeMillis() } }
+        peers.forEach { p ->
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    BasicText(p.name.uppercase(), style = headline(22.sp))
+                    BasicText(if (p.seen == 0L) "paired, not in step yet" else "in step " + ago(tick - p.seen), style = pixel(12.sp, Ink.mid))
+                }
+                Word("forget", pixel(13.sp, Ink.mid), touch = 8.dp) { SyncPhone.forget(p.id) }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        BasicText(said ?: "on the same wifi they keep in step by themselves, every minute this app is open", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(10.dp))
+        Row {
+            Word("sync now", pixel(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { scope.launch { SyncPhone.now() } }
+            if (waiting.isNotEmpty()) Word("pair another", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.HandOver) }
+        }
+    }
+    Spacer(Modifier.height(40.dp))
+}
+
+/** "just now", "4 minutes ago", "2 hours ago", "3 days ago". */
+fun ago(ms: Long): String = when {
+    ms < 60_000 -> "just now"
+    ms < 3_600_000 -> (ms / 60_000).let { "$it ${if (it == 1L) "minute" else "minutes"} ago" }
+    ms < 86_400_000 -> (ms / 3_600_000).let { "$it ${if (it == 1L) "hour" else "hours"} ago" }
+    else -> (ms / 86_400_000).let { "$it ${if (it == 1L) "day" else "days"} ago" }
 }

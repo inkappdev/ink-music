@@ -41,9 +41,9 @@ import java.net.URL
 data class Computer(val name: String, val host: String, val port: Int)
 
 /**
- * Sign a computer in (the Mac app; it has no YouTube sign-in page of its own): ink music on it shows a code and waits;
- * here it's found on the wifi, picked, and its code typed; this phone's sign-in goes over sealed ([Handover]), only
- * after the code matches the computer's own key, so it's that computer and no other.
+ * Pair a computer (the Mac app): ink music on it shows a code and waits; here it's found on the wifi, picked, and its
+ * code typed; the two pair ([Computers.pair]) only after the code matches the computer's own key, so it's that
+ * computer and no other, and this phone's sign-in goes with it.
  */
 @Composable
 fun HandOverPage(pages: Pages) {
@@ -63,10 +63,11 @@ fun HandOverPage(pages: Pages) {
             Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal))
                 .verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
         ) {
-            BasicText("SIGN IN A COMPUTER", style = headline(40.sp))
+            BasicText("SYNC WITH A COMPUTER", style = headline(40.sp))
             Spacer(Modifier.height(8.dp))
-            BasicText("on the computer: ink music, settings, youtube music, sign in from your phone. it shows a code; " +
-                "on the same wifi, it's listed here", style = pixel(12.sp, Ink.mid))
+            BasicText("on the computer: ink music, settings, your phone, pair your phone. it shows a code; on the same wifi, it's listed here. " +
+                "paired, it's signed in to what this phone is, and the two keep in step on your wifi: what you've heard, what you love, " +
+                "what you were playing", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(20.dp))
             val p = picked
             if (p == null) {
@@ -84,11 +85,11 @@ fun HandOverPage(pages: Pages) {
                 BasicText(p.name.uppercase(), style = headline(28.sp))
                 Spacer(Modifier.height(14.dp))
                 Field("the code on its screen", code, { code = it.filter(Char::isDigit).take(6) }, "123 456", KeyboardType.Number)
-                Word(if (sending) "SIGNING IN" else "SIGN IN", headline(40.sp, if (sending || code.length < 6) Ink.mid else Ink.ink), touch = 10.dp) {
+                Word(if (sending) "PAIRING" else "PAIR", headline(40.sp, if (sending || code.length < 6) Ink.mid else Ink.ink), touch = 10.dp) {
                     if (sending || code.length < 6) return@Word
                     sending = true; said = null
                     scope.launch {
-                        said = withContext(Dispatchers.IO) { Computers.hand(ctx, p, code) }
+                        said = withContext(Dispatchers.IO) { Computers.pair(ctx, p, code) }
                         sending = false
                     }
                 }
@@ -126,17 +127,34 @@ object Computers {
         return { runCatching { m.stopServiceDiscovery(l) } }
     }
 
-    /** The code checked against the computer's key, then this phone's sign-in sent to it, sealed. What happened, said. */
-    fun hand(ctx: Context, to: Computer, code: String): String = runCatching {
-        val auth = YouTubeAccount.handover(ctx) ?: return "sign in to youtube music on this phone first"
+    /**
+     * The code checked against the computer's key, then the two paired ([Sync]): this phone's id and name, and its
+     * YouTube Music sign-in, sent sealed; each works out the key the two keep. A computer from before pairing takes the
+     * sign-in alone. What happened, said.
+     */
+    fun pair(ctx: Context, to: Computer, code: String): String = runCatching {
         val hello = JSONObject(get(to, "/hello"))
         val theirs = Handover.decode(hello.getString("key"))
         // it's that computer: the code it shows was made from this key
         if (Handover.code(theirs).filter(Char::isDigit) != code) return "that isn't the code on ${to.name.lowercase()}: look again"
+        SyncPhone.start(ctx)
+        val auth = YouTubeAccount.handover(ctx)
         val mine = Handover.keys()
-        val (iv, data) = Handover.seal(mine, theirs, auth)
-        val answer = JSONObject(post(to, "/hand", JSONObject().put("key", Handover.encode(mine.public)).put("iv", iv).put("data", data).toString()))
-        if (answer.optBoolean("ok")) "signed in on ${to.name.lowercase()}" else "it didn't take: ${answer.optString("why").lowercase()}"
+        val hi = JSONObject().put("id", SyncPhone.kept.id()).put("name", SyncPhone.deviceName(ctx))
+        auth?.let { runCatching { hi.put("youtube", JSONObject(it)) } }
+        val (iv, data) = Handover.seal(mine, theirs, hi.toString())
+        val answer = JSONObject(post(to, "/pair", JSONObject().put("key", Handover.encode(mine.public)).put("iv", iv).put("data", data).toString()))
+        if (!answer.has("ok")) {
+            // a computer from before pairing: the sign-in, as it was
+            auth ?: return "update ink music on ${to.name.lowercase()} to pair with it"
+            val (iv2, data2) = Handover.seal(mine, theirs, auth)
+            val old = JSONObject(post(to, "/hand", JSONObject().put("key", Handover.encode(mine.public)).put("iv", iv2).put("data", data2).toString()))
+            return if (old.optBoolean("ok")) "signed in on ${to.name.lowercase()}" else "it didn't take: ${old.optString("why").lowercase()}"
+        }
+        if (!answer.optBoolean("ok")) return "it didn't take: ${answer.optString("why").lowercase()}"
+        val name = answer.optString("name").ifEmpty { to.name }
+        SyncPhone.paired(Sync.Peer(answer.optString("id"), name, Handover.kept(mine, theirs), seen = System.currentTimeMillis(), at = ""))
+        "paired with ${name.lowercase()}" + if (auth != null) ", and signed in to youtube music there" else ""
     }.getOrElse { "couldn't reach ${to.name.lowercase()}: ${it.message?.lowercase()}" }
 
     private fun get(to: Computer, path: String): String {

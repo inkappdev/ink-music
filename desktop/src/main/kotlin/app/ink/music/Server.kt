@@ -75,6 +75,8 @@ object Server {
 
     fun signOut() {
         accountFile.delete()
+        // a paired phone's sign-in isn't put back over this one
+        SyncHub.kept.signed("server", System.currentTimeMillis())
         songsFile.delete()
         _account.value = null
         count.value = 0
@@ -254,11 +256,49 @@ object Server {
         runCatching { call(a, if (on) "star" else "unstar", "id" to songId.removePrefix("n")) }
     }
 
-    fun url(a: Account, method: String, vararg params: Pair<String, Any>): String {
-        val q = (listOf("u" to a.user, "t" to a.token, "s" to a.salt, "v" to "1.16.1", "c" to "inkmusic", "f" to "json") + params)
+    fun url(a: Account, method: String, vararg params: Pair<String, Any>, client: String = "inkmusic"): String {
+        val q = (listOf("u" to a.user, "t" to a.token, "s" to a.salt, "v" to "1.16.1", "c" to client, "f" to "json") + params)
             .joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v.toString(), "UTF-8") }
         return "${a.base}/rest/$method?$q"
     }
+
+    // ---- the queue kept on the server (Sync, away from the wifi) ----
+
+    /** Who saved a queue: this app, so its own isn't offered back to it. */
+    private const val QUEUE_CLIENT = "inkmusic-desktop"
+
+    /**
+     * The queue saved on the server (Subsonic's savePlayQueue: its server songs, the one playing, where), so the other
+     * device can carry on with it away from home. Nothing when what plays isn't the server's.
+     */
+    fun saveQueue(songs: List<Song>, index: Int, position: Long) {
+        val a = _account.value ?: return
+        val current = songs.getOrNull(index)?.takeIf { it.server } ?: return
+        val from = (index - 50).coerceAtLeast(0)
+        val ids = songs.subList(from, minOf(songs.size, index + 150)).filter { it.server }
+        val params = ids.map { "id" to it.id.removePrefix("n") } + ("current" to current.id.removePrefix("n")) + ("position" to position)
+        scope.launch {
+            runCatching {
+                val c = URL(url(a, "savePlayQueue", *params.toTypedArray(), client = QUEUE_CLIENT)).openConnection() as HttpURLConnection
+                c.connectTimeout = 10_000; c.readTimeout = 15_000; c.setRequestProperty("User-Agent", AGENT)
+                try { c.inputStream.readBytes() } finally { c.disconnect() }
+            }
+        }
+    }
+
+    /** The queue the other device saved on the server: its songs (the ones here), which plays, where, when it was saved. */
+    data class Saved(val songs: List<Song>, val index: Int, val position: Long, val at: Long)
+
+    fun savedQueue(): Saved? = runCatching {
+        val a = _account.value ?: return null
+        val q = call(a, "getPlayQueue")?.optJSONObject("playQueue") ?: return null
+        if (q.optString("changedBy") == QUEUE_CLIENT) return null
+        val entries = q.optJSONArray("entry") ?: return null
+        val songs = (0 until entries.length()).mapNotNull { Library.song("n" + entries.getJSONObject(it).optString("id")) }
+        val index = songs.indexOfFirst { it.id == "n" + q.optString("current") }
+        if (songs.isEmpty() || index < 0) return null
+        Saved(songs, index, q.optLong("position"), runCatching { java.time.Instant.parse(q.optString("changed")).toEpochMilli() }.getOrDefault(0L))
+    }.getOrNull()
 
     /** The answer's `subsonic-response`, or null when what came back isn't a Subsonic answer. Throws when unreachable. */
     private fun call(a: Account, method: String, vararg params: Pair<String, Any>): JSONObject? {

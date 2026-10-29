@@ -44,6 +44,15 @@ object Handover {
         return SecretKeySpec(MessageDigest.getInstance("SHA-256").digest(raw + "ink music handover".toByteArray()), "AES")
     }
 
+    /**
+     * A key the two keep after pairing ([Sync]): the same secret the pair agreed, under its own label, base64. Both work
+     * it out; it never crosses the network.
+     */
+    fun kept(mine: KeyPair, theirs: PublicKey): String {
+        val raw = KeyAgreement.getInstance("ECDH").apply { init(mine.private); doPhase(theirs, true) }.generateSecret()
+        return Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256").digest(raw + "ink music sync".toByteArray()))
+    }
+
     /** Sealed for `theirs`: (iv, data), both base64. */
     fun seal(mine: KeyPair, theirs: PublicKey, text: String): Pair<String, String> {
         val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }

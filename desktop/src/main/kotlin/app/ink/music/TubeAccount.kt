@@ -78,8 +78,11 @@ object TubeAccount {
         Loved.putTube(emptyList())
     }
 
+    /** The cookie signed in with, if any (a sign-in handed again is taken only if it's another). */
+    fun cookie(): String? = auth?.optString("cookie")
+
     /** The sign-in handed over: tried (who are they?), kept if it works. */
-    private fun take(o: JSONObject): Who? {
+    fun take(o: JSONObject): Who? {
         val cookie = o.optString("cookie").ifEmpty { return null }
         val t = InnerTube(cookie, o.optString("visitor").ifEmpty { null }, o.optString("sync").ifEmpty { null }, o.optString("version").ifEmpty { InnerTube.VERSION })
         val w = t.who()?.let { Who(it.name, it.handle) } ?: return null
@@ -160,6 +163,19 @@ object TubeAccount {
         val body = String(input.readNBytes(length.coerceIn(0, 64 * 1024)))
         val (status, reply) = when (first.getOrNull(0) to first.getOrNull(1)) {
             "GET" to "/hello" -> 200 to JSONObject().put("key", Handover.encode(keys.public)).put("name", name).put("app", "ink music")
+            // a phone pairing ([Sync]): who it is and its sign-in, sealed; the key the two keep worked out on each side
+            "POST" to "/pair" -> runCatching {
+                val o = JSONObject(body)
+                val theirs = Handover.decode(o.getString("key"))
+                val text = runCatching { Handover.open(keys, theirs, o.getString("iv"), o.getString("data")) }
+                    .getOrElse { error("it couldn't be opened here, so it wasn't for this computer") }
+                val hello = JSONObject(text)
+                SyncHub.paired(hello.getString("id"), hello.optString("name", "your phone"), Handover.kept(keys, theirs))
+                val w = hello.optJSONObject("youtube")?.let { take(it) }
+                said.value = "paired with ${hello.optString("name", "your phone").lowercase()}" + (w?.let { ", signed in as ${it.name.lowercase()}" } ?: "")
+                scope.launch { kotlinx.coroutines.delay(500); stop() }
+                200 to JSONObject().put("ok", true).put("name", name).put("id", SyncHub.kept.id())
+            }.getOrElse { e -> said.value = "that didn't work: ${e.message?.lowercase()}"; 400 to JSONObject().put("ok", false).put("why", e.message.orEmpty()) }
             "POST" to "/hand" -> runCatching {
                 val o = JSONObject(body)
                 val text = runCatching { Handover.open(keys, Handover.decode(o.getString("key")), o.getString("iv"), o.getString("data")) }

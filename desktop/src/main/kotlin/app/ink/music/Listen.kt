@@ -79,12 +79,15 @@ fun ListenPage(open: (Page) -> Unit) {
     val friday by Picks.friday.collectAsState()
     val electronic by Picks.electronic.collectAsState()
     val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, heard, songs) { Picks.yours(heard, songs) }
+    val continued = continueOffer()
     val made by Discover.mixes.collectAsState()
     val because by Discover.because.collectAsState()
     val newTo by Discover.newToYou.collectAsState()
     // one rhythm down the page: the same room between every shelf, each with a head of its own (Bronson, 2026-10-29)
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(GAP)) {
+        // what the phone was playing, to carry on with here
+        continued?.let { o -> item(key = "continue") { ContinueHere(o) } }
         // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: that's INK's)
         if (fromYours.isNotEmpty()) item { NewFromYours(fromYours, open) }
         if (first.isNotEmpty()) item {

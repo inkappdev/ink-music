@@ -199,6 +199,8 @@ object Playback {
             stopped = c.playbackState == Player.STATE_IDLE && c.playerError == null,
             heard = heard?.takeIf { it.id == item.mediaId },   // never the song before's, told late
         )
+        // a paired computer told what plays here, and when it changed (Sync)
+        SyncPhone.heard(_now.value)
     }
 
     /** The library's song for a queue item (a queue kept before ids carried their source: a bare number is a file). */
