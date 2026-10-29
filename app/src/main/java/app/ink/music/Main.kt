@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
@@ -395,6 +396,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     // nothing on the phone or a server: no records, artists or songs to show
     val tabs = if (songs.isEmpty()) listOf("listen", "explore", "lists") else listOf("listen", "explore", "albums", "artists", "songs", "lists")
     val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
+    // the places' menu, dropped down from the place's word
+    var menu by remember { mutableStateOf(false) }
     // the tab row follows a swipe; a tab tapped goes there on ink's curve
     LaunchedEffect(pager, tabs) { snapshotFlow { pager.currentPage }.collect { tab = tabs.getOrElse(it) { "listen" } } }
     LaunchedEffect(tabs) { pager.scrollToPage(tabs.indexOf(tab).coerceAtLeast(0)) }
@@ -542,40 +545,51 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     // the tab row on black; what scrolls up toward it softens just under it
     Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
       Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(bars)) {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            // the tabs slide sideways when they're more than the row holds; find and the cog stay put
-            // (softening as they near them)
-            val slide = rememberHazeState()
-            Box(Modifier.weight(1f)) {
-                val slid = rememberScrollState()
-                // where each tab starts and ends, so the one you're on slides into view (at Android's own text size
-                // they're wider than the row: lists past its end)
-                val spans = remember { HashMap<Int, IntRange>() }
-                val chosen = tabs.indexOf(tab)
-                LaunchedEffect(chosen, slid.maxValue) {
-                    val at = spans[chosen] ?: return@LaunchedEffect
-                    val view = slid.value until slid.value + slid.viewportSize
-                    val to = when { at.first < view.first -> at.first; at.last > view.last -> at.last - slid.viewportSize + 1; else -> return@LaunchedEffect }
-                    slid.animateScrollTo(to.coerceIn(0, slid.maxValue), tween(Motion.ENTER, easing = Motion.expo))
-                }
-                Row(Modifier.hazeSource(slide).horizontalScroll(slid), verticalAlignment = Alignment.CenterVertically) {
-                    tabs.forEachIndexed { i, t ->
-                        Word(t, pixel(14.sp, if (t == tab) Ink.ink else Ink.dim), Modifier.padding(end = 12.dp)
-                            .onGloballyPositioned { c -> val x = c.positionInParent().x.toInt(); spans[i] = x until x + c.size.width }, touch = 8.dp) {
-                            scope.launch { pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
-                        }
-                    }
-                }
-                // softened only while there's more to slide to (it blurred "lists" when they all fit)
-                if (slid.maxValue > 0) Box(Modifier.matchParentSize().wrapContentWidth(Alignment.End).width(BAND).softEdgeEnd(slide))
+        // the place you're on, one big word (Bronson, 2026-10-28: the row of words got crowded at six); a tap drops
+        // every place down as big words, ink's menu (no hamburger: a word where an icon would go). Find stays put.
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu }),
+                verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.animation.AnimatedContent(tab, label = "place",
+                    transitionSpec = { androidx.compose.animation.fadeIn(tween(Motion.ENTER, easing = Motion.expo)) togetherWith androidx.compose.animation.fadeOut(tween(Motion.EXIT)) },
+                ) { t -> BasicText(t.uppercase(), style = headline(26.sp)) }
+                Spacer(Modifier.width(10.dp))
+                // the menu's chevron: down while shut, up while open
+                val turn by androidx.compose.animation.core.animateFloatAsState(if (menu) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "chevron")
+                Sprite(listOf("##...##", ".##.##.", "..###..", "...#..."), Ink.mid, 2.dp, Modifier.graphicsLayer { rotationZ = turn })
             }
-            Spacer(Modifier.width(12.dp))
-            // the cog is on the listen page, by its greeting
-            Word("find", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.Find) }
+            Word("find", pixel(14.sp, Ink.mid), touch = 8.dp) { menu = false; pages.open(Page.Find) }
         }
       }
       Box(Modifier.fillMaxWidth().height(BAND).softEdge(tabsFrost, towardBottom = false))
     }
+    // the places, dropped down under the word: big, the one you're on lit, each arriving in turn; a tap goes there (on
+    // ink's curve, as a swipe would), a tap anywhere else or back folds it away. Black, never a frosted panel.
+    BackHandler(menu) { menu = false }
+    androidx.compose.animation.AnimatedVisibility(
+        menu, modifier = Modifier.padding(top = (head - BAND).coerceAtLeast(0.dp)),
+        enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) +
+            androidx.compose.animation.fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+        exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) +
+            androidx.compose.animation.fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+    ) {
+        Column(
+            Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) { menu = false }
+                .windowInsetsPadding(sides).padding(start = 20.dp, end = 20.dp, top = 10.dp),
+        ) {
+            tabs.forEachIndexed { i, t ->
+                Word(t.uppercase(), headline(48.sp, if (t == tab) Ink.ink else Ink.mid), Modifier.arrive(i, menu), touch = 4.dp) {
+                    menu = false
+                    scope.launch { pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+            Word("settings", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size, menu), touch = 8.dp) { menu = false; pages.open(Page.Settings) }
+            Word("your year", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 1, menu), touch = 8.dp) { menu = false; pages.open(Page.Year) }
+        }
+    }
+    // a swipe to another place folds the menu away
+    LaunchedEffect(tab) { menu = false }
     // the records, with nothing open over them, follow the phone round (ink music is upright everywhere else, and
     // Android's rotation lock is kept): turned sideways they're the covers to flick through, the whole screen;
     // upright again, the grid as it was

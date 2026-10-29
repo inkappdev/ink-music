@@ -3,6 +3,7 @@ package app.ink.music
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +56,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Explore (the Mac's, here): what isn't yours yet, picked by people. The record of the day; what DJs are playing this
+ * Explore (the Mac's, here): what isn't yours yet, picked by critics and DJs. The record of the day; what DJs are playing this
  * minute; right now's moods and every mood and genre (the full build); new records and songs the critics picked; an
  * artist of the week from the indie chart; the chart, each song's move over the week.
  */
@@ -87,8 +88,8 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         }
         moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
         if (records.isNotEmpty()) item(key = "picked") {
-            Label("new records, picked by people")
-            BasicText("pitchfork, stereogum, bandcamp daily, nme, the quietus, aquarium drunkard, gorilla vs. bear; the ones more than one named first",
+            Label("new records, picked by critics")
+            BasicText("the critics' favorites lately",
                 style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp))
             Spacer(Modifier.height(10.dp))
             ShelfIndexed(records.take(30)) { _, s -> PickTile(s, pages) }
@@ -97,7 +98,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (songs.isNotEmpty()) item(key = "songs") {
             var said by remember { mutableStateOf<String?>(null) }
             Row(verticalAlignment = Alignment.Bottom) {
-                Label("songs, picked by people")
+                Label("songs, picked by critics")
                 Spacer(Modifier.weight(1f))
                 Word("play all", pixel(12.sp), Modifier.padding(end = 20.dp), touch = 8.dp) { scope.launch { said = "finding them"; Picks.playSongs(songs); said = null } }
             }
@@ -341,13 +342,23 @@ private fun MoodsAndGenres(all: List<TubeMood>, pages: Pages) {
             all.filter { !it.genre }.forEach { m -> Word(m.title.uppercase(), headline(20.sp, Ink.mid)) { Moods.open(ctx, m); pages.open(Page.Mood(m)) } }
         }
         Spacer(Modifier.height(14.dp))
+        // the genres as a row of tiles to slide through, the ones you open most first (as words they were a wall of
+        // text on a phone: Bronson, 2026-10-28)
         BasicText("genres, the ones you open most first", style = pixel(12.sp, Ink.mid))
-        Spacer(Modifier.height(6.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            all.filter { it.genre }.sortedByDescending { counts[it.title] ?: 0 }.forEach { m ->
-                Word(m.title.lowercase(), pixel(14.sp, if ((counts[m.title] ?: 0) > 0) Ink.ink else Ink.mid), touch = 4.dp) { Moods.open(ctx, m); pages.open(Page.Mood(m)) }
-            }
-        }
+    }
+    Spacer(Modifier.height(8.dp))
+    Shelf(all.filter { it.genre }.sortedByDescending { counts[it.title] ?: 0 }) { m ->
+        GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(ctx, m); pages.open(Page.Mood(m)) }
+    }
+    Spacer(Modifier.height(12.dp))
+}
+
+/** A genre as a tile: its name big in the pixel face on black in a hairline frame (as ink radio's kinds are), lit if it's yours. */
+@Composable
+private fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
+    Box(Modifier.width(120.dp).aspectRatio(1f).border(1.dp, if (yours) Ink.mid else Ink.line)
+        .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(12.dp)) {
+        BasicText(name.lowercase(), style = pixel(if (name.length > 12) 15.sp else 19.sp, if (yours) Ink.ink else Ink.mid), maxLines = 4, overflow = TextOverflow.Ellipsis)
     }
 }
 
