@@ -48,7 +48,7 @@ object Covers {
         return withContext(Dispatchers.IO) {
             val bytes = try { remote(song, px) } catch (e: Server.Busy) {
                 missed[song.albumId] = System.currentTimeMillis(); return@withContext kept.get(song.albumId)
-            } ?: if (song.server || song.tube) null else picture(File(song.path))
+            } ?: if (song.server || song.tube) null else picture(File(song.path)) ?: found(song, px)
             missed -= song.albumId
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
             if (img == null) {
@@ -123,6 +123,12 @@ object Covers {
             try { if (c.responseCode == 200) return c.inputStream.use { it.readBytes() } } finally { c.disconnect() }
         }
         return null
+    }
+
+    /** A file's record with no picture of its own (none in its tags or folder): found by name in the catalogs. */
+    private fun found(song: Song, px: Int): ByteArray? {
+        val url = FoundCovers.link(File(Home.cache, "covers"), song.album, song.albumArtist) ?: return null
+        return fromDisk(url, px) ?: fetch(url, px)?.also { toDisk(url, px, it) }
     }
 
     // the server's and YouTube's covers kept on the computer too, so the next start has them at once

@@ -45,7 +45,8 @@ object Covers {
                     if (song.station) song.art?.let { fetch(it, px) }   // the cover it gave for its song, else its sleeve
                     else if (song.server) song.art?.let { Server.cover(it, px) }
                     else if (song.tube) song.art?.let { fetch(it, px) }
-                    else ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null)
+                    // a file with no picture of its own: the record's from the catalogs (FoundCovers)
+                    else runCatching { ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null) }.getOrNull() ?: found(ctx, song, px)
                     )?.also { if (remote) { android.util.Log.d("ink-covers", "${song.title}: fetched ${System.currentTimeMillis() - t0} ms"); toDisk(ctx, song, px, it) } }
             } catch (e: Exception) { null }
             if (bmp == null) {
@@ -57,6 +58,13 @@ object Covers {
             bmp.prepareToDraw()
             Cover(bmp.asImageBitmap(), accentOf(bmp)).also { kept.put(song.albumId, it) }
         }
+    }
+
+    /** A file's record with no picture: found by name in the catalogs, kept on the phone as the network's are. */
+    private fun found(ctx: Context, song: Song, px: Int): Bitmap? {
+        val url = FoundCovers.link(java.io.File(ctx.cacheDir, "covers"), song.album, song.albumArtist) ?: return null
+        val found = song.copy(art = url)
+        return fromDisk(ctx, found, px) ?: fetch(url, px)?.also { toDisk(ctx, found, px, it) }
     }
 
     // covers from the network, as JPEGs in the cache (the system may clear it; trimmed to 150 MB, oldest first)
