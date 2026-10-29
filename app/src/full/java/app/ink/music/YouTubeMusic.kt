@@ -305,7 +305,8 @@ object YouTubeMusic {
         init()
         return runCatching {
             SearchInfo.getInfo(yt, yt.searchQHFactory.fromQuery("$artist $title", listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")).relatedItems
-                .filterIsInstance<StreamInfoItem>().firstOrNull()?.let { song(it) }
+                .filterIsInstance<StreamInfoItem>().take(8).map { song(it) }
+                .firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
         }.getOrNull()
     }
 

@@ -91,7 +91,8 @@ object YouTube {
     fun find(title: String, artist: String): Song? = runCatching {
         Pipe.init()
         SearchInfo.getInfo(yt, yt.searchQHFactory.fromQuery("$artist $title", listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")).relatedItems
-            .filterIsInstance<StreamInfoItem>().firstOrNull()?.let { song(it) }
+            .filterIsInstance<StreamInfoItem>().take(8).map { song(it) }
+                .firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
     }.getOrNull()
 
     /** A song's audio stream (blocking: the player's load hook, a speaker's ask): the best there is, or for a speaker the m4a. */

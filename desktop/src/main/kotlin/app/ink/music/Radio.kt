@@ -22,6 +22,8 @@ object Radio {
     /** A song to find more like. */
     data class Seed(val id: String, val title: String, val artist: String)
 
+    /** A sped-up, slowed, nightcore or karaoke version (radio's and the mixes' own sifting). */
+    fun odd(title: String) = versions.containsMatchIn(title)
     private val versions = Regex("""\b(sped ?up|slowed|nightcore|karaoke|8d audio|bass ?boosted|reverb)\b""", RegexOption.IGNORE_CASE)
 
     /** Songs to follow the seeds (blocking; the last song first): none already queued (ids, and title/artist keys). */
@@ -62,14 +64,14 @@ object Radio {
     }
 
     /** One seed's songs: the server's similar, else YouTube Music's radio from it. */
-    private fun related(s: Seed): List<Song> =
+    fun related(s: Seed): List<Song> =
         if (s.id.startsWith("y")) YouTube.related(s.id)
         else Server.similar(s.id, s.title, s.artist).ifEmpty {
             YouTube.find(s.title, s.artist)?.let { YouTube.related(it.id) }.orEmpty()
         }
 
     /** The same order, but no artist twice in a row (nor straight after the song before them), where it can be helped. */
-    private fun apart(songs: List<Song>, before: String): List<Song> {
+    fun apart(songs: List<Song>, before: String): List<Song> {
         fun who(a: String) = a.lowercase().substringBefore(",").trim()
         val left = songs.toMutableList()
         val out = ArrayList<Song>(songs.size)
