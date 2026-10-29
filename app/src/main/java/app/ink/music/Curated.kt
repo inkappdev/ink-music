@@ -43,7 +43,8 @@ object Picks {
         val file = File(c.cacheDir, "picks.json")
         val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
         kept?.let(::show)
-        readAt = kept?.optLong("at") ?: 1L
+        // a day kept before it was checked against YouTube Music: read again now
+        readAt = kept?.takeIf { it.optBoolean("checked") }?.optLong("at") ?: 1L
         if (System.currentTimeMillis() - readAt > 12 * 3_600_000L) scope.launch { read(file) }
     }
 
@@ -59,13 +60,18 @@ object Picks {
             kotlinx.coroutines.delay(800)
         }
         val shown = firsts.map { (p, by) -> Shown(p, p.art ?: before[Curation.key(p)] ?: found[Curation.key(p)], by) }
-        val day = Curation.recordOfTheDay(all)?.let { d -> shown.firstOrNull { Curation.key(it.pick) == Curation.key(d) }?.copy(pick = d) }
-        records.value = shown.filter { it.pick.record }.sortedWith(compareByDescending<Shown> { it.by.size }.thenByDescending { it.pick.at })
-        songs.value = shown.filter { !it.pick.record }
+        // the day's record: the first in turn that YouTube Music has, so play always plays (eight asked at most; the
+        // play build, without YouTube, the first)
+        val day = Curation.recordsOfTheDay(all).take(8).let { l -> if (YouTubeMusic.available) l.firstOrNull { record(it) != null } else l.firstOrNull() }
+            ?.let { d -> shown.firstOrNull { Curation.key(it.pick) == Curation.key(d) }?.copy(pick = d) }
+        // the records several named first, then the publications in turn (Curation.fair: no one of them fills the shelf)
+        val recs = shown.filter { it.pick.record }.sortedByDescending { it.pick.at }
+        records.value = recs.filter { it.by.size > 1 }.sortedByDescending { it.by.size } + Curation.fair(recs.filter { it.by.size <= 1 }) { it.pick.from }
+        songs.value = Curation.fair(shown.filter { !it.pick.record }.sortedByDescending { it.pick.at }) { it.pick.from }
         today.value = day
         readAt = System.currentTimeMillis()
         runCatching {
-            file.writeText(JSONObject().put("at", readAt).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
+            file.writeText(JSONObject().put("at", readAt).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
                 .put("songs", JSONArray(songs.value.map(::json))).toString())
         }
     }
