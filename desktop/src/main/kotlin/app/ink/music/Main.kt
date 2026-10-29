@@ -92,6 +92,7 @@ fun main() {
     Listened.read()
     Loved.start()
     TubeAccount.start()
+    Follows.start()
     Colours.start()
     Player.start()
     application {
@@ -160,6 +161,17 @@ object Nav {
         pages.removeLast()
     }
     fun find() { open(Page.Find); Finding.asked.value++ }
+
+    /**
+     * The down arrow: the whole browsing trail closed at once, back to the place it began from (the phone's: an artist,
+     * then fans also like, then another, was a close each). Esc and ⌘[ still go back one at a time ([back]).
+     */
+    fun close() {
+        if (Page.Find in pages) { Finding.keep(Finding.query); Finding.query = "" }
+        // the player stays if it's what's open under the trail
+        val keep = pages.takeWhile { it == Page.Playing }
+        pages.clear(); pages.addAll(keep)
+    }
     /** The player over the window; `full`, the whole screen. */
     fun player(full: Boolean = false) { if (full) Win.full(true); open(Page.Playing) }
 }
@@ -197,7 +209,7 @@ private fun androidx.compose.ui.window.FrameWindowScope.Menus() {
         }
         Menu("Go") {
             PLACES.forEachIndexed { i, p ->
-                Item(p.replaceFirstChar { it.uppercase() }, shortcut = cmd(listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven)[i])) { Nav.go(p) }
+                Item(p.replaceFirstChar { it.uppercase() }, shortcut = cmd(listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight)[i])) { Nav.go(p) }
             }
             Separator()
             Item("Find", shortcut = cmd(Key.F)) { Nav.find() }
@@ -262,17 +274,17 @@ private fun App() {
                 ) { page ->
                     when (page) {
                         null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
-                        is Page.Record -> RecordPage(page.id, { pages += it }) { pages.removeLast() }
-                        is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { pages.removeLast() }
-                        Page.Find -> Column(Modifier.fillMaxSize()) { Close { Nav.back() }; FindTab { pages += it } }
+                        is Page.Record -> RecordPage(page.id, { pages += it }) { Nav.close() }
+                        is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { Nav.close() }
+                        Page.Find -> Column(Modifier.fillMaxSize()) { Close { Nav.close() }; FindTab { pages += it } }
                         Page.Playing -> {}
-                        Page.Settings -> SettingsPage { pages.removeLast() }
-                        Page.Year -> YearPage({ pages += it }) { pages.removeLast() }
-                        is Page.Mood -> MoodPage(page.mood, { pages += it }) { pages.removeLast() }
-                        Page.Queue -> QueuePage({ pages += it }) { pages.removeLast() }
-                        Page.PlayOn -> PlayOnPage { pages.removeLast() }
-                        is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { pages.removeLast() }
-                        is Page.List -> ListPage(page.id, page.name, { pages += it }) { pages.removeLast() }
+                        Page.Settings -> SettingsPage { Nav.close() }
+                        Page.Year -> YearPage({ pages += it }) { Nav.close() }
+                        is Page.Mood -> MoodPage(page.mood, { pages += it }) { Nav.close() }
+                        Page.Queue -> QueuePage({ pages += it }) { Nav.close() }
+                        Page.PlayOn -> PlayOnPage { Nav.close() }
+                        is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { Nav.close() }
+                        is Page.List -> ListPage(page.id, page.name, { pages += it }) { Nav.close() }
                     }
                 }
             }
@@ -372,6 +384,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
                 key(ac, seed) { Artists(artists, open) }
             }
             "radio" -> RadioTab()
+            "ink" -> InkPage(open)
             "listen" -> ListenPage(open)
             "explore" -> ExplorePage(open)
             "lists" -> ListsPage(open)
@@ -719,7 +732,7 @@ fun rememberLyrics(song: Song): List<Line>? {
 /** The words: the line before dim, the sung one big (lit word by word), the next three dim; a new line rises in. */
 @Composable
 fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolean = false) {
-    val k = if (small) .62f else 1f
+    val k = if (small) .78f else 1f
     val drift = with(androidx.compose.ui.platform.LocalDensity.current) { Motion.drift.roundToPx() }
     // the lines to come run out of room at the foot: feathered, never cut
     Box(modifier.clipToBounds().feather({ 0f }, { 1f })) {
