@@ -11,8 +11,9 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-// the phone's version for now (a Mac package's must start above 0)
-version = "1.4.9"
+// the phone's version, one for both (app/build.gradle.kts' versionName): what the computer's updater compares, and the
+// packages' own (a Mac's must start above 0, Windows' msi upgrades by it)
+version = Regex("versionName = \"([^\"]+)\"").find(rootProject.file("app/build.gradle.kts").readText())!!.groupValues[1]
 
 kotlin { jvmToolchain(21) }
 
@@ -26,10 +27,11 @@ val writeKeys by tasks.registering {
     val from = rootProject.file("keystore.properties")
     val out = keys.map { it.file("keys.properties") }
     val version = project.version.toString()
-    // which build this is (the Action's commit, else "here"), said at the foot of settings: every build is 1.4.9 to macOS
+    // which build this is (the Action's commit, else "here"), said at the foot of settings: builds of one version look alike to macOS
     val build = (System.getenv("GITHUB_SHA")?.take(7) ?: "here") + " " + LocalDate.now()
     inputs.property("env", listOf(System.getenv("LASTFM_KEY").orEmpty(), System.getenv("LASTFM_SECRET").orEmpty()).joinToString())
     inputs.property("build", build)
+    inputs.property("version", version)
     if (from.exists()) inputs.file(from)
     outputs.file(out)
     doLast {
