@@ -22,6 +22,17 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.lazy.items
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
@@ -32,78 +43,301 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 
 /**
- * Explore: what isn't yours yet. On the left the week on indie radio (the phone's indie chart: what KEXP, KCRW and
- * WXPN played most), drawn as a chart, the place big; on the right YouTube Music's new records, then its home's
- * shelves (as it shows them to anyone signed out). Side by side in a wide window, one above the other in a narrow one.
+ * Explore, what isn't yours yet, picked by people (Bronson, 2026-10-28: "as cool and curated as possible, even signed
+ * out"): the record of the day; what DJs are playing this minute; right now's moods and every mood and genre;
+ * new records the critics picked; an artist of the week from the indie chart; the songs the critics picked beside the
+ * chart, each song's move over the week; YouTube Music's own new records and shelves only as you, signed in (signed
+ * out they're mostly made by AI).
  */
 @Composable
 fun ExplorePage(open: (Page) -> Unit) {
     val chart by produceState<List<IndieChart.Entry>?>(null) { value = IndieChart.week() }
-    val fresh by produceState<List<TubeAlbum>?>(null) {
-        value = withContext(Dispatchers.IO) { runCatching { InnerTube().items("FEmusic_new_releases_albums", 24).mapNotNull(::tubeAlbum) }.getOrDefault(emptyList()) }
+    val before = remember(chart) { IndieChart.before() }
+    val who by TubeAccount.who.collectAsState()
+    val fresh by produceState<List<TubeAlbum>?>(null, who) {
+        val t = TubeAccount.tube() ?: run { value = emptyList(); return@produceState }
+        value = withContext(Dispatchers.IO) { runCatching { t.items("FEmusic_new_releases_albums", 24).mapNotNull(::tubeAlbum) }.getOrDefault(emptyList()) }
     }
-    val shelves by produceState<List<Pair<String, List<TubeAlbum>>>?>(null) {
+    val shelves by produceState<List<Pair<String, List<TubeAlbum>>>?>(null, who) {
+        val t = TubeAccount.tube() ?: run { value = emptyList(); return@produceState }
         value = withContext(Dispatchers.IO) {
-            runCatching { InnerTube().home(12).map { it.title to it.items.mapNotNull(::tubeAlbum) }.filter { it.first.isNotEmpty() && it.second.size >= 3 } }
+            runCatching { t.home(12).map { it.title to it.items.mapNotNull(::tubeAlbum) }.filter { it.first.isNotEmpty() && it.second.size >= 3 } }
                 .getOrDefault(emptyList())
         }
     }
     val moods by produceState<List<InnerTube.Mood>?>(Moods.kept()) { value = Moods.read() ?: value }
+    LaunchedEffect(Unit) { Picks.start() }
+    // what's on the air, asked again each minute while explore is up
+    LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
+    val records by Picks.records.collectAsState()
+    val songs by Picks.songs.collectAsState()
+    val today by Picks.today.collectAsState()
+    val air by Picks.onAir.collectAsState()
+    val list = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val across = ((maxWidth - SIDE * 2) / 170.dp).toInt().coerceAtLeast(2)
         val wide = maxWidth >= 860.dp
-        val chartList = @Composable { m: Modifier ->
-            val list = rememberLazyListState()
-            val c = chart
-            LazyColumn(m.feather(list), list, contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp)) {
-                item {
-                    BasicText("THE INDIE CHART", style = headline(30.sp))
-                    BasicText("this week on kexp, kcrw and wxpn, the songs they played most", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    if (c == null) BasicText("counting this week's plays", style = pixel(12.sp, Ink.mid))
+        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 40.dp)) {
+            today?.let { d -> item(key = "today") { RecordOfTheDay(d, open) } }
+            if (air.isNotEmpty()) item(key = "air") { OnTheAir(air) }
+            item(key = "moods") { MoodsAndGenres(moods, open) }
+            if (records.isNotEmpty()) {
+                item(key = "picked") {
+                    Column(Modifier.padding(top = 8.dp, bottom = 12.dp)) {
+                        BasicText("NEW RECORDS, PICKED BY PEOPLE", style = headline(30.sp))
+                        BasicText("what pitchfork, stereogum, bandcamp daily, nme, the quietus, aquarium drunkard and gorilla vs. bear chose lately; " +
+                            "the ones more than one named first", style = pixel(12.sp, Ink.mid))
+                    }
                 }
-                val songs = c.orEmpty().mapNotNull { it.song }
-                itemsIndexed(c.orEmpty(), key = { i, e -> "$i" + e.title }) { i, e ->
-                    val s = e.song ?: return@itemsIndexed
-                    // a chart: the place big beside each
+                records.take(across * 4).chunked(across).forEachIndexed { r, row ->
+                    item(key = "pr$r") { TileRow(row, across) { s -> PickTile(s, open) } }
+                }
+            }
+            chart.orEmpty().takeIf { it.isNotEmpty() }?.let { c -> item(key = "artist") { ArtistOfTheWeek(c, open) } }
+            item(key = "songs") {
+                // the songs the critics picked, beside the stations' chart: side by side wide, one above the other narrow
+                val picked = @Composable { m: Modifier -> PickedSongs(songs, m) }
+                val charted = @Composable { m: Modifier -> Chart(chart, before, open, m) }
+                if (wide) Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+                    charted(Modifier.weight(1f)); picked(Modifier.weight(1f))
+                } else Column(Modifier.padding(top = 18.dp)) { charted(Modifier.fillMaxWidth()); Spacer(Modifier.height(24.dp)); picked(Modifier.fillMaxWidth()) }
+            }
+            // yours from YouTube Music, signed in
+            if (!fresh.isNullOrEmpty()) {
+                item(key = "fresh") {
+                    Column(Modifier.padding(top = 30.dp, bottom = 12.dp)) {
+                        BasicText("NEW RECORDS ON YOUTUBE MUSIC", style = headline(30.sp))
+                        BasicText("this week, for you", style = pixel(12.sp, Ink.mid))
+                    }
+                }
+                fresh.orEmpty().take(across * 2).chunked(across).forEachIndexed { r, row ->
+                    item(key = "f$r") { TileRow(row, across) { a -> TubeTile(a, Modifier.fillMaxWidth()) { open(Page.Tube(a)) } } }
+                }
+            }
+            shelves.orEmpty().forEach { (title, items) ->
+                item(key = "s$title") {
+                    Label(title.lowercase())
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                        items(items.take(16), key = { it.url }) { a -> TubeTile(a, Modifier.width(160.dp)) { open(Page.Tube(a)) } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A row of tiles, `across` to it, the last row's room kept so tiles are one width. */
+@Composable
+private fun <T> TileRow(row: List<T>, across: Int, tile: @Composable (T) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        row.forEach { Box(Modifier.weight(1f)) { tile(it) } }
+        repeat(across - row.size) { Spacer(Modifier.weight(1f)) }
+    }
+}
+
+/** The record of the day: its cover big, its name, what was said of it and by whom; play, or its page. */
+@Composable
+private fun RecordOfTheDay(d: Picks.Shown, open: (Page) -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var said by remember { mutableStateOf<String?>(null) }
+    fun go(play: Boolean) = scope.launch {
+        said = "finding it on youtube music"
+        val a = Picks.record(d.pick)
+        if (a == null) { said = "not on youtube music"; return@launch }
+        said = null
+        if (play) Player.play(YouTube.album(a)) else open(Page.Tube(a))
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = 30.dp)) {
+        val side = minOf(maxWidth * .42f, 380.dp)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { go(false) }) {
+                CoverOf(d.face, d.pick.title, Modifier.fillMaxSize(), px = 800)
+            }
+            Spacer(Modifier.width(32.dp))
+            Column(Modifier.weight(1f)) {
+                BasicText("RECORD OF THE DAY", style = headline(18.sp, Ink.mid))
+                BasicText("picked by ${d.by.joinToString(", ")}", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(14.dp))
+                BasicText(d.pick.title.uppercase(), style = headline(48.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                BasicText(d.pick.artist.lowercase(), style = pixel(16.sp))
+                if (d.pick.said.isNotBlank()) {
+                    Spacer(Modifier.height(16.dp))
+                    BasicText("“${d.pick.said}”".uppercase(), style = headline(20.sp).copy(lineHeight = 26.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+                    BasicText("— ${d.pick.from}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                    Word("play", pixel(14.sp), touch = 8.dp) { go(true) }
+                    Word("its page", pixel(14.sp, Ink.mid), touch = 8.dp) { go(false) }
+                    if (d.pick.link.isNotBlank()) Word("read it", pixel(14.sp, Ink.mid), touch = 8.dp) { browse(d.pick.link) }
+                }
+                said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
+            }
+        }
+    }
+}
+
+/** On the air now: what each station is playing this minute, its cover, where; the song, or the station itself. */
+@Composable
+private fun OnTheAir(air: List<Curation.Aired>) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Column(Modifier.padding(bottom = 28.dp)) {
+        BasicText("ON THE AIR NOW", style = headline(30.sp))
+        BasicText("what the djs are playing this minute: a click plays the song, tune in plays the station", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(12.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            items(air, key = { it.station }) { a ->
+                var said by remember(a) { mutableStateOf<String?>(null) }
+                Column(Modifier.width(170.dp)) {
+                    // the station's cover, else iTunes' (asked aside, never while drawing)
+                    val art by produceState(a.art, a) { if (value == null) value = withContext(Dispatchers.IO) { Curation.itunes(a.title, a.artist, false) } }
+                    val face = remember(a, art) { Song(id = "yair:" + a.station + a.title, path = "", title = a.title, artist = a.artist, album = a.title,
+                        albumId = "air:" + a.station + a.title + (art ?: ""), albumArtist = a.artist, duration = 0, disc = 1, track = 0, year = 0, art = art) }
+                    Box(Modifier.fillMaxWidth().aspectRatio(1f).clickable(remember { MutableInteractionSource() }, indication = null) {
+                        scope.launch { said = "finding it"; val s = Picks.song(a.title, a.artist); said = if (s == null) "not on youtube music" else null; s?.let { Player.play(listOf(it)) } }
+                    }) { CoverOf(face, a.title, Modifier.fillMaxSize(), px = 340) }
+                    Spacer(Modifier.height(8.dp))
+                    UnderCover(a.title, a.artist)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        BasicText("${i + 1}", style = headline(30.sp), modifier = Modifier.width(56.dp))
-                        Box(Modifier.weight(1f)) {
-                            SongRow(s, said = (s.artist + "  ·  " + e.stations.joinToString(" ")).lowercase(), open = open) {
-                                Player.play(songs, songs.indexOf(s).coerceAtLeast(0))
-                            }
-                        }
+                        BasicText("on ${a.name}", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+                        Stations.known(a.station)?.let { st -> Word("tune in", pixel(12.sp), touch = 4.dp) { Player.play(listOf(st)) } }
+                    }
+                    said?.let { BasicText(it, style = pixel(12.sp, Ink.dim)) }
+                }
+            }
+        }
+    }
+}
+
+/** A record someone picked: its cover, its name, who picked it; a click opens it on YouTube Music. */
+@Composable
+private fun PickTile(s: Picks.Shown, open: (Page) -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var said by remember(s) { mutableStateOf<String?>(null) }
+    Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null) {
+        scope.launch { said = "finding it"; val a = Picks.record(s.pick); said = if (a == null) "not on youtube music" else null; a?.let { open(Page.Tube(it)) } }
+    }) {
+        CoverOf(s.face, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        Spacer(Modifier.height(8.dp))
+        UnderCover(s.pick.title, s.pick.artist)
+        BasicText(said ?: s.by.joinToString(" · "), style = pixel(12.sp, if (s.by.size > 1) Ink.ink else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The songs the critics picked: each, who picked it, play all. */
+@Composable
+private fun PickedSongs(songs: List<Picks.Shown>, modifier: Modifier) {
+    if (songs.isEmpty()) return
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var said by remember { mutableStateOf<String?>(null) }
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                BasicText("SONGS, PICKED BY PEOPLE", style = headline(30.sp))
+                BasicText(said ?: "pitchfork's and gorilla vs. bear's, the newest first", style = pixel(12.sp, Ink.mid))
+            }
+            Word("play all", pixel(14.sp), touch = 8.dp) { scope.launch { said = "finding them on youtube music"; Picks.playSongs(songs); said = null } }
+        }
+        Spacer(Modifier.height(10.dp))
+        songs.take(14).forEach { s ->
+            Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null) {
+                scope.launch { Picks.song(s.pick.title, s.pick.artist)?.let { Player.play(listOf(it)) } ?: run { said = "${s.pick.title.lowercase()}: not on youtube music" } }
+            }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                CoverOf(s.face, s.pick.title, Modifier.size(48.dp), px = 120)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    BasicText(s.pick.title.uppercase(), style = headline(16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BasicText("${s.pick.artist.lowercase()}  ·  ${s.by.joinToString(" · ")}", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/** The indie chart: the place big, the song, how it moved this week (new, up, down), its stations. */
+@Composable
+private fun Chart(chart: List<IndieChart.Entry>?, before: Map<String, Int?>?, open: (Page) -> Unit, modifier: Modifier) {
+    val songs = chart.orEmpty().mapNotNull { it.song }
+    Column(modifier) {
+        BasicText("THE INDIE CHART", style = headline(30.sp))
+        BasicText(if (chart == null) "counting this week's plays" else "this week on kexp, kcrw and wxpn, the songs they played most", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(10.dp))
+        chart.orEmpty().forEachIndexed { i, e ->
+            val s = e.song ?: return@forEachIndexed
+            // how it moved: new this week, up or down so many, or where it was
+            val was = before?.let { b -> if (IndieChart.key(e) in b) b[IndieChart.key(e)] else null }
+            val move = when {
+                before == null -> ""
+                was == null -> "new"
+                was > i + 1 -> "↑${was - i - 1}"
+                was < i + 1 -> "↓${i + 1 - was}"
+                else -> "="
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.width(64.dp)) {
+                    BasicText("${i + 1}", style = headline(30.sp))
+                    if (move.isNotEmpty()) BasicText(move, style = pixel(12.sp, if (move == "new" || move.startsWith("↑")) Ink.ink else Ink.dim))
+                }
+                Box(Modifier.weight(1f)) {
+                    SongRow(s, said = (s.artist + "  ·  " + e.stations.joinToString(" ")).lowercase(), open = open) {
+                        Player.play(songs, songs.indexOf(s).coerceAtLeast(0))
                     }
                 }
             }
         }
-        val records = @Composable { m: Modifier ->
-            val grid = rememberLazyGridState()
-            LazyVerticalGrid(GridCells.Adaptive(150.dp), m.feather(grid), grid, contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                // right now, then every mood and genre (YouTube Music's own), before what's new
-                item(span = { GridItemSpan(maxLineSpan) }) { MoodsAndGenres(moods, open) }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column {
-                        BasicText("NEW RECORDS", style = headline(30.sp))
-                        BasicText(if (fresh == null) "reading youtube music" else "this week on youtube music", style = pixel(12.sp, Ink.mid))
+    }
+}
+
+/**
+ * The artist of the week: one from the indie chart's top, the same all week, their photo in the dither big, their
+ * name, what's said of them; their best known songs, a station from them, their page.
+ */
+@Composable
+private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit) {
+    // the week's turn through the chart's top fifteen, passing over the very famous (a discovery, not the Rolling Stones)
+    val names = remember(chart) { chart.take(15).map { it.artist.substringBefore(",").trim() }.distinct() }
+    val week = java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toEpochDay() / 7
+    val info by produceState<ArtistInfo?>(null, names) {
+        if (names.isEmpty()) return@produceState
+        val from = (week % names.size).toInt()
+        for (k in names.indices) {
+            val name = names[(from + k) % names.size]
+            val a = withContext(Dispatchers.IO) { kotlinx.coroutines.withTimeoutOrNull(8_000) { Artists.of(name, "").firstOrNull { it != null } } } ?: continue
+            if (audience(a.audience) < 10_000_000 && a.photo != null) { value = a; return@produceState }
+        }
+    }
+    val i = info ?: return
+    Column(Modifier.padding(top = 18.dp, bottom = 18.dp)) {
+        BasicText("ARTIST OF THE WEEK", style = headline(18.sp, Ink.mid))
+        BasicText("from the indie chart's top, a new one each monday", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(14.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val side = minOf(maxWidth * .42f, 380.dp)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Box(Modifier.size(side), contentAlignment = Alignment.BottomStart) {
+                    i.photo?.let { Dithered(remember(it) { faceSong(i.name, it, photo = true) }, Modifier.fillMaxSize()) }
+                }
+                Spacer(Modifier.width(32.dp))
+                Column(Modifier.weight(1f)) {
+                    BasicText(i.name.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (i.audience.isNotEmpty()) BasicText(i.audience.lowercase().replace("monthly audience", "a month"), style = pixel(12.sp, Ink.mid))
+                    val (said, _) = remember(i.about) { Artists.pullQuote(i.about) }
+                    said?.let {
+                        Spacer(Modifier.height(14.dp))
+                        BasicText(it.uppercase(), style = headline(20.sp).copy(lineHeight = 26.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                        if (i.top.isNotEmpty()) Word("play", pixel(14.sp), touch = 8.dp) { Player.play(i.top) }
+                        if (i.top.isNotEmpty()) Word("station", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.startRadio(i.top.first()) }
+                        Word("their page", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Artist(i.name, i.id)) }
                     }
                 }
-                items(fresh.orEmpty(), key = { "n" + it.url }) { a -> TubeTile(a, Modifier) { open(Page.Tube(a)) } }
-                shelves.orEmpty().forEach { (title, items) ->
-                    item(span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.height(1.dp)); Label(title.lowercase()) }
-                    items(items.take(12), key = { title + it.url }) { a -> TubeTile(a, Modifier) { open(Page.Tube(a)) } }
-                }
             }
-        }
-        if (wide) Row(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-            chartList(Modifier.weight(1f).fillMaxHeight())
-            records(Modifier.weight(1.1f).fillMaxHeight())
-        } else Column(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE)) {
-            chartList(Modifier.weight(1f))
-            records(Modifier.weight(1f))
         }
     }
 }
@@ -125,6 +359,10 @@ private fun who(subtitle: String) = subtitle.split(" • ").map { it.trim() }
  * A station from a mood: a playlist from each of its first flavors, mixed, radio after.
  */
 object Moods {
+    /** Flavors for one region or language: after the rest on a mood's page, unless you open that genre. */
+    val REGIONAL = listOf("latin", "bollywood", "indian", "k-pop", "kpop", "j-pop", "arab", "turk", "african", "brazil", "mandopop", "cantopop", "opm",
+        "punjabi", "tamil", "telugu", "desi", "afro", "reggaeton", "mexican", "french", "german", "italian", "spanish", "korean", "japanese", "chinese")
+
     private val file = java.io.File(Home.cache, "moods.json")
     private val opened = java.io.File(Home.dir, "moods-opened.json")
     val counts = kotlinx.coroutines.flow.MutableStateFlow(runCatching {
@@ -219,7 +457,13 @@ private fun MoodsAndGenres(moods: List<InnerTube.Mood>?, open: (Page) -> Unit) {
 /** A mood's page: its flavors, each a row of YouTube Music's playlists for it; a station from all of it. */
 @Composable
 fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
-    val shelves by produceState<List<InnerTube.Shelf>?>(null, m.params) { value = withContext(Dispatchers.IO) { InnerTube().mood(m.params) } }
+    val counts by Moods.counts.collectAsState()
+    // a region's or a language's flavors after the rest, unless it's a genre you open (Bronson, 2026-10-28: all of it picked-feeling)
+    val shelves by produceState<List<InnerTube.Shelf>?>(null, m.params, counts) {
+        val all = withContext(Dispatchers.IO) { InnerTube().mood(m.params) }
+        val opened = counts.filterValues { it > 0 }.keys.joinToString(" ").lowercase()
+        value = all.sortedBy { s -> Moods.REGIONAL.any { w -> w in s.title.lowercase() && w !in opened } }
+    }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val list = rememberLazyListState()
     Column(Modifier.fillMaxSize()) {
@@ -244,4 +488,11 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
             }
         }
     }
+}
+
+/** "50.5M monthly audience" as a number (0: not said). */
+private fun audience(said: String): Long {
+    val m = Regex("([\\d.]+)\\s*([KMB]?)").find(said.uppercase()) ?: return 0
+    val n = m.groupValues[1].toDoubleOrNull() ?: return 0
+    return (n * when (m.groupValues[2]) { "K" -> 1e3; "M" -> 1e6; "B" -> 1e9; else -> 1.0 }).toLong()
 }
