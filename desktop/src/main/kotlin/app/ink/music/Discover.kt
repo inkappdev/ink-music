@@ -267,7 +267,7 @@ fun MadeForYou() {
     val mixes by Discover.mixes.collectAsState()
     if (mixes.isEmpty()) return
     Column {
-        Label("made for you")
+        Section("MADE FOR YOU", "from what you play, new each day or each monday")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val across = if (maxWidth > 1000.dp) 2 else 1
             Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
@@ -279,7 +279,6 @@ fun MadeForYou() {
                 }
             }
         }
-        Spacer(Modifier.height(30.dp))
     }
 }
 
@@ -310,16 +309,9 @@ fun BecauseYouLoved(open: (Page) -> Unit) {
     val b by Discover.because.collectAsState()
     val (seed, songs) = b ?: return
     Column {
-        Label("because you loved")
-        Row(verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) {
-                BasicText(seed.title.uppercase(), style = headline(26.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                BasicText("${seed.artist.lowercase()} · from its radio, only songs you've never played; another love tomorrow",
-                    style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+        Section("BECAUSE YOU LOVED ${seed.title.uppercase()}", "${seed.artist.lowercase()} · songs from its radio you've never played") {
             Word("play all", pixel(14.sp), touch = 8.dp) { Player.play(songs) }
         }
-        Spacer(Modifier.height(12.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
                 Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(songs, i) })) {
@@ -329,7 +321,6 @@ fun BecauseYouLoved(open: (Page) -> Unit) {
                 }
             }
         }
-        Spacer(Modifier.height(26.dp))
     }
 }
 
@@ -339,12 +330,9 @@ fun NewToYou(open: (Page) -> Unit) {
     val list by Discover.newToYou.collectAsState()
     if (list.isEmpty()) return
     Column {
-        Label("new to you")
-        Row(verticalAlignment = Alignment.Bottom) {
-            BasicText("close to what you play, and you haven't played them yet", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+        Section("NEW TO YOU", "close to what you play, and you haven't played them yet") {
             Word("discovery station", pixel(14.sp), touch = 8.dp) { Discover.station() }
         }
-        Spacer(Modifier.height(12.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             itemsIndexed(list, key = { _, n -> n.artist.name }) { _, n ->
                 Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null,
@@ -357,6 +345,5 @@ fun NewToYou(open: (Page) -> Unit) {
                 }
             }
         }
-        Spacer(Modifier.height(26.dp))
     }
 }

@@ -115,24 +115,13 @@ fun InkMoodsShelf() {
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
     fun go(m: InkMoods.Mood) = scope.launch { said = "${m.name}: finding its songs"; said = if (Moodboard.play(m)) null else "${m.name}: couldn't find its songs" }
-    Column(Modifier.padding(bottom = 18.dp)) {
-        BasicText("RIGHT NOW", style = headline(30.sp))
-        BasicText(said ?: "picked for ${Moods.said()}", style = pixel(12.sp, Ink.mid))
-        Spacer(Modifier.height(12.dp))
+    // one row of tiles (Bronson, 2026-10-29: the three as words and the rest as tiles didn't belong together): right
+    // now's three bigger, then the rest
+    Column {
+        Section("RIGHT NOW", said ?: "moods for ${Moods.said()}, then the rest")
         val now = remember { InkMoods.now() }
-        now.forEach { m ->
-            Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    Word(m.name.uppercase(), headline(40.sp), touch = 4.dp) { go(m) }
-                    BasicText(m.line, style = pixel(12.sp, Ink.mid))
-                }
-                Word("start station", pixel(13.sp), Modifier.padding(bottom = 8.dp), touch = 8.dp) { go(m) }
-            }
-        }
-        Spacer(Modifier.height(22.dp))
-        // the rest of them (right now's three aren't shown twice)
-        Label("more moods")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
+            items(now, key = { "now" + it.key }) { m -> MoodTile(m, kept[m.key]?.art, 250.dp) { go(m) } }
             items(InkMoods.ALL.filter { it !in now }, key = { it.key }) { m -> MoodTile(m, kept[m.key]?.art) { go(m) } }
         }
     }
@@ -140,12 +129,12 @@ fun InkMoodsShelf() {
 
 /** A mood as a tile: a cover of its songs in the dither, its name big on it, its line under it. */
 @Composable
-fun MoodTile(m: InkMoods.Mood, art: String?, onClick: () -> Unit) {
-    Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+fun MoodTile(m: InkMoods.Mood, art: String?, side: androidx.compose.ui.unit.Dp = 170.dp, onClick: () -> Unit) {
+    Column(Modifier.width(side).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.BottomStart) {
             if (art != null) Dithered(remember(art) { faceSong("mood " + m.key, art, photo = true) }, Modifier.fillMaxSize(), px = 340)
             // its name on a black tab in the corner (a sleeve's label: pale dithers swallowed it)
-            BasicText(m.name.uppercase(), style = headline(22.sp), maxLines = 2,
+            BasicText(m.name.uppercase(), style = headline(if (side > 200.dp) 30.sp else 22.sp), maxLines = 2,
                 modifier = Modifier.background(Ink.black).padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 4.dp))
         }
         Spacer(Modifier.height(8.dp))
@@ -183,10 +172,8 @@ object Fests {
 fun FestivalsShelf(open: (Page) -> Unit) {
     val soon = remember { Festivals.soon(Fests.all) }
     if (soon.isEmpty()) return
-    Column(Modifier.padding(bottom = 26.dp)) {
-        BasicText("FESTIVALS SOON", style = headline(30.sp))
-        BasicText("who's playing, to know before you go", style = pixel(12.sp, Ink.mid))
-        Spacer(Modifier.height(12.dp))
+    Column {
+        Section("FESTIVALS SOON", "who's playing, to know before you go")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             items(soon, key = { it.name }) { f -> FestivalPoster(f, Modifier.width(250.dp)) { open(Page.Festival(f.name)) } }
         }

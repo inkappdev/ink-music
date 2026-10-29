@@ -50,10 +50,11 @@ fun RadioTab() {
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Word("ink radio", pixel(13.sp, if (genre == null) Ink.ink else Ink.dim), touch = 8.dp) { genre = null }
+            // one row, slid through (it wrapped onto a second line)
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                item { Word("ink radio", pixel(13.sp, if (genre == null) Ink.ink else Ink.dim), touch = 8.dp) { genre = null } }
                 Stations.genres.forEach { (word, _) ->
-                    Word(word, pixel(13.sp, if (genre == word) Ink.ink else Ink.dim), touch = 8.dp) { genre = word }
+                    item { Word(word, pixel(13.sp, if (genre == word) Ink.ink else Ink.dim), touch = 8.dp) { genre = word } }
                 }
             }
         }

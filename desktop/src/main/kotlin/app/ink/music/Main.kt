@@ -285,6 +285,9 @@ private fun App() {
       BoxWithConstraints(Modifier.fillMaxSize()) {
         val frame = frameOf(maxWidth)
         val tucked by Tuck.on.collectAsState()
+        // nothing playing: no now column, the page has its room (it came with the first thing played)
+        val playing by Player.now.collectAsState()
+        val trouble by Player.trouble.collectAsState()
         // find takes the now column's room too (its results in two columns), the bar along the foot meanwhile
         val finding = pages.lastOrNull() == Page.Find
         Row(Modifier.fillMaxSize()) {
@@ -329,7 +332,7 @@ private fun App() {
         }
         // the now column, tucked away to the right (its arrow, or ⌘\): the bar along the foot instead
         AnimatedVisibility(
-            frame == Frame.WIDE && !tucked && !finding && pages.lastOrNull() != Page.Playing,
+            frame == Frame.WIDE && !tucked && !finding && pages.lastOrNull() != Page.Playing && (playing != null || trouble != null),
             enter = expandHorizontally(tween(Motion.ENTER, easing = Motion.expo)) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = shrinkHorizontally(tween(Motion.ENTER, easing = Motion.expo)) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) { NowColumn({ Tuck.set(true) }) { pages += it } }
@@ -357,9 +360,8 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             Word("your year", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Year) }
             Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Settings) }
         }
-        // beside the rail: the place's own name, big
-        else BasicText(tab.uppercase(), style = headline(44.sp), modifier = Modifier.padding(horizontal = SIDE))
-        Spacer(Modifier.height(14.dp))
+        // beside the rail no name over the page: the rail's lit word says where you are (Bronson, 2026-10-29)
+        if (words) Spacer(Modifier.height(14.dp))
         if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
             Modifier.padding(horizontal = SIDE))
         Spacer(Modifier.height(4.dp))
@@ -458,9 +460,35 @@ fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry> {
 
 @Composable
 private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
-    val list = rememberLazyListState()
-    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
-        items(artists, key = { it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }
+    // a grid of faces, as the records are (Bronson, 2026-10-29: one thin list down a wide page)
+    val albums by Library.albums.collectAsState()
+    val covers = remember(albums) { albums.groupBy { it.artist }.mapValues { it.value.first().songs.first() } }
+    val grid = rememberLazyGridState()
+    LazyVerticalGrid(
+        GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
+        contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        items(artists, key = { it.name }) { a -> ArtistTile(a, covers[a.name]) { open(Page.Artist(a.name)) } }
+    }
+}
+
+/**
+ * An artist as a tile: their photo from YouTube Music (asked once it's been in sight a moment, so a fast scroll asks for
+ * none; kept after), their record's cover till then; their name, how much of theirs is here.
+ */
+@Composable
+private fun ArtistTile(a: ArtistEntry, record: Song?, onClick: () -> Unit) {
+    val photo by androidx.compose.runtime.produceState<String?>(null, a.name) {
+        kotlinx.coroutines.delay(500)
+        Artists.of(a.name).collect { i -> i?.photo?.let { value = it } }
+    }
+    Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        val face = remember(photo, record) { photo?.let { faceSong(a.name, it, photo = true) } ?: record }
+        CoverOf(face, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        Spacer(Modifier.height(8.dp))
+        UnderCover(a.name, listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" },
+            "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("  ·  "))
     }
 }
 

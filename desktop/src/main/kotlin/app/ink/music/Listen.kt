@@ -1,5 +1,7 @@
 package app.ink.music
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -58,8 +60,8 @@ fun ListenPage(open: (Page) -> Unit) {
         val minute = Listening.minuteOfWeek(now)
         songs.mapNotNull { s -> heard.hour(s.id, minute)?.let { s to it } }.sortedByDescending { it.second }.map { it.first }.take(60)
     }
-    val hourRecords = remember(hourSongs, byId) { hourSongs.mapNotNull { byId[it.albumId] }.distinctBy { it.id }.take(4) }
-    val shelf = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(4) }
+    val hourRecords = remember(hourSongs, byId) { hourSongs.mapNotNull { byId[it.albumId] }.distinctBy { it.id }.take(7) }
+    val shelf = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(7) }
     val first = hourRecords.ifEmpty { shelf }
     val lately = remember(albums, heard) { albums.mapNotNull { a -> heard.lately("r:" + a.id)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
     val forgotten = remember(albums, heard) { albums.mapNotNull { a -> heard.forgotten("r:" + a.id, now)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
@@ -71,79 +73,98 @@ fun ListenPage(open: (Page) -> Unit) {
     val tubeMixes by TubeAccount.mixes.collectAsState()
     LaunchedEffect(songs.isNotEmpty()) { Discover.start(songs) }
     val list = rememberLazyListState()
-    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
+    val made by Discover.mixes.collectAsState()
+    val because by Discover.because.collectAsState()
+    val newTo by Discover.newToYou.collectAsState()
+    // one rhythm down the page: the same room between every shelf, each with a head of its own (Bronson, 2026-10-29)
+    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(GAP)) {
         if (first.isNotEmpty()) item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                BasicText(if (hourRecords.isNotEmpty()) partOfDay(now) else "FROM YOUR SHELVES", style = headline(32.sp), modifier = Modifier.weight(1f))
-                val play = hourSongs.ifEmpty { first.flatMap { it.songs } }
+            Column {
+            val play = hourSongs.ifEmpty { first.flatMap { it.songs } }
+            Section(if (hourRecords.isNotEmpty()) partOfDay(now) else "FROM YOUR SHELVES",
+                if (hourRecords.isNotEmpty()) "what you play at this hour" else "a few of yours, a new few each day") {
                 Word(if (hourRecords.isNotEmpty()) "play this hour" else "play these", pixel(14.sp), touch = 8.dp) { Player.play(play) }
             }
-            Spacer(Modifier.height(16.dp))
-            // one big, the rest beside it
+            // one big, six beside it in two rows of three (four in a row left the big one's height empty beside it)
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Top) {
-                first.forEachIndexed { i, a -> RecordTile(a, Modifier.weight(if (i == 0) 2f else 1f)) { open(Page.Record(a.id)) } }
-                repeat(4 - first.size) { Spacer(Modifier.weight(1f)) }
+                first.firstOrNull()?.let { a -> RecordTile(a, Modifier.weight(2f)) { open(Page.Record(a.id)) } }
+                Column(Modifier.weight(3f), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    first.drop(1).chunked(3).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                            row.forEach { a -> RecordTile(a, Modifier.weight(1f)) { open(Page.Record(a.id)) } }
+                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
             }
-            Spacer(Modifier.height(30.dp))
+            }
         }
         // made from your listening: fresh finds, deep cuts and the rest (Discover.kt)
-        item { MadeForYou() }
+        if (made.isNotEmpty()) item { MadeForYou() }
         // YouTube Music's own mixes for you (signed in): supermix, discover, new release, replay
         if (tubeMixes.isNotEmpty()) item {
-            Label("your mixes on youtube music")
+            Column {
+            Section("YOUR MIXES", "youtube music's, made for you")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                items(tubeMixes, key = { it.url }) { a -> TubeTile(a, Modifier.width(150.dp)) { open(Page.Tube(a)) } }
+                items(tubeMixes, key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp)) { open(Page.Tube(a)) } }
             }
-            Spacer(Modifier.height(26.dp))
+            }
         }
         if (mixes.isNotEmpty()) item {
-            Label("mixes for you")
+            Column {
+            Section("YOUR ARTISTS' MIXES", "who you play most, and more like them")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 itemsIndexed(mixes, key = { _, m -> m.name }) { _, m ->
-                    Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { mixScope.launch { Mixes.play(m) } })) {
-                        Dithered(m.face, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
+                    Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { mixScope.launch { Mixes.play(m) } })) {
+                        Dithered(m.face, Modifier.fillMaxWidth().aspectRatio(1f), px = 340)
                         Spacer(Modifier.height(8.dp))
                         UnderCover(m.name, "mix")
                     }
                 }
             }
-            Spacer(Modifier.height(26.dp))
+            }
         }
-        item { BecauseYouLoved(open) }
-        item { NewToYou(open) }
-        records("lately", lately, open)
-        records("forgotten favorites", forgotten, open)
-        records("new on your server", newest, open)
+        if (because != null) item { BecauseYouLoved(open) }
+        if (newTo.isNotEmpty()) item { NewToYou(open) }
+        records("lately", "the records you've played lately", lately, open)
+        records("forgotten favorites", "ones you loved, quiet for a while", forgotten, open)
+        records("new on your server", "the newest there", newest, open)
+        // this week's ink weekly: its mosaic (the phone's), its name and note, play; every volume on INK
         weeks.firstOrNull()?.let { w ->
             item {
-                Label("ink weekly · vol ${w.week}" + Weekly.day(w.date).takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty())
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Column(Modifier.weight(1f)) {
-                        BasicText(w.title.uppercase(), style = headline(26.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (w.note.isNotEmpty()) BasicText(w.note.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                    Word("play the week", pixel(14.sp), touch = 8.dp) { Player.play(w.songs) }
-                    // the others on INK, ink's own place
-                    Word("every volume", pixel(14.sp, Ink.mid), Modifier.padding(start = 22.dp), touch = 8.dp) { Nav.go("ink") }
+                Column {
+                Section("INK WEEKLY", "vol ${w.week}" + Weekly.day(w.date).takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty() + " · what we're listening to at ink") {
+                    Word("every volume", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("ink") }
                 }
-                Spacer(Modifier.height(12.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    itemsIndexed(w.songs, key = { _, s -> s.id }) { i, s ->
-                        Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(w.songs, i) })) {
-                            CoverOf(s, s.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Box(Modifier.size(220.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Nav.go("ink") }),
+                        contentAlignment = Alignment.BottomStart) {
+                        Mosaic(w.songs, Modifier.fillMaxSize())
+                    }
+                    Spacer(Modifier.width(24.dp))
+                    Column(Modifier.weight(1f)) {
+                        BasicText(w.title.uppercase(), style = headline(40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (w.note.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
-                            UnderCover(s.title, s.artist)
+                            BasicText(w.note.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 21.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                            Word("play the week", pixel(14.sp), touch = 8.dp) { Player.play(w.songs) }
+                            Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(w.songs.shuffled()) }
                         }
                     }
                 }
-                Spacer(Modifier.height(26.dp))
+                }
             }
         }
         if (stars.isNotEmpty()) item {
-            Label("ink radio")
+            Column {
+            Section("INK RADIO", "the stations we keep") { Word("all of them", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("ink") } }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 itemsIndexed(stars, key = { _, c -> c.song.id }) { i, c ->
-                    Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null,
+                    Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null,
                         onClick = felt { Player.play(stars.drop(i).map { it.song }) })) {
                         StationCover(c.song, Modifier.fillMaxWidth().aspectRatio(1f))
                         Spacer(Modifier.height(8.dp))
@@ -151,24 +172,27 @@ fun ListenPage(open: (Page) -> Unit) {
                     }
                 }
             }
-            Spacer(Modifier.height(26.dp))
+            }
         }
-        if (lists.isNotEmpty()) {
-            item { Label("your lists") }
-            items(lists.take(8), key = { "l" + it.id }) { p -> ListRow(p) { open(Page.List(p.id, p.name)) } }
+        if (lists.isNotEmpty()) item {
+            Column {
+                Section("YOUR LISTS", "on your server")
+                lists.take(8).forEach { p -> ListRow(p) { open(Page.List(p.id, p.name)) } }
+            }
         }
     }
 }
 
 /** A shelf of records, sliding sideways. */
-private fun androidx.compose.foundation.lazy.LazyListScope.records(label: String, albums: List<Album>, open: (Page) -> Unit) {
+private fun androidx.compose.foundation.lazy.LazyListScope.records(label: String, line: String, albums: List<Album>, open: (Page) -> Unit) {
     if (albums.isEmpty()) return
     item {
-        Label(label)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            items(albums, key = { it.id }) { a -> RecordTile(a, Modifier.width(176.dp)) { open(Page.Record(a.id)) } }
+        Column {
+            Section(label.uppercase(), line)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(albums, key = { it.id }) { a -> RecordTile(a, Modifier.width(176.dp)) { open(Page.Record(a.id)) } }
+            }
         }
-        Spacer(Modifier.height(26.dp))
     }
 }
 
