@@ -94,6 +94,8 @@ fun main() {
     Listened.read()
     Loved.start()
     TubeAccount.start()
+    // a paired phone kept in step, over the wifi (Sync)
+    SyncHub.start()
     Follows.start()
     Colours.start()
     Player.start()

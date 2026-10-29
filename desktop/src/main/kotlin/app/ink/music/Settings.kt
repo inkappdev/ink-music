@@ -1,5 +1,7 @@
 package app.ink.music
 
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +44,10 @@ fun SettingsPage(onClose: () -> Unit) {
           Column(Modifier.widthIn(max = 640.dp)) {
             BasicText("SETTINGS", style = headline(64.sp))
             Spacer(Modifier.height(32.dp))
+
+            // first: pair the phone, and the rest (your server, youtube, listenbrainz) comes across from it
+            PhoneSetting()
+            Spacer(Modifier.height(36.dp))
 
             val account by Server.account.collectAsState()
             val count by Server.count.collectAsState()
@@ -186,7 +192,7 @@ private fun ListenBrainzSetting() {
         BasicText(a.user.lowercase(), style = pixel(13.sp))
         BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(8.dp))
-        Word("disconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { ListenBrainz.disconnect(Home.dir) }
+        Word("disconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { ListenBrainz.disconnect(Home.dir); SyncHub.kept.signed("listenbrainz", System.currentTimeMillis()) }
     }
 }
 
@@ -225,7 +231,7 @@ private fun LastFmSetting() {
         BasicText(a.name.lowercase(), style = pixel(13.sp))
         BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(8.dp))
-        Word("disconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { LastFm.disconnect(Home.dir) }
+        Word("disconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { LastFm.disconnect(Home.dir); SyncHub.kept.signed("lastfm", System.currentTimeMillis()) }
     }
 }
 
@@ -307,23 +313,14 @@ private fun YouTubeSetting() {
     val w = who
     val c = code
     when {
-        c != null -> {
-            BasicText("on your phone: settings, youtube music, sign in a computer. pick ${TubeAccount.name.lowercase()}, and type", style = pixel(12.sp, Ink.mid))
-            Spacer(Modifier.height(8.dp))
-            BasicText(c, style = headline(64.sp))
-            BasicText("the phone hands its sign-in over, sealed: only this computer can open it. both on the same wifi", style = pixel(12.sp, Ink.mid))
-            // the way by hand, if the phone doesn't list it
-            val where by TubeAccount.at.collectAsState()
-            where?.let { BasicText("not listed on the phone? type its address there: $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
-            Spacer(Modifier.height(10.dp))
-            Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
-        }
+        c != null -> BasicText("pairing your phone, above: its sign-in comes with it", style = pixel(12.sp, Ink.mid))
         w == null -> {
             BasicText("your playlists, liked songs and mixes, and radio made as you, from your own account. " +
                 "signed in from your phone: a computer has no youtube sign-in page of its own here. " +
                 "ink music isn't youtube's own app, and google could, rarely, mind one being used", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(10.dp))
             Word("SIGN IN FROM YOUR PHONE", headline(36.sp), touch = 10.dp) { TubeAccount.await() }
+            BasicText("pairing your phone, above, does it too", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
         }
         else -> {
             BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
@@ -334,7 +331,66 @@ private fun YouTubeSetting() {
             Word("sign out", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.signOut() }
         }
     }
+}
+
+/**
+ * Your phone (Bronson, 2026-10-29: "make everything seamlessly sync"): paired once by the code, then the two kept in
+ * step on the wifi ([SyncHub]): what you've heard, loves, sign-ins, what each was playing. Waiting, the code big;
+ * paired, each phone and when it was last in step, forget it.
+ */
+@Composable
+private fun PhoneSetting() {
+    val peers by SyncHub.peers.collectAsState()
+    val code by TubeAccount.code.collectAsState()
+    val said by TubeAccount.said.collectAsState()
+    BasicText("YOUR PHONE", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    val c = code
+    when {
+        c != null -> {
+            BasicText("on your phone: ink music, settings, sync with a computer. pick ${TubeAccount.name.lowercase()}, and type", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(8.dp))
+            BasicText(c, style = headline(64.sp))
+            BasicText("the two agree a key no one else on the wifi can work out; everything between them goes sealed under it", style = pixel(12.sp, Ink.mid))
+            val where by TubeAccount.at.collectAsState()
+            where?.let { BasicText("not listed on the phone? type its address there: $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
+            Spacer(Modifier.height(10.dp))
+            Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
+        }
+        peers.isEmpty() -> {
+            BasicText("pair it once, and this computer is signed in to what your phone is (your server, youtube music, listenbrainz), " +
+                "and the two keep in step on your wifi from then on: what you've heard, what you love, what you were playing. " +
+                "nothing goes through anyone else", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(10.dp))
+            Word("PAIR YOUR PHONE", headline(36.sp), touch = 10.dp) { TubeAccount.await() }
+        }
+        else -> {
+            // a minute's tick, so "a minute ago" moves on
+            val tick by androidx.compose.runtime.produceState(System.currentTimeMillis()) { while (true) { kotlinx.coroutines.delay(30_000); value = System.currentTimeMillis() } }
+            peers.forEach { p ->
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Column(Modifier.weight(1f)) {
+                        BasicText(p.name.uppercase(), style = headline(20.sp))
+                        BasicText(if (p.seen == 0L) "paired, not in step yet" else "in step " + ago(tick - p.seen), style = pixel(12.sp, Ink.mid))
+                    }
+                    Word("forget", pixel(13.sp, Ink.mid), touch = 8.dp) { SyncHub.forget(p.id) }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            BasicText("on the same wifi they keep in step by themselves, every minute the phone's app is open", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(10.dp))
+            Word("pair another", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.await() }
+        }
+    }
     said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
+}
+
+/** "just now", "4 minutes ago", "2 hours ago", "3 days ago". */
+fun ago(ms: Long): String = when {
+    ms < 60_000 -> "just now"
+    ms < 3_600_000 -> (ms / 60_000).let { "$it ${if (it == 1L) "minute" else "minutes"} ago" }
+    ms < 86_400_000 -> (ms / 3_600_000).let { "$it ${if (it == 1L) "hour" else "hours"} ago" }
+    else -> (ms / 86_400_000).let { "$it ${if (it == 1L) "day" else "days"} ago" }
 }
 
 /** Private listening: a switch; while it's on, nothing kept or told. */

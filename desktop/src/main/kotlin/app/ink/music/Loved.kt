@@ -93,6 +93,8 @@ object Loved {
         }
         publish()
         keep()
+        // told to a paired phone at its next call
+        SyncHub.loved(s, on)
     }
 
     private fun keep() {

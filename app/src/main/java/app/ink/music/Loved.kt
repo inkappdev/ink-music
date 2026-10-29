@@ -121,6 +121,8 @@ object Loved {
         app?.let { prefs(it).edit().putStringSet("ids", local)
             .putString("tube", JSONArray().apply { _tube.value.forEach { put(it.json()) } }.toString()).apply() }
         publish()
+        // told to a paired computer soon
+        SyncPhone.loved(s, on)
     }
 }
 

@@ -155,6 +155,11 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(seeds.map { it.name }) { Listen.load(ctx); Weekly.load(ctx) }
     LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday(); Picks.startElectronic() }
+    // the computer's offer: newer than what played here, and nothing playing here
+    val offer by SyncPhone.theirs.collectAsState()
+    val nowHere by Playback.now.collectAsState()
+    val putAside by SyncPhone.dismissed.collectAsState()
+    val continued = offer?.takeUnless { it.at <= SyncPhone.playedAt || it.at <= putAside || nowHere?.playing == true }
     val pickedRecords by Picks.records.collectAsState()
     val pickedSongs by Picks.songs.collectAsState()
     val friday by Picks.friday.collectAsState()
@@ -227,6 +232,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 Cog { pages.open(Page.Settings) }
             }
         }}
+        // what the computer was playing, to carry on with here (Sync)
+        continued?.let { o -> item(key = "continue") { Column(Modifier.cascade(1)) { ContinueHere(o) } } }
         if (!online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(1)) { KeptShelf(keptRecords, "no data? no problem", pages) }}
         // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: it's INK's cover now)
         if (fromYours.isNotEmpty()) item { Column(Modifier.cascade(2)) {
@@ -473,6 +480,25 @@ private fun KeptShelf(records: List<Album>, label: String, pages: Pages) {
         items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
     }
     Spacer(Modifier.height(10.dp))
+}
+
+/** What the computer was playing: its cover, "on <computer>", the song; continue here (where it was), or not now. */
+@Composable
+private fun ContinueHere(o: SyncPhone.Offer) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(64.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { SyncPhone.take(o) })) {
+            CoverOf(o.song, o.song.album.ifEmpty { o.song.title }, Modifier.fillMaxSize())
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            BasicText((if (o.playing) "playing on " else "on ") + o.from, style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BasicText(o.song.title.uppercase(), style = headline(18.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row {
+                Word("CONTINUE HERE", headline(14.sp), Modifier.padding(end = 18.dp), touch = 8.dp) { SyncPhone.take(o) }
+                Word("not now", pixel(12.sp, Ink.mid), touch = 8.dp) { SyncPhone.dismissed.value = o.at }
+            }
+        }
+    }
 }
 
 /** A tile: a cover (or an artist's photo), a name big, a word small; numbered on a chart. */
