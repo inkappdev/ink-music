@@ -216,7 +216,7 @@ fun Label(text: String) {
  * A playlist YouTube Music made (its mixes and its own playlists: an "RD..." list, or YouTube Music's name on it), not
  * a record's: its stock art stands apart from album art in the dither, as the phone shows them.
  */
-val TubeAlbum.branded: Boolean get() = Regex("[?&]list=RD").containsMatchIn(url) || artist.equals("youtube music", ignoreCase = true)
+val TubeAlbum.branded: Boolean get() = Curation.tubeBranded(url, artist)
 
 /** A YouTube Music record as a tile: its cover (from its link), name and artist; YouTube's own playlists in the dither. */
 @Composable

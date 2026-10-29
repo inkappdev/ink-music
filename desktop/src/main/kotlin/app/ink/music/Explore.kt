@@ -219,7 +219,7 @@ private fun OnTheAir(air: List<Curation.Aired>) {
                 var said by remember(a) { mutableStateOf<String?>(null) }
                 Column(Modifier.width(170.dp)) {
                     // the station's cover, else iTunes' (asked aside, never while drawing)
-                    val art by produceState(a.art, a) { if (value == null) value = withContext(Dispatchers.IO) { Curation.itunes(a.title, a.artist, false) } }
+                    val art by produceState(a.art, a) { if (value == null) value = withContext(Dispatchers.IO) { Curation.cover(a.title, a.artist, false) } }
                     val face = remember(a, art) { Song(id = "yair:" + a.station + a.title, path = "", title = a.title, artist = a.artist, album = a.title,
                         albumId = "air:" + a.station + a.title + (art ?: ""), albumArtist = a.artist, duration = 0, disc = 1, track = 0, year = 0, art = art) }
                     // a click tunes in to the station (its song, if the station's not one ink keeps)

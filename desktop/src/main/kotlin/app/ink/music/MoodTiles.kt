@@ -70,7 +70,7 @@ object Moodboard {
                 val songs = InkMoods.songs(m, LastFm.key, week())
                 if (songs.isEmpty()) continue
                 // its tile's cover: the first of its songs iTunes knows
-                val art = songs.take(4).firstNotNullOfOrNull { (t, a) -> Curation.itunes(t, a, false).also { kotlinx.coroutines.delay(400) } }
+                val art = songs.take(4).firstNotNullOfOrNull { (t, a) -> Curation.cover(t, a, false).also { kotlinx.coroutines.delay(400) } }
                 made[m.key] = Kept(songs, art)
                 kept.value = kept.value + (m.key to made.getValue(m.key))
             }

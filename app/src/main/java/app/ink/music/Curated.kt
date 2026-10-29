@@ -57,7 +57,7 @@ object Picks {
         val before = (records.value + songs.value).associate { Curation.key(it.pick) to it.art }
         val found = HashMap<String, String?>()
         firsts.filter { (p, _) -> p.art == null && before[Curation.key(p)] == null }.take(40).chunked(4).forEach { group ->
-            group.map { (p, _) -> async { Curation.key(p) to Curation.itunes(p.title, p.artist, p.record) } }.awaitAll().forEach { (k, v) -> found[k] = v }
+            group.map { (p, _) -> async { Curation.key(p) to Curation.cover(p.title, p.artist, p.record) } }.awaitAll().forEach { (k, v) -> found[k] = v }
             kotlinx.coroutines.delay(800)
         }
         val shown = firsts.map { (p, by) -> Shown(p, p.art ?: before[Curation.key(p)] ?: found[Curation.key(p)], by) }
@@ -116,7 +116,11 @@ object Picks {
         arts[k]?.let { return it.orElse(null) }
         return asking.withPermit {
             arts[k]?.let { return@withPermit it.orElse(null) }
-            withContext(Dispatchers.IO) { Curation.coverAt(link) ?: Curation.itunes(title, artist, record) }.also { arts[k] = java.util.Optional.ofNullable(it) }
+            withContext(Dispatchers.IO) {
+                Curation.coverAt(link) ?: Curation.cover(title, artist, record)
+                    // the last place: YouTube Music's own search (where it'd play from anyway; the full build)
+                    ?: runCatching { if (record) YouTubeMusic.findRecord(title, artist)?.art else YouTubeMusic.find(title, artist)?.art }.getOrNull()
+            }.also { arts[k] = java.util.Optional.ofNullable(it) }
         }
     }
 
