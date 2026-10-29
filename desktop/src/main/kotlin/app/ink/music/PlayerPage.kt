@@ -258,6 +258,8 @@ private val SETTLING = CubicBezierEasing(.45f, 0f, .2f, 1f)
 @Composable
 private fun HeardPage(h: Heard, onClose: () -> Unit) {
     val volume by Player.volume.collectAsState()
+    val muted by Player.muted.collectAsState()
+    val sound by Player.sound.collectAsState()
     val lines = listOfNotNull(
         "format" to (h.codec + if (h.hires) ", hi-res lossless" else if (h.lossless) ", lossless" else ", lossy"),
         h.bits.takeIf { it > 0 }?.let { "bit depth" to "$it bit" },
@@ -270,8 +272,16 @@ private fun HeardPage(h: Heard, onClose: () -> Unit) {
             "station" -> "the station's stream"
             else -> "this ${if (Home.mac) "mac" else "computer"}, the file as it is"
         },
-        "even volume" to (h.gain?.let { "%+.1f db".format(java.util.Locale.ROOT, it) } ?: "none in the file"),
+        "even volume" to (if (!sound.even) "off, as recorded" else h.gain?.let { "%+.1f db".format(java.util.Locale.ROOT, it) } ?: "none in the file"),
         "volume" to "$volume",
+        // whether the file's samples reach the output unchanged, and what's in the way if not
+        "exact" to when {
+            !h.lossless -> "no: a lossy file is never the recording exactly"
+            muted || volume < 100 -> "no: volume at ${if (muted) "mute" else volume}"
+            sound.even && h.gain != null -> "no: even volume"
+            !sound.exclusive -> "no: shared, mixed at the ${if (Home.mac) "mac" else "computer"}'s rate (settings, sound: alone)"
+            else -> "yes: the file's samples, at its own rate"
+        },
     )
     Column(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
         Close(onClose)
