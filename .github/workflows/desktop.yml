@@ -1,0 +1,65 @@
+# ink music for Windows and Linux, on each push that touches the desktop app (the Mac's is mac.yml): an msi with
+# libmpv inside (mpv's own Windows build, shinchiro's), and a deb and an rpm that use the system's libmpv (libmpv2 on
+# Debian and Ubuntu, mpv-libs on Fedora). Unsigned: Windows' first open is SmartScreen's More info, Run anyway.
+name: desktop
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/**", "youtube/**", "core/**", "app/src/main/res/font/**", "app/src/main/assets/**", ".github/workflows/desktop.yml", "*.gradle.kts", "gradle/**"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21" }
+      - uses: gradle/actions/setup-gradle@v4
+
+      # libmpv for Windows (x86-64, any CPU from the last decade), beside the app: found at run time from its resources
+      - name: libmpv, bundled
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          name=$(gh release view -R shinchiro/mpv-winbuild-cmake --json assets --jq '.assets[].name | select(test("^mpv-dev-x86_64-[0-9]{8}"))' | head -1)
+          echo "$name"
+          gh release download -R shinchiro/mpv-winbuild-cmake -p "$name" -D mpv
+          7z x "mpv/$name" -ompv/x > /dev/null
+          mkdir -p desktop/native/windows-x64
+          cp mpv/x/libmpv-2.dll desktop/native/windows-x64/
+          ls -la desktop/native/windows-x64
+
+      - name: msi
+        run: ./gradlew :desktop:packageMsi -PdesktopOnly --no-daemon
+        env:
+          LASTFM_KEY: ${{ secrets.LASTFM_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ink-music-windows
+          path: desktop/build/compose/binaries/main/msi/*.msi
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21" }
+      - uses: gradle/actions/setup-gradle@v4
+      - name: rpm's tools
+        run: sudo apt-get install -y rpm
+
+      - name: deb and rpm
+        run: ./gradlew :desktop:packageDeb :desktop:packageRpm -PdesktopOnly --no-daemon
+        env:
+          LASTFM_KEY: ${{ secrets.LASTFM_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ink-music-linux
+          path: |
+            desktop/build/compose/binaries/main/deb/*.deb
+            desktop/build/compose/binaries/main/rpm/*.rpm

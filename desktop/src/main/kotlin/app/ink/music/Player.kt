@@ -103,7 +103,12 @@ object Player {
                 "loop-playlist" to if (repeat.value == 1) "inf" else "no", "loop-file" to if (repeat.value == 2) "inf" else "no",
                 // -Dink.ao=null: silent, to try it without playing out loud
             ) + listOfNotNull(System.getProperty("ink.ao")?.let { "ao" to it }))
-        } catch (e: Throwable) { trouble.value = "can't play: ${e.message?.lowercase()}"; null }
+        } catch (e: Throwable) {
+            // on Linux the system's libmpv plays (it isn't carried in the app): said how to get it
+            trouble.value = if (!Home.mac && !Home.windows) "can't play: mpv's library isn't here. install libmpv2 (debian, ubuntu) or mpv-libs (fedora)"
+                else "can't play: ${e.message?.lowercase()}"
+            null
+        }
         val m = mpv ?: return
         m.observe("pause", Mpv.FLAG)
         m.observe("playlist-pos", Mpv.INT64)

@@ -61,7 +61,8 @@ compose.desktop {
         mainClass = "app.ink.music.MainKt"
         jvmArgs += listOf("-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua")
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg)
+            // each made on its own system (the Action's): the Mac's dmg, Windows' msi, Linux's deb and rpm
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "ink music"
             packageVersion = project.version.toString()
             description = "A music player in ink's look"
@@ -72,6 +73,23 @@ compose.desktop {
             appResourcesRootDir.set(project.layout.projectDirectory.dir("native"))
             // what the app reaches for (Compose's suggestRuntimeModules), and the naming and sql jaudiotagger and JmDNS use
             modules("java.instrument", "java.net.http", "java.sql", "java.naming", "jdk.dynalink", "jdk.unsupported")
+            windows {
+                // installed for you alone (no administrator), in the start menu, its own upgrade id so a new one replaces the old
+                perUserInstall = true
+                menu = true
+                shortcut = true
+                menuGroup = "ink"
+                upgradeUuid = "6f1c2a9e-3b7d-4e55-9a41-1c0d8e2f7b63"
+                project.file("ink-music.ico").takeIf { it.exists() }?.let { iconFile.set(it) }
+            }
+            linux {
+                // a package's name can't have a space
+                packageName = "ink-music"
+                debMaintainer = "hello@inkhome.app"
+                menuGroup = "AudioVideo"
+                appCategory = "Audio"
+                project.file("src/main/resources/ink-music.png").takeIf { it.exists() }?.let { iconFile.set(it) }
+            }
             macOS {
                 bundleID = "app.ink.music"
                 appCategory = "public.app-category.music"

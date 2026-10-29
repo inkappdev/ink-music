@@ -207,12 +207,20 @@ object Library {
 /** Where ink music keeps its own files: ~/Library/Application Support/ink music (a Mac), ~/.local/share/ink-music. */
 object Home {
     val mac = System.getProperty("os.name").lowercase().startsWith("mac")
-    val dir: File = (if (mac) File(System.getProperty("user.home"), "Library/Application Support/ink music")
-        else File(System.getenv("XDG_DATA_HOME") ?: (System.getProperty("user.home") + "/.local/share"), "ink-music")).apply { mkdirs() }
+    val windows = System.getProperty("os.name").lowercase().startsWith("windows")
+    val dir: File = (when {
+        mac -> File(System.getProperty("user.home"), "Library/Application Support/ink music")
+        // Windows' own place for an app's things: %APPDATA%\ink music
+        windows -> File(System.getenv("APPDATA") ?: System.getProperty("user.home"), "ink music")
+        else -> File(System.getenv("XDG_DATA_HOME") ?: (System.getProperty("user.home") + "/.local/share"), "ink-music")
+    }).apply { mkdirs() }
 
     /** What may be thrown away and fetched again: ~/Library/Caches/ink music, ~/.cache/ink-music. */
-    val cache: File = (if (mac) File(System.getProperty("user.home"), "Library/Caches/ink music")
-        else File(System.getenv("XDG_CACHE_HOME") ?: (System.getProperty("user.home") + "/.cache"), "ink-music")).apply { mkdirs() }
+    val cache: File = (when {
+        mac -> File(System.getProperty("user.home"), "Library/Caches/ink music")
+        windows -> File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "ink music\\cache")
+        else -> File(System.getenv("XDG_CACHE_HOME") ?: (System.getProperty("user.home") + "/.cache"), "ink-music")
+    }).apply { mkdirs() }
 
     /** Written whole or not at all. */
     fun write(f: File, text: String) {

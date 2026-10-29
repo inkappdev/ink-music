@@ -64,6 +64,8 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
@@ -111,6 +113,8 @@ fun main() {
                 window.rootPane.putClientProperty("apple.awt.fullWindowContent", true)
                 window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
                 window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
+                // Windows: its title bar black, not white
+                darkTitleBar(window)
                 // back to the front: the music folder read again (a song added meanwhile shows)
                 window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
                     override fun windowGainedFocus(e: java.awt.event.WindowEvent?) = Library.freshen()
@@ -243,6 +247,30 @@ private fun App() {
         Modifier.fillMaxSize().background(Ink.black).takesDrops().focusRequester(focus).focusable()
             .onKeyEvent { k ->
                 if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
+                // Windows and Linux: the Mac menu bar's keys with Ctrl (there's no menu bar there)
+                if (!Home.mac && k.isCtrlPressed) {
+                    val digits = listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight)
+                    val done = when {
+                        k.key in digits -> { PLACES.getOrNull(digits.indexOf(k.key))?.let { Nav.go(it) }; true }
+                        k.key == Key.F && k.isShiftPressed -> { if (Player.now.value != null) Nav.player(full = true); true }
+                        k.key == Key.F -> { Nav.find(); true }
+                        k.key == Key.M && k.isShiftPressed -> { Mini.open(); true }
+                        k.key == Key.L -> { Lyrics.toggle(); if (Lyrics.on.value && Player.now.value != null) Nav.player(); true }
+                        k.key == Key.U -> { Nav.open(Page.Queue); true }
+                        k.key == Key.P -> { Nav.open(Page.PlayOn); true }
+                        k.key == Key.S -> { Player.shuffle(); true }
+                        k.key == Key.R -> { Player.repeat(); true }
+                        k.key == Key.Zero -> { if (Player.now.value != null) Nav.player(); true }
+                        k.key == Key.Y -> { Nav.open(Page.Year); true }
+                        k.key == Key.Comma -> { Nav.open(Page.Settings); true }
+                        k.key == Key.LeftBracket -> { Nav.back(); true }
+                        k.key == Key.Backslash -> { Tuck.set(!Tuck.on.value); true }
+                        k.key == Key.DirectionRight -> { Player.next(); true }
+                        k.key == Key.DirectionLeft -> { Player.previous(); true }
+                        else -> false
+                    }
+                    if (done) return@onKeyEvent true
+                }
                 when {
                     k.key == Key.Spacebar -> { Player.toggle(); true }
                     k.key == Key.DirectionRight -> { Player.seek(Player.position.value + 10_000); true }

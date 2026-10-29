@@ -118,9 +118,9 @@ class Mpv(options: Map<String, String>) {
         private fun load(): MpvApi {
             // the app's own (its dependencies beside it, found through @loader_path), else the system's
             val bundled = System.getProperty("compose.application.resources.dir")?.let { dir ->
-                listOf("libmpv.2.dylib", "libmpv.dylib", "libmpv.so.2", "mpv-2.dll").map { File(dir, it) }.firstOrNull { it.exists() }
+                listOf("libmpv.2.dylib", "libmpv.dylib", "libmpv.so.2", "libmpv-2.dll", "mpv-2.dll").map { File(dir, it) }.firstOrNull { it.exists() }
             }
-            val names = listOfNotNull(bundled?.path, "mpv", "libmpv.so.2", "/opt/homebrew/lib/libmpv.dylib", "/usr/local/lib/libmpv.dylib", "mpv-2")
+            val names = listOfNotNull(bundled?.path, "mpv", "libmpv.so.2", "/opt/homebrew/lib/libmpv.dylib", "/usr/local/lib/libmpv.dylib", "libmpv-2", "mpv-2")
             var last: Throwable? = null
             for (n in names) try { return Native.load(n, MpvApi::class.java) } catch (e: UnsatisfiedLinkError) { last = e }
             throw IllegalStateException("libmpv isn't here", last)

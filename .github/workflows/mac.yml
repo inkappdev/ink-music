@@ -5,7 +5,7 @@ name: mac
 on:
   push:
     branches: [main]
-    paths: ["desktop/**", "youtube/**", "core/**", "app/src/main/res/font/**", ".github/workflows/mac.yml", "*.gradle.kts", "gradle/**"]
+    paths: ["desktop/**", "youtube/**", "core/**", "app/src/main/res/font/**", "app/src/main/assets/**", ".github/workflows/mac.yml", "*.gradle.kts", "gradle/**"]
   workflow_dispatch:
 
 jobs:
