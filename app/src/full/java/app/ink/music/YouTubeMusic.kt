@@ -300,6 +300,25 @@ object YouTubeMusic {
         InnerTube().lyrics(vid).map { (at, words) -> Line(at, if (words.trim() == "♪") "" else words) }
     }.onFailure { android.util.Log.d("ink-youtube", "lyrics $title: $it") }.getOrNull()
 
+    /** YouTube Music's moods & moments and genres (blocking; signed out the same). */
+    fun moods(): List<TubeMood> = InnerTube().moods().map { TubeMood(it.title, it.params, it.genre) }
+
+    /** A mood's flavors: shelves of YouTube Music's playlists for it (blocking). */
+    fun mood(params: String): List<Pair<String, List<TubeList>>> = InnerTube().mood(params).map { s ->
+        s.title to s.items.filter { it.kind == InnerTube.Kind.PLAYLIST }.map { TubeList(it.id.removePrefix("VL"), it.title, it.subtitle, it.art) }
+    }.filter { it.second.isNotEmpty() }
+
+    /** A station from a mood: the first playlist of each of its first flavors, their songs taken in turn (blocking). */
+    fun moodStation(params: String): List<Song> {
+        val lists = InnerTube().mood(params).take(4).mapNotNull { it.items.firstOrNull { i -> i.kind == InnerTube.Kind.PLAYLIST } }
+        val each = lists.map { runCatching { InnerTube().tracks(it.id, 30).map { t -> trackSong(t) }.shuffled() }.getOrDefault(emptyList()) }
+        return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }.distinctBy { it.id }.take(80)
+    }
+
+    /** A record someone picked, found on YouTube Music: its name and artist matched; null when it hasn't it. */
+    suspend fun findRecord(title: String, artist: String): TubeAlbum? =
+        search("$artist $title").albums.firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
+
     /** YouTube Music's song by these words, if it has one (blocking). */
     fun find(title: String, artist: String): Song? {
         init()
