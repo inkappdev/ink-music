@@ -63,8 +63,22 @@ object NowPlaying {
     private fun str(s: String) = msg(cls("NSString"), "stringWithUTF8String:", s)
     private fun num(d: Double) = msg(cls("NSNumber"), "numberWithDouble:", d)
 
+    /** The app quitting: off Now Playing, so the Mac doesn't keep it as the app playing. */
+    fun stop() {
+        if (!ours || !::objc.isInitialized) return
+        runCatching {
+            val pool = objc.objc_autoreleasePoolPush()
+            val center = msg(cls("MPNowPlayingInfoCenter"), "defaultCenter")
+            msg(center, "setNowPlayingInfo:", null as Pointer?)
+            msg(center, "setPlaybackState:", 3L) // stopped
+            objc.objc_autoreleasePoolPop(pool)
+        }
+    }
+
     /** A global block (nothing captured, never copied or freed) whose invoke is `f`. */
     private fun block(f: Callback): Pointer {
+        // the Mac calls it on a thread of its own: a daemon to Java, so it never keeps the app alive after a quit
+        com.sun.jna.Native.setCallbackThreadInitializer(f, com.sun.jna.CallbackThreadInitializer(true, false, "ink-nowplaying"))
         val descriptor = Memory(16).apply { setLong(0, 0); setLong(8, 32) }
         val b = Memory(32)
         b.setPointer(0, NativeLibrary.getInstance("System").getGlobalVariableAddress("_NSConcreteGlobalBlock"))

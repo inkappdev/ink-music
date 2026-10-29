@@ -125,6 +125,9 @@ object SyncHub {
         }
     }
 
+    /** The app quitting: nothing left listening or announcing (dns-sd would go on saying this computer's here). */
+    fun close() = stop()
+
     @Synchronized private fun stop() {
         runCatching { server?.close() }; server = null
         announcing?.destroy(); announcing = null
