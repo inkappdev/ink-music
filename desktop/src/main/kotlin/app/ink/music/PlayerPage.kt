@@ -46,6 +46,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowState
@@ -54,8 +56,28 @@ import kotlinx.coroutines.delay
 /** The window, for the player's whole screen. */
 object Win {
     var state: WindowState? = null
+    /** The window's size and place before full screen, put back after (the Mac sometimes left it its smallest). */
+    var before: DpSize? = null
+    var beforeAt: WindowPosition? = null
+    private var was: WindowPlacement = WindowPlacement.Floating
     val full get() = state?.placement == WindowPlacement.Fullscreen
-    fun full(on: Boolean) { state?.placement = if (on) WindowPlacement.Fullscreen else WindowPlacement.Floating }
+
+    fun full(on: Boolean) {
+        val s = state ?: return
+        if (on == full) return   // closing the player when it wasn't full screen: the window left as it is (zoomed stays zoomed)
+        if (on) {
+            was = s.placement
+            if (s.placement == WindowPlacement.Floating) { before = s.size; beforeAt = s.position }
+            s.placement = WindowPlacement.Fullscreen
+        } else {
+            s.placement = was
+            // once the Mac's done leaving full screen, the size it had (it can come back at its smallest)
+            if (was == WindowPlacement.Floating) javax.swing.Timer(700) {
+                before?.takeIf { it.width >= Placed.LEAST.width }?.let { s.size = it }
+                beforeAt?.takeIf { it.isSpecified }?.let { s.position = it }
+            }.apply { isRepeats = false; start() }
+        }
+    }
 }
 
 /**
