@@ -120,7 +120,10 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             label = "song",
                         ) { _ ->
                             Column {
-                                BasicText(title.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                Row(verticalAlignment = Alignment.Top) {
+                                    BasicText(title.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                    Heart(n.song, 3.dp, Modifier.padding(start = 8.dp))
+                                }
                                 Spacer(Modifier.height(12.dp))
                                 if (!n.song.station) Word(by.lowercase(), pixel(14.sp)) { artist?.let { open(Page.Artist(it)) } }
                                 if (n.song.album.isNotEmpty()) Word(n.song.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }

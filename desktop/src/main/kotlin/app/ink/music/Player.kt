@@ -73,6 +73,8 @@ object Player {
     private var unshuffled: List<Song>? = null
 
     private var mpv: Mpv? = null
+    /** Even volume's level for a song that has none in its tags (dB). */
+    const val UNTAGGED = -7f
     @Volatile private var paused = true
     @Volatile private var index = -1
     @Volatile private var duration = 0L
@@ -89,6 +91,9 @@ object Player {
                 "gapless-audio" to "yes",
                 // even volume from the files' own tags: a record's level, a song's when it has none
                 "replaygain" to if (sound.value.even) "album" else "no", "replaygain-clip" to "no",
+                // a song with no gain anywhere: about where most of a library sits (the phone's, ReplayGain's -18 LUFS
+                // from today's masters), so an untagged song isn't the odd loud one out
+                "replaygain-fallback" to UNTAGGED.toString(),
                 // the Mac's media keys and Now Playing (mpv does both, asked to even as a library)
                 "media-controls" to "yes", "input-media-keys" to "yes",
                 "audio-client-name" to "ink music", "title" to "ink music",
@@ -206,6 +211,7 @@ object Player {
                 val format = m.get("audio-params/format").orEmpty()
                 val bits = s.bits.takeIf { it > 0 } ?: Regex("\\d+").find(format)?.value?.toIntOrNull()?.takeIf { codec in Heard.LOSSLESS && it <= 24 } ?: 0
                 val gain = (m.get("current-tracks/audio/replaygain-album-gain") ?: m.get("current-tracks/audio/replaygain-track-gain"))?.toFloatOrNull()
+                    ?: if (s.station) null else UNTAGGED
                 heard.value = Heard(
                     id = s.id, codec = codec, bits = if (codec in Heard.LOSSLESS) bits else 0,
                     rate = m.get("audio-params/samplerate")?.toIntOrNull() ?: s.rate,
@@ -358,6 +364,21 @@ object Player {
             scope.launch { ListenBrainz.playingNow(Home.dir, said); LastFm.playingNow(Home.dir, said) }
         }
         if (s != null) keep()
+    }
+
+    /** Radio from a song: it plays, and more like it follow as the queue runs out (radio on). */
+    fun startRadio(s: Song) { if (!radio.value) radio(true); play(listOf(s)) }
+
+    /** More after a song already playing (a mix's own songs, once they're read), if it's still the one playing. */
+    fun follow(s: Song, songs: List<Song>) {
+        if (casting) return Casting.extend(songs)
+        val m = mpv ?: return
+        if (_queue.value.getOrNull(index)?.id != s.id) return
+        val there = _queue.value.map { it.id }.toSet()
+        val more = songs.filter { it.id !in there }
+        _queue.value = _queue.value + more
+        more.forEach { m.command("loadfile", where(it), "append") }
+        keep()
     }
 
     /** These songs, from `start`: the queue they become. */

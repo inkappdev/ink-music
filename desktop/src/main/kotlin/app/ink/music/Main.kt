@@ -90,6 +90,7 @@ fun main() {
     ListenBrainz.start(Home.dir)
     LastFm.start(Home.dir)
     Listened.read()
+    Loved.start()
     Colours.start()
     Player.start()
     application {
@@ -462,13 +463,18 @@ fun SongRow(
             // a length not known (YouTube's top songs come without one): none said
             if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), modifier = Modifier.padding(start = 16.dp))
         }
-        if (options) Row(
+        // its options, wrapping onto a second line where there's no room (the now column's up next)
+        if (options) androidx.compose.foundation.layout.FlowRow(
             Modifier.padding(start = if (number != null) 36.dp else 0.dp, bottom = 10.dp).fadeUp(),
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             val o = pixel(13.sp)
             Word("play next", o, touch = 6.dp) { options = false; Player.playNext(s) }
             Word("add to queue", o, touch = 6.dp) { options = false; Player.add(s) }
+            // radio: this song, then more like it as the queue runs out
+            if (!s.station) Word("radio", o, touch = 6.dp) { options = false; Player.startRadio(s) }
+            val loved by Loved.ids.collectAsState()
+            if (!s.station) Word(if (s.id in loved) "unlove" else "love", o, touch = 6.dp) { options = false; Loved.toggle(s) }
             if (open != null && s.album.isNotEmpty()) Word("record", o, touch = 6.dp) { options = false; open(Page.Record(s.albumId)) }
             if (open != null) Word("artist", o, touch = 6.dp) { options = false; open(Page.Artist(s.albumArtist)) }
             if (onRemove != null) Word("remove", o, touch = 6.dp) { options = false; onRemove() }

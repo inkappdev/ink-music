@@ -99,16 +99,26 @@ object Server {
                     offset += 500
                 }
                 val songs = ArrayList<Song>()
+                val starred = HashSet<String>()
+                val starredAt = HashMap<String, Long>()
                 offset = 0
                 while (true) {
                     val list = call(a, "search3", "query" to "", "songCount" to 500, "songOffset" to offset, "artistCount" to 0, "albumCount" to 0)
                         ?.optJSONObject("searchResult3")?.optJSONArray("song") ?: break
-                    for (i in 0 until list.length()) list.optJSONObject(i)?.let { songs += song(a, it, recordArtist) }
+                    for (i in 0 until list.length()) list.optJSONObject(i)?.let {
+                        songs += song(a, it, recordArtist)
+                        // a star is a love (the phone's and every other app's): when it was made, where it says
+                        if (it.optString("starred").isNotEmpty()) {
+                            starred += "n" + it.optString("id")
+                            runCatching { java.time.Instant.parse(it.optString("starred")).toEpochMilli() }.getOrNull()?.let { at -> starredAt["n" + it.optString("id")] = at }
+                        }
+                    }
                     if (list.length() < 500) break
                     offset += 500
                 }
                 if (songs.isNotEmpty() || offset == 0) {
                     readPlaylists()
+                    Loved.putServer(starred, starredAt)
                     Library.putServer(songs)
                     count.value = songs.size
                     runCatching { Home.write(songsFile, JSONArray().apply { songs.forEach { put(it.json()) } }.toString()) }
@@ -220,6 +230,12 @@ object Server {
             (0 until list.length()).mapNotNull { list.optJSONObject(it) }.map { Library.song("n" + it.optString("id")) ?: song(a, it, emptyMap()) }
                 .filter { it.id != "n$sid" }
         }.getOrDefault(emptyList())
+    }
+
+    /** A song's star on the server, on or off (a love). */
+    fun star(songId: String, on: Boolean) {
+        val a = _account.value ?: return
+        runCatching { call(a, if (on) "star" else "unstar", "id" to songId.removePrefix("n")) }
     }
 
     fun url(a: Account, method: String, vararg params: Pair<String, Any>): String {
