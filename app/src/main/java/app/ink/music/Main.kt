@@ -235,6 +235,7 @@ sealed interface Page {
     data class TubeList(val list: app.ink.music.TubeList) : Page
     data class TubeArtist(val artist: app.ink.music.TubeArtist) : Page
     data class Weekly(val week: Int) : Page
+    data object Kept : Page
     data object Import : Page
     data object Equalizer : Page
     data object HandOver : Page
@@ -355,6 +356,7 @@ private fun App() {
                         is Page.TubeList -> TubeListPage(p.list, pages)
                         is Page.TubeArtist -> ArtistPage(p.artist.name, pages, p.artist.id)
                         is Page.Weekly -> WeeklyPage(p.week, pages)
+                        Page.Kept -> KeptPage(pages)
                         Page.Import -> ImportPage(pages)
                         Page.Equalizer -> EqualizerPage(pages)
                         Page.HandOver -> HandOverPage(pages)
@@ -526,6 +528,9 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
                     item {
                         if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}") { pages.open(Page.Loved) }
                         ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
+                        // what's on the phone to play with no signal (your server's, YouTube's)
+                        val keptIds by Offline.kept.collectAsState()
+                        if (keptIds.isNotEmpty()) ListRow("kept on this phone", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}, offline") { pages.open(Page.Kept) }
                         Spacer(Modifier.height(10.dp))
                         if (account != null) { NewPlaylist(null) {}; Spacer(Modifier.height(10.dp)) }
                     }
@@ -791,7 +796,7 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
             val sonic by Server.sonic.collectAsState()
             if (pages != null && sonic && account != null && Server.idOf(s) != null)
                 Word("path to", pixel(13.sp), touch = 8.dp) { open = false; pages.open(Page.Path(s)) }
-            if (s.server) {
+            if (Offline.keepable(s)) {
                 val kept by Offline.kept.collectAsState()
                 val ctx2 = LocalContext.current
                 if (s.id in kept) Word("not offline", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; Offline.remove(ctx2, listOf(s.id)) }
@@ -1114,6 +1119,36 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
     } }
 }
 
+/** The songs kept on the phone (your server's, YouTube Music's), to play with no signal; each let go from its options. */
+@Composable
+private fun KeptPage(pages: Pages) {
+    val ctx = LocalContext.current
+    val kept by Offline.kept.collectAsState()
+    val songs = remember(kept) { kept.mapNotNull { Library.song(it) } + Offline.tubeSongs(ctx).filter { it.id in kept } }
+        .let { l -> remember(l) { l.distinctBy { it.id }.sortedBy { Library.sortName(it.artist) + it.album + it.title } } }
+    val list = rememberLazyListState()
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                BasicText("KEPT ON THIS PHONE", style = headline(36.sp), maxLines = 2)
+                Spacer(Modifier.height(6.dp))
+                BasicText("${songs.size} songs, to play with no signal · %.1f gb".format(java.util.Locale.ROOT, Offline.bytes(ctx) / 1e9), style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(14.dp))
+                if (songs.isNotEmpty()) Row {
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs, 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(songs, i) } } }
+    } }
+}
+
 /** Four of a week's covers in the dither, two by two, edge to edge: ink weekly's own cover. */
 @Composable
 fun Mosaic(songs: List<Song>, modifier: Modifier) {
@@ -1326,7 +1361,8 @@ private fun ImportPage(pages: Pages) {
 @Composable
 fun KeepOffline(songs: List<Song>) {
     val ctx = LocalContext.current
-    val server = remember(songs) { songs.filter { it.server } }
+    // your server's and YouTube Music's (the full build)
+    val server = remember(songs) { songs.filter { Offline.keepable(it) } }
     if (server.isEmpty()) return
     val kept by Offline.kept.collectAsState()
     val keeping by Offline.keeping.collectAsState()
@@ -1540,6 +1576,7 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             if (!all.isNullOrEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                Box(Modifier.padding(end = 26.dp)) { KeepOffline(all) }
                 // signed in: saved to your library there (lit), or not
                 val who by YouTubeAccount.who.collectAsState()
                 val records by YouTubeAccount.records.collectAsState()
@@ -1583,7 +1620,8 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
             Spacer(Modifier.height(16.dp))
             if (!all.isNullOrEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                KeepOffline(all)
             }
             // yours (not a mix, not someone else's): "delete", then "delete it" lit a moment, as a server playlist's
             val mine by androidx.compose.runtime.produceState(false, pl.id) { value = YouTubeAccount.mine(pl.id) }

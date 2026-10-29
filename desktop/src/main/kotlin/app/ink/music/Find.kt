@@ -251,7 +251,12 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                 BasicText(songs?.let { s -> listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration }), "youtube music").joinToString("  ·  ") } ?: "reading",
                     style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(16.dp))
-                songs?.takeIf { it.isNotEmpty() }?.let { s -> Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) } }
+                songs?.takeIf { it.isNotEmpty() }?.let { s ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                        Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
+                        KeepOffline(s)
+                    }
+                }
             }
             Spacer(Modifier.width(40.dp))
             val list = rememberLazyListState()

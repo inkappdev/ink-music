@@ -1,5 +1,7 @@
 package app.ink.music
 
+import kotlinx.coroutines.launch
+
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -11,7 +13,9 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Your server's songs kept on the phone, to play with no signal (a flight, the car, the country): fetched by
+ * Your server's songs kept on the phone, and YouTube Music's (the full build: Bronson, 2026-10-29, "a lot of people
+ * ask"; its stream found first, the plain one a speaker gets, its name and cover kept beside it as "<id>.json"), to
+ * play with no signal (a flight, the car, the country): fetched by
  * Android's own download manager (it carries on with the app closed and through a bad signal, and shows itself in
  * the notifications) into ink music's own folder, out of the library's sight (so they're not listed twice). The
  * original file (lossless, if it is), or MP3 320 to keep it small (settings). The player plays the kept file in
@@ -28,6 +32,10 @@ object Offline {
     private fun dir(c: Context) = File(c.getExternalFilesDir(null) ?: c.filesDir, "offline")
     private fun pending(c: Context) = File(c.filesDir, "offline-pending.json")
     private fun small(c: Context) = File(c.filesDir, "offline-mp3")
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    /** Whether a song can be kept: your server's, or YouTube Music's (the full build). */
+    fun keepable(s: Song) = s.server || (s.tube && YouTubeMusic.available)
 
     /** A song's kept file, if it's whole (the player asks this as each server song starts: quick, no listing). */
     fun file(c: Context, id: String): File? = File(dir(c), id).takeIf { it.isFile && it.length() > 0 }
@@ -39,8 +47,10 @@ object Offline {
     /** What's kept and what's being fetched, read from the folder and the download manager. */
     fun start(c: Context) = refresh(c)
 
-    /** The songs (your server's) kept: each not kept or on its way asked for. */
+    /** The songs (your server's, YouTube Music's) kept: each not kept or on its way asked for; a YouTube song's stream found first. */
     fun keep(c: Context, songs: List<Song>) {
+        val tube = songs.filter { it.tube && YouTubeMusic.available && it.id !in _kept.value && it.id !in _keeping.value }
+        if (tube.isNotEmpty()) scope.launch { keepTube(c, tube) }
         val dm = c.getSystemService(DownloadManager::class.java) ?: return
         val now = _keeping.value.toMutableMap()
         dir(c).mkdirs()
@@ -56,13 +66,47 @@ object Offline {
         _keeping.value = now; save(c)
     }
 
+    /** YouTube songs kept: each its stream found (the plain one, which the download manager can fetch as it is), its words beside it. */
+    @Synchronized private fun keepTube(c: Context, songs: List<Song>) {
+        val dm = c.getSystemService(DownloadManager::class.java) ?: return
+        dir(c).mkdirs()
+        for (s in songs) {
+            if (s.id in _kept.value || s.id in _keeping.value) continue
+            val url = runCatching { YouTubeMusic.stream(s.id, forSpeaker = true, small = mp3(c))?.first }.getOrNull() ?: continue
+            runCatching {
+                File(dir(c), "${s.id}.json").writeText(JSONObject().put("id", s.id).put("title", s.title).put("artist", s.artist).put("album", s.album)
+                    .put("albumId", s.albumId).put("albumArtist", s.albumArtist).put("duration", s.duration).put("art", s.art ?: "").toString())
+            }
+            // the whole file asked for at once (its length is in the link): YouTube slows a plain long read to playing speed
+            val whole = Regex("[?&]clen=(\\d+)").find(url)?.groupValues?.get(1)?.toLongOrNull()
+                ?.takeIf { "range=" !in url }?.let { "$url&range=0-${it - 1}" } ?: url
+            val r = DownloadManager.Request(Uri.parse(whole))
+                .setTitle(s.title).setDescription("ink music · keeping it on the phone")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+                .setDestinationUri(Uri.fromFile(File(dir(c), "${s.id}.dl")))
+            val id = runCatching { dm.enqueue(r) }.getOrNull() ?: continue
+            _keeping.value = _keeping.value + (s.id to id); save(c)
+        }
+    }
+
+    /** The YouTube songs kept, as songs to list and play (from their words kept beside them). */
+    fun tubeSongs(c: Context): List<Song> = dir(c).listFiles()?.filter { it.name.endsWith(".json") }?.mapNotNull { f ->
+        runCatching {
+            val o = JSONObject(f.readText()); val id = o.getString("id")
+            if (!File(dir(c), id).isFile) return@runCatching null
+            YouTubeMusic.known(id) ?: Song(id = id, uri = Uri.parse("ytm://" + id.removePrefix("y")), title = o.optString("title"), artist = o.optString("artist"),
+                album = o.optString("album"), albumId = o.optString("albumId").ifEmpty { id }, albumArtist = o.optString("albumArtist").ifEmpty { o.optString("artist") },
+                duration = o.optLong("duration"), disc = 1, track = 0, year = 0, art = o.optString("art").ifEmpty { null }).also(YouTubeMusic::remember)
+        }.getOrNull()
+    }.orEmpty()
+
     /** These songs no longer kept (and any on their way called off). */
     fun remove(c: Context, songs: Collection<String>) {
         val dm = c.getSystemService(DownloadManager::class.java)
         val now = _keeping.value.toMutableMap()
         for (id in songs) {
             now.remove(id)?.let { runCatching { dm?.remove(it) } }
-            File(dir(c), id).delete(); File(dir(c), "$id.dl").delete()
+            File(dir(c), id).delete(); File(dir(c), "$id.dl").delete(); File(dir(c), "$id.json").delete()
         }
         _keeping.value = now; save(c)
         _kept.value = _kept.value - songs.toSet()
@@ -92,7 +136,7 @@ object Offline {
     }
 
     /** How much the kept songs take (bytes). */
-    fun bytes(c: Context): Long = dir(c).listFiles()?.filter { !it.name.endsWith(".dl") }?.sumOf { it.length() } ?: 0L
+    fun bytes(c: Context): Long = dir(c).listFiles()?.filter { !it.name.endsWith(".dl") && !it.name.endsWith(".json") }?.sumOf { it.length() } ?: 0L
 
     /** Downloads finished made songs (renamed whole), failed ones let go; the kept read from the folder. */
     @Synchronized fun refresh(c: Context) {
@@ -116,7 +160,7 @@ object Offline {
             }
         }
         _keeping.value = now; save(c)
-        _kept.value = dir(c).listFiles()?.filter { !it.name.endsWith(".dl") && it.length() > 0 }?.map { it.name }?.toSet().orEmpty()
+        _kept.value = dir(c).listFiles()?.filter { !it.name.endsWith(".dl") && !it.name.endsWith(".json") && it.length() > 0 }?.map { it.name }?.toSet().orEmpty()
     }
 
     private fun save(c: Context) = runCatching {

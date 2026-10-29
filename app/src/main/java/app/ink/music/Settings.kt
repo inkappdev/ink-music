@@ -235,20 +235,20 @@ fun SettingsPage(pages: Pages, part: String? = null) {
 
                 Column(Modifier.cascade(2)) {
                     // your server's songs kept on the phone: how many, how much, in what, and all let go
-                    if (account != null) {
+                    if (account != null || YouTubeMusic.available) {
                         val kept by Offline.kept.collectAsState()
                         BasicText("OFFLINE", style = headline(24.sp))
                         Spacer(Modifier.height(6.dp))
                         val mb = remember(kept) { Offline.bytes(ctx) / 1_048_576 }
-                        BasicText(if (kept.isEmpty()) "keep a record or a playlist from your server on the phone (keep offline, on its page) to play it with no signal"
+                        BasicText(if (kept.isEmpty()) "keep a song, a record or a playlist on the phone (keep offline: on its page, or held) to play it with no signal"
                             else "${kept.size} ${if (kept.size == 1) "song" else "songs"} on this phone, $mb mb", style = pixel(12.sp, Ink.mid))
                         Spacer(Modifier.height(12.dp))
-                        BasicText("kept as", style = pixel(12.sp, Ink.mid))
+                        BasicText("kept as: your server's original file (lossless if it is) and youtube's best, or smaller (mp3 320, and youtube's lighter stream)", style = pixel(12.sp, Ink.mid))
                         Spacer(Modifier.height(6.dp))
                         var small by remember { mutableStateOf(Offline.mp3(ctx)) }
                         Row {
-                            Word("original", pixel(14.sp, if (!small) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { small = false; Offline.mp3(ctx, false) }
-                            Word("mp3 320", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { small = true; Offline.mp3(ctx, true) }
+                            Word("as they are", pixel(14.sp, if (!small) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { small = false; Offline.mp3(ctx, false) }
+                            Word("smaller", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { small = true; Offline.mp3(ctx, true) }
                         }
                         if (kept.isNotEmpty()) {
                             Spacer(Modifier.height(10.dp))
