@@ -273,7 +273,9 @@ object Mixes {
         val played = History.read().filter { it.at >= since }.groupingBy { it.artist.substringBefore(", ").lowercase() }.eachCount()
         val names = songs.filter { !it.station }.groupBy { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
             .filterKeys { it.isNotBlank() && it != "unknown" && !it.equals("various artists", true) }
-            .entries.sortedByDescending { (name, list) -> (played[name.lowercase()] ?: 0) * 1000 + list.size }.map { it.key }.take(8)
+            .entries.sortedByDescending { (name, list) -> (played[name.lowercase()] ?: 0) * 1000 + list.size }.map { it.key }
+            // whom you follow first, then whom you play most
+            .let { mine -> (Follows.all.value.map { it.name } + mine).distinctBy { it.lowercase() } }.take(8)
         val found = ArrayList<Mix>()
         for (name in names) {
             val info = kotlinx.coroutines.withTimeoutOrNull(8_000) { Artists.of(name, "").firstOrNull { it != null } } ?: continue
