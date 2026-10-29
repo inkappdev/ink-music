@@ -60,10 +60,18 @@ object TubeAccount {
         }
     }
 
-    /** A YouTube song liked (or not) there: the heart. */
+    /**
+     * A YouTube song liked (or not) there: the heart. Among your liked songs here at once (the loved list shows them),
+     * as the phone does; put back if YouTube turns it down.
+     */
     fun like(s: Song, on: Boolean) {
         val t = tube() ?: return
-        scope.launch { runCatching { t.like(s.id.removePrefix("y"), on) } }
+        val before = liked.value
+        liked.value = if (on) listOf(s) + before.filter { it.id != s.id } else before.filter { it.id != s.id }
+        scope.launch {
+            val ok = runCatching { t.like(s.id.removePrefix("y"), on) }.getOrDefault(false)
+            if (!ok) { Log.d("youtube: like ${s.id} $on refused"); liked.value = before }
+        }
     }
 
     /** A YouTube song played here, told to your history there. */
