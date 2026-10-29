@@ -410,6 +410,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
         }
         // beside the rail no name over the page: the rail's lit word says where you are (Bronson, 2026-10-29)
         if (words) Spacer(Modifier.height(14.dp))
+        if (tab in setOf("albums", "artists", "songs")) NetworkShut(Modifier.padding(horizontal = SIDE).padding(bottom = 18.dp))
         if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
             Modifier.padding(horizontal = SIDE))
         Spacer(Modifier.height(4.dp))
