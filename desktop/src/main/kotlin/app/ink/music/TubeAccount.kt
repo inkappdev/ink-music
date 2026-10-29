@@ -99,6 +99,9 @@ object TubeAccount {
 
     /** While waiting: the code to type on the phone; null when not. */
     val code = MutableStateFlow<String?>(null)
+    /** Where the phone can reach it by hand, if the wifi doesn't show it ("192.168.1.20:52114"). */
+    val at = MutableStateFlow<String?>(null)
+    private var announcing: Process? = null
     /** What happened, said ("signed in as ...", "that didn't work"). */
     val said = MutableStateFlow<String?>(null)
     private var server: ServerSocket? = null
@@ -124,8 +127,13 @@ object TubeAccount {
         }, "handover").apply { isDaemon = true }.start()
         scope.launch {
             runCatching {
-                val at = Serve.local() ?: java.net.InetAddress.getLocalHost()
-                dns = javax.jmdns.JmDNS.create(at).also { it.registerService(javax.jmdns.ServiceInfo.create("${Handover.SERVICE}.local.", name, s.localPort, "ink music")) }
+                val ip = Serve.local() ?: java.net.InetAddress.getLocalHost()
+                at.value = "${ip.hostAddress}:${s.localPort}"
+                // a Mac's own announcer (mDNSResponder, as every Mac app's): a second one in the app (JmDNS) fought it
+                // for the port and the phone never heard; elsewhere JmDNS
+                if (Home.mac) announcing = ProcessBuilder("/usr/bin/dns-sd", "-R", name, Handover.SERVICE, "local", s.localPort.toString())
+                    .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
+                else dns = javax.jmdns.JmDNS.create(ip).also { it.registerService(javax.jmdns.ServiceInfo.create("${Handover.SERVICE}.local.", name, s.localPort, "ink music")) }
             }.onFailure { Log.d("handover dns: $it") }
             kotlinx.coroutines.delay(10 * 60_000L)
             if (server === s) stop()
@@ -134,6 +142,8 @@ object TubeAccount {
 
     fun stop() {
         runCatching { server?.close() }; server = null
+        announcing?.destroy(); announcing = null
+        at.value = null
         val d = dns; dns = null
         if (d != null) scope.launch { runCatching { d.unregisterAllServices(); d.close() } }
         code.value = null

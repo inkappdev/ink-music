@@ -72,6 +72,14 @@ fun HandOverPage(pages: Pages) {
             if (p == null) {
                 if (found.isEmpty()) BasicText("looking on this wifi", style = pixel(13.sp, Ink.mid))
                 found.forEach { c -> Word(c.name.uppercase(), headline(28.sp), touch = 8.dp) { picked = c; said = null } }
+                // not listed (a wifi that keeps devices apart, a firewall): its address, as the computer shows it
+                Spacer(Modifier.height(28.dp))
+                var typed by remember { mutableStateOf("") }
+                Field("or its address, under the code on the computer", typed, { typed = it.trim() }, "192.168.1.20:52114", KeyboardType.Uri)
+                Word("NEXT", headline(28.sp, if (typed.contains(':')) Ink.ink else Ink.mid), touch = 8.dp) {
+                    val host = typed.substringBeforeLast(':'); val port = typed.substringAfterLast(':').toIntOrNull()
+                    if (host.isNotEmpty() && port != null) { picked = Computer(host, host, port); said = null }
+                }
             } else {
                 BasicText(p.name.uppercase(), style = headline(28.sp))
                 Spacer(Modifier.height(14.dp))
