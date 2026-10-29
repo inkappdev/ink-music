@@ -1,6 +1,10 @@
 package app.ink.music
 
 import androidx.compose.foundation.Image
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,8 +47,8 @@ import kotlin.math.max
 import kotlin.math.pow
 
 /** The tower's dots as a picture (unfiltered, 3 dp a dot). */
-private fun towerFrame(w: Int, h: Int, frame: Int, dot: Int): ImageBitmap {
-    val out = RadioTower.pixels(w, h, .2f, frame, Ink.ink.toArgb(), dot)
+private fun towerFrame(w: Int, h: Int, frame: Int, dot: Int, bolts: Boolean = false): ImageBitmap {
+    val out = RadioTower.pixels(w, h, .2f, frame, Ink.ink.toArgb(), dot, bolts)
     // ARGB ints as Skia's BGRA bytes (little-endian: the same memory)
     val bytes = java.nio.ByteBuffer.allocate(out.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply { asIntBuffer().put(out) }.array()
     return org.jetbrains.skia.Image.makeRaster(
@@ -84,7 +88,25 @@ fun RadioHead() {
             val count = frames?.size ?: return@LaunchedEffect
             while (moving && count > 1) { delay(220); frame = (frame + 1) % count }
         }
-        frames?.let { f -> Image(f[frame % f.size], null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None) }
+        // three clicks on the tower: lightning off its mast, and a station by chance (an easter egg)
+        var taps by remember { mutableIntStateOf(0) }
+        var lastTap by remember { mutableLongStateOf(0L) }
+        var struck by remember { mutableLongStateOf(0L) }
+        val bolt by produceState<ImageBitmap?>(null, w, h, dot) { value = withContext(Dispatchers.Default) { towerFrame(w, h, 0, dot, bolts = true) } }
+        var flash by remember { mutableStateOf(false) }
+        LaunchedEffect(struck) {
+            if (struck == 0L) return@LaunchedEffect
+            repeat(5) { flash = true; delay(90); flash = false; delay(70) }
+            ours.filter { it.song.id != station?.id }.randomOrNull()?.let { Player.play(listOf(it.song)) }
+        }
+        val tower = Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, indication = null) {
+            val t = System.currentTimeMillis()
+            taps = if (t - lastTap < 500) taps + 1 else 1
+            lastTap = t
+            if (taps >= 3) { taps = 0; struck = t }
+        }
+        val shownFrame = if (flash) bolt else frames?.let { f -> f[frame % f.size] }
+        shownFrame?.let { Image(it, null, tower, contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None) }
         // the words, on black, at the right
         // on a black tab, as a sleeve's name is: the rings run behind it, and type over the dots doesn't read
         Column(Modifier.fillMaxWidth(.5f).align(Alignment.BottomEnd).padding(bottom = 18.dp).background(Ink.black).padding(start = 18.dp, top = 12.dp, bottom = 10.dp)) {

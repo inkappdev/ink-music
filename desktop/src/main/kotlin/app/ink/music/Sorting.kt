@@ -151,7 +151,7 @@ object Listened {
     private val _now = MutableStateFlow(Listening())
     val now: StateFlow<Listening> = _now
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    fun read() { scope.launch { _now.value = Listening.of(History.read()) } }
+    fun read() { scope.launch { val all = History.read(); _now.value = Listening.of(all); EggsNow.take(all) } }
 }
 
 /** Shuffle's order for this run: each song, record or artist by its own key's place (the phone's Order). */

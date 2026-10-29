@@ -2,6 +2,7 @@ package app.ink.music
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -101,7 +102,26 @@ private fun RadioHead(ours: List<Stations.Curated>) {
                 val count = frames?.size ?: return@LaunchedEffect
                 while (moving && count > 1) { delay(220); frame = (frame + 1) % count }
             }
-            frames?.let { f -> Image(f[frame % f.size], null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None) }
+            // three taps on the tower: lightning off its mast, and a station by chance (an easter egg)
+            var taps by remember { mutableIntStateOf(0) }
+            var lastTap by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+            var struck by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+            var flash by remember { mutableStateOf(false) }
+            val bolt by produceState<ImageBitmap?>(null, w, h, dot) {
+                value = withContext(Dispatchers.Default) { Bitmap.createBitmap(RadioTower.pixels(w, h, .5f, 0, Ink.ink.toArgb(), dot, bolts = true), w, h, Bitmap.Config.ARGB_8888).asImageBitmap() }
+            }
+            LaunchedEffect(struck) {
+                if (struck == 0L) return@LaunchedEffect
+                repeat(5) { flash = true; delay(90); flash = false; delay(70) }
+                ours.filter { it.song.id != station?.id }.randomOrNull()?.let { Playback.play(listOf(it.song), 0) }
+            }
+            val tower = Modifier.fillMaxSize().clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
+                val t = System.currentTimeMillis()
+                taps = if (t - lastTap < 500) taps + 1 else 1
+                lastTap = t
+                if (taps >= 3) { taps = 0; struck = t }
+            }
+            (if (flash) bolt else frames?.let { f -> f[frame % f.size] })?.let { Image(it, null, tower, contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None) }
         }
         Spacer(Modifier.height(14.dp))
         if (station != null) {

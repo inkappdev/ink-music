@@ -158,7 +158,7 @@ object Listened {
     private val _now = MutableStateFlow(Listening())
     val now: StateFlow<Listening> = _now
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    fun read(c: Context) { val app = c.applicationContext; scope.launch { _now.value = Listening.of(History.read(app)) } }
+    fun read(c: Context) { val app = c.applicationContext; scope.launch { val all = History.read(app); _now.value = Listening.of(all); EggsNow.take(all) } }
 }
 
 /**

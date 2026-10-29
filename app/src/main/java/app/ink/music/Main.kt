@@ -596,6 +596,16 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
             Spacer(Modifier.height(24.dp))
             Word("settings", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size, menu), touch = 8.dp) { menu = false; pages.open(Page.Settings) }
             Word("your year", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 1, menu), touch = 8.dp) { menu = false; pages.open(Page.Year) }
+            // made by ink, its heart (it beats; seven taps and hearts float up), ink its website: the quiet funnel
+            Row(Modifier.arrive(tabs.size + 2, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                val ctx = LocalContext.current
+                BasicText("made by ", style = pixel(12.sp, Ink.dim))
+                Word("ink", pixel(12.sp, Ink.mid), touch = 8.dp) {
+                    runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://inkhome.app")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                }
+                Spacer(Modifier.width(8.dp))
+                InkHeart(Ink.dim)
+            }
         }
     }
     // a swipe to another place folds the menu away
@@ -1924,6 +1934,8 @@ private val CLOSE_ROW = 40.dp
 @Composable
 fun CoverOf(song: Song?, name: String, modifier: Modifier) {
     val cover = rememberCover(song)
+    // 1-bit mode (the clickwheel three turns backwards): every cover in the dither, its own colour
+    if (OneBit.on.collectAsState().value && cover != null && song != null && !song.station) return Dithered(song, modifier, px = 600)
     BoxWithConstraints(modifier) {
         if (cover != null) Image(cover.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else if (song?.station == true) StationCover(song, Modifier.fillMaxSize())

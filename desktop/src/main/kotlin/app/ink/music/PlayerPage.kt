@@ -156,6 +156,8 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                 Spacer(Modifier.height(4.dp))
                                 BasicText(listOfNotNull(n.song.year.takeIf { it > 0 }?.toString(), on?.let { "on ${it.name.lowercase()}" }).joinToString("  ·  "),
                                     style = pixel(12.sp, Ink.mid))
+                                // an easter egg's word, when one's due (on repeat, a 100th time, a promise kept)
+                                EggsNow.line(n.song)?.let { BasicText(it, style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 6.dp)) }
                             }
                         }
                         Spacer(Modifier.height(22.dp))

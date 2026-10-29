@@ -19,7 +19,7 @@ object RadioTower {
     private const val BLACK = 0xFF000000.toInt()
 
     /** The banner `w` x `h` dots: the tower at `at` across (0 to 1), its tip a fifth down, the rings round the tip in `dot`. */
-    fun pixels(w: Int, h: Int, at: Float, frame: Int, ink: Int, dot: Int): IntArray {
+    fun pixels(w: Int, h: Int, at: Float, frame: Int, ink: Int, dot: Int, bolts: Boolean = false): IntArray {
         val out = IntArray(w * h) { BLACK }
         val tipX = (w * at).toInt(); val tipY = (h * .2f).toInt()
         val base = h - 3
@@ -72,6 +72,21 @@ object RadioTower {
         line(tipX - half(base), base, tipX + half(base), base)
         // the ground
         line((tipX - h * .32f).toInt(), base + 1, (tipX + h * .32f).toInt(), base + 1)
+        // lightning off the mast (an easter egg: three clicks on the tower), four zigzags out from just under the ball
+        if (bolts) {
+            val len = (h * .34f).toInt()
+            for ((sx, sy) in listOf(-1 to -1, 1 to -1, -1 to 1, 1 to 1)) {
+                var x = tipX + sx * 5; var y = tipY + sy * 4
+                fun put(px: Int, py: Int) { for (t in 0..1) if (px + t in 0 until w && py in 0 until h) out[py * w + px + t] = ink }
+                var leg = 0; var zag = 1
+                while (leg < len) {
+                    // a bolt: a run out along its way, then a kick across it, the other way each time
+                    repeat(5) { x += sx; y += sy; put(x, y) }
+                    repeat(3) { x += sy * zag; y -= sx * zag; put(x, y) }
+                    zag = -zag; leg += 8
+                }
+            }
+        }
         return out
     }
 }

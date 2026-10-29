@@ -370,6 +370,8 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 Heart(t.song, 3.dp, Modifier.padding(start = 8.dp))
             }
             Spacer(Modifier.height(8.dp))
+            // an easter egg's word, when one's due (on repeat, a 100th time, a promise kept)
+            EggsNow.line(t.song)?.let { BasicText(it, style = pixel(SMALL, Ink.ink)); Spacer(Modifier.height(4.dp)) }
             // on a speaker: what reaches it ("flac 24/96 on dining room speaker")
             if (t.device.isNotEmpty()) {
                 BasicText(listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" "),
@@ -526,6 +528,7 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = compos
             var mark = down.position     // where the thumb's way was last read
             var way: Float? = null
             var bent = 0f                // how far its way has turned (a straight swipe's stays near 0)
+            var flipped = false
             while (true) {
                 val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
@@ -544,6 +547,8 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = compos
                 val a = atan2(v.y, v.x)   // screen y runs down, so clockwise is positive
                 last?.let { turned += wrap(a - it) }
                 last = a
+                // three turns backwards: 1-bit mode, over (an easter egg), once a gesture
+                if (!flipped && turned <= -6 * PI.toFloat()) { flipped = true; OneBit.on.value = !OneBit.on.value; view.performHapticFeedback(HapticFeedbackConstants.CONFIRM) }
                 // circling: its way bending, round the centre the same way it goes
                 if (engaged == null && kotlin.math.abs(bent) >= WHEEL_ENGAGE && bent * turned > 0) engaged = turned
                 val base = engaged ?: continue

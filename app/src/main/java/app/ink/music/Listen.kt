@@ -126,7 +126,7 @@ object Listen {
         Playback.follow(hit, withContext(Dispatchers.IO) { YouTubeMusic.related(hit.id) })
     }
 
-    fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+    fun greeting(): String = Eggs.greeting() ?: when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
         in 5..11 -> "GOOD MORNING"
         in 12..16 -> "GOOD AFTERNOON"
         in 17..21 -> "GOOD EVENING"
@@ -159,6 +159,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val offer by SyncPhone.theirs.collectAsState()
     val nowHere by Playback.now.collectAsState()
     val putAside by SyncPhone.dismissed.collectAsState()
+    val firstHeard by EggsNow.first.collectAsState()
     val continued = offer?.takeUnless { it.at <= SyncPhone.playedAt || it.at <= putAside || nowHere?.playing == true }
     val pickedRecords by Picks.records.collectAsState()
     val pickedSongs by Picks.songs.collectAsState()
@@ -232,6 +233,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 Cog { pages.open(Page.Settings) }
             }
         }}
+        // a year in (or two...): your first song here, on the day (an easter egg)
+        firstHeard?.takeIf { Eggs.anniversary(it.at) > 0 }?.let { f -> item(key = "anniversary") { Column(Modifier.cascade(1)) { Anniversary(f) } } }
         // what the computer was playing, to carry on with here (Sync)
         continued?.let { o -> item(key = "continue") { Column(Modifier.cascade(1)) { ContinueHere(o) } } }
         if (!online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(1)) { KeptShelf(keptRecords, "no data? no problem", pages) }}
@@ -480,6 +483,24 @@ private fun KeptShelf(records: List<Album>, label: String, pages: Pages) {
         items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
     }
     Spacer(Modifier.height(10.dp))
+}
+
+/** A year of ink music (or more), on the day: the first song you played here, to play again. */
+@Composable
+private fun Anniversary(f: History.Heard) {
+    val years = Eggs.anniversary(f.at)
+    val song = remember(f) { Library.song(f.id) ?: Library.songs.value.firstOrNull { it.title.equals(f.title, true) && it.artist.equals(f.artist, true) } }
+    val day = remember(f) { java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale.ENGLISH).format(java.util.Date(f.at)).lowercase() }
+    Heading(if (years == 1) "a year of ink music" else "$years years of ink music", "the first song you played here, $day")
+    Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        CoverOf(song, f.album.ifEmpty { f.title }, Modifier.size(80.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            BasicText(f.title.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            BasicText(f.artist.lowercase(), style = pixel(12.sp, Ink.mid))
+            song?.let { s -> Word("PLAY IT AGAIN", headline(14.sp), Modifier.padding(top = 4.dp), touch = 8.dp) { Playback.play(listOf(s), 0) } }
+        }
+    }
 }
 
 /** What the computer was playing: its cover, "on <computer>", the song; continue here (where it was), or not now. */
