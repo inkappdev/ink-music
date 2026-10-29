@@ -72,11 +72,15 @@ val NOW = 360.dp
  * lyrics or where it plays, chosen by a word. The cover opens the player, the whole window.
  */
 @Composable
-fun NowColumn(open: (Page) -> Unit) {
+fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
     val now by Player.now.collectAsState()
     val trouble by Player.trouble.collectAsState()
     var shows by remember { mutableStateOf("up next") }
-    Column(Modifier.width(NOW).fillMaxHeight().padding(start = 8.dp, end = SIDE, top = TOP + 40.dp, bottom = 16.dp)) {
+    Column(Modifier.width(NOW).fillMaxHeight().padding(start = 8.dp, end = SIDE, top = TOP + 4.dp, bottom = 16.dp)) {
+        // tucked away to the right (the bar along the foot shows it instead)
+        Box(Modifier.fillMaxWidth().height(36.dp)) {
+            Pixel(TUCK, "tuck away", Ink.dim, Modifier.align(Alignment.CenterEnd).offset(x = 8.dp), onClick = onTuck)
+        }
         val n = now
         if (n == null) {
             BasicText("NOTHING PLAYING", style = headline(22.sp, Ink.dim))
@@ -138,4 +142,11 @@ fun NowColumn(open: (Page) -> Unit) {
             }
         }
     }
+}
+
+/** The now column tucked away (kept): the window's foot bar shows what's playing instead. */
+object Tuck {
+    private val file = java.io.File(Home.dir, "now-tucked")
+    val on = kotlinx.coroutines.flow.MutableStateFlow(file.exists())
+    fun set(t: Boolean) { on.value = t; runCatching { if (t) file.writeText("") else file.delete() } }
 }
