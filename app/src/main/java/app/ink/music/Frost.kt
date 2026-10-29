@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
@@ -26,7 +27,8 @@ val LocalFoot = compositionLocalOf { 0.dp }
  * the strip's far side, [EDGE] of blur where it meets the bar, feathered (2026-10-27: "barely notice it"):
  * it comes on along [FEATHER], hardly at all till the last of the strip. No tint, nothing painted: the
  * content itself, softened. `towardBottom`: the bar is below the strip (the mini player); else above
- * (the tab row, the status bar).
+ * (the tab row, the status bar). Black under the strip: the softened copy is drawn over the content itself, and a
+ * dim word (35%) showed through it twice, brighter, cut off sharp at the strip's edge (2026-10-29, up next).
  */
 /** The blur where content meets a bar (4 dp till 2026-10-27, when Bronson wanted to barely notice it). */
 private val EDGE = 1.5.dp
@@ -50,7 +52,7 @@ fun Modifier.softEdge(state: HazeState, towardBottom: Boolean): Modifier {
             )
         }
     }
-    return this.onSizeChanged { height = it.height }.hazeBlur(HazeInput.Sources(state), style)
+    return this.onSizeChanged { height = it.height }.background(Ink.black).hazeBlur(HazeInput.Sources(state), style)
 }
 
 /** The soft edge sideways: what slides along a row toward what stands at its end (the tabs, toward "find"). */
@@ -65,5 +67,5 @@ fun Modifier.softEdgeEnd(state: HazeState): Modifier {
             progressive(HazeProgressive.horizontalGradient(easing = FEATHER, startX = 0f, startIntensity = 0f, endX = width.toFloat().coerceAtLeast(1f), endIntensity = 1f))
         }
     }
-    return this.onSizeChanged { width = it.width }.hazeBlur(HazeInput.Sources(state), style)
+    return this.onSizeChanged { width = it.width }.background(Ink.black).hazeBlur(HazeInput.Sources(state), style)
 }
