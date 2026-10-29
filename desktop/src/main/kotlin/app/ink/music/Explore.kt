@@ -360,6 +360,11 @@ private fun who(subtitle: String) = subtitle.split(" • ").map { it.trim() }
  * A station from a mood: a playlist from each of its first flavors, mixed, radio after.
  */
 object Moods {
+    /** ink's own order for the genres (Bronson, 2026-10-28: alphabetical put the odd ones first): the ones you open most still lead. */
+    val GENRES = listOf("Indie & alternative", "Dance & electronic", "Hip-hop", "R&B & soul", "Jazz", "Rock", "Folk & acoustic", "Pop",
+        "Soundtracks & musicals", "Reggae & caribbean", "Blues", "Latin", "Brazilian", "African", "Classical", "Metal", "Country & Americana",
+        "K-Pop", "J-Pop", "Decades", "Songwriters & producers")
+    fun rank(title: String) = GENRES.indexOfFirst { it.equals(title, true) }.let { if (it < 0) GENRES.size else it }
     /** Flavors for one region or language: after the rest on a mood's page, unless you open that genre. */
     val REGIONAL = listOf("latin", "bollywood", "indian", "k-pop", "kpop", "j-pop", "arab", "turk", "african", "brazil", "mandopop", "cantopop", "opm",
         "punjabi", "tamil", "telugu", "desi", "afro", "reggaeton", "mexican", "french", "german", "italian", "spanish", "korean", "japanese", "chinese")
@@ -427,28 +432,15 @@ object Moods {
 /** Right now (three moods for the hour, a station each), then every mood and genre as words. */
 @Composable
 private fun MoodsAndGenres(moods: List<InnerTube.Mood>?, open: (Page) -> Unit) {
-    val all = moods ?: return
     val counts by Moods.counts.collectAsState()
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column(Modifier.padding(bottom = 24.dp)) {
-        BasicText("RIGHT NOW", style = headline(30.sp))
-        BasicText("picked for ${Moods.said()}", style = pixel(12.sp, Ink.mid))
-        Spacer(Modifier.height(12.dp))
-        Moods.now(all).forEach { m ->
-            Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
-                Word(m.title.uppercase(), headline(40.sp), Modifier.weight(1f), touch = 4.dp) { Moods.open(m); open(Page.Mood(m)) }
-                Word("start station", pixel(13.sp), Modifier.padding(bottom = 8.dp), touch = 8.dp) { scope.launch { Moods.station(m) } }
-            }
-        }
-        Spacer(Modifier.height(22.dp))
-        Label("moods & moments")
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            all.filter { !it.genre }.forEach { m -> Word(m.title.uppercase(), headline(22.sp, Ink.mid)) { Moods.open(m); open(Page.Mood(m)) } }
-        }
-        Spacer(Modifier.height(10.dp))
+        // ink's own moods (Last.fm's listeners' tags), right now's three and all as tiles; YouTube's own moods gone
+        // (Bronson, 2026-10-28: they "suck"); its genres stay, its editors' playlists
+        InkMoodsShelf()
+        val all = moods ?: return@Column
         Label("genres, the ones you open most first")
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            all.filter { it.genre }.sortedByDescending { counts[it.title] ?: 0 }.forEach { m ->
+            all.filter { it.genre }.sortedWith(compareByDescending<InnerTube.Mood> { counts[it.title] ?: 0 }.thenBy { Moods.rank(it.title) }).forEach { m ->
                 Word(m.title.lowercase(), pixel(14.sp, if ((counts[m.title] ?: 0) > 0) Ink.ink else Ink.mid), touch = 4.dp) { Moods.open(m); open(Page.Mood(m)) }
             }
         }
