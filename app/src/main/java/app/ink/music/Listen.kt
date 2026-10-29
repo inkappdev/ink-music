@@ -275,7 +275,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             val starred = ink.filter { it.star }
             ShelfIndexed(starred) { i, st ->
                 val on = now?.song?.id == st.song.id
-                RadioTile(st.song.title.lowercase(), on, now?.playing == true, said = if (on) "on now" else st.city) {
+                StationTile(st.song, on, now?.playing == true, said = if (on) "on now" else st.city) {
                     Playback.play(starred.map { it.song }, i)
                 }
             }
@@ -326,7 +326,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 Label("$word radio")
                 ShelfIndexed(list.take(12)) { i, s ->
                     val on = now?.song?.id == s.id
-                    RadioTile(s.title.lowercase(), on, now?.playing == true, said = if (on) "on now" else word) { Playback.play(list, i) }
+                    StationTile(s, on, now?.playing == true, said = if (on) "on now" else word) { Playback.play(list, i) }
                 }
             }}
         }
@@ -361,6 +361,17 @@ internal fun RadioTile(word: String, on: Boolean, moving: Boolean, said: String?
         Spacer(Modifier.height(8.dp))
         BasicText(word.uppercase(), style = headline(15.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
         BasicText(if (on) "on now" else said ?: "stations", style = pixel(12.sp, Ink.mid), maxLines = 1)
+    }
+}
+
+/** A station as a tile: its sleeve (framed, its rings moving while it plays), its name, where or what's on. */
+@Composable
+internal fun StationTile(station: Song, on: Boolean, moving: Boolean, said: String, onClick: () -> Unit) {
+    Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        StationCover(station, Modifier.fillMaxWidth().aspectRatio(1f), moving = on && moving)
+        Spacer(Modifier.height(8.dp))
+        BasicText(station.title.uppercase(), style = headline(15.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        BasicText(said.lowercase(), style = pixel(12.sp, if (on) Ink.ink else Ink.mid), maxLines = 1)
     }
 }
 
