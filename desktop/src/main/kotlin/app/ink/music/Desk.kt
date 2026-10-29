@@ -63,14 +63,23 @@ object Placed {
     fun remember(): WindowState {
         val o = runCatching { JSONObject(file.readText()) }.getOrNull()
         val screen = runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds }.getOrNull()
-        val w = o?.optDouble("w", FIRST.width.value.toDouble())?.toFloat() ?: FIRST.width.value
-        val h = o?.optDouble("h", FIRST.height.value.toDouble())?.toFloat() ?: FIRST.height.value
+        // the first time at most 90% of the screen (a laptop's 1280 x 800 is under FIRST), then as it was left
+        val w = o?.optDouble("w", FIRST.width.value.toDouble())?.toFloat() ?: screen?.let { minOf(FIRST.width.value, it.width * .9f) } ?: FIRST.width.value
+        val h = o?.optDouble("h", FIRST.height.value.toDouble())?.toFloat() ?: screen?.let { minOf(FIRST.height.value, it.height * .9f) } ?: FIRST.height.value
         val size = DpSize(
             w.coerceAtLeast(LEAST.width.value).let { v -> screen?.let { minOf(v, it.width.toFloat()) } ?: v }.dp,
             h.coerceAtLeast(LEAST.height.value).let { v -> screen?.let { minOf(v, it.height.toFloat()) } ?: v }.dp,
         )
-        val at = o?.takeIf { it.has("x") }?.let { WindowPosition(it.optDouble("x").toFloat().dp, it.optDouble("y").toFloat().dp) }
-            ?: WindowPosition.PlatformDefault
+        // where it was, kept on the screen (one since unplugged, a smaller one); the first time in the middle: the
+        // system's own place (Windows' cascade) can push a big window off the screen's edge
+        val at = o?.takeIf { it.has("x") }?.let {
+            var x = it.optDouble("x").toFloat(); var y = it.optDouble("y").toFloat()
+            screen?.let { b ->
+                x = x.coerceIn(b.x.toFloat(), maxOf(b.x.toFloat(), b.x + b.width - size.width.value))
+                y = y.coerceIn(b.y.toFloat(), maxOf(b.y.toFloat(), b.y + b.height - size.height.value))
+            }
+            WindowPosition(x.dp, y.dp)
+        } ?: WindowPosition(Alignment.Center)
         val zoomed = o?.optBoolean("zoomed") == true
         return rememberWindowState(placement = if (zoomed) WindowPlacement.Maximized else WindowPlacement.Floating, size = size, position = at)
     }
