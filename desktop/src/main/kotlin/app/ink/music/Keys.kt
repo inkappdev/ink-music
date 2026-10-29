@@ -8,6 +8,8 @@ package app.ink.music
 object Keys {
     /** Which build this is: its commit and day ("36d3a01 2026-10-29"), shown at the foot of settings. */
     var build = ""
+    /** This build's version, the phone's ("2.0.0"): what an update is newer than. */
+    var version = ""
 
     fun start() {
         val p = java.util.Properties()
@@ -16,5 +18,6 @@ object Keys {
         LastFm.secret = p.getProperty("lastfmSecret").orEmpty()
         ListenBrainz.version = p.getProperty("version").orEmpty()
         build = p.getProperty("build").orEmpty()
+        version = p.getProperty("version").orEmpty()
     }
 }

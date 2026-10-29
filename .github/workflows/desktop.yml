@@ -5,7 +5,7 @@ name: desktop
 on:
   push:
     branches: [main]
-    paths: ["desktop/**", "youtube/**", "core/**", "app/src/main/res/font/**", "app/src/main/assets/**", ".github/workflows/desktop.yml", "*.gradle.kts", "gradle/**"]
+    paths: ["desktop/**", "youtube/**", "core/**", "app/src/main/res/font/**", "app/src/main/assets/**", ".github/workflows/desktop.yml", "*.gradle.kts", "app/build.gradle.kts", "gradle/**"]
   workflow_dispatch:
 
 jobs:
