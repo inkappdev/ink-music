@@ -81,7 +81,7 @@ fun SettingsPage(onClose: () -> Unit) {
                             Spacer(Modifier.height(36.dp)); ListenBrainzSetting()
                             if (LastFm.available) { Spacer(Modifier.height(36.dp)); LastFmSetting() }
                         }
-                        else -> AboutSetting()
+                        else -> { SizeSetting(); Spacer(Modifier.height(36.dp)); AboutSetting() }
                     }
                 }
             }
@@ -497,6 +497,29 @@ private fun KeptSetting() {
         }
     }
 }
+
+/** How big everything's drawn: fit to the screen, or a size; ⌘/Ctrl = and - step it. */
+@Composable
+private fun SizeSetting() {
+    val chosen by Size.chosen.collectAsState()
+    val key = if (Home.mac) "⌘" else "ctrl"
+    BasicText("SIZE", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText(
+        if (chosen == null) "fit: this screen made about 1920 across (${pct(Size.fit)} of the desktop's own size)"
+        else "${pct(chosen ?: 1f)} of the desktop's own size. $key = and $key - step it",
+        style = pixel(12.sp, Ink.mid),
+    )
+    Spacer(Modifier.height(10.dp))
+    androidx.compose.foundation.layout.Row {
+        Word("fit", pixel(14.sp, if (chosen == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Size.set(null) }
+        Size.CHOICES.forEach { c ->
+            Word(pct(c), pixel(14.sp, if (chosen == c) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Size.set(c) }
+        }
+    }
+}
+
+private fun pct(f: Float) = "${Math.round(f * 100)}%"
 
 /** Private listening: a switch; while it's on, nothing kept or told. */
 @Composable
