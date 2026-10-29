@@ -117,7 +117,9 @@ compose.desktop {
 // rpm by what it provides (Fedora's mpv-libs, openSUSE's libmpv2); deb by name (libmpv1 on Ubuntu 22.04 and older)
 tasks.withType<AbstractJPackageTask>().configureEach {
     when (targetFormat) {
-        TargetFormat.Rpm -> freeArgs.addAll("--linux-package-deps", "libmpv.so.2()(64bit)")
+        // and its own spec (linux/ink-music.spec: the menu entry kept through an upgrade); Compose's resource dir is
+        // empty on Linux, and the last one given is the one jpackage reads
+        TargetFormat.Rpm -> freeArgs.addAll("--linux-package-deps", "libmpv.so.2()(64bit)", "--resource-dir", project.file("linux").path)
         TargetFormat.Deb -> freeArgs.addAll("--linux-package-deps", "libmpv2|libmpv1")   // no spaces: Compose hands jpackage its arguments unquoted
         else -> {}
     }
