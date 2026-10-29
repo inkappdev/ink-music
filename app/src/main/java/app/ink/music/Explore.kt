@@ -88,6 +88,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             }
             Spacer(Modifier.height(14.dp))
         }
+        item(key = "festivals") { FestivalsShelf(pages) }
         // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: Bronson, 2026-10-28)
         item(key = "inkmoods") { InkMoodsShelf() }
         moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
@@ -530,4 +531,67 @@ fun InkMoodsShelf() {
         }
     }
     Spacer(Modifier.height(8.dp))
+}
+
+/** ink's festivals here: the file read from the app's assets, and a festival's station (each artist's best known song in turn). */
+object Fests {
+    @Volatile private var all: List<Festivals.Festival>? = null
+    fun all(c: Context): List<Festivals.Festival> = all ?: Festivals.read(
+        runCatching { c.assets.open("ink-festivals.json").bufferedReader().use { it.readText() } }.getOrDefault("{}"),
+    ).also { all = it }
+
+    suspend fun play(f: Festivals.Festival): Boolean {
+        val songs = withContext(Dispatchers.IO) {
+            kotlinx.coroutines.coroutineScope {
+                f.artists.take(16).map { name ->
+                    async { withTimeoutOrNull(10_000) { YouTubeAccount.artist(name, "").firstOrNull { it != null } }?.top?.filter { it.tube }?.take(2).orEmpty() }
+                }.map { it.await() }
+            }.let { each -> (0 until 2).flatMap { i -> each.mapNotNull { it.getOrNull(i) } } }
+        }
+        if (songs.isEmpty()) return false
+        Playback.radio(true)
+        Playback.play(songs, 0)
+        return true
+    }
+}
+
+/** Festivals soon: each on now or within two months, how soon and where, its lineup as faces, a station of them. */
+@Composable
+fun FestivalsShelf(pages: Pages) {
+    val ctx = LocalContext.current
+    val soon = remember { Festivals.soon(Fests.all(ctx)) }
+    if (soon.isEmpty() || !YouTubeMusic.available) return
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.padding(bottom = 18.dp)) {
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            BasicText("FESTIVALS SOON", style = headline(28.sp))
+            BasicText(said ?: "who's playing, to know before you go", style = pixel(12.sp, Ink.mid))
+        }
+        soon.forEach { f ->
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    BasicText(f.name.uppercase(), style = headline(22.sp))
+                    BasicText("${f.when_()} · ${f.city}", style = pixel(12.sp, Ink.mid))
+                }
+                Word("station", pixel(13.sp), touch = 8.dp) { scope.launch { said = "${f.name.lowercase()}: finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" } }
+            }
+            Spacer(Modifier.height(8.dp))
+            Shelf(f.artists) { name -> LineupTile(name, pages) }
+        }
+    }
+}
+
+/** An artist on a lineup: their photo in the dither (read from YouTube Music, kept), their name; a tap opens their page. */
+@Composable
+private fun LineupTile(name: String, pages: Pages) {
+    val info by produceState<ArtistInfo?>(null, name) { YouTubeAccount.artist(name, "").collect { if (it != null) value = it } }
+    Column(Modifier.width(120.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Artist(info?.name ?: name)) })) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            info?.photo?.let { Dithered(remember(it) { faceSong(name, it) }, Modifier.fillMaxSize(), px = 240) } ?: NameCover(name, 120.dp)
+        }
+        Spacer(Modifier.height(6.dp))
+        BasicText(name.uppercase(), style = headline(13.sp), maxLines = 2)
+    }
 }

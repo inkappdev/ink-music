@@ -1,0 +1,29 @@
+{
+  "note": "ink's festivals: the ones worth hearing ahead of, their lineups as announced (each source kept). Kept by hand, as ink weekly is; the apps show those on or within two months.",
+  "festivals": [
+    { "name": "Pitchfork London", "city": "london", "start": "2026-11-02", "end": "2026-11-08",
+      "link": "https://routenote.com/radar/pitchfork-music-festival-london-2026-lineup-the-avalanches-diiv-noname-and-more/",
+      "artists": ["The Avalanches", "Noname", "Panda Bear", "Actress", "Tortoise", "DIIV", "The Radio Dept.", "Los Thuthanaka", "aja monet", "Hania Rani", "Olof Dreijer", "Ana Roxanne", "Jacob Alon", "Thaiboy Digital", "Arushi Jain", "Psychedelic Porn Crumpets", "Robert Lester Folsom", "Ship Sket"] },
+    { "name": "Pitchfork Paris", "city": "paris", "start": "2026-11-02", "end": "2026-11-08",
+      "link": "https://www.sortiraparis.com/en/what-to-see-in-paris/concerts-music-festival/articles/53082-pitchfork-music-festival-paris-2026-the-first-acts-announced-headache-charlotte-adigery-bolis-pupul",
+      "artists": ["DIIV", "Iceage", "Charlotte Adigéry & Bolis Pupul", "Headache", "Lido Pimienta", "Bassvictim", "Robber Robber", "Quiet Light", "Becky and the Birds", "Worldpeace DMT"] },
+    { "name": "Le Guess Who?", "city": "utrecht", "start": "2026-11-05", "end": "2026-11-08",
+      "link": "https://leguesswho.com/news/initial-line-up-lgw26",
+      "artists": ["Grouper", "Tortoise", "Dirty Three", "Loraine James", "Kelsey Lu", "Ana Roxanne", "Horse Lords", "Melt-Banana", "Goat", "Shabaka Hutchings", "Tropical Fuck Storm", "aja monet", "KMRU", "Eris Drew", "Octo Octa", "Okkyung Lee", "Bitchin Bajas", "Bill Orcutt", "King Ayisoba"] },
+    { "name": "Iceland Airwaves", "city": "reykjavík", "start": "2026-11-04", "end": "2026-11-08",
+      "link": "https://readdork.com/news/iceland-airwaves-2026-lineup-first-wave",
+      "artists": ["Shygirl", "The Streets", "Daði Freyr", "Dove Ellis", "Adult DVD", "PISS", "Mammút", "Árný Margrét", "Ólöf Arnalds", "Mugison", "Arima Ederra", "Bleech 9:3"] },
+    { "name": "Camp Flog Gnaw", "city": "los angeles", "start": "2026-11-14", "end": "2026-11-15",
+      "link": "https://thefader.com/2026/08/18/camp-flog-gnaw-2026-lineup-tickets",
+      "artists": ["Tyler, The Creator", "Steve Lacy", "Turnstile", "Earl Sweatshirt", "MIKE", "Vince Staples", "Magdalena Bay", "Jane Remover", "Syd", "Wallows", "Lola Young", "JID"] },
+    { "name": "Corona Capital", "city": "mexico city", "start": "2026-11-20", "end": "2026-11-22",
+      "link": "https://www.jambase.com/article/corona-capital-2026-lineup",
+      "artists": ["The Strokes", "The xx", "Gorillaz", "James Blake", "Daniel Caesar", "Underworld", "CHVRCHES", "CMAT", "Purity Ring", "Ela Minus", "Johnny Marr", "Lola Young"] },
+    { "name": "Clockenflap", "city": "hong kong", "start": "2026-12-04", "end": "2026-12-06",
+      "link": "https://www.timeout.com/hong-kong/news/clockenflap-confirms-hayley-williams-keshi-slowdive-queens-of-the-stone-age-and-more-for-the-2026-lineup-100726",
+      "artists": ["Slowdive", "Kim Gordon", "The Jesus and Mary Chain", "Hayley Williams", "keshi", "HYUKOH", "Queens of the Stone Age", "Malcolm Todd", "Digable Planets", "DOMi & JD BECK", "Sleaford Mods", "Fazerdaze"] },
+    { "name": "Holiday Hootenanny", "city": "austin", "start": "2026-12-11", "end": "2026-12-12",
+      "link": "https://www.austinchronicle.com/music/thundercat-and-magdalena-bay-to-headline-2026-holiday-hootenanny/",
+      "artists": ["Thundercat", "Magdalena Bay", "Drugdealer", "Sports", "54 Ultra", "The Two Lips", "Frost Children", "Coco & Clair Clair"] }
+  ]
+}

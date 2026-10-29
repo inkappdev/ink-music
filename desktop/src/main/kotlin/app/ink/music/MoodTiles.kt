@@ -36,6 +36,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -146,5 +147,67 @@ fun MoodTile(m: InkMoods.Mood, art: String?, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         BasicText(m.line, style = pixel(12.sp, Ink.mid), maxLines = 2)
+    }
+}
+
+/** ink's festivals here: the file read (it comes with the app), and a festival's station (each artist's best known song in turn). */
+object Fests {
+    val all: List<Festivals.Festival> by lazy {
+        Festivals.read(runCatching { Fests::class.java.getResourceAsStream("/ink-festivals.json")!!.bufferedReader().use { it.readText() } }.getOrDefault("{}"))
+    }
+
+    suspend fun play(f: Festivals.Festival): Boolean {
+        val songs = withContext(Dispatchers.IO) {
+            coroutineScope {
+                f.artists.take(16).map { name ->
+                    async { kotlinx.coroutines.withTimeoutOrNull(10_000) { Artists.of(name, "").firstOrNull { it != null } }?.top?.filter { it.tube }?.take(2).orEmpty() }
+                }.awaitAll()
+            }.let { each -> (0 until 2).flatMap { i -> each.mapNotNull { it.getOrNull(i) } } }
+        }
+        if (songs.isEmpty()) return false
+        if (!Player.radio.value) Player.radio(true)
+        Player.play(songs)
+        return true
+    }
+}
+
+/** Festivals soon: each on now or within two months, how soon and where, its lineup as faces, a station of them. */
+@Composable
+fun FestivalsShelf(open: (Page) -> Unit) {
+    val soon = remember { Festivals.soon(Fests.all) }
+    if (soon.isEmpty()) return
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.padding(bottom = 24.dp)) {
+        BasicText("FESTIVALS SOON", style = headline(30.sp))
+        BasicText(said ?: "who's playing, to know before you go (or wish you were)", style = pixel(12.sp, Ink.mid))
+        soon.forEach { f ->
+            Spacer(Modifier.height(18.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    BasicText(f.name.uppercase(), style = headline(26.sp))
+                    BasicText("${f.when_()} · ${f.city} · ${f.artists.size} artists", style = pixel(12.sp, Ink.mid))
+                }
+                Word("station", pixel(14.sp), touch = 8.dp) { scope.launch { said = "${f.name.lowercase()}: finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" } }
+                if (f.link.isNotBlank()) Word("lineup", pixel(14.sp, Ink.mid), Modifier.padding(start = 22.dp), touch = 8.dp) { browse(f.link) }
+            }
+            Spacer(Modifier.height(10.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(f.artists, key = { f.name + it }) { name -> LineupTile(name, open) }
+            }
+        }
+    }
+}
+
+/** An artist on a lineup: their photo in the dither (read from YouTube Music, kept), their name; a tap opens their page. */
+@Composable
+private fun LineupTile(name: String, open: (Page) -> Unit) {
+    val info by androidx.compose.runtime.produceState<ArtistInfo?>(null, name) { Artists.of(name, "").collect { if (it != null) value = it } }
+    Column(Modifier.width(130.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Artist(info?.name ?: name, info?.id ?: "")) })) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            info?.photo?.let { Dithered(remember(it) { faceSong(name, it, photo = true) }, Modifier.fillMaxSize(), px = 260) } ?: NameCover(name, 130.dp)
+        }
+        Spacer(Modifier.height(6.dp))
+        BasicText(name.uppercase(), style = headline(13.sp), maxLines = 2)
     }
 }
