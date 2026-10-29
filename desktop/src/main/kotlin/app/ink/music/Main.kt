@@ -266,6 +266,9 @@ private fun App() {
         Modifier.fillMaxSize().background(Ink.black).takesDrops().focusRequester(focus).focusable()
             .onKeyEvent { k ->
                 if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
+                // ↑ ↑ ↓ ↓ ← → ← → B A: 1-bit mode (the arrows still do what they do)
+                val name = when (k.key) { Key.DirectionUp -> "up"; Key.DirectionDown -> "down"; Key.DirectionLeft -> "left"; Key.DirectionRight -> "right"; Key.B -> "b"; Key.A -> "a"; else -> "" }
+                if (name.isNotEmpty() && OneBit.key(name)) return@onKeyEvent true
                 // Windows and Linux: the Mac menu bar's keys with Ctrl (there's no menu bar there)
                 if (!Home.mac && k.isCtrlPressed) {
                     val digits = listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight)
@@ -620,6 +623,8 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
 fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, moving: Boolean = false) {
     // a station: its own sleeve (its logo small and every shape; a word works)
     if (song?.station == true) return StationCover(song, modifier, moving)
+    // 1-bit mode (the Konami code): every cover in the dither, its own colour
+    if (OneBit.on.collectAsState().value && song != null && rememberCover(song, px) != null) return Dithered(song, modifier, px)
     val cover = rememberCover(song, px)
     BoxWithConstraints(modifier) {
         if (cover != null) Image(cover.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)

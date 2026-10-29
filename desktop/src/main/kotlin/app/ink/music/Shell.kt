@@ -71,12 +71,8 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
             BasicText("made by ", style = pixel(12.sp, Ink.dim))
             Word("ink", pixel(12.sp, Ink.mid)) { browse("https://inkhome.app") }
             Spacer(Modifier.width(6.dp))
-            androidx.compose.foundation.Canvas(Modifier.size(10.5.dp, 9.dp)) {
-                val cell = size.width / 7
-                HEART.forEachIndexed { r, row -> row.forEachIndexed { c, ch ->
-                    if (ch == '#') drawRect(Ink.dim, androidx.compose.ui.geometry.Offset(c * cell, r * cell), androidx.compose.ui.geometry.Size(cell, cell))
-                } }
-            }
+            // it beats when clicked; seven clicks and hearts float up (an easter egg)
+            InkHeart(Ink.dim)
         }
     }
 }

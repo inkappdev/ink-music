@@ -123,8 +123,10 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     var red by remember { mutableStateOf(false) }
     LaunchedEffect(lovedAt) { if (lovedAt > 0) { red = true; delay(2_000); red = false } }
     LaunchedEffect(on) { if (!on) red = false }
+    // the day of its 100th play, gold (an easter egg)
+    val golden by EggsNow.golden.collectAsState()
     val colour by animateColorAsState(
-        when { red -> RED; on -> Ink.ink; else -> Ink.dim },
+        when { red -> RED; song != null && song.id in golden -> GOLD; on -> Ink.ink; else -> Ink.dim },
         tween(if (red) Motion.FADE else Motion.ENTER, easing = Motion.expo), label = "heart",
     )
     Pixel(HEART, if (on) "unlove" else "love", colour, modifier, cell = cell) {

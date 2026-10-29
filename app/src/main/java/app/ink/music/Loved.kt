@@ -127,7 +127,7 @@ object Loved {
 }
 
 /** The desktop bar's heart (waybar/heart/make-hearts.py), 7 x 6 on Silkscreen's grid. */
-private val HEART = listOf(
+val HEART = listOf(
     ".##.##.",
     "#######",
     "#######",
@@ -152,7 +152,7 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     LaunchedEffect(lovedAt) { if (lovedAt > 0) { red = true; delay(2_000); red = false } }
     LaunchedEffect(on) { if (!on) red = false }
     val colour by animateColorAsState(
-        when { red -> RED; on -> Ink.ink; else -> Ink.dim },
+        when { red -> RED; song != null && song.id in EggsNow.golden.collectAsState().value -> GOLD; on -> Ink.ink; else -> Ink.dim },
         tween(if (red) Motion.FADE else Motion.ENTER, easing = Motion.expo), label = "heart",
     )
     val glow by animateFloatAsState(if (red) .55f else 0f, tween(if (red) Motion.FADE else 600), label = "glow")
