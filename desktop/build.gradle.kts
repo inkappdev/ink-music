@@ -118,7 +118,7 @@ compose.desktop {
 tasks.withType<AbstractJPackageTask>().configureEach {
     when (targetFormat) {
         TargetFormat.Rpm -> freeArgs.addAll("--linux-package-deps", "libmpv.so.2()(64bit)")
-        TargetFormat.Deb -> freeArgs.addAll("--linux-package-deps", "libmpv2 | libmpv1")
+        TargetFormat.Deb -> freeArgs.addAll("--linux-package-deps", "libmpv2|libmpv1")   // no spaces: Compose hands jpackage its arguments unquoted
         else -> {}
     }
 }
