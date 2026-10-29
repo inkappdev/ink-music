@@ -2,6 +2,7 @@ package app.ink.music
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -93,7 +94,7 @@ fun main() {
             icon = androidx.compose.ui.graphics.painter.BitmapPainter(
                 org.jetbrains.skia.Image.makeFromEncoded(Ink::class.java.getResourceAsStream("/ink-music.png")!!.readBytes()).toComposeImageBitmap(),
             ),
-            state = rememberWindowState(size = DpSize(1440.dp, 900.dp)),
+            state = rememberWindowState(size = DpSize(1440.dp, 900.dp)).also { Win.state = it },
         ) {
             LaunchedEffect(Unit) {
                 window.minimumSize = java.awt.Dimension(720, 520)
@@ -142,7 +143,9 @@ private fun App() {
                     k.key == Key.DirectionLeft && k.isMetaPressed -> { Player.previous(); true }
                     k.key == Key.DirectionRight -> { Player.seek(Player.position.value + 10_000); true }
                     k.key == Key.DirectionLeft -> { Player.seek((Player.position.value - 10_000).coerceAtLeast(0)); true }
-                    k.key == Key.Escape && pages.isNotEmpty() -> { pages.removeLast(); true }
+                    k.key == Key.DirectionUp -> { Player.volume(Player.volume.value + 5); true }
+                    k.key == Key.DirectionDown -> { Player.volume(Player.volume.value - 5); true }
+                    k.key == Key.Escape && pages.isNotEmpty() -> { if (pages.last() == Page.Playing) Win.full(false); pages.removeLast(); true }
                     k.key == Key.F && k.isMetaPressed -> { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++; true }
                     else -> false
                 }
@@ -155,7 +158,8 @@ private fun App() {
             { if (pages.lastOrNull() != Page.Settings) pages += Page.Settings })
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                val top = pages.lastOrNull()
+                // the player's over the whole window: under it, the page it was opened from
+                val top = pages.lastOrNull().let { if (it == Page.Playing) pages.dropLast(1).lastOrNull() else it }
                 AnimatedContent(
                     top,
                     transitionSpec = {
@@ -169,7 +173,7 @@ private fun App() {
                         is Page.Record -> RecordPage(page.id, { pages += it }) { pages.removeLast() }
                         is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { pages.removeLast() }
                         Page.Find -> Column(Modifier.fillMaxSize()) { Close { pages.removeLast() }; FindTab { pages += it } }
-                        Page.Playing -> PlayerPage({ pages += it }) { pages.removeLast() }
+                        Page.Playing -> {}
                         Page.Settings -> SettingsPage { pages.removeLast() }
                         Page.Queue -> QueuePage({ pages += it }) { pages.removeLast() }
                         Page.PlayOn -> PlayOnPage { pages.removeLast() }
@@ -187,6 +191,11 @@ private fun App() {
         }
         if (frame == Frame.WIDE && pages.lastOrNull() != Page.Playing) NowColumn { pages += it }
         }
+        AnimatedVisibility(
+            pages.lastOrNull() == Page.Playing,
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 12 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 16 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { PlayerPage({ pages += it }) { Win.full(false); pages.remove(Page.Playing) } }
       }
     }
 }
@@ -200,7 +209,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
         // the phone's layout (a narrow window): the places as words across the top
         if (words) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (t in PLACES) Word(t.uppercase(), headline(26.sp, if (t == tab) Ink.ink else Ink.dim)) { onPlace(t) }
-            Word("find", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Find) }
+            Pixel(SEARCH, "find", Ink.mid, Modifier.padding(top = 4.dp)) { open(Page.Find) }
             Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Settings) }
         }
         // beside the rail: the place's own name, big
@@ -501,23 +510,16 @@ private fun MiniPlayer(onQueue: () -> Unit, onPlayOn: () -> Unit, onArtist: (Str
                     }
                 }
             }
-            Controls(n)
+            Controls(n, small = true)
             Spacer(Modifier.width(24.dp))
             Times(n, Modifier.widthIn(min = 96.dp))
+            Volume(line = 80.dp)
             Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
             // where it plays: lit while on a speaker
             val on by Casting.on.collectAsState()
             Word("play on", pixel(14.sp, if (on != null) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onPlayOn)
+            Pixel(FULL, "full screen", Ink.mid, Modifier.padding(start = 4.dp)) { Win.full(true); onOpen() }
         }
-    }
-}
-
-@Composable
-fun Controls(n: Player.Now) {
-    Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-        Word("back", pixel(14.sp, Ink.mid), touch = 10.dp) { Player.previous() }
-        Word(if (n.playing) "pause" else "play", pixel(14.sp), touch = 10.dp) { Player.toggle() }
-        Word("next", pixel(14.sp, Ink.mid), touch = 10.dp) { Player.next() }
     }
 }
 
@@ -542,81 +544,6 @@ fun Line(n: Player.Now, accent: Color, modifier: Modifier = Modifier) {
     ) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
             Box(Modifier.fillMaxWidth(frac).height(1.dp).background(accent))
-        }
-    }
-}
-
-/**
- * The player: the cover as big as the window lets it, the line along its top edge with the times
- * over it, the song beside it, and the artist running along the foot.
- */
-@Composable
-private fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
-    val now by Player.now.collectAsState()
-    val n = now ?: return Close(onClose)
-    val cover = rememberCover(n.song, 1200)
-    Box(Modifier.fillMaxSize()) {
-        Marquee(said(n).second, n.playing, Modifier.align(Alignment.BottomStart).fillMaxWidth(), size = 150.sp)
-        Column(Modifier.fillMaxSize()) {
-            Close(onClose)
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(start = SIDE, end = SIDE, top = 8.dp, bottom = 190.dp)) {
-                val side: Dp = minOf(maxHeight - 24.dp, maxWidth * .5f)
-                Row {
-                    Column(Modifier.width(side)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            val pos by Player.position.collectAsState()
-                            BasicText(if (n.song.station) "live" else clock(pos), style = pixel(12.sp, Ink.mid))
-                            if (!n.song.station) BasicText("-" + clock((n.duration - pos).coerceAtLeast(0)), style = pixel(12.sp, Ink.mid))
-                        }
-                        Line(n, cover?.accent ?: Ink.ink, Modifier.width(side))
-                        CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.size(side), px = 1200, moving = n.playing)
-                    }
-                    Spacer(Modifier.width(40.dp))
-                    Column(Modifier.weight(1f).padding(top = 24.dp)) {
-                        val (title, _) = said(n)
-                        AnimatedContent(
-                            n.song.id + title,
-                            transitionSpec = {
-                                (slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 4 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
-                                    (slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { -it / 4 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)))
-                            },
-                            label = "song",
-                        ) { _ ->
-                            Column {
-                                BasicText(title.uppercase(), style = headline(44.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
-                                Spacer(Modifier.height(12.dp))
-                                if (!n.song.station) Word(said(n).second.lowercase(), pixel(14.sp)) {
-                                    open(Page.Artist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }))
-                                }
-                                Word(n.song.album.lowercase(), pixel(14.sp, Ink.mid)) {
-                                    if (n.song.album.isNotEmpty()) open(Page.Record(n.song.albumId))
-                                }
-                                Spacer(Modifier.height(4.dp))
-                                BasicText(listOfNotNull(n.song.year.takeIf { it > 0 }?.toString(), n.song.quality.takeIf { it.isNotEmpty() }).joinToString("  ·  "),
-                                    style = pixel(12.sp, Ink.mid))
-                            }
-                        }
-                        Spacer(Modifier.height(28.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Controls(n)
-                            Spacer(Modifier.width(18.dp))
-                            val on by Lyrics.on.collectAsState()
-                            Word("lyrics", pixel(14.sp, if (on) Ink.ink else Ink.dim), touch = 10.dp) { Lyrics.toggle() }
-                        }
-                        Spacer(Modifier.height(20.dp))
-                        val q by Player.queue.collectAsState()
-                        q.getOrNull(n.index + 1)?.let { up ->
-                            Word("up next: ${up.title.lowercase()}", pixel(12.sp, Ink.mid), touch = 6.dp) { open(Page.Queue) }
-                        }
-                        // the song's words, the sung line lit, as it plays
-                        val pos by Player.position.collectAsState()
-                        rememberLyrics(n.song)?.let { all ->
-                            Spacer(Modifier.height(28.dp))
-                            LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.weight(1f).fillMaxWidth())
-                        }
-                    }
-                }
-            }
         }
     }
 }

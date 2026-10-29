@@ -32,6 +32,16 @@ object Player {
     val position = MutableStateFlow(0L)
     /** Why it won't play, said once (no libmpv). */
     val trouble = MutableStateFlow<String?>(null)
+    /** What's heard of the song playing: its format, depth and rate, where it came from (null till it's opened). */
+    val heard = MutableStateFlow<Heard?>(null)
+    /** The app's own volume, 0 to 100 (the Mac's is apart from it), and whether it's muted; kept. */
+    val volume = MutableStateFlow(runCatching { File(Home.dir, "volume").readText().trim().toInt() }.getOrDefault(100).coerceIn(0, 100))
+    val muted = MutableStateFlow(false)
+    /** Shuffle (the songs after the one playing, in another order) and repeat (0 off, 1 all, 2 one); kept. */
+    val shuffle = MutableStateFlow(File(Home.dir, "shuffle").exists())
+    val repeat = MutableStateFlow(runCatching { File(Home.dir, "repeat").readText().trim().toInt() }.getOrDefault(0).coerceIn(0, 2))
+    /** The queue in its own order while shuffled (back to it when shuffle's off). */
+    private var unshuffled: List<Song>? = null
 
     private var mpv: Mpv? = null
     @Volatile private var paused = true
@@ -54,6 +64,8 @@ object Player {
                 "media-controls" to "yes", "input-media-keys" to "yes",
                 "audio-client-name" to "ink music", "title" to "ink music",
                 "ytdl" to "no", "cache" to "yes",
+                "volume" to volume.value.toString(), "volume-max" to "100",
+                "loop-playlist" to if (repeat.value == 1) "inf" else "no", "loop-file" to if (repeat.value == 2) "inf" else "no",
                 // -Dink.ao=null: silent, to try it without playing out loud
             ) + listOfNotNull(System.getProperty("ink.ao")?.let { "ao" to it }))
         } catch (e: Throwable) { trouble.value = "can't play: ${e.message?.lowercase()}"; null }
@@ -109,7 +121,7 @@ object Player {
                         val s = _queue.value.getOrNull(index)
                         onAir.value = if (s?.station == true) (e.value as? String)?.takeIf { it != s.title && "://" !in it }?.let { OnAir.parse(it, s.title) } else null
                     }
-                    "playlist-pos" -> { index = (e.value as? Long)?.toInt() ?: -1; tell() }
+                    "playlist-pos" -> { index = (e.value as? Long)?.toInt() ?: -1; heard.value = heard.value?.takeIf { it.id == _queue.value.getOrNull(index)?.id }; tell() }
                     "duration" -> { duration = ((e.value as? Double) ?: 0.0).times(1000).toLong(); tell() }
                     "time-pos" -> if (!casting) {
                         val ms = ((e.value as? Double) ?: 0.0).times(1000).toLong()
@@ -132,11 +144,98 @@ object Player {
                         m.proceed(e.id)
                     }.start()
                 }
-                is Mpv.Loaded -> if (pendingSeek > 0) { val ms = pendingSeek; pendingSeek = 0; seek(ms) }
+                is Mpv.Loaded -> {
+                    if (pendingSeek > 0) { val ms = pendingSeek; pendingSeek = 0; seek(ms) }
+                    hear(m)
+                }
                 is Mpv.Shutdown -> return
                 else -> {}
             }
         }
+    }
+
+    /**
+     * What's heard, read off mpv once the song's opened (and again a moment on: a lossy stream's bitrate is known
+     * once some has played). The depth is the file's own (its tags, the server's word) where known: mpv's decoder
+     * hands 24-bit FLAC on as 32.
+     */
+    private fun hear(m: Mpv) {
+        val s = _queue.value.getOrNull(index) ?: return
+        scope.launch {
+            for (wait in listOf(400L, 2_600L)) {
+                kotlinx.coroutines.delay(wait)
+                if (_queue.value.getOrNull(index)?.id != s.id) return@launch
+                val raw = m.get("audio-codec-name") ?: continue
+                val codec = when {
+                    raw.startsWith("pcm_") -> "wav"
+                    raw == "mp3float" -> "mp3"
+                    raw.startsWith("aac") -> "aac"
+                    else -> raw
+                }
+                val format = m.get("audio-params/format").orEmpty()
+                val bits = s.bits.takeIf { it > 0 } ?: Regex("\\d+").find(format)?.value?.toIntOrNull()?.takeIf { codec in Heard.LOSSLESS && it <= 24 } ?: 0
+                val gain = (m.get("current-tracks/audio/replaygain-album-gain") ?: m.get("current-tracks/audio/replaygain-track-gain"))?.toFloatOrNull()
+                heard.value = Heard(
+                    id = s.id, codec = codec, bits = if (codec in Heard.LOSSLESS) bits else 0,
+                    rate = m.get("audio-params/samplerate")?.toIntOrNull() ?: s.rate,
+                    channels = m.get("audio-params/channel-count")?.toIntOrNull() ?: 0,
+                    kbps = ((m.get("audio-bitrate")?.toDoubleOrNull() ?: 0.0) / 1000).toInt(),
+                    from = when { s.server -> "server"; s.tube -> "youtube"; s.station -> "station"; else -> "computer" },
+                    gain = gain,
+                )
+            }
+        }
+    }
+
+    /** The app's volume (0 to 100), kept; on a speaker, the speaker's. */
+    fun volume(v: Int) {
+        val to = v.coerceIn(0, 100)
+        if (casting) return Casting.setVolume(to / 100f)
+        volume.value = to
+        if (muted.value && to > 0) mute(false)
+        mpv?.set("volume", to.toString())
+        scope.launch { runCatching { Home.write(File(Home.dir, "volume"), to.toString()) } }
+    }
+
+    fun mute(on: Boolean = !muted.value) { muted.value = on; mpv?.set("mute", if (on) "yes" else "no") }
+
+    /** Repeat's next step: off, all, one. */
+    fun repeat() {
+        val r = (repeat.value + 1) % 3
+        repeat.value = r
+        mpv?.set("loop-playlist", if (r == 1) "inf" else "no")
+        mpv?.set("loop-file", if (r == 2) "inf" else "no")
+        runCatching { File(Home.dir, "repeat").let { if (r == 0) it.delete() else it.writeText(r.toString()) } }
+    }
+
+    /** Shuffle on (the songs after this one in another order) or off (back to the queue's own order). */
+    fun shuffle() {
+        val on = !shuffle.value
+        shuffle.value = on
+        runCatching { File(Home.dir, "shuffle").let { if (on) it.writeText("") else it.delete() } }
+        if (casting) return
+        val q = _queue.value
+        if (q.isEmpty() || index < 0) return
+        val rest = if (on) { unshuffled = q; q.drop(index + 1).shuffled() } else {
+            // the queue's own order on from the song playing
+            val own = unshuffled ?: return
+            unshuffled = null
+            val at = own.indexOfFirst { it.id == q[index].id }
+            val played = q.take(index + 1).map { it.id }.toSet()
+            (if (at >= 0) own.drop(at + 1) else own).filter { it.id !in played } + q.drop(index + 1).filter { s -> own.none { it.id == s.id } }
+        }
+        reorder(rest)
+    }
+
+    /** The songs after the one playing replaced by these (mpv's playlist with them). */
+    private fun reorder(rest: List<Song>) {
+        val m = mpv ?: return
+        val q = _queue.value
+        for (i in q.size - 1 downTo index + 1) m.command("playlist-remove", i.toString())
+        rest.forEach { m.command("loadfile", where(it), "append") }
+        _queue.value = q.take(index + 1) + rest
+        radioFrom = null
+        keep()
     }
 
     // the server told what's playing, and that it was heard once it has played half, or four minutes
@@ -234,7 +333,15 @@ object Player {
     fun play(songs: List<Song>, start: Int = 0) {
         // a speaker chosen: there
         Casting.on.value?.let { to -> return Casting.play(to, songs, start, 0L) }
-        pendingSeek = 0; load(songs, start, go = true)
+        pendingSeek = 0
+        unshuffled = null
+        if (shuffle.value && songs.size > 2) {
+            // shuffled: the one chosen first (or any, from the start), the rest in another order
+            val first = songs[start.coerceIn(songs.indices)]
+            unshuffled = songs
+            return load(listOf(first) + (songs - first).shuffled(), 0, go = true)
+        }
+        load(songs, start, go = true)
     }
 
     // ---- casting: a speaker plays, this computer's player waits, paused, and shows the speaker's song ----
@@ -369,6 +476,7 @@ object Player {
     fun stop() {
         mpv?.command("stop")
         _queue.value = emptyList()
+        heard.value = null
     }
 
     fun close() {
