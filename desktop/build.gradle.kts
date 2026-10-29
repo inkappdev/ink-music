@@ -139,3 +139,32 @@ tasks.withType<AbstractJPackageTask>().configureEach {
         else -> {}
     }
 }
+
+// Windows: the msi made here rather than by Compose's packageMsi, so it carries ink's own wizard (desktop/windows/:
+// jpackage's main.wxs with ink's pictures, type and an "open ink music" at the end; the wizard's words): jpackage reads
+// those from --resource-dir, which Compose fills and empties itself. jpackage makes Compose's finished app
+// (createDistributable) into the msi, with the WiX Compose fetched; no license or folder pages (welcome, ready, done)
+tasks.register<Exec>("packageInkMsi") {
+    dependsOn("createDistributable")
+    if (System.getProperty("os.name").startsWith("Windows")) dependsOn("unzipWix")
+    val app = layout.buildDirectory.dir("compose/binaries/main/app/ink music").get().asFile
+    val out = layout.buildDirectory.dir("compose/binaries/main/msi").get().asFile
+    val res = layout.buildDirectory.dir("msi-resources").get().asFile
+    val art = project.file("windows")
+    val wix = tasks.named<AbstractJPackageTask>("packageMsi").flatMap { it.wixToolsetDir }
+    executable = File(compose.desktop.application.javaHome, "bin/jpackage").path
+    args(
+        "--type", "msi", "--app-image", app.path, "--dest", out.path,
+        "--name", "ink music", "--app-version", project.version.toString(), "--vendor", "ink",
+        "--description", "A music player in ink's look", "--resource-dir", res.path,
+        "--win-per-user-install", "--win-menu", "--win-menu-group", "ink", "--win-shortcut",
+        "--win-upgrade-uuid", "6f1c2a9e-3b7d-4e55-9a41-1c0d8e2f7b63",
+    )
+    doFirst {
+        environment("PATH", wix.get().asFile.path + File.pathSeparator + System.getenv("PATH"))
+        out.deleteRecursively(); res.deleteRecursively(); res.mkdirs()
+        // the folder where the pictures are, written into main.wxs (WiX wants it whole)
+        for (name in listOf("main.wxs", "MsiInstallerStrings_en.wxl"))
+            File(res, name).writeText(File(art, name).readText().replace("@ART@", art.absolutePath))
+    }
+}

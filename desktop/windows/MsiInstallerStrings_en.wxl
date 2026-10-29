@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  jpackage's own English strings (JDK 21), and WiX's wizard's words in ink's (WiX lets these be overridden): the
+  pages' type (Segoe UI; main.wxs's Ink_Headline and Ink_Title for the headings), welcome, ready, installing, done.
+-->
+<WixLocalization Culture="en-us" xmlns="http://schemas.microsoft.com/wix/2006/localization" Codepage="1252">
+  <String Id="message.install.dir.exist">The folder [INSTALLDIR] already exist. Would you like to install to that folder anyway?</String>
+  <String Id="MainFeatureTitle">Main Feature</String>
+  <String Id="DowngradeErrorMessage">A newer ink music is already here, so this one stops.</String>
+  <String Id="DisallowUpgradeErrorMessage">An older ink music is already here, and this one can't replace it.</String>
+
+  <String Id="ShortcutPromptDlg_Title">[ProductName]</String>
+  <String Id="ShortcutPromptDlgTitle">{\WixUI_Font_Title}Shortcuts</String>
+  <String Id="ShortcutPromptDlgBannerBitmap">WixUI_Bmp_Banner</String>
+  <String Id="ShortcutPromptDlgDescription">Select shortcuts to create.</String>
+  <String Id="ShortcutPromptDlgDesktopShortcutControlLabel">Create desktop shortcut(s)</String>
+  <String Id="ShortcutPromptDlgStartMenuShortcutControlLabel">Create start menu shortcut(s)</String>
+  <String Id="InstallDirNotEmptyDlg_Title">[ProductName]</String>
+  <String Id="ContextMenuCommandLabel">Open with [ProductName]</String>
+
+  <String Id="Advanced_Font_FaceName" Overridable="yes">Segoe UI</String>
+  <String Id="Advanced_Font_Normal_Size" Overridable="yes">9</String>
+  <String Id="Advanced_Font_Emphasized_FaceName" Overridable="yes">Segoe UI</String>
+
+  <String Id="WelcomeDlg_Title">[ProductName]</String>
+  <String Id="WelcomeDlgTitle">{\Ink_Headline}INK MUSIC</String>
+  <String Id="WelcomeDlgDescription">The music player in ink's look: the songs on this computer, your own server, YouTube Music and the radio, in one place.
+
+Free, and it always will be.</String>
+  <String Id="WelcomeUpdateDlgTitleUpdate">{\Ink_Headline}INK MUSIC</String>
+  <String Id="WelcomeUpdateDlgDescriptionUpdate">A new ink music. Your music, sign-ins and settings stay as they are.</String>
+
+  <String Id="VerifyReadyDlg_Title">[ProductName]</String>
+  <String Id="VerifyReadyDlgInstallTitle">{\Ink_Title}READY</String>
+  <String Id="VerifyReadyDlgInstallText">ink music goes in your start menu and on your desktop. Nothing else changes, and it needs no administrator.</String>
+
+  <String Id="ProgressDlg_Title">[ProductName]</String>
+  <String Id="ProgressDlgTitleInstalling">{\Ink_Title}INSTALLING</String>
+  <String Id="ProgressDlgTextInstalling">A moment.</String>
+
+  <String Id="ExitDialog_Title">[ProductName]</String>
+  <String Id="ExitDialogTitle">{\Ink_Headline}DONE</String>
+  <String Id="ExitDialogDescription">ink music is in your start menu. Play something good.</String>
+  <String Id="InkOpenNow">Open ink music now</String>
+</WixLocalization>
