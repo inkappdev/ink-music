@@ -4,6 +4,9 @@ package app.ink.music
 data class TubeAlbum(val url: String, val title: String, val artist: String, val art: String?)
 
 /** What a YouTube Music search found: songs and records. */
+/** A mood or genre on YouTube Music's own page of them (chill, focus...; african to soundtracks); its `params` open it. */
+data class TubeMood(val title: String, val params: String, val genre: Boolean)
+
 data class TubeFound(val songs: List<Song> = emptyList(), val albums: List<TubeAlbum> = emptyList())
 
 /** An artist on YouTube Music: their name and photo (the onboarding's faces), and their page ("UC...") when known. */

@@ -78,6 +78,8 @@ fun ExplorePage(open: (Page) -> Unit) {
     val today by Picks.today.collectAsState()
     val air by Picks.onAir.collectAsState()
     val list = rememberLazyListState()
+    // the record of the day arriving above: the page stays at its top (it had opened partway down)
+    LaunchedEffect(today != null) { if (list.firstVisibleItemIndex <= 2) list.scrollToItem(0) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val across = ((maxWidth - SIDE * 2) / 170.dp).toInt().coerceAtLeast(2)
         val wide = maxWidth >= 860.dp

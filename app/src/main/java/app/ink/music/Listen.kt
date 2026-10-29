@@ -181,6 +181,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val lovedTube by Loved.tube.collectAsState()
     val songs by Library.songs.collectAsState()
     val recentSongs = remember(recent, songs) { recent.mapNotNull { Library.song(it.id) } }
+    LaunchedEffect(songs.isNotEmpty()) { Discover.start(ctx, songs) }
     // a played song as one to play again: the library's, else a YouTube song this run knows (liked, heard there, loved)
     val known = remember(liked, tubeHeard, lovedTube) { (liked + tubeHeard + lovedTube).associateBy { it.id } }
     fun songOf(id: String) = Library.song(id) ?: known[id] ?: YouTubeMusic.known(id)
@@ -222,6 +223,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         weekly.firstOrNull()?.let { w ->
             item { Column(Modifier.cascade(2)) { WeeklyBlock(w) { pages.open(Page.Weekly(w.week)) } }}
         }
+        // made from your listening (Discover): fresh finds, deep cuts and the rest
+        item { Column(Modifier.cascade(3)) { MadeForYouShelf() } }
         if (recentSongs.isNotEmpty() || tubeRecent.isNotEmpty()) item { Column(Modifier.cascade(3)) {
             Label("jump back in")
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -249,6 +252,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 Tile(a.hit, a.name, "mix", face = a.face, dither = true) { scope.launch { Listen.mix(a.hit!!) } }
             }
         }}
+        item { Column(Modifier.cascade(6)) { BecauseYouLovedShelf() } }
+        item { Column(Modifier.cascade(7)) { NewToYouShelf(pages) } }
         if (onRepeat.size >= 3) item { Column(Modifier.cascade(7)) {
             Label("on repeat")
             ShelfIndexed(onRepeat) { i, s -> Tile(s, s.title, s.artist) { Playback.play(onRepeat, i) } }
@@ -346,7 +351,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
  * pixel face on black in a hairline frame, and a little equaliser of pixels that moves while it plays.
  */
 @Composable
-private fun RadioTile(word: String, on: Boolean, moving: Boolean, said: String? = null, onClick: () -> Unit) {
+internal fun RadioTile(word: String, on: Boolean, moving: Boolean, said: String? = null, onClick: () -> Unit) {
     Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black).border(1.dp, if (on) Ink.mid else Ink.line)) {
             BasicText(word, style = pixel(fit(word), if (on) Ink.ink else Ink.mid), maxLines = 4,
@@ -421,7 +426,7 @@ fun InkRadioPage(pages: Pages) {
 
 /** A shelf: a row of tiles, sliding sideways, the page's margins at its ends. */
 @Composable
-private fun <T> Shelf(items: List<T>, tile: @Composable (T) -> Unit) {
+internal fun <T> Shelf(items: List<T>, tile: @Composable (T) -> Unit) {
     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         items(items) { tile(it) }
     }
@@ -429,7 +434,7 @@ private fun <T> Shelf(items: List<T>, tile: @Composable (T) -> Unit) {
 }
 
 @Composable
-private fun <T> ShelfIndexed(items: List<T>, tile: @Composable (Int, T) -> Unit) {
+internal fun <T> ShelfIndexed(items: List<T>, tile: @Composable (Int, T) -> Unit) {
     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         itemsIndexed(items) { i, it -> tile(i, it) }
     }
@@ -477,7 +482,7 @@ private fun WeeklyBlock(w: Weekly.Week, onOpen: () -> Unit) {
 
 /** A tile: a cover (or an artist's photo), a name big, a word small; numbered on a chart. */
 @Composable
-private fun Tile(song: Song?, name: String, said: String, face: String? = null, number: Int? = null, dither: Boolean = false, onClick: () -> Unit) {
+internal fun Tile(song: Song?, name: String, said: String, face: String? = null, number: Int? = null, dither: Boolean = false, onClick: () -> Unit) {
     val shown = remember(song?.id, face) { if (face != null) faceSong(name, face) else song }
     Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         // a mix or a playlist: its picture in the dither (YouTube's lettering on it made ink's)

@@ -233,6 +233,7 @@ sealed interface Page {
     data object Import : Page
     data object Equalizer : Page
     data object HandOver : Page
+    data class Mood(val mood: TubeMood) : Page
     data class SettingsPart(val part: String) : Page
 }
 
@@ -351,6 +352,7 @@ private fun App() {
                         Page.Import -> ImportPage(pages)
                         Page.Equalizer -> EqualizerPage(pages)
                         Page.HandOver -> HandOverPage(pages)
+                        is Page.Mood -> MoodPage(p.mood, pages)
                         is Page.SettingsPart -> SettingsPage(pages, p.part)
                     }
                     }
@@ -391,7 +393,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     val read by Library.read.collectAsState()
     var tab by rememberSaveable { mutableStateOf("listen") }
     // nothing on the phone or a server: no records, artists or songs to show
-    val tabs = if (songs.isEmpty()) listOf("listen", "lists") else listOf("listen", "albums", "artists", "songs", "lists")
+    val tabs = if (songs.isEmpty()) listOf("listen", "explore", "lists") else listOf("listen", "explore", "albums", "artists", "songs", "lists")
     val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
     // the tab row follows a swipe; a tab tapped goes there on ink's curve
     LaunchedEffect(pager, tabs) { snapshotFlow { pager.currentPage }.collect { tab = tabs.getOrElse(it) { "listen" } } }
@@ -402,6 +404,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
         scope.launch { pager.animateScrollToPage(0, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
     }
     val listenList = rememberLazyListState()
+    val exploreList = rememberLazyListState()
     val grid = rememberLazyGridState()
     val artistList = rememberLazyListState()
     val listsList = rememberLazyListState()
@@ -470,6 +473,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
        Box(Modifier.fillMaxSize().nestedScroll(keepSideways)) {
         when (tabs[page]) {
             "listen" -> ListenPage(pages, pad, listenList)
+            "explore" -> ExplorePage(pages, pad, exploreList)
             "albums" -> LazyVerticalGrid(
                 GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
