@@ -42,54 +42,112 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * INK's own place on the rail: what we make, all of it. This week's ink weekly on top, as its own spread each week
- * (its covers in the dither two by two, its name on them, its note, its songs as a chart beside), the weeks before as
- * their mosaics (a click puts that week on top); then ink radio, the stations we keep, in shelves by what they play
- * (Bronson, 2026-10-29: as one grid it was a long list), each with what it's playing this minute where that's known.
+ * ink weekly as INK's front cover (Bronson, 2026-10-29: "really make that top ink weekly design shine"): its four covers
+ * in the dither, big; the week's name huge beside them, its note, play the week; the week's artists running across the
+ * page in the giant marquee, as the player's do; its songs as a chart in columns; the volumes before, small, a click
+ * putting one on the cover.
  */
 @Composable
-fun InkPage(open: (Page) -> Unit) {
+fun InkWeekly() {
     val weeks by Weekly.weeks.collectAsState()
     LaunchedEffect(Unit) { Weekly.load() }
     var chosen by remember { mutableStateOf<Int?>(null) }
-    val w = weeks.firstOrNull { it.week == chosen } ?: weeks.firstOrNull()
-    LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
-    val air by Picks.onAir.collectAsState()
-    val list = rememberLazyListState()
-    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
-        verticalArrangement = Arrangement.spacedBy(GAP)) {
-        item(key = "week") {
-            if (w == null) Section("INK WEEKLY", "reading this week's")
-            else WeekSpread(w, w.week == weeks.firstOrNull()?.week)
-        }
-        val before = weeks.filter { it.week != w?.week }
-        if (before.isNotEmpty()) item(key = "before") {
-            Column {
-                Section("THE WEEKS BEFORE", "every volume, the newest first")
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    val w = weeks.firstOrNull { it.week == chosen } ?: weeks.firstOrNull() ?: return Section("INK WEEKLY", "reading this week's")
+    val latest = w.week == weeks.firstOrNull()?.week
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val room = maxWidth
+        val side = minOf(room * .46f, 540.dp)
+        val wide = room >= 820.dp
+        Column {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Box(Modifier.size(if (wide) side else room)) { Mosaic(w.songs, Modifier.fillMaxSize()) }
+                if (wide) {
+                    Spacer(Modifier.width(40.dp))
+                    Column(Modifier.weight(1f)) { WeekWords(w, latest, big = true) { chosen = null } }
+                }
+            }
+            if (!wide) { Spacer(Modifier.height(18.dp)); WeekWords(w, latest, big = false) { chosen = null } }
+            Spacer(Modifier.height(26.dp))
+            // who's on it, running off both edges (still under less motion)
+            val names = remember(w) { w.songs.map { it.artist.substringBefore(",").trim() }.distinct().joinToString("  ·  ") }
+            Marquee(names, true, Modifier.fillMaxWidth(), size = 84.sp)
+            Spacer(Modifier.height(22.dp))
+            // the songs as a chart: three columns wide, the place big beside each
+            val across = if (room >= 1100.dp) 3 else if (wide) 2 else 1
+            val per = (w.songs.size + across - 1) / across
+            Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                w.songs.chunked(per.coerceAtLeast(1)).forEachIndexed { c, col ->
+                    Column(Modifier.weight(1f)) {
+                        col.forEachIndexed { r, s ->
+                            val n = c * per + r
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                BasicText("${n + 1}".padStart(2, '0'), style = headline(20.sp, Ink.mid), modifier = Modifier.width(40.dp))
+                                CoverOf(s, s.album.ifEmpty { s.title }, Modifier.size(44.dp), px = 120)
+                                Spacer(Modifier.width(12.dp))
+                                Box(Modifier.weight(1f)) { SongRow(s, said = s.artist.lowercase()) { Player.play(w.songs, n) } }
+                            }
+                        }
+                    }
+                }
+                repeat(across - w.songs.chunked(per.coerceAtLeast(1)).size) { Spacer(Modifier.weight(1f)) }
+            }
+            // the volumes before, small
+            val before = weeks.filter { it.week != w.week }
+            if (before.isNotEmpty()) {
+                Spacer(Modifier.height(26.dp))
+                Label(if (latest) "the volumes before" else "every volume")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     items(before, key = { it.week }) { b ->
-                        Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { chosen = b.week })) {
+                        Column(Modifier.width(120.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { chosen = b.week })) {
                             Mosaic(b.songs, Modifier.fillMaxWidth().aspectRatio(1f))
-                            Spacer(Modifier.height(8.dp))
-                            UnderCover(b.title, "vol ${b.week}" + Weekly.day(b.date).takeIf { it.isNotEmpty() }?.let { " · $it" }.orEmpty())
+                            Spacer(Modifier.height(6.dp))
+                            UnderCover(b.title, "vol ${b.week}")
                         }
                     }
                 }
             }
         }
-        RADIO_KINDS.forEach { kind ->
-            val stations = Stations.curated().filter { kindOf(it) == kind.key }.sortedByDescending { it.star }
-            if (stations.isNotEmpty()) item(key = "radio-" + kind.key) {
-                Column {
-                    if (kind == RADIO_KINDS.first()) {
-                        BasicText("INK RADIO", style = headline(44.sp))
-                        Spacer(Modifier.height(18.dp))
-                    }
-                    Section(kind.name, kind.line)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                        items(stations, key = { it.song.id }) { c -> StationTile(c, air.firstOrNull { it.station == c.song.id }) { Player.play(stations.dropWhile { it != c }.map { it.song }) } }
-                    }
-                }
+    }
+}
+
+/** A week's words: ink weekly, its volume and day; its name huge; its note; play the week, shuffle, how long. */
+@Composable
+private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BasicText("INK WEEKLY", style = headline(18.sp))
+        Spacer(Modifier.width(14.dp))
+        BasicText(listOf("vol ${w.week}", Weekly.day(w.date), if (latest) "this week" else "").filter { it.isNotEmpty() }.joinToString("  ·  "),
+            style = pixel(12.sp, Ink.mid))
+        if (!latest) { Spacer(Modifier.width(18.dp)); Word("this week's", pixel(12.sp), touch = 6.dp, onClick = onLatest) }
+    }
+    Spacer(Modifier.height(10.dp))
+    BasicText(w.title.uppercase(), style = headline(if (big) 88.sp else 56.sp).copy(lineHeight = if (big) 84.sp else 54.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+    if (w.note.isNotEmpty()) {
+        Spacer(Modifier.height(14.dp))
+        BasicText(w.note.lowercase(), style = pixel(14.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 23.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+    }
+    Spacer(Modifier.height(20.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+        Word("PLAY THE WEEK", headline(24.sp), touch = 8.dp) { Player.play(w.songs) }
+        Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(w.songs.shuffled()) }
+        BasicText("${w.songs.size} songs  ·  ${w.songs.sumOf { it.duration } / 60_000} min", style = pixel(12.sp, Ink.mid))
+    }
+}
+
+/** Ink radio on INK: the stations we keep, a kind chosen in a row of words (all, the stars first), each what it's playing now. */
+@Composable
+fun InkRadio(air: List<Curation.Aired>) {
+    var kind by remember { mutableStateOf<String?>(null) }
+    val stations = remember(kind) { Stations.curated().filter { kind == null || kindOf(it) == kind }.sortedByDescending { it.star } }
+    Column {
+        Section("INK RADIO", "the stations we keep: real djs, picked by people")
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(bottom = 14.dp)) {
+            item { Word("all", pixel(13.sp, if (kind == null) Ink.ink else Ink.dim), touch = 8.dp) { kind = null } }
+            items(RADIO_KINDS, key = { it.key }) { k -> Word(k.name.lowercase(), pixel(13.sp, if (kind == k.key) Ink.ink else Ink.dim), touch = 8.dp) { kind = k.key } }
+        }
+        androidx.compose.runtime.key(kind) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(stations, key = { it.song.id }) { c -> StationTile(c, air.firstOrNull { it.station == c.song.id }) { Player.play(stations.dropWhile { it != c }.map { it.song }) } }
             }
         }
     }
@@ -123,51 +181,6 @@ private fun StationTile(c: Stations.Curated, aired: Curation.Aired?, onClick: ()
         Spacer(Modifier.height(2.dp))
         if (aired != null) BasicText("playing ${aired.title} by ${aired.artist}".lowercase(), style = pixel(12.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
         else BasicText(c.line.lowercase(), style = pixel(12.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-/** A week of ink weekly as a spread: its mosaic big with its name on it, its note, play; its songs as a chart beside. */
-@Composable
-private fun WeekSpread(w: Weekly.Week, latest: Boolean) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val side = minOf(maxWidth * .44f, 460.dp)
-        val beside = maxWidth >= 820.dp
-        val head = @Composable {
-            Column {
-                BasicText(listOf("ink weekly", "vol ${w.week}", Weekly.day(w.date), if (latest) "this week" else "").filter { it.isNotEmpty() }.joinToString("  ·  "),
-                    style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.height(10.dp))
-                // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
-                Box(Modifier.size(side), contentAlignment = Alignment.BottomStart) {
-                    Mosaic(w.songs, Modifier.fillMaxSize())
-                    BasicText(w.title.uppercase(), style = headline(44.sp).copy(lineHeight = 44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.background(Ink.black).padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 2.dp))
-                }
-                if (w.note.isNotEmpty()) {
-                    Spacer(Modifier.height(14.dp))
-                    BasicText(w.note.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 21.sp), modifier = Modifier.width(side))
-                }
-                Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(26.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Word("play", pixel(14.sp), touch = 8.dp) { Player.play(w.songs) }
-                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(w.songs.shuffled()) }
-                    BasicText("${w.songs.size} songs  ·  ${w.songs.sumOf { it.duration } / 60_000} min", style = pixel(12.sp, Ink.mid))
-                }
-            }
-        }
-        // the songs as a chart: the place big beside each
-        val chart = @Composable { m: Modifier ->
-            Column(m) {
-                w.songs.forEachIndexed { n, s ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        BasicText("${n + 1}", style = headline(24.sp, Ink.mid), modifier = Modifier.width(48.dp))
-                        Box(Modifier.weight(1f)) { SongRow(s, said = s.artist.lowercase()) { Player.play(w.songs, n) } }
-                    }
-                }
-            }
-        }
-        if (beside) Row { head(); Spacer(Modifier.width(48.dp)); chart(Modifier.weight(1f).padding(top = 26.dp)) }
-        else Column { head(); Spacer(Modifier.height(20.dp)); chart(Modifier.fillMaxWidth()) }
     }
 }
 

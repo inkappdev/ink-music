@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -80,6 +81,8 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     // the record of the day arriving above: the page stays at its top (it had opened partway down)
     LaunchedEffect(today != null) { if (state.firstVisibleItemIndex <= 2) state.scrollToItem(0) }
     LazyColumn(state = state, contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding())) {
+        // ink weekly, the cover: ours, new each Friday
+        item(key = "weekly") { InkWeeklyCover(pages) }
         today?.let { d -> item(key = "today") { RecordOfTheDay(d, pages) } }
         if (air.isNotEmpty()) item(key = "air") {
             Label("on the air now")
@@ -90,6 +93,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             }
             Spacer(Modifier.height(14.dp))
         }
+        item(key = "radio") { InkRadioShelf(pages) }
         item(key = "festivals") { FestivalsShelf(pages) }
         // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: Bronson, 2026-10-28)
         item(key = "inkmoods") { InkMoodsShelf() }
@@ -236,6 +240,73 @@ private fun PickTile(s: Picks.Shown, pages: Pages) {
 }
 
 /** The artist of the week: from the indie chart's top fifteen, the very famous passed over; their photo dithered, a line, play. */
+/**
+ * ink weekly as INK's cover (Bronson, 2026-10-29: "really make that top ink weekly design shine"): its four covers in
+ * the dither across the page, its name on a black tab in their corner; the week's artists running across in the giant
+ * marquee, as the player's do (still under less motion); its note, play the week; its songs as a numbered shelf. A tap
+ * on the covers or the songs' count opens the week.
+ */
+@Composable
+private fun InkWeeklyCover(pages: Pages) {
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) { Weekly.load(ctx) }
+    val weeks by Weekly.weeks.collectAsState()
+    val w = weeks.firstOrNull() ?: return
+    val less by Moves.less.collectAsState()
+    Column(Modifier.padding(top = 6.dp, bottom = 24.dp)) {
+        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText("INK WEEKLY", style = headline(16.sp))
+            Spacer(Modifier.width(12.dp))
+            BasicText(listOf("vol ${w.week}", Weekly.day(w.date), "this week").filter { it.isNotEmpty() }.joinToString("  ·  "), style = pixel(12.sp, Ink.mid))
+        }
+        Spacer(Modifier.height(10.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Weekly(w.week)) }),
+            contentAlignment = Alignment.BottomStart) {
+            Mosaic(w.songs, Modifier.size(maxWidth))
+            // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
+            BasicText(w.title.uppercase(), style = headline(52.sp).copy(lineHeight = 50.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.background(Ink.black).padding(start = 0.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        val names = remember(w) { w.songs.map { it.artist.substringBefore(",").trim() }.distinct().joinToString("  ·  ") }
+        Marquee(names, !less, Modifier.fillMaxWidth(), size = 64.sp)
+        if (w.note.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            BasicText(w.note.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 21.sp), modifier = Modifier.padding(horizontal = 20.dp))
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Word("PLAY THE WEEK", headline(20.sp), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
+            Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
+            Word("${w.songs.size} songs", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.Weekly(w.week)) }
+        }
+        Spacer(Modifier.height(14.dp))
+        ShelfIndexed(w.songs) { i, s -> Tile(s, s.title, s.artist, number = i + 1) { Playback.play(w.songs, i) } }
+    }
+}
+
+/** Ink radio on INK: the stations we keep, the stars first, each its sleeve; all of them a tap away. */
+@Composable
+private fun InkRadioShelf(pages: Pages) {
+    val ctx = LocalContext.current
+    val now by Playback.now.collectAsState()
+    val ink = remember { Stations.curated(ctx).sortedByDescending { it.star } }
+    if (ink.isEmpty()) return
+    Row(verticalAlignment = Alignment.Bottom) {
+        Label("ink radio")
+        Spacer(Modifier.weight(1f))
+        Word("all", pixel(12.sp, Ink.mid), Modifier.padding(end = 20.dp), touch = 8.dp) { pages.open(Page.InkRadio) }
+    }
+    BasicText("the stations we keep: real djs, picked by people", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp))
+    Spacer(Modifier.height(10.dp))
+    ShelfIndexed(ink) { i, st ->
+        val on = now?.song?.id == st.song.id
+        StationTile(st.song, on, now?.playing == true, said = if (on) "on now" else st.city) { Playback.play(ink.drop(i).map { it.song }, 0) }
+    }
+    Spacer(Modifier.height(12.dp))
+}
+
 /**
  * Out this Friday: every record out this week (r/indieheads' New Music Friday thread, typed up by one of them each
  * Friday), filtered by kind, a shelf to slide through; each cover found as it comes into sight.

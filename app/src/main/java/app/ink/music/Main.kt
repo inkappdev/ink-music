@@ -396,7 +396,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     val read by Library.read.collectAsState()
     var tab by rememberSaveable { mutableStateOf("listen") }
     // nothing on the phone or a server: no records, artists or songs to show
-    val tabs = if (songs.isEmpty()) listOf("listen", "explore", "lists") else listOf("listen", "explore", "albums", "artists", "songs", "lists")
+    // INK: ink weekly, ink radio and everything people picked, one place (explore till 2026-10-29: Bronson)
+    val tabs = if (songs.isEmpty()) listOf("listen", "ink", "lists") else listOf("listen", "ink", "albums", "artists", "songs", "lists")
     val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
     // the places' menu, dropped down from the place's word
     var menu by remember { mutableStateOf(false) }
@@ -478,7 +479,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
        Box(Modifier.fillMaxSize().nestedScroll(keepSideways)) {
         when (tabs[page]) {
             "listen" -> ListenPage(pages, pad, listenList)
-            "explore" -> ExplorePage(pages, pad, exploreList)
+            "ink" -> ExplorePage(pages, pad, exploreList)
             "albums" -> LazyVerticalGrid(
                 GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
