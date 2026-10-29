@@ -49,6 +49,8 @@ fun RadioTab() {
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
+        // the tower sending, what's on
+        item(span = { GridItemSpan(maxLineSpan) }) { RadioHead() }
         item(span = { GridItemSpan(maxLineSpan) }) {
             // one row, slid through (it wrapped onto a second line)
             androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {

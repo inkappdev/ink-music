@@ -51,6 +51,8 @@ object SyncHub {
     private var dns: javax.jmdns.JmDNS? = null
     /** When what plays here last changed (a song, play, pause), so the newer of the two is the one carried on with. */
     @Volatile var playedAt = runCatching { File(Home.dir, "queue.json").lastModified() }.getOrDefault(0L)
+    /** When play was last pressed here (paused to playing), so a stop the phone asks for from before it is passed over. */
+    @Volatile var resumedAt = 0L
     /** A love the phone made, being done here: not one to tell it about again. */
     @Volatile private var applying = false
 
@@ -58,10 +60,13 @@ object SyncHub {
         scope.launch {
             // what the app opens with (the queue it was left with) isn't a change
             var first = true
+            var was = false
             Player.now.map { it?.song?.id to it?.playing }.distinctUntilChanged().collect { (id, _) ->
                 if (id == null) return@collect
                 if (first) { first = false; return@collect }
                 playedAt = System.currentTimeMillis()
+                if (Player.now.value?.playing == true && !was) resumedAt = playedAt
+                was = Player.now.value?.playing == true
                 // kept on the server too, for the phone away from home
                 Player.now.value?.let { n -> Server.saveQueue(Player.queue.value, n.index, Player.position.value) }
             }
@@ -136,6 +141,8 @@ object SyncHub {
         while (true) { val h = line(); if (h.isEmpty()) break; if (h.lowercase().startsWith("content-length:")) length = h.substringAfter(":").trim().toIntOrNull() ?: 0 }
         val body = String(input.readNBytes(length.coerceIn(0, 64 shl 20)))
         val (status, reply) = when (first.getOrNull(0) to first.getOrNull(1)) {
+            // the phone's player, playing with the app closed: has this computer carried on with it?
+            "POST" to "/handed" -> runCatching { Sync.answerHanded(kept, body)?.let { 200 to it } ?: (403 to "{}") }.getOrElse { 400 to "{}" }
             "POST" to "/sync" -> runCatching {
                 val r = Sync.answer(side, kept, body, k.inetAddress.hostAddress + ":" + (server?.localPort ?: Sync.PORT))
                 peers.value = kept.peers()
@@ -219,19 +226,23 @@ object SyncHub {
         override fun heardChanged() { Listened.read() }
 
         override fun theirs(peer: Sync.Peer, now: JSONObject?) {
-            theirs.value = now?.let { Continue.offer(peer.name, it, ::resolve) }
+            theirs.value = now?.let { Continue.offer(peer.name, it, ::resolve, peer.id) }
         }
+
+        override fun resumedAt(): Long = resumedAt
+
+        override fun stop() { if (Player.now.value?.playing == true) Player.toggle() }
     }
 }
 
 /** What the other device was playing, offered here: "on your phone: … continue here". */
 object Continue {
-    data class Offer(val from: String, val songs: List<Song>, val index: Int, val position: Long, val playing: Boolean, val at: Long) {
+    data class Offer(val from: String, val songs: List<Song>, val index: Int, val position: Long, val playing: Boolean, val at: Long, val peer: String = "") {
         val song: Song get() = songs[index]
     }
 
     /** Its queue found here; null if none of it could be, or nothing played there. */
-    fun offer(from: String, o: JSONObject, resolve: (JSONObject) -> Song?): Offer? {
+    fun offer(from: String, o: JSONObject, resolve: (JSONObject) -> Song?, peer: String = ""): Offer? {
         val q = o.optJSONArray("queue") ?: return null
         val index = o.optInt("index")
         val songs = ArrayList<Song>(); var at = -1
@@ -241,14 +252,15 @@ object Continue {
             songs += s
         }
         if (songs.isEmpty() || at < 0) return null
-        return Offer(from.lowercase(), songs, at, o.optLong("position"), o.optBoolean("playing"), o.optLong("at"))
+        return Offer(from.lowercase(), songs, at, o.optLong("position"), o.optBoolean("playing"), o.optLong("at"), peer)
     }
 
-    /** Carried on with here, where it was. */
+    /** Carried on with here, where it was; the phone told to stop (at its next call, or its player's next ask). */
     fun take(o: Offer) {
         val at = if (o.position > 5_000 && !o.song.station) o.position else 0L
         Casting.on.value?.let { to -> Casting.play(to, o.songs, o.index, at) } ?: Player.takeBack(o.songs, o.index, at, go = true)
         dismissed.value = o.at
+        if (o.peer.isNotEmpty()) SyncHub.kept.handed(o.peer, System.currentTimeMillis())
     }
 
     /** The offer last put aside ("not now"), by when it was. */

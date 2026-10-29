@@ -42,6 +42,7 @@ class PlayerService : MediaLibraryService() {
     // the screens' controller telling us what a speaker does (its asks go back to it; gone, casting's over here)
     private var caster: MediaSession.ControllerInfo? = null
     private val work = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private lateinit var handed: HandedCheck
     private var clock: History.Clock? = null
     private var onAir: OnAir? = null
 
@@ -436,6 +437,7 @@ class PlayerService : MediaLibraryService() {
         player.currentMediaItem?.let { Widget.show(this, it.mediaId, it.mediaMetadata.title?.toString().orEmpty(), it.mediaMetadata.artist?.toString().orEmpty(), false) }
         radio = prefs.getBoolean("radio", true)
         onAir = OnAir(player, main, net)
+        handed = HandedCheck(this) { player.pause() }
         player.addListener(object : Player.Listener {
             // a station's song, as its stream says it
             override fun onMetadata(metadata: androidx.media3.common.Metadata) { onAir?.metadata(metadata) }
@@ -495,6 +497,8 @@ class PlayerService : MediaLibraryService() {
 
             // sleeping at the song's end: it paused there, so the timer's done
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // a paired computer that carries on with this stops it here (Sync)
+                handed.playing(playWhenReady)
                 if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAt == SLEEP_END_OF_SONG)
                     session?.player?.let { setSleep(it, 0) }
             }
