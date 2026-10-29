@@ -393,8 +393,11 @@ object Casting {
             handedOver = queue.size - songs.size   // songs is the queue from some song on (all, or from one refused)
             val first = chunk()
             Log.d("${to.name}: queue of ${first.length()} of ${songs.size}, the first ${first.optJSONObject(0)?.optJSONObject("media")?.let { it.optString("contentType") + " " + it.optString("contentId").substringBefore('?').take(80) }}")
+            // a station from now: it has no 78 s in to start at (KEXP to the bedroom speaker sat buffering, or the speaker
+            // closed; Bronson, 2026-10-29)
+            val live = songs.firstOrNull()?.station == true
             send(t, MEDIA, JSONObject().put("type", "QUEUE_LOAD").put("requestId", ++requests).put("items", first)
-                .put("startIndex", 0).put("currentTime", from / 1000.0).put("repeatMode", "REPEAT_OFF"))
+                .put("startIndex", 0).put("currentTime", if (live) 0.0 else from / 1000.0).put("repeatMode", "REPEAT_OFF"))
         }
 
         @Synchronized private fun nearEnd() { current?.let { c -> if (pending.isNotEmpty() && queue.indexOf(c) >= handedOver - 3) more() } }
@@ -476,7 +479,7 @@ object Casting {
                 .put("albumName", s.album).put("albumArtist", s.albumArtist)
             Serve.art(s)?.let { meta.put("images", JSONArray().put(JSONObject().put("url", it))) }
             return JSONObject().put("autoplay", true).put("preloadTime", 8).put("media", JSONObject()
-                .put("contentId", url).put("streamType", "BUFFERED")
+                .put("contentId", url).put("streamType", if (s.station) "LIVE" else "BUFFERED")
                 .put("contentType", Serve.type(s, lossless)).put("metadata", meta)
                 .put("customData", JSONObject().put("id", s.id)))
         }
