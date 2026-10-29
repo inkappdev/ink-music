@@ -11,6 +11,10 @@ on:
 jobs:
   dmg:
     runs-on: macos-15   # Apple Silicon
+    # the signing certificate (below); empty, the build stays ad hoc as before
+    env:
+      P12: ${{ secrets.MAC_SIGN_P12 }}
+      PASS: ${{ secrets.MAC_SIGN_PASS }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -38,6 +42,41 @@ jobs:
         env:
           LASTFM_KEY: ${{ secrets.LASTFM_KEY }}
           LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+
+      # signed as "ink music", one certificate of ink's own (made 2026-10-29, ~/.config/ink-music/ink-music-mac-sign.*,
+      # the repository's MAC_SIGN_P12 and MAC_SIGN_PASS): not Apple's, so the first open is still Open Anyway, but
+      # every build is the same app to macOS, which keeps what it was allowed (Local Network: an ad hoc build was a
+      # new app each time, and its server went dark till allowed again; Bronson's Mac, 2026-10-29). Each piece of
+      # code inside from the inside out (Java's runtime, libmpv's), then the app; the dmg opened writable to do it.
+      - name: signed as ink music
+        if: env.P12 != ''
+        run: |
+          set -euo pipefail
+          echo "$P12" | base64 --decode > sign.p12
+          kc="$RUNNER_TEMP/sign.keychain-db"
+          security create-keychain -p "" "$kc"
+          security set-keychain-settings "$kc"
+          security unlock-keychain -p "" "$kc"
+          security import sign.p12 -k "$kc" -P "$PASS" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm sign.p12
+          id=$(security find-certificate -c "ink music" -Z "$kc" | awk '/SHA-1/ { print $3 }')
+          dmg=$(ls desktop/build/compose/binaries/main/dmg/*.dmg)
+          hdiutil convert "$dmg" -format UDRW -o rw.dmg
+          hdiutil resize -size +40m rw.dmg
+          hdiutil attach rw.dmg -nobrowse -mountpoint m
+          app="m/ink music.app"
+          find "$app/Contents" -type f \( -name '*.dylib' -o -name '*.jnilib' -o -perm -u+x \) -print0 |
+            while IFS= read -r -d '' f; do file -b "$f" | grep -q Mach-O && codesign --force --sign "$id" --keychain "$kc" "$f"; done
+          [ -d "$app/Contents/runtime" ] && codesign --force --sign "$id" --keychain "$kc" "$app/Contents/runtime"
+          codesign --force --sign "$id" --keychain "$kc" "$app"
+          codesign --verify --deep --strict "$app"
+          codesign -dvv "$app" 2>&1 | grep -E "^(Identifier|Authority|Signature)="
+          hdiutil detach m
+          rm "$dmg"
+          hdiutil convert rw.dmg -format UDZO -o "$dmg"
+          security delete-keychain "$kc"
 
       - uses: actions/upload-artifact@v4
         with:
