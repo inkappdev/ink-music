@@ -812,8 +812,9 @@ fun rememberLyrics(song: Song): List<Line>? {
 
 /** The words: the line before dim, the sung one big (lit word by word), the next three dim; a new line rises in. */
 @Composable
-fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolean = false) {
-    val k = if (small) .78f else 1f
+fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolean = false, big: Boolean = false) {
+    // big: the full-screen player's inner sleeve, the words the room's whole height
+    val k = if (small) .78f else if (big) 1.35f else 1f
     val drift = with(androidx.compose.ui.platform.LocalDensity.current) { Motion.drift.roundToPx() }
     // the lines to come run out of room at the foot: feathered, never cut
     Box(modifier.clipToBounds().feather({ 0f }, { 1f })) {
@@ -827,7 +828,7 @@ fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolea
         ) { i ->
             val sung = lines.getOrNull(i)?.takeIf { it.words.isNotBlank() }
             val before = (i - 1 downTo 0).asSequence().map { lines[it] }.firstOrNull { it.words.isNotBlank() }?.takeIf { sung != null }
-            val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(3).toList()
+            val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(if (big) 6 else 3).toList()
             Column(Modifier.fillMaxWidth()) {
                 before?.let {
                     BasicText(it.words.uppercase(), style = headline(20.sp * k, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)

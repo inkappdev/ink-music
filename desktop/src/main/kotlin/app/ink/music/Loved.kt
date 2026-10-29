@@ -105,7 +105,7 @@ object Loved {
 }
 
 /** The desktop bar's heart (waybar/heart/make-hearts.py), 7 x 6 on Silkscreen's grid. */
-private val HEART = listOf(".##.##.", "#######", "#######", ".#####.", "..###..", "...#...")
+val HEART = listOf(".##.##.", "#######", "#######", ".#####.", "..###..", "...#...")
 
 /** The heart's red, the desktop's: shown only a moment after loving, the one colour that isn't the art. */
 private val RED = Color(0xFFE8302A)

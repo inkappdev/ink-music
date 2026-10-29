@@ -27,6 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
@@ -43,6 +46,8 @@ private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
 val BACK = listOf("#...#", "#..##", "#.###", "#####", "#.###", "#..##", "#...#")
 val PLAY = listOf("#....", "##...", "###..", "####.", "#####", "####.", "###..", "##...", "#....")
 val PAUSE = listOf("##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##")
+/** The volume's knob: a pixel pill, 4 wide, 7 tall. */
+private val KNOB = listOf(".##.", "####", "####", "####", "####", "####", ".##.")
 val NEXT = listOf("#...#", "##..#", "###.#", "#####", "###.#", "##..#", "#...#")
 /** Shuffle and repeat (at 2 dp): two crossing ways; a loop, a lit pixel in it for repeat one. */
 private val SHUFFLE = listOf("........#..", "##....#####", "..#..#..#..", "...##......", "..#..#..#..", "##....#####", "........#..")
@@ -109,8 +114,11 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp) {
         Pixel(if (quiet || shown == 0) MUTED else LOUD, if (quiet) "unmute" else "mute", if (quiet) OFF else Ink.mid) {
             if (on == null) Player.mute() else Player.volume(0)
         }
+        val src = remember { MutableInteractionSource() }
+        val over by src.collectIsHoveredAsState()
         Box(
-            Modifier.width(line).height(17.dp)
+            Modifier.width(line).height(17.dp).hoverable(src)
+                .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)))
                 .pointerInput(Unit) { detectTapGestures { Player.volume((it.x / size.width * 100).toInt()) } }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
@@ -123,6 +131,16 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp) {
         ) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
                 Box(Modifier.fillMaxWidth(if (quiet) 0f else shown / 100f).height(1.dp).background(if (dragging != null) Ink.ink else Ink.mid))
+            }
+            // the knob to take hold of (Bronson, 2026-10-29: "an easy thing to grab"), on Silkscreen's grid like the
+            // controls: a pixel pill at the line's end, a step brighter under the mouse, ink while dragged
+            val at = if (quiet) 0f else shown / 100f
+            val knob = if (dragging != null) Ink.ink else if (over) brighter(Ink.mid) else Ink.mid
+            androidx.compose.foundation.Canvas(Modifier.offset(x = line * at - 4.dp).size(8.dp, 14.dp)) {
+                val cell = size.width / 4
+                KNOB.forEachIndexed { r, row -> row.forEachIndexed { c, ch ->
+                    if (ch == '#') drawRect(knob, androidx.compose.ui.geometry.Offset(c * cell, r * cell), androidx.compose.ui.geometry.Size(cell, cell))
+                } }
             }
         }
         Spacer(Modifier.width(10.dp))
