@@ -188,7 +188,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                 "lyrics" -> {
                                     val pos by Player.position.collectAsState()
                                     val all = lines
-                                    if (all.isNullOrEmpty()) BasicText(if (all == null) "finding the words" else "no words found for this one", style = pixel(13.sp, Ink.mid))
+                                    if (all.isNullOrEmpty()) BasicText(lyricsSaid(all), style = pixel(13.sp, Ink.mid))
                                     else LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.fillMaxSize(), big = true)
                                 }
                                 "up next" -> Column {
@@ -490,7 +490,7 @@ fun RemotePlayerPage(o: Continue.Offer, open: (Page) -> Unit, onClose: () -> Uni
                         Box(Modifier.weight(1f).fillMaxWidth()) {
                             if (panel == "lyrics") {
                                 val all = lines
-                                if (all.isNullOrEmpty()) BasicText(if (all == null) "finding the words" else "no words found for this one", style = pixel(13.sp, Ink.mid))
+                                if (all.isNullOrEmpty()) BasicText(lyricsSaid(all), style = pixel(13.sp, Ink.mid))
                                 else LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.fillMaxSize(), big = true)
                             } else {
                                 val n = remember(o.song.id) { Player.Now(o.song, 0, o.playing, o.song.duration) }
