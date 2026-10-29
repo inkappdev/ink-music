@@ -309,20 +309,21 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
     }
 }
 
-/** A record someone picked: its cover, its name, who picked it; a click opens it on YouTube Music. */
+/** A record or song someone picked: its cover, its name, who picked it; a click opens the record or plays the song. */
 @Composable
 internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember(s) { mutableStateOf<String?>(null) }
-    // not on YouTube Music (often reviewed before it's streaming, or only on Bandcamp): a second click reads the review
-    var missing by remember(s) { mutableStateOf(false) }
+    // never out to the review (Bronson, 2026-10-29: The War on Drugs' "Who's That", a song, sent you to Pitchfork
+    // while YouTube Music had it): a song picked plays; a record opens, and one not there yet plays its song of the
+    // same name (its single) where there is one
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null) {
-        if (missing && s.pick.link.isNotBlank()) browse(s.pick.link)
-        else scope.launch {
-            said = "finding it"; val a = Picks.record(s.pick)
-            missing = a == null
-            said = if (a == null) (if (s.pick.link.isNotBlank()) "not streaming yet: click to read" else "not on youtube music yet") else null
-            a?.let { open(Page.Tube(it)) }
+        scope.launch {
+            said = "finding it"
+            val a = if (s.pick.record) Picks.record(s.pick) else null
+            val song = if (a == null) Picks.song(s.pick.title, s.pick.artist) else null
+            said = if (a == null && song == null) "not on youtube music yet" else null
+            a?.let { open(Page.Tube(it)) } ?: song?.let { Player.play(listOf(it)) }
         }
     }) {
         CoverOf(s.face, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
