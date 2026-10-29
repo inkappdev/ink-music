@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -54,7 +55,8 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
             Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
         }
         Spacer(Modifier.height(28.dp))
-        Word("find", pixel(13.sp, Ink.mid), touch = 6.dp, onClick = onFind)
+        // find, the lens (⌘F)
+        Pixel(SEARCH, "find", Ink.mid, Modifier.offset(x = (-8).dp), cell = 3.dp, onClick = onFind)
         Word("settings", pixel(13.sp, Ink.mid), touch = 6.dp, onClick = onSettings)
         Spacer(Modifier.weight(1f))
         BasicText("made by ink", style = pixel(12.sp, Ink.dim))
@@ -84,11 +86,14 @@ fun NowColumn(open: (Page) -> Unit) {
         }
         val cover = rememberCover(n.song, 720)
         val pos by Player.position.collectAsState()
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            BasicText(if (n.song.station) "live" else clock(pos), style = pixel(12.sp, Ink.mid))
-            if (!n.song.station) BasicText("-" + clock((n.duration - pos).coerceAtLeast(0)), style = pixel(12.sp, Ink.mid))
+        val heard by Player.heard.collectAsState()
+        val on by Casting.on.collectAsState()
+        // the times, what's heard between them (a click opens the player), the line along the cover's top
+        Scrubber(n, cover?.accent ?: Ink.ink) {
+            heard?.takeIf { it.id == n.song.id && on == null }?.let { h ->
+                Word(h.word, pixel(12.sp, if (h.lossless) Ink.ink else Ink.mid)) { open(Page.Playing) }
+            }
         }
-        Line(n, cover?.accent ?: Ink.ink)
         Box(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Playing) })) {
             CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxWidth().aspectRatio(1f), px = 720, moving = n.playing)
         }
@@ -98,15 +103,18 @@ fun NowColumn(open: (Page) -> Unit) {
         Spacer(Modifier.height(4.dp))
         Word(artist.lowercase(), pixel(13.sp)) { if (!n.song.station) open(Page.Artist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") })) }
         if (n.song.album.isNotEmpty()) Word(n.song.album.lowercase(), pixel(12.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }
-        val on by Casting.on.collectAsState()
         on?.let { BasicText("on ${it.name.lowercase()}", style = pixel(12.sp, Ink.mid)) }
-        Spacer(Modifier.height(12.dp))
-        Controls(n)
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(8.dp))
+        Controls(n, Modifier.fillMaxWidth())
+        Volume(Modifier.offset(x = (-8).dp), line = 200.dp)
+        Spacer(Modifier.height(8.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
             for (w in listOf("up next", "lyrics", "play on")) Word(w, pixel(13.sp, if (w == shows) Ink.ink else Ink.dim), touch = 6.dp) { shows = w }
+            Spacer(Modifier.weight(1f))
+            // the player, the whole screen
+            Pixel(FULL, "full screen", Ink.mid, Modifier.offset(x = 8.dp)) { Win.full(true); open(Page.Playing) }
         }
         Spacer(Modifier.height(8.dp))
         Box(Modifier.weight(1f).fillMaxWidth()) {
