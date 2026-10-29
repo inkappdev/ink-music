@@ -308,6 +308,9 @@ private fun YouTubeSetting() {
             Spacer(Modifier.height(8.dp))
             BasicText(c, style = headline(64.sp))
             BasicText("the phone hands its sign-in over, sealed: only this computer can open it. both on the same wifi", style = pixel(12.sp, Ink.mid))
+            // the way by hand, if the phone doesn't list it
+            val where by TubeAccount.at.collectAsState()
+            where?.let { BasicText("not listed on the phone? type its address there: $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
             Spacer(Modifier.height(10.dp))
             Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
         }
