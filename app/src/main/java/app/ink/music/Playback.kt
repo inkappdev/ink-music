@@ -378,9 +378,11 @@ object Playback {
 
     /** After the song playing (nothing playing: it plays). */
     fun playNext(s: Song) {
+        // on a speaker: after the speaker's song (the phone's queue reaches it only at its end)
+        if (casting) { app?.let { Casting.playNext(it, s) }; return }
         val c = controller ?: return
         if (c.mediaItemCount == 0) return play(listOf(s), 0)
-        c.addMediaItem(c.currentMediaItemIndex + 1, item(s))
+        c.addMediaItem(c.currentMediaItemIndex + 1, item(s, next = true))
     }
 
     /** Songs to follow [s], still playing: at the queue's end, those not in it already (radio may have topped it up). */
@@ -398,10 +400,11 @@ object Playback {
         c.addMediaItem(item(s))
     }
 
-    fun item(s: Song) = MediaItem.Builder()
+    fun item(s: Song, next: Boolean = false) = MediaItem.Builder()
         .setMediaId(s.id)
         .setUri(s.uri)
-        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(s.uri).build())
+        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(s.uri)
+            .apply { if (next) setExtras(android.os.Bundle().apply { putBoolean(PlayerService.NEXT, true) }) }.build())
         .setMediaMetadata(
             MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
                 .setAlbumArtist(s.albumArtist).setTrackNumber(s.track).setIsPlayable(true).setExtras(Levelling.extras(s))
