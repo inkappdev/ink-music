@@ -189,7 +189,7 @@ private fun AiredTile(a: Curation.Aired) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var said by remember(a) { mutableStateOf<String?>(null) }
-    val art by produceState(a.art, a) { if (value == null) value = withContext(Dispatchers.IO) { Curation.itunes(a.title, a.artist, false) } }
+    val art by produceState(a.art, a) { if (value == null) value = withContext(Dispatchers.IO) { Curation.cover(a.title, a.artist, false) } }
     val face = remember(a, art) { Song(id = "yair:" + a.station + a.title, uri = Uri.EMPTY, title = a.title, artist = a.artist, album = a.title,
         albumId = "air:" + a.station + a.title + (art ?: ""), albumArtist = a.artist, duration = 0, disc = 1, track = 0, year = 0, art = art) }
     val station = remember(a) { Stations.curated(ctx).firstOrNull { it.song.id == a.station }?.song }
@@ -598,7 +598,7 @@ object Moodboard {
             for (m in InkMoods.ALL) {
                 val songs = InkMoods.songs(m, LastFm.key, week())
                 if (songs.isEmpty()) continue
-                val art = songs.take(4).firstNotNullOfOrNull { (t, a) -> Curation.itunes(t, a, false).also { kotlinx.coroutines.delay(400) } }
+                val art = songs.take(4).firstNotNullOfOrNull { (t, a) -> Curation.cover(t, a, false).also { kotlinx.coroutines.delay(400) } }
                 made[m.key] = Kept(songs, art)
                 kept.value = kept.value + (m.key to made.getValue(m.key))
             }

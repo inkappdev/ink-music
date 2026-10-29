@@ -1497,7 +1497,9 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
 fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
     val face = remember(a.url) { tubeFace(a) }
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
-        CoverOf(face, a.title, Modifier.fillMaxWidth().aspectRatio(1f))
+        // YouTube's own playlists (its mixes, charts, editors' lists) in the dither, its lettering made ink's
+        if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Dithered(face, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        else CoverOf(face, a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
         UnderCover(a.title, a.artist, pixel(12.sp, Ink.mid), gap = 3.dp)
     }

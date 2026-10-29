@@ -394,6 +394,34 @@ object Curation {
 
     // ---- covers ----
 
+    /**
+     * A record's or song's cover, from the catalogs in turn: iTunes, then Deezer (Bronson, 2026-10-29: covers missing
+     * on the new shelves; iTunes knows little that's small or brand new, and turns a crowd of asks away).
+     */
+    fun cover(title: String, artist: String, record: Boolean): String? = itunes(title, artist, record) ?: deezer(title, artist, record)
+
+    /** Deezer's cover for a record or song (its open search, no key): the same artist and name, at its largest. */
+    fun deezer(title: String, artist: String, record: Boolean): String? = runCatching {
+        fun plainName(s: String) = s.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
+        val q = java.net.URLEncoder.encode("artist:\"${artist.substringBefore(",").trim()}\" ${if (record) "album" else "track"}:\"$title\"", "UTF-8")
+        val o = org.json.JSONObject(get("https://api.deezer.com/search/${if (record) "album" else "track"}?q=$q&limit=8"))
+        val results = o.optJSONArray("data") ?: return null
+        val want = plainName(artist.substringBefore(",")); val wt = plainName(title)
+        (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
+            val a = plainName(r.optJSONObject("artist")?.optString("name").orEmpty())
+            val t = plainName(r.optString("title"))
+            a.isNotEmpty() && (a.contains(want) || want.contains(a)) && wt.isNotEmpty() && (t.startsWith(wt) || wt.startsWith(t))
+        }?.let { r -> (if (record) r else r.optJSONObject("album"))?.optString("cover_xl")?.takeIf { it.isNotEmpty() } }
+    }.getOrNull()
+
+    /**
+     * Whether a YouTube Music playlist is YouTube's own (shown in the dither, its lettering made ink's): its mixes
+     * ("RD..."), its charts ("PL4fGSI1pDJn..."), its editors' lists, anything it signs as YouTube Music or a chart.
+     */
+    fun tubeBranded(url: String, by: String): Boolean =
+        Regex("[?&]list=(RD|PL4fGSI1pDJn)").containsMatchIn(url) ||
+            by.trim().lowercase() in setOf("youtube music", "youtube", "chart", "charts")
+
     /** A record's (or song's) cover from Apple's iTunes search (no key), artist and name matched, at its largest. */
     fun itunes(title: String, artist: String, record: Boolean): String? = runCatching {
         fun plainName(s: String) = s.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
