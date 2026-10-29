@@ -178,3 +178,25 @@ fun DropHint() {
         }
     }
 }
+
+/** Windows' window manager (DWM), the one call ink needs: a window's title bar dark, and its colours. */
+private interface Dwm : com.sun.jna.Library {
+    fun DwmSetWindowAttribute(hwnd: com.sun.jna.Pointer, attribute: Int, value: com.sun.jna.ptr.IntByReference, size: Int): Int
+}
+
+/**
+ * On Windows, the window's title bar black with ink's white words (it was Windows' white): dark mode for it, and on
+ * Windows 11 its caption and text colours too. Elsewhere nothing (a Mac's is gone; Linux's follows its theme).
+ */
+fun darkTitleBar(window: java.awt.Window) {
+    if (!Home.windows) return
+    runCatching {
+        val dwm = com.sun.jna.Native.load("dwmapi", Dwm::class.java)
+        val hwnd = com.sun.jna.Native.getWindowPointer(window)
+        fun set(attribute: Int, v: Int) = dwm.DwmSetWindowAttribute(hwnd, attribute, com.sun.jna.ptr.IntByReference(v), 4)
+        set(20, 1)              // DWMWA_USE_IMMERSIVE_DARK_MODE
+        set(35, 0x00000000)     // DWMWA_CAPTION_COLOR: black (COLORREF, 0x00BBGGRR)
+        set(36, 0x00ECF0F1)     // DWMWA_TEXT_COLOR: ink's white, #F1F0EC
+        set(34, 0x00000000)     // DWMWA_BORDER_COLOR: black
+    }
+}
