@@ -64,7 +64,9 @@ jobs:
           id=$(security find-certificate -c "ink music" -Z "$kc" | awk '/SHA-1/ { print $3 }')
           dmg=$(ls desktop/build/compose/binaries/main/dmg/*.dmg)
           hdiutil convert "$dmg" -format UDRW -o rw.dmg
-          hdiutil resize -size +40m rw.dmg
+          # room for the signatures: its size now (in 512-byte sectors, the middle of min / now / max) and 40 MB more
+          now=$(hdiutil resize -limits rw.dmg | tail -1 | awk '{ print $2 }')
+          hdiutil resize -sectors $((now + 81920)) rw.dmg
           hdiutil attach rw.dmg -nobrowse -mountpoint m
           app="m/ink music.app"
           find "$app/Contents" -type f \( -name '*.dylib' -o -name '*.jnilib' -o -perm -u+x \) -print0 |
