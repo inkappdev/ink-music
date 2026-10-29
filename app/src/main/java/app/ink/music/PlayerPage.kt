@@ -123,6 +123,10 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     val n = now
     var dir by remember { mutableIntStateOf(1) }   // the push's way: next in from the right, back from the left
     var queueUp by remember { mutableStateOf(false) }
+    // into a playlist, from here (Bronson, 2026-10-29: "an easier way"): your lists over the player, and back
+    var addUp by remember { mutableStateOf(false) }
+    var added by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(added) { if (added != null) { delay(3_000); added = null } }
     var playOnUp by remember { mutableStateOf(false) }
     var heardUp by remember { mutableStateOf(false) }
     // a lossless song's moment across the cover, while it types (the word at the top waits for it)
@@ -131,6 +135,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     val close by rememberUpdatedState(onClose)
     val scrub = remember { Scrub() }
     androidx.activity.compose.BackHandler(queueUp) { queueUp = false }
+    androidx.activity.compose.BackHandler(addUp) { addUp = false }
     // pulled down, the player comes with the finger: past a fifth of the screen (or flung) it goes, else it settles
     // back (it had closed on a pull without moving, and a tester found no pull at all)
     val pull = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -267,7 +272,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
             // (lit with the cover still there read as broken to a tester)
             val none = sing && lines?.isEmpty() == true
-            Modes(n, if (none) "no lyrics" else "lyrics", sing && !none, onQueue = { queueUp = true }, onStop = onStop)
+            Modes(n, if (none) "no lyrics" else "lyrics", sing && !none, onQueue = { queueUp = true }, onStop = onStop,
+                added = added, onAdd = if (canAddToList(n.song)) ({ addUp = true }) else null)
             Spacer(Modifier.height(12.dp))
             // the artist's name, big, a way to their page too
             Marquee(n.artist, n.moving, Modifier.fillMaxWidth().bleedPastCutout().clickable(remember { MutableInteractionSource() }, indication = null,
@@ -279,6 +285,11 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) { QueuePage(onClose = { queueUp = false }) }
+        androidx.compose.animation.AnimatedVisibility(
+            addUp && n.song != null,
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { n.song?.let { song -> AddToList(song, onDone = { name -> addUp = false; added = name }, onClose = { addUp = false }) } }
         androidx.compose.animation.AnimatedVisibility(
             playOnUp,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
@@ -293,39 +304,22 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
 }
 
 /**
- * The player's second row, smaller: shuffle and repeat (lit is on; repeat steps off, all, one),
- * up next, and sleep (15m, 30m, 1h, the song's end, off; while set, the time left).
+ * The player's second row, smaller: up next, lyrics, into a playlist, stop (sleep gone: Bronson, 2026-10-29).
  */
 @Composable
-private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit) {
+private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null) {
     val style = 14.sp
-    // where sleep's steps are; back to the start once the timer has run out
-    var step by remember { mutableIntStateOf(0) }
-    LaunchedEffect(n.sleepAt) { if (n.sleepAt == 0L) step = 0 }
-    val left by produceState(0L, n.sleepAt) {
-        while (n.sleepAt > 0) { value = n.sleepAt - System.currentTimeMillis(); delay(15_000) }
-        value = 0L
-    }
     // the words with no drawing everyone reads, stop last, away from next (it ends everything and closes the player)
     Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Word("up next", pixel(style, SAID), touch = 10.dp, onClick = onQueue)
         Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
-        val said = when {
-            n.sleepAt == PlayerService.SLEEP_END_OF_SONG -> "sleep  end"
-            n.sleepAt > 0 -> "sleep ${((left + 59_999) / 60_000).coerceAtLeast(1)}m"
-            else -> "sleep"
-        }
-        Word(said, pixel(style, if (n.sleepAt != 0L) Ink.ink else OFF), touch = 10.dp) {
-            step = (step + 1) % SLEEPS.size
-            Playback.sleep(SLEEPS[step])
-        }
+        // into one of your playlists (lit a moment once it's in)
+        if (onAdd != null) Word(if (added != null) "added" else "playlist", pixel(style, if (added != null) Ink.ink else SAID), touch = 10.dp, onClick = onAdd)
         // stopped, the player goes too (the mini player's gone with it: nothing left to come back down to)
         Word("stop", pixel(style, if (n.playing) SAID else OFF), touch = 10.dp) { Playback.stop(); onStop() }
     } }
 }
 
-/** Sleep's steps: off, 15m, 30m, 1h, the song's end. */
-private val SLEEPS = listOf(0L, 15 * 60_000L, 30 * 60_000L, 60 * 60_000L, PlayerService.SLEEP_END_OF_SONG)
 
 /**
  * The song under the line: the cover (its clickwheel: circle a thumb round it to scrub, tap to
