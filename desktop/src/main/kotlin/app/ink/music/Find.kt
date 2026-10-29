@@ -212,11 +212,18 @@ fun Label(text: String) {
     BasicText(text, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
 }
 
-/** A YouTube Music record as a tile: its cover (from its link), name and artist. */
+/**
+ * A playlist YouTube Music made (its mixes and its own playlists: an "RD..." list, or YouTube Music's name on it), not
+ * a record's: its stock art stands apart from album art in the dither, as the phone shows them.
+ */
+val TubeAlbum.branded: Boolean get() = Regex("[?&]list=RD").containsMatchIn(url) || artist.equals("youtube music", ignoreCase = true)
+
+/** A YouTube Music record as a tile: its cover (from its link), name and artist; YouTube's own playlists in the dither. */
 @Composable
 fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
     androidx.compose.foundation.layout.Column(modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
-        CoverOf(face(a), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        if (a.branded && a.art != null) Dithered(face(a), Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        else CoverOf(face(a), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(a.title, a.artist)
     }
@@ -234,7 +241,8 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
         Close(onClose)
         Row(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 16.dp)) {
             androidx.compose.foundation.layout.Column(Modifier.width(320.dp)) {
-                CoverOf(face(a), a.title, Modifier.size(320.dp))
+                if (a.branded && a.art != null) Dithered(face(a), Modifier.size(320.dp), px = 640)
+                else CoverOf(face(a), a.title, Modifier.size(320.dp))
                 Spacer(Modifier.height(16.dp))
                 BasicText(a.title.uppercase(), style = headline(30.sp), maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
