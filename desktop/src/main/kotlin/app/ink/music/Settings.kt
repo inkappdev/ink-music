@@ -462,6 +462,24 @@ private fun PhoneSetting() {
         }
     }
     said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
+    // Windows: its firewall keeping the phone out, and the way in (Firewall)
+    if (Home.windows) {
+        LaunchedEffect(Unit) { Firewall.check() }
+        val wall by Firewall.state.collectAsState()
+        val wallSaid by Firewall.said.collectAsState()
+        if (wall == Firewall.State.SHUT || wall == Firewall.State.PUBLIC) {
+            Spacer(Modifier.height(14.dp))
+            BasicText(
+                if (wall == Firewall.State.PUBLIC) "windows has this wifi as public, so its firewall keeps your phone out. let it in: " +
+                    "this wifi made private, and ink music allowed on private networks (windows asks you first)"
+                else "windows' firewall keeps your phone out. let it in: ink music allowed on private networks (windows asks you first)",
+                style = pixel(12.sp, Ink.mid),
+            )
+            Spacer(Modifier.height(8.dp))
+            Word("LET IT IN", headline(24.sp), touch = 8.dp) { Firewall.letIn() }
+        }
+        wallSaid?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp)) }
+    }
 }
 
 /** "just now", "4 minutes ago", "2 hours ago", "3 days ago". */
