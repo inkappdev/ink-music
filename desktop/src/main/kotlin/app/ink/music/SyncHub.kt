@@ -375,7 +375,7 @@ fun remoteNow(): Continue.Offer? {
  * back, play or pause, next steering it there; continue here taking it over at the second it's at.
  */
 @Composable
-fun RemoteBar(o: Continue.Offer, onArtist: (String) -> Unit) {
+fun RemoteBar(o: Continue.Offer, onArtist: (String) -> Unit, onOpen: () -> Unit = {}) {
     val cover = rememberCover(o.song, 300)
     val pos by produceState(o.positionNow(), o) { while (true) { value = o.positionNow(); kotlinx.coroutines.delay(500) } }
     val length = o.song.duration
@@ -385,10 +385,10 @@ fun RemoteBar(o: Continue.Offer, onArtist: (String) -> Unit) {
             if (length > 0 && !o.song.station) Box(Modifier.fillMaxWidth((pos.toFloat() / length).coerceIn(0f, 1f)).height(1.dp).background(cover?.accent ?: Ink.ink))
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            CoverOf(o.song, o.song.album.ifEmpty { o.song.title }, Modifier.size(72.dp))
+            Opens(Modifier.size(72.dp), onOpen) { CoverOf(o.song, o.song.album.ifEmpty { o.song.title }, Modifier.fillMaxSize()) }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                BasicText(o.song.title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Word(o.song.title.uppercase(), headline(20.sp), onClick = onOpen)
                 Spacer(Modifier.height(4.dp))
                 Word(o.song.artist.lowercase(), pixel(12.sp, Ink.mid)) { if (!o.song.station) onArtist(o.song.albumArtist.ifBlank { o.song.artist.substringBefore(", ") }) }
                 BasicText((if (o.playing) "playing on " else "paused on ") + o.from + (if (o.device.isNotEmpty()) " · on ${o.device.lowercase()}" else ""),

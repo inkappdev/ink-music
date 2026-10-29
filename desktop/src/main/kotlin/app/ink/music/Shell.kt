@@ -135,7 +135,7 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         // the song small, so up next and the lyrics have the column (Bronson, 2026-10-28: "far too small"): the cover
         // under the line, its words beside it; the cover opens the player, the big one
         Row(verticalAlignment = Alignment.Top) {
-            Box(Modifier.size(112.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Playing) })) {
+            Opens(Modifier.size(112.dp), { open(Page.Playing) }) {
                 CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize(), px = 720, moving = n.playing)
             }
             Spacer(Modifier.width(14.dp))

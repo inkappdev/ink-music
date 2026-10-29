@@ -414,3 +414,92 @@ private fun Notes(n: Player.Now, heard: Heard?, speaker: String?) {
         }
     }
 }
+
+/**
+ * The phone's playing, the whole window (Bronson, 2026-10-29): as this computer's own player looks (the cover over its
+ * dither print, the line and the times, the artist as the giant marquee), where it plays said ("playing on <phone> ·
+ * on <speaker>"); back, play, next steering it there; continue here, big, taking it over; its lyrics as it sings them
+ * there, or its notes.
+ */
+@Composable
+fun RemotePlayerPage(o: Continue.Offer, open: (Page) -> Unit, onClose: () -> Unit) {
+    val cover = rememberCover(o.song, 1200)
+    val accent by animateColorAsState(cover?.accent ?: Ink.ink, tween(Motion.ENTER), label = "accent")
+    val pos by androidx.compose.runtime.produceState(o.positionNow(), o) { while (true) { value = o.positionNow(); kotlinx.coroutines.delay(250) } }
+    val artist = o.song.takeUnless { it.station }?.let { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
+    Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
+        Marquee(o.song.artist, o.playing, Modifier.align(Alignment.BottomStart).fillMaxWidth()
+            .clickable(remember { MutableInteractionSource() }, indication = null) { artist?.let { open(Page.Artist(it)) } }, size = 150.sp)
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(start = SIDE - 8.dp, end = SIDE - 8.dp, top = TOP), verticalAlignment = Alignment.CenterVertically) {
+                CloseArrow(onClick = onClose)
+                Spacer(Modifier.weight(1f))
+                Pixel(if (Win.full) UNFULL else FULL, if (Win.full) "leave full screen" else "full screen", Ink.mid) { Win.full(!Win.full) }
+            }
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(start = SIDE, end = SIDE, top = 8.dp, bottom = 190.dp)) {
+                val side: Dp = minOf((maxHeight - 17.dp - 18.dp) / 1.05f, maxWidth * .5f).coerceAtLeast(120.dp)
+                val off = side * .05f
+                Row {
+                    Column(Modifier.width(side + off)) {
+                        // the times, the line in the cover's colour, filling as it plays there
+                        val length = o.song.duration
+                        Row(Modifier.width(side).padding(bottom = 6.dp)) {
+                            BasicText(if (o.song.station) "live" else clock(pos), style = pixel(12.sp, Ink.mid))
+                            Spacer(Modifier.weight(1f))
+                            if (length > 0 && !o.song.station) BasicText("-" + clock((length - pos).coerceAtLeast(0L)), style = pixel(12.sp, Ink.mid))
+                        }
+                        Box(Modifier.width(side).height(1.dp).background(Ink.line)) {
+                            if (length > 0 && !o.song.station) Box(Modifier.fillMaxWidth((pos.toFloat() / length).coerceIn(0f, 1f)).height(1.dp).background(accent))
+                        }
+                        Box(Modifier.size(side + off)) {
+                            if (!o.song.station) Dithered(o.song, Modifier.offset(off, off).size(side), px = 1200)
+                            CoverOf(o.song, o.song.album.ifEmpty { o.song.title }, Modifier.size(side), px = 1200, moving = o.playing)
+                        }
+                    }
+                    Spacer(Modifier.width(48.dp))
+                    Column(Modifier.weight(1f).padding(top = 17.dp)) {
+                        BasicText((if (o.playing) "playing now on " else "paused on ") + o.from + (if (o.device.isNotEmpty()) " · on ${o.device.lowercase()}" else ""),
+                            style = pixel(12.sp, Ink.ink))
+                        Spacer(Modifier.height(10.dp))
+                        BasicText(o.song.title.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(12.dp))
+                        if (!o.song.station) Word(o.song.artist.lowercase(), pixel(14.sp)) { artist?.let { open(Page.Artist(it)) } }
+                        if (o.song.album.isNotEmpty()) BasicText(o.song.album.lowercase(), style = pixel(14.sp, Ink.mid))
+                        Spacer(Modifier.height(22.dp))
+                        // steering it there, then taking it over
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                            Pixel(BACK, "back, there", Ink.mid, cell = 3.dp) { SyncHub.steer(o.peer, "previous") }
+                            Pixel(if (o.playing) PAUSE else PLAY, if (o.playing) "pause, there" else "play, there", Ink.ink, cell = 4.dp) {
+                                SyncHub.steer(o.peer, if (o.playing) "pause" else "play")
+                            }
+                            Pixel(NEXT, "next, there", Ink.mid, cell = 3.dp) { SyncHub.steer(o.peer, "next") }
+                            Spacer(Modifier.width(12.dp))
+                            Word("CONTINUE HERE", headline(26.sp), touch = 10.dp) { Continue.take(o) }
+                        }
+                        Spacer(Modifier.height(18.dp))
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+                        Spacer(Modifier.height(14.dp))
+                        val lines = rememberLyrics(o.song)
+                        var shows by remember(o.song.id) { mutableStateOf<String?>(null) }
+                        val panel = shows ?: if (!lines.isNullOrEmpty()) "lyrics" else "notes"
+                        Row {
+                            for (w in listOf("lyrics", "notes"))
+                                Word(w, pixel(14.sp, if (w == panel) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 10.dp) { shows = w }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            if (panel == "lyrics") {
+                                val all = lines
+                                if (all.isNullOrEmpty()) BasicText(if (all == null) "finding the words" else "no words found for this one", style = pixel(13.sp, Ink.mid))
+                                else LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.fillMaxSize(), big = true)
+                            } else {
+                                val n = remember(o.song.id) { Player.Now(o.song, 0, o.playing, o.song.duration) }
+                                Notes(n, null, o.device.ifEmpty { null } ?: o.from)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

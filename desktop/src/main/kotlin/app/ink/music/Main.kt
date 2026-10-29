@@ -364,7 +364,12 @@ private fun App() {
             pages.lastOrNull() == Page.Playing,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 12 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 16 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { PlayerPage({ pages += it }) { Win.full(false); pages.remove(Page.Playing) } }
+        ) {
+            // nothing playing here and the phone is: its playing, the whole window (steered from here, to take over)
+            val remote = remoteNow()
+            if (remote != null) RemotePlayerPage(remote, { pages += it }) { Win.full(false); pages.remove(Page.Playing) }
+            else PlayerPage({ pages += it }) { Win.full(false); pages.remove(Page.Playing) }
+        }
         DropHint()
       }
     }
@@ -703,7 +708,7 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
         return
     }
     // nothing playing here and the phone is: its playing, steered from here, to take over (Sync)
-    remoteNow()?.let { return RemoteBar(it, onArtist) }
+    remoteNow()?.let { return RemoteBar(it, onArtist, onOpen) }
     val n = now ?: return
     val cover = rememberCover(n.song)
     Column(Modifier.fillMaxWidth().background(Ink.black).padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
@@ -713,7 +718,7 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                 Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onOpen)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.size(72.dp))
+                Opens(Modifier.size(72.dp), onOpen) { CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize()) }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     val (title, artist) = said(n)

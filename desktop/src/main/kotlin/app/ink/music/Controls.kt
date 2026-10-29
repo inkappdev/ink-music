@@ -48,6 +48,31 @@ val PLAY = listOf("#....", "##...", "###..", "####.", "#####", "####.", "###..",
 val PAUSE = listOf("##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##")
 /** The volume's knob: a pixel pill, 4 wide, 7 tall. */
 private val KNOB = listOf(".##.", "####", "####", "####", "####", "####", ".##.")
+/** Open (the player, the whole window): close's chevron turned up. */
+val OPEN_UP = listOf("...#...", "..###..", ".##.##.", "##...##")
+
+/**
+ * A cover that opens the player: under the mouse a pixel up arrow on a black tab at its foot, and the hand, so it's
+ * plain a click makes it the whole window (Bronson, 2026-10-29).
+ */
+@Composable
+fun Opens(modifier: Modifier, onOpen: () -> Unit, content: @Composable () -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    val over by src.collectIsHoveredAsState()
+    Box(modifier.hoverable(src).pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)))
+        .clickable(src, indication = null, onClick = felt(then = onOpen))) {
+        content()
+        if (over) Box(Modifier.align(Alignment.BottomCenter).background(Ink.black).padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 4.dp)) {
+            androidx.compose.foundation.Canvas(Modifier.size(14.dp, 8.dp)) {
+                val cell = size.width / 7
+                OPEN_UP.forEachIndexed { r, row -> row.forEachIndexed { c, ch ->
+                    if (ch == '#') drawRect(Ink.ink, androidx.compose.ui.geometry.Offset(c * cell, r * cell), androidx.compose.ui.geometry.Size(cell, cell))
+                } }
+            }
+        }
+    }
+}
+
 val NEXT = listOf("#...#", "##..#", "###.#", "#####", "###.#", "##..#", "#...#")
 /** Shuffle and repeat (at 2 dp): two crossing ways; a loop, a lit pixel in it for repeat one. */
 private val SHUFFLE = listOf("........#..", "##....#####", "..#..#..#..", "...##......", "..#..#..#..", "##....#####", "........#..")
