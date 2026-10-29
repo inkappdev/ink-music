@@ -102,13 +102,20 @@ fun main() {
     Follows.start()
     Colours.start()
     Player.start()
+    // ink's icon on every window Java makes, not Java's own (Duke): Windows' restart screen showed Duke beside ink music
+    // (Bronson's PC, 2026-10-29); Swing's hidden owner of a window with none (the folder chooser's) and any other
+    runCatching {
+        val icon = javax.imageio.ImageIO.read(Ink::class.java.getResource("/ink-music.png"))
+        javax.swing.JOptionPane.getRootFrame().iconImage = icon
+        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener({ e ->
+            (e.source as? java.awt.Window)?.let { if (it.iconImages.isEmpty()) it.iconImages = listOf(icon) }
+        }, java.awt.AWTEvent.WINDOW_EVENT_MASK)
+    }
     application {
         Window(
             onCloseRequest = { quit() },
             title = "ink music",
-            icon = androidx.compose.ui.graphics.painter.BitmapPainter(
-                org.jetbrains.skia.Image.makeFromEncoded(Ink::class.java.getResourceAsStream("/ink-music.png")!!.readBytes()).toComposeImageBitmap(),
-            ),
+            icon = inkIcon,
             state = Placed.remember().also { Win.state = it },
         ) {
             // never dragged smaller than the rail, a page and the now column
@@ -144,6 +151,13 @@ fun main() {
 }
 
 /** Everything let go (the player, Now Playing, the wifi announcements) and the process ended, however it was quit. */
+/** ink's icon, for its windows' title bars and the taskbar. */
+val inkIcon by lazy {
+    androidx.compose.ui.graphics.painter.BitmapPainter(
+        org.jetbrains.skia.Image.makeFromEncoded(Ink::class.java.getResourceAsStream("/ink-music.png")!!.readBytes()).toComposeImageBitmap(),
+    )
+}
+
 fun quit(): Nothing {
     runCatching { Win.state?.let(Placed::keep) }
     runCatching { Player.close() }

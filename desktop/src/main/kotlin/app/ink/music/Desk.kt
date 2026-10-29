@@ -157,7 +157,7 @@ fun MiniWindow() {
     if (!on) return
     val state = rememberWindowState(size = DpSize(420.dp, 112.dp), position = WindowPosition(Alignment.TopEnd))
     Window(
-        onCloseRequest = { Mini.close() }, state = state, title = "ink music", undecorated = true,
+        onCloseRequest = { Mini.close() }, state = state, title = "ink music", icon = inkIcon, undecorated = true,
         alwaysOnTop = true, resizable = false,
     ) {
         window.background = java.awt.Color.BLACK

@@ -155,7 +155,16 @@ object Computers {
         val name = answer.optString("name").ifEmpty { to.name }
         SyncPhone.paired(Sync.Peer(answer.optString("id"), name, Handover.kept(mine, theirs), seen = System.currentTimeMillis(), at = ""))
         "paired with ${name.lowercase()}" + if (auth != null) ", and signed in to youtube music there" else ""
-    }.getOrElse { "couldn't reach ${to.name.lowercase()}: ${it.message?.lowercase()}" }
+    }.getOrElse {
+        // found on the wifi but not let in: most often the computer's firewall (Windows lets a new app's port in only
+        // once it's allowed; Bronson's PC, 2026-10-29), so the way through is said rather than the socket's words
+        if (it is java.net.SocketTimeoutException || it is java.net.ConnectException || it is java.net.NoRouteToHostException)
+            "couldn't reach ${to.name.lowercase()}. its firewall may be keeping your phone out. on windows: windows " +
+                "security, firewall, allow an app through, tick ink music for private networks, and make this wifi " +
+                "private (settings, network, wi-fi, your wifi). on a mac: allow ink music on the local network " +
+                "(system settings, privacy and security)"
+        else "couldn't reach ${to.name.lowercase()}: ${it.message?.lowercase()}"
+    }
 
     private fun get(to: Computer, path: String): String {
         val c = URL("http://${to.host}:${to.port}$path").openConnection() as HttpURLConnection

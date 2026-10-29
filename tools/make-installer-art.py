@@ -1,8 +1,9 @@
 """The Windows installer's two pictures, for WiX's wizard (desktop/windows/, read by main.wxs):
 the welcome and finish pages' panel (WixUIDialogBmp) and the strip over the pages between
-(WixUIBannerBmp). WiX writes its own words over them in black, from about 36% across the panel
-and from the strip's left, so ink's black is the left of the panel and the strip's right end;
-the rest stays white for the words. INK in Archivo Black, MUSIC in Silkscreen, as the icon; a
+(WixUIBannerBmp). Black all over: WiX writes its words over them from about 36% across the panel
+and from the strip's left, in ink's white (main.wxs's Ink_ styles give their colour; left to
+Windows they'd be black in light mode and white in dark, and white halves left them unreadable
+in dark, Bronson's PC, 2026-10-29); a 12% hairline where the panel meets the words. INK in Archivo Black, MUSIC in Silkscreen, as the icon; a
 radio's waves dithered under them, as the stations' sleeves. Drawn at twice WiX's size (493 x 312,
 493 x 58): WiX stretches them to the dialog, so a 2x screen gets them sharp.
 Needs Pillow:
@@ -17,7 +18,6 @@ PIXEL = os.path.join(ROOT, "app/src/main/res/font/silkscreen.ttf")
 OUT = os.path.join(ROOT, "desktop/windows")
 INK = (0xF1, 0xF0, 0xEC)
 BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
 X2 = 2
 
 # a 4 x 4 Bayer matrix: a level from 0 to 1 becomes dots, as the app's dither print
@@ -65,10 +65,10 @@ def waves(d, box, dot):
 
 def dialog():
     w, h = 493 * X2, 312 * X2
-    im = Image.new("RGB", (w, h), WHITE)
+    im = Image.new("RGB", (w, h), BLACK)
     d = ImageDraw.Draw(im)
     panel = 168 * X2                       # WiX's words start at 135 dialog units, about 180 px
-    d.rectangle([0, 0, panel, h], fill=BLACK)
+    d.rectangle([panel, 0, panel + X2 - 1, h], fill=dim(INK, .12))
     pad = 18 * X2
     word(d, pad, pad + 4 * X2, 58 * X2)
     waves(d, (0, 150 * X2, panel, h - 34 * X2), 4 * X2)
@@ -79,9 +79,8 @@ def dialog():
 
 def banner():
     w, h = 493 * X2, 58 * X2
-    im = Image.new("RGB", (w, h), WHITE)
+    im = Image.new("RGB", (w, h), BLACK)
     d = ImageDraw.Draw(im)
-    d.rectangle([w - h, 0, w, h], fill=BLACK)
     word(d, w - h + 10 * X2, 17 * X2, 18 * X2)
     im.save(os.path.join(OUT, "banner.bmp"))
 

@@ -2,7 +2,8 @@
 <!--
   jpackage's own English strings (JDK 21), and WiX's wizard's words in ink's (WiX lets these be overridden): the
   pages' type (Segoe UI; main.wxs's Ink_Headline and Ink_Title for the headings), welcome, shortcuts, ready,
-  installing, done.
+  installing, done. Every word over a picture has an Ink_ style (its colour given), the other pages' too:
+  changing it, taking it out, stopped, gone wrong.
 -->
 <WixLocalization Culture="en-us" xmlns="http://schemas.microsoft.com/wix/2006/localization" Codepage="1252">
   <String Id="message.install.dir.exist">The folder [INSTALLDIR] already exist. Would you like to install to that folder anyway?</String>
@@ -13,7 +14,7 @@
   <String Id="ShortcutPromptDlg_Title">[ProductName]</String>
   <String Id="ShortcutPromptDlgTitle">{\Ink_Title}WHERE IT GOES</String>
   <String Id="ShortcutPromptDlgBannerBitmap">WixUI_Bmp_Banner</String>
-  <String Id="ShortcutPromptDlgDescription">Your start menu, your desktop, or both.</String>
+  <String Id="ShortcutPromptDlgDescription">{\Ink_Words}Your start menu, your desktop, or both.</String>
   <String Id="ShortcutPromptDlgDesktopShortcutControlLabel">On the desktop</String>
   <String Id="ShortcutPromptDlgStartMenuShortcutControlLabel">In the start menu</String>
   <String Id="InstallDirNotEmptyDlg_Title">[ProductName]</String>
@@ -25,11 +26,11 @@
 
   <String Id="WelcomeDlg_Title">[ProductName]</String>
   <String Id="WelcomeDlgTitle">{\Ink_Headline}INK MUSIC</String>
-  <String Id="WelcomeDlgDescription">The music player in ink's look: the songs on this computer, your own server, YouTube Music and the radio, in one place.
+  <String Id="WelcomeDlgDescription">{\Ink_Words}The music player in ink's look: the songs on this computer, your own server, YouTube Music and the radio, in one place.
 
 Free, and it always will be.</String>
   <String Id="WelcomeUpdateDlgTitleUpdate">{\Ink_Headline}INK MUSIC</String>
-  <String Id="WelcomeUpdateDlgDescriptionUpdate">A new ink music. Your music, sign-ins and settings stay as they are.</String>
+  <String Id="WelcomeUpdateDlgDescriptionUpdate">{\Ink_Words}A new ink music. Your music, sign-ins and settings stay as they are.</String>
 
   <String Id="VerifyReadyDlg_Title">[ProductName]</String>
   <String Id="VerifyReadyDlgInstallTitle">{\Ink_Title}READY</String>
@@ -41,6 +42,28 @@ Free, and it always will be.</String>
 
   <String Id="ExitDialog_Title">[ProductName]</String>
   <String Id="ExitDialogTitle">{\Ink_Headline}DONE</String>
-  <String Id="ExitDialogDescription">ink music is in your start menu. Play something good.</String>
+  <String Id="ExitDialogDescription">{\Ink_Words}ink music is in your start menu. Play something good.</String>
   <String Id="InkOpenNow">Open ink music now</String>
+  <String Id="VerifyReadyDlgRepairTitle">{\Ink_Title}READY TO REPAIR</String>
+  <String Id="VerifyReadyDlgRemoveTitle">{\Ink_Title}READY TO REMOVE</String>
+  <String Id="VerifyReadyDlgChangeTitle">{\Ink_Title}READY</String>
+  <String Id="VerifyReadyDlgUpdateTitle">{\Ink_Title}READY</String>
+  <String Id="ProgressDlgTitleChanging">{\Ink_Title}CHANGING</String>
+  <String Id="ProgressDlgTitleRepairing">{\Ink_Title}REPAIRING</String>
+  <String Id="ProgressDlgTitleRemoving">{\Ink_Title}REMOVING</String>
+  <String Id="ProgressDlgTitleUpdating">{\Ink_Title}UPDATING</String>
+  <String Id="MaintenanceWelcomeDlgTitle">{\Ink_Headline}INK MUSIC</String>
+  <String Id="MaintenanceWelcomeDlgDescription">{\Ink_Words}It's here already. Repair it, or remove it.</String>
+  <String Id="MaintenanceTypeDlgTitle">{\Ink_Title}REPAIR OR REMOVE</String>
+  <String Id="MaintenanceTypeDlgDescription">{\Ink_Words}Your music stays where it is either way.</String>
+  <String Id="PrepareDlgTitle">{\Ink_Headline}INK MUSIC</String>
+  <String Id="PrepareDlgDescription">{\Ink_Words}A moment.</String>
+  <String Id="ResumeDlgTitle">{\Ink_Headline}INK MUSIC</String>
+  <String Id="ResumeDlgDescription">{\Ink_Words}Picking up where it stopped.</String>
+  <String Id="UserExitTitle">{\Ink_Headline}STOPPED</String>
+  <String Id="UserExitDescription1">{\Ink_Words}Nothing was changed. Come back any time.</String>
+  <String Id="UserExitDescription2">{\Ink_Words} </String>
+  <String Id="FatalErrorTitle">{\Ink_Headline}IT DIDN'T GO IN</String>
+  <String Id="FatalErrorDescription1">{\Ink_Words}Something stopped it, and nothing was changed.</String>
+  <String Id="FatalErrorDescription2">{\Ink_Words}Try it again; if it stops again, tell us on GitHub (inkappdev/ink-music).</String>
 </WixLocalization>
