@@ -79,6 +79,7 @@ fun ListenPage(open: (Page) -> Unit) {
     val list = rememberLazyListState()
     LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic(); Updates.check() }
     val update by Updates.offer.collectAsState()
+    val shut by Server.shut.collectAsState()
     val pickedRecords by Picks.records.collectAsState()
     val pickedSongs by Picks.songs.collectAsState()
     val friday by Picks.friday.collectAsState()
@@ -92,6 +93,8 @@ fun ListenPage(open: (Page) -> Unit) {
     // one rhythm down the page: the same room between every shelf, each with a head of its own (Bronson, 2026-10-29)
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(GAP)) {
+        // macOS keeping it off the network: why nothing from the server shows
+        if (shut) item(key = "shut") { NetworkShut() }
         // a newer ink music, first of all (Updates)
         update?.let { u -> item(key = "update") { UpdateCard(u) } }
         // what the phone was playing, to carry on with here

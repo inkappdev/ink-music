@@ -179,9 +179,11 @@ object Server {
                 c.setRequestProperty("User-Agent", AGENT)
                 try {
                     val code = c.responseCode
+                    reached()
                     if (code == 429 || code == 503) { Thread.sleep(400L shl i); return@repeat }
                     return if (code != 200 || c.contentType?.startsWith("image") != true) null else c.inputStream.use { it.readBytes() }
                 } catch (e: java.io.IOException) {
+                    failed(e)
                     if (i >= 1) throw Busy()
                 } finally { c.disconnect() }
             }
@@ -327,9 +329,22 @@ object Server {
         c.connectTimeout = 10_000; c.readTimeout = 30_000
         c.setRequestProperty("User-Agent", AGENT)
         return try {
-            val body = (if (c.responseCode in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: return null
+            val code = c.responseCode
+            reached()
+            val body = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: return null
             runCatching { JSONObject(body).optJSONObject("subsonic-response") }.getOrNull()
-        } finally { c.disconnect() }
+        } catch (e: java.io.IOException) { failed(e); throw e } finally { c.disconnect() }
+    }
+
+    /**
+     * macOS keeping ink music off the home network (Bronson's Mac, 2026-10-29: every new build is a new app to it, and
+     * till it's allowed again under Local Network every connection fails "No route to host", the covers blank and
+     * nothing said). True while that's so; said on listen and the library, with where to allow it.
+     */
+    val shut = MutableStateFlow(false)
+    private fun reached() { if (shut.value) shut.value = false }
+    private fun failed(e: java.io.IOException) {
+        if (Home.mac && (e is java.net.NoRouteToHostException || e.message?.contains("No route to host", ignoreCase = true) == true)) shut.value = true
     }
 
     private fun kept(): List<Song>? = runCatching {

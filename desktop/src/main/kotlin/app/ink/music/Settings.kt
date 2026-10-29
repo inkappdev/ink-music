@@ -553,3 +553,16 @@ private fun PrivateSetting() {
         Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { Private.set(false) }
     }
 }
+
+/** macOS keeping ink music off your network ([Server.shut]): said, with where to allow it, till it's allowed. */
+@Composable
+fun NetworkShut(modifier: Modifier = Modifier) {
+    val shut by Server.shut.collectAsState()
+    if (!shut) return
+    Column(modifier) {
+        BasicText("MACOS IS KEEPING INK MUSIC OFF YOUR NETWORK", style = headline(20.sp))
+        BasicText("so your server can't be reached, its covers and songs with it. system settings, privacy and security, " +
+            "local network: switch ink music on (off and on again if it is), then open ink music again", style = pixel(13.sp, Ink.mid),
+            modifier = Modifier.padding(top = 4.dp))
+    }
+}
