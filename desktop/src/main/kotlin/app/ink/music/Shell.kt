@@ -103,7 +103,10 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         }
         Spacer(Modifier.height(14.dp))
         val (title, artist) = said(n)
-        BasicText(title.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.Top) {
+            BasicText(title.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Heart(n.song, 2.dp, Modifier.offset(x = 8.dp, y = (-6).dp))
+        }
         Spacer(Modifier.height(4.dp))
         Word(artist.lowercase(), pixel(13.sp)) { if (!n.song.station) open(Page.Artist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") })) }
         if (n.song.album.isNotEmpty()) Word(n.song.album.lowercase(), pixel(12.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }

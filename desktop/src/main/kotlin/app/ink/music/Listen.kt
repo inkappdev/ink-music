@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -62,6 +65,9 @@ fun ListenPage(open: (Page) -> Unit) {
     val forgotten = remember(albums, heard) { albums.mapNotNull { a -> heard.forgotten("r:" + a.id, now)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
     val newest by produceState(emptyList<Album>(), account, albums) { value = Server.newest(16).mapNotNull { byId[it] } }
     val stars = remember { Stations.curated().filter { it.star } }
+    // your artists' mixes: who you play most, each their best-known song and YouTube Music's radio from it
+    val mixes by produceState(emptyList<Mixes.Mix>(), songs.size > 0) { Mixes.of(songs).collect { value = it } }
+    val mixScope = androidx.compose.runtime.rememberCoroutineScope()
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
         if (first.isNotEmpty()) item {
@@ -77,6 +83,19 @@ fun ListenPage(open: (Page) -> Unit) {
                 repeat(4 - first.size) { Spacer(Modifier.weight(1f)) }
             }
             Spacer(Modifier.height(30.dp))
+        }
+        if (mixes.isNotEmpty()) item {
+            Label("mixes for you")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                itemsIndexed(mixes, key = { _, m -> m.name }) { _, m ->
+                    Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { mixScope.launch { Mixes.play(m) } })) {
+                        Dithered(m.face, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
+                        Spacer(Modifier.height(8.dp))
+                        UnderCover(m.name, "mix")
+                    }
+                }
+            }
+            Spacer(Modifier.height(26.dp))
         }
         records("lately", lately, open)
         records("forgotten favorites", forgotten, open)
@@ -154,14 +173,16 @@ fun ListRow(p: Server.Playlist, onClick: () -> Unit) {
     }
 }
 
-/** Lists: your server's playlists. */
+/** Lists: the songs you love, then your server's playlists. */
 @Composable
 fun ListsPage(open: (Page) -> Unit) {
     val lists by Server.playlists.collectAsState()
     val account by Server.account.collectAsState()
+    val loved = lovedSongs()
     LaunchedEffect(account) { Server.readPlaylists() }
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
+        if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
         if (lists.isEmpty()) item {
             BasicText(if (account == null) "your server's playlists show here once you're signed in to it" else "no playlists on your server yet",
                 style = pixel(12.sp, Ink.mid))
@@ -173,7 +194,8 @@ fun ListsPage(open: (Page) -> Unit) {
 /** A playlist: its name, its songs in its order, played from there. */
 @Composable
 fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit) {
-    val songs by produceState<List<Song>?>(null, id) { value = Server.playlist(id) }
+    val loved = lovedSongs()
+    val songs by produceState<List<Song>?>(null, id, loved) { value = if (id == LOVED) loved else Server.playlist(id) }
     val list = rememberLazyListState()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
@@ -193,5 +215,55 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
             val s = songs.orEmpty()
             itemsIndexed(s, key = { i, x -> "$i" + x.id }) { i, x -> SongRow(x, said = "${x.artist}  ·  ${x.album}".lowercase(), open = open) { Player.play(s, i) } }
         }
+    }
+}
+
+/** The loved list's id among the lists (none of the server's look like it). */
+const val LOVED = "~loved"
+
+/** The songs you love, the latest loved first: your library's and the YouTube songs kept with their words. */
+@Composable
+fun lovedSongs(): List<Song> {
+    val ids by Loved.ids.collectAsState()
+    val songs by Library.songs.collectAsState()
+    val tube by Loved.tube.collectAsState()
+    return remember(ids, songs, tube) {
+        (songs.filter { it.id in ids } + tube.filter { it.id in ids }).distinctBy { it.id }.sortedByDescending { Loved.lovedAt(it) ?: 0L }
+    }
+}
+
+/**
+ * Mixes for you (the phone's, the way it auto-DJs): the artists you play most (else the ones you have most of), each
+ * their best-known song on YouTube Music and its radio behind it, the queue's end bringing more as radio does.
+ */
+object Mixes {
+    data class Mix(val name: String, val face: Song, val hit: Song)
+
+    /** Up to eight, each as its artist page is read (kept on disk: at once after the first time). */
+    fun of(songs: List<Song>): kotlinx.coroutines.flow.Flow<List<Mix>> = kotlinx.coroutines.flow.flow {
+        val since = System.currentTimeMillis() - 90L * 86_400_000
+        val played = History.read().filter { it.at >= since }.groupingBy { it.artist.substringBefore(", ").lowercase() }.eachCount()
+        val names = songs.filter { !it.station }.groupBy { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
+            .filterKeys { it.isNotBlank() && it != "unknown" && !it.equals("various artists", true) }
+            .entries.sortedByDescending { (name, list) -> (played[name.lowercase()] ?: 0) * 1000 + list.size }.map { it.key }.take(8)
+        val found = ArrayList<Mix>()
+        for (name in names) {
+            val info = kotlinx.coroutines.withTimeoutOrNull(8_000) { Artists.of(name, "").firstOrNull { it != null } } ?: continue
+            val hit = info.top.firstOrNull { it.tube } ?: continue
+            val face = info.photo?.let { faceSong(name, it, photo = true) } ?: hit
+            found += Mix(info.name, face, hit)
+            emit(found.toList())
+        }
+    }.flowOn(kotlinx.coroutines.Dispatchers.IO)
+
+    /** Their song at once, the mix's songs behind it once they're read (a speaker takes the whole queue, so it waits). */
+    suspend fun play(m: Mix) {
+        if (Casting.on.value != null) {
+            val more = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.related(m.hit.id) }
+            return Player.play(listOf(m.hit) + more)
+        }
+        Player.play(listOf(m.hit))
+        val more = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.related(m.hit.id) }
+        Player.follow(m.hit, more)
     }
 }
