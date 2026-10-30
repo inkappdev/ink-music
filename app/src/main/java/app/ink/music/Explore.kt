@@ -227,7 +227,10 @@ internal fun PickTile(s: Picks.Shown, pages: Pages) {
             a?.let { pages.open(Page.Tube(it)) } ?: song?.let { Playback.play(listOf(it), 0) }
         }
     }) {
-        CoverOf(s.face, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f))
+        // no cover found when the picks were read (forty are asked for a read, and a read is twice a day: #1's INK was
+        // half gray): asked for as the tile comes into sight, three at a time, YouTube Music's the last place
+        val art by produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+        CoverOf(remember(s, art) { if (art == s.art) s.face else s.copy(art = art).face }, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
         UnderCover(s.pick.title, s.pick.artist, pixel(12.sp, Ink.mid))
         BasicText(said ?: s.by.joinToString(" · "), style = pixel(12.sp, if (s.by.size > 1) Ink.ink else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
