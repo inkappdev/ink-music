@@ -1,0 +1,7 @@
+- Moving covers: records that have one move in the player
+- Sign in to Spotify to bring your playlists in, and see a song's canvas behind the player
+- Settings, the look: the cover, the background and the canvas each get their own effect, with a preview
+- Works on Android 11 (#2)
+- The record of the day changes every day now
+- Your covers move now. Your playlists still don't do your dishes.
+- Do something nice for someone today. Tell a musician their song got you through something
