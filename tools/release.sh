@@ -21,10 +21,11 @@ cp app/build/outputs/apk/play/release/app-play-release.apk "build/play/ink-music
 if unzip -p "build/play/ink-music-$version-play.apk" 'classes*.dex' | grep -q -a "org/schabi/newpipe"; then echo "NewPipe in the play build"; exit 1; fi
 # the computer's: the Actions' builds of this very commit (mac.yml and desktop.yml, on the private mac repo till the
 # desktop source is public), named for the release: what the computer's updater looks for (-mac.dmg, .msi, .deb, .rpm).
-# PHONE_ONLY=1 leaves them out.
+# PHONE_ONLY=1 leaves them out. Their Actions only run when the computer's code changes: after a phone-only fix,
+# DESKTOP_SHA=<the last commit they built> takes those (git diff it against HEAD first: only app/src/ changed).
 if [ -z "${PHONE_ONLY:-}" ]; then
   desk="${DESKTOP_REPO:-inkappdev/ink-music-mac}"
-  sha=$(git rev-parse HEAD)
+  sha=${DESKTOP_SHA:-$(git rev-parse HEAD)}
   got=$(mktemp -d)
   for wf in mac desktop; do
     id=$(gh run list -R "$desk" -w "$wf.yml" --commit "$sha" --status success --json databaseId -q '.[0].databaseId')
