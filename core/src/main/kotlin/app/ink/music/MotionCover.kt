@@ -53,6 +53,43 @@ object MotionCover {
         return url
     }
 
+    private val records = HashMap<String, String?>()
+
+    /**
+     * A song's record's moving cover, when the song came without its record's name (YouTube's search finds songs so):
+     * the record named by Apple's own search for the song (the same artist and title), then its cover.
+     */
+    fun ofSong(artist: String, title: String): String? {
+        if (artist.isBlank() || title.isBlank()) return null
+        val key = Search.fold("$artist / $title")
+        // asked before: the record then, or none (asked once)
+        if (synchronized(this) { records.containsKey(key) }) return synchronized(this) { records[key] }?.let { of(artist, it) }
+        val album = run {
+            val bearer = synchronized(this) { pass() } ?: return null
+            val found = runCatching { record(artist, title, bearer) }.getOrElse { return null }
+            synchronized(this) { records[key] = found }
+            found
+        } ?: return null
+        return of(artist, album)
+    }
+
+    private fun record(artist: String, title: String, bearer: String): String? {
+        val shop = java.util.Locale.getDefault().country.lowercase().takeIf { it.length == 2 } ?: "us"
+        val term = URLEncoder.encode("$artist $title", "UTF-8")
+        val hits = JSONObject(get("$CATALOG/$shop/search?term=$term&types=songs&limit=10", bearer))
+            .optJSONObject("results")?.optJSONObject("songs")?.optJSONArray("data") ?: return null
+        val a = Search.fold(artist); val t = Search.fold(cut(title))
+        for (i in 0 until hits.length()) {
+            val at = hits.optJSONObject(i)?.optJSONObject("attributes") ?: continue
+            val theirArtist = Search.fold(at.optString("artistName"))
+            if (!(theirArtist == a || theirArtist.startsWith("$a ") || a.startsWith("$theirArtist "))) continue
+            val theirs = Search.fold(cut(at.optString("name")))
+            if (theirs != t && !theirs.startsWith("$t ") && !t.startsWith("$theirs ")) continue
+            return at.optString("albumName").takeIf { it.isNotBlank() }
+        }
+        return null
+    }
+
     private fun ask(artist: String, album: String, bearer: String): String? {
         val shop = java.util.Locale.getDefault().country.lowercase().takeIf { it.length == 2 } ?: "us"
         val term = URLEncoder.encode("$artist $album", "UTF-8")

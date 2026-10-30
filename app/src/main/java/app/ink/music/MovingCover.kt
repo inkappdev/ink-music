@@ -85,13 +85,14 @@ object Moving {
  * sleeve), else as it is.
  */
 @Composable
-fun MovingCover(artist: String, album: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier) {
+fun MovingCover(artist: String, album: String, title: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
     val inLook by Moving.inLook.collectAsState()
     val look by Looks.on.collectAsState()
-    val url by produceState<String?>(null, artist, album, whenOn) {
-        value = if (Moving.wanted(ctx)) withContext(Dispatchers.IO) { MotionCover.of(artist, album) } else null
+    val url by produceState<String?>(null, artist, album, title, whenOn) {
+        // a song without its record's name (YouTube's search finds them so): the record found from the song
+        value = if (Moving.wanted(ctx)) withContext(Dispatchers.IO) { if (album.isNotBlank()) MotionCover.of(artist, album) else MotionCover.ofSong(artist, title) } else null
         android.util.Log.i("ink-moving", "cover for $artist / $album: ${if (value != null) "found" else "none"}")
     }
     val u = url ?: return
