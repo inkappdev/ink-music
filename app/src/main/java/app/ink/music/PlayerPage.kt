@@ -424,7 +424,7 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
         else if (t.song?.station == true) StationCover(t.song, Modifier.fillMaxSize(), moving = t.moving)
         else NameCover(t.album.ifEmpty { t.title }, side)
         // the record's own moving sleeve over it, where it has one (settings: moving covers)
-        if (t.song?.station != true && t.album.isNotBlank()) MovingCover(t.artist, t.album, c?.accent ?: Ink.ink, t.moving, Modifier.fillMaxSize())
+        if (t.song?.station != true) MovingCover(t.artist, t.album, t.title, c?.accent ?: Ink.ink, t.moving, Modifier.fillMaxSize())
     }
 }
 
