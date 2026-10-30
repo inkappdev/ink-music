@@ -167,6 +167,7 @@ fun quit(): Nothing {
     runCatching { NowPlaying.stop() }
     runCatching { SyncHub.close() }
     runCatching { TubeAccount.stop() }
+    runCatching { Casting.stopFinding() }
     kotlin.system.exitProcess(0)
 }
 
