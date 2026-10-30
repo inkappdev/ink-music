@@ -6,7 +6,6 @@
 
 <p align="center">
   A music player that looks like nothing else. Free and open source, for Android, Mac, Windows and Linux.<br />
-  Pure black, warm white type, no chrome: the album art is the only color on screen.<br />
   Your files, your server, YouTube Music and independent radio; new music picked by people, not a feed.
 </p>
 
