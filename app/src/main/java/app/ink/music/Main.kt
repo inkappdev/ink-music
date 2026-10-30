@@ -143,6 +143,7 @@ class Main : ComponentActivity() {
         Lyrics.start(this)
         Moments.start(this)
         Looks.start(this)
+        Marquees.start(this)
         Loved.start(this)
         YouTubeMusic.attach(this)
         Server.start(this)
@@ -1528,7 +1529,7 @@ private fun NameOn(name: String, modifier: Modifier) {
     BoxWithConstraints(modifier) {
         val room = with(LocalDensity.current) { (maxWidth - 40.dp).toPx() }
         val wide = remember(name, room) { measurer.measure(name.uppercase(), style, maxLines = 1, softWrap = false).size.width > room }
-        if (wide) Marquee(name, true, Modifier.fillMaxWidth(), size = 96.sp)
+        if (wide) Marquee(name, Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 96.sp)
         else BasicText(name.uppercase(), style = style, maxLines = 1, modifier = Modifier.padding(horizontal = 20.dp))
     }
 }

@@ -286,7 +286,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 added = added, onAdd = if (canAddToList(n.song)) ({ addUp = true }) else null)
             Spacer(Modifier.height(12.dp))
             // the artist's name, big, a way to their page too
-            Marquee(n.artist, n.moving, Modifier.fillMaxWidth().bleedPastCutout().clickable(remember { MutableInteractionSource() }, indication = null,
+            Marquee(n.artist, n.moving && Marquees.on.collectAsState().value, Modifier.fillMaxWidth().bleedPastCutout().clickable(remember { MutableInteractionSource() }, indication = null,
                 onClick = felt { artistOf(n)?.let { onOpen(Page.Artist(it)) } }), size = 120.sp)
             }
         }
