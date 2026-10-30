@@ -202,6 +202,31 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 // your computer: paired, kept in step on the wifi (Sync)
                 Column(Modifier.cascade(3)) { ComputerSetting(pages) }
 
+                // moving covers: a record's own looping sleeve in the player, where it has one (the full build)
+                if (Moving.available) Column(Modifier.cascade(3)) {
+                    val whenOn by Moving.whenOn.collectAsState()
+                    val dither by Moving.dither.collectAsState()
+                    BasicText("MOVING COVERS", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("where a record has one, its own looping sleeve in the player (apple music's). silent", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    Row {
+                        listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF).forEach { w ->
+                            Word(w, pixel(14.sp, if (whenOn == w) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, whenOn = w) }
+                        }
+                    }
+                    if (whenOn != Moving.OFF) {
+                        Spacer(Modifier.height(6.dp))
+                        Row {
+                            Word("as it is", pixel(14.sp, if (!dither) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, dither = false) }
+                            // the shader is Android 13's: before it, as it is
+                            if (android.os.Build.VERSION.SDK_INT >= 33)
+                                Word("dithered", pixel(14.sp, if (dither) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(ctx, dither = true) }
+                        }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
                 // private listening: a switch, nothing kept or told while it's on
                 Column(Modifier.cascade(3)) {
                     var hidden by remember { mutableStateOf(Private.on(ctx)) }
@@ -222,7 +247,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     // bringing playlists in from spotify, by a file (its own API is closed to small apps)
                     BasicText("FROM SPOTIFY", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText("bring a playlist in: exported from exportify.app, or from spotify's own download of your data", style = pixel(12.sp, Ink.mid))
+                    BasicText(if (Spotify.available) "bring a playlist in: signed in to spotify, or from a file" else "bring a playlist in: exported from exportify.app, or from spotify's own download of your data", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     Word("bring one in", pixel(14.sp), touch = 8.dp) { pages.open(Page.Import) }
                     Spacer(Modifier.height(40.dp))

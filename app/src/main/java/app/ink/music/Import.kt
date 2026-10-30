@@ -24,6 +24,9 @@ object Import {
     /** A playlist as the file has it. */
     data class Listed(val name: String, val songs: List<Said>)
 
+    /** One of your playlists on Spotify, signed in (the full build's [Spotify]): its id, name and whose it is. */
+    data class Theirs(val id: String, val name: String, val by: String)
+
     /** The playlists in a file (one for an Exportify CSV, every one for Spotify's own). */
     suspend fun read(c: Context, uri: Uri): List<Listed> = withContext(Dispatchers.IO) {
         val text = c.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() } ?: return@withContext emptyList()

@@ -84,6 +84,8 @@ import androidx.compose.ui.window.rememberWindowState
 
 fun main() {
     System.setProperty("apple.laf.useScreenMenuBar", "true")
+    // Apple's catalog (moving covers) wants an Origin header, which the JVM drops unless allowed before any request
+    System.setProperty("sun.net.http.allowRestrictedHeaders", "true")
     linuxWindow()
     // ⌘Q (the app menu's Quit, the Dock's): the same whole quit as closing the window
     runCatching { java.awt.Desktop.getDesktop().setQuitHandler { _, response -> runCatching { quit() }; response.performQuit() } }

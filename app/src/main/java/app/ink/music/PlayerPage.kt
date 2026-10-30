@@ -409,6 +409,8 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
         if (c != null) Image(c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else if (t.song?.station == true) StationCover(t.song, Modifier.fillMaxSize(), moving = t.moving)
         else NameCover(t.album.ifEmpty { t.title }, side)
+        // the record's own moving sleeve over it, where it has one (settings: moving covers)
+        if (t.song?.station != true && t.album.isNotBlank()) MovingCover(t.artist, t.album, c?.accent ?: Ink.ink, Modifier.fillMaxSize())
     }
 }
 

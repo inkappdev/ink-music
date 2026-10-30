@@ -148,6 +148,7 @@ class Main : ComponentActivity() {
         Server.start(this)
         YouTubeAccount.start(this)
         HiddenLists.load(this)
+        Moving.start(this)
         ListenBrainz.start(this)
         LastFm.start(this)
         Offline.start(this)
@@ -1256,8 +1257,8 @@ private fun WeeklyPage(number: Int, pages: Pages) {
 }
 
 /**
- * Bringing a Spotify playlist in: a file chosen (Exportify's CSV, or Spotify's own download), a playlist in it
- * picked if there are several, its songs matched (yours first, else YouTube Music's), then made where you keep
+ * Bringing a Spotify playlist in: signed in to Spotify (the full build: your playlists listed, one picked), or a file
+ * chosen (Exportify's CSV, or Spotify's own download), a playlist in it picked if there are several; its songs matched (yours first, else YouTube Music's), then made where you keep
  * playlists (YouTube Music, your server), or played as it is. What wasn't found is listed, dim.
  */
 @Composable
@@ -1279,6 +1280,31 @@ private fun ImportPage(pages: Pages) {
             said = if (read.isEmpty()) "no playlist in that file: an exportify csv, or spotify's Playlist1.json" else null
         }
     }
+    // signed in to Spotify: your playlists, read once the sign-in comes back; one tapped, its songs read in
+    val spotifyAt by Spotify.at.collectAsState()
+    var theirs by remember { mutableStateOf<List<Import.Theirs>?>(null) }
+    var wanted by remember { mutableStateOf<Import.Theirs?>(null) }
+    var reading by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(spotifyAt) {
+        if (!Spotify.ready()) return@LaunchedEffect
+        if (theirs == null) theirs = Spotify.playlists() ?: run { said = "spotify didn't say. sign in again"; null }
+        wanted?.let { w ->
+            reading = 0
+            val songs = Spotify.songs(w.id) { reading = it }
+            reading = null; wanted = null
+            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = Import.Listed(w.name, songs); lists = null }
+        }
+    }
+    fun open(w: Import.Theirs) {
+        wanted = w; said = null
+        // the passes last an hour: an older one signs in again (straight through), then reads it
+        if (Spotify.ready()) scope.launch {
+            reading = 0
+            val songs = Spotify.songs(w.id) { reading = it }
+            reading = null; wanted = null
+            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = Import.Listed(w.name, songs); lists = null }
+        } else Spotify.signIn(ctx)
+    }
     LaunchedEffect(chosen) {
         val c = chosen ?: return@LaunchedEffect
         progress = 0; matched = null; made.clear(); said = null
@@ -1296,6 +1322,27 @@ private fun ImportPage(pages: Pages) {
             BasicText((c?.name ?: "FROM SPOTIFY").uppercase(), style = headline(40.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(10.dp))
             when {
+                c == null && Spotify.available -> {
+                    val list = theirs
+                    when {
+                        reading != null -> BasicText("reading ${wanted?.name?.lowercase().orEmpty()}: $reading songs", style = pixel(12.sp, Ink.mid))
+                        list == null -> {
+                            BasicText("sign in to spotify and pick a playlist (or your liked songs). each song is found here, yours first, " +
+                                "else on youtube music. your sign-in stays on this phone.", style = pixel(12.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 20.sp))
+                            Spacer(Modifier.height(14.dp))
+                            Word("SIGN IN", headline(40.sp), touch = 8.dp) { said = null; if (Spotify.ready()) scope.launch { theirs = Spotify.playlists() } else Spotify.signIn(ctx) }
+                        }
+                        else -> BasicText("${list.size - 1} playlists and your liked songs. pick one", style = pixel(12.sp, Ink.mid))
+                    }
+                    said?.let { Spacer(Modifier.height(12.dp)); BasicText(it, style = pixel(12.sp, Ink.mid)) }
+                    // or a file, as before: exportify's csv, spotify's own download
+                    if (list == null && reading == null) {
+                        Spacer(Modifier.height(30.dp))
+                        BasicText("or a file: an exportify.app csv, or spotify's own download of your data (Playlist1.json)", style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(6.dp))
+                        Word("choose a file", pixel(14.sp, Ink.mid), touch = 8.dp) { pick.launch(arrayOf("text/*", "application/json", "application/octet-stream", "*/*")) }
+                    }
+                }
                 c == null -> {
                     BasicText("a playlist from spotify, as a file: on exportify.app sign in with spotify and export one (a csv), " +
                         "or use spotify's own download of your data (Playlist1.json, every playlist). each song is found here, " +
@@ -1359,6 +1406,15 @@ private fun ImportPage(pages: Pages) {
                     }
                     said?.let { Spacer(Modifier.height(10.dp)); BasicText(it, style = pixel(12.sp, Ink.mid)) }
                     Spacer(Modifier.height(14.dp))
+                }
+            }
+        }
+        // your spotify playlists: one picked
+        if (c == null && reading == null && lists == null) theirs?.let { all ->
+            items(all, key = { it.id }) { l ->
+                Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(l) }).padding(vertical = 9.dp)) {
+                    BasicText(l.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (l.by.isNotBlank()) BasicText(l.by.lowercase(), style = pixel(12.sp, Ink.mid))
                 }
             }
         }
