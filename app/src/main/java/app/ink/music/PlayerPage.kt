@@ -915,7 +915,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
             when {
                 file?.lossless != true -> "as good as its stream: lossy to begin with"
                 !asIs -> "no: made smaller on the way"
-                v != null && v < .995f -> "no: the speaker's own volume (${Math.round(v * 100)}%) turns it down digitally\nat 100% (and the receiver after it turned up), it'd be the file as it is"
+                v != null && v < .995f -> "no: the speaker's own volume (${Math.round(v * 100)}%) turns it down digitally; at 100%, it'd be the file as it is"
                 else -> "close: the file as it is, at the speaker's full volume; what it does inside, google doesn't say"
             }
         }
