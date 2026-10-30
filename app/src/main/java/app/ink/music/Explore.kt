@@ -270,7 +270,7 @@ private fun InkWeeklyCover(pages: Pages) {
         }
         Spacer(Modifier.height(16.dp))
         val names = remember(w) { w.songs.map { it.artist.substringBefore(",").trim() }.distinct().joinToString("  ·  ") }
-        Marquee(names, !less, Modifier.fillMaxWidth(), size = 64.sp)
+        Marquee(names, !less && Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 64.sp)
         if (w.note.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             BasicText(w.note.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 21.sp), modifier = Modifier.padding(horizontal = 20.dp))

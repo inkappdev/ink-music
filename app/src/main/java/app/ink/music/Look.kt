@@ -168,3 +168,16 @@ internal fun boxBlur(px: IntArray, n: Int, r: Int, rows: Boolean) {
         for (i in 0 until n) px[if (rows) line * n + i else i * n + line] = out[i]
     }
 }
+
+/**
+ * The giant names running across (the player's artist at its foot, ink weekly's, a long name on an artist's page):
+ * moving, or still where they are (settings, the look; Bronson, 2026-10-30). Kept beside the look's own choice.
+ */
+object Marquees {
+    private val _on = MutableStateFlow(true)
+    val on: StateFlow<Boolean> = _on
+    private fun prefs(c: Context) = c.getSharedPreferences("look", Context.MODE_PRIVATE)
+    fun start(c: Context) { _on.value = prefs(c).getBoolean("marquee", true) }
+    fun set(c: Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("marquee", on).apply() }
+}
+

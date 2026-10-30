@@ -114,8 +114,18 @@ fun LookPage(pages: Pages) {
                     }
                     Spacer(Modifier.height(40.dp))
                 }
+                // the giant names running across: moving, or still where they are
+                Column(Modifier.cascade(4)) {
+                    val marquee by Marquees.on.collectAsState()
+                    BasicText("THE NAME", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("the artist's name running across the foot of the player (and ink weekly's, a long one on an artist's page)", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    Choices(listOf("moving" to marquee, "still" to !marquee)) { Marquees.set(ctx, it == 0) }
+                    Spacer(Modifier.height(40.dp))
+                }
                 // whether covers and canvases move: they're video, so on wifi unless you say
-                if (Moving.available) Column(Modifier.cascade(4)) {
+                if (Moving.available) Column(Modifier.cascade(5)) {
                     BasicText("MOVING", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
                     BasicText("a record's moving cover (apple music's) and a song's canvas, where they have them. silent; " +
