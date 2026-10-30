@@ -77,7 +77,7 @@
 - Easter eggs. We said we wouldn't tell.
 
 Every version's changes are in [the releases](https://github.com/inkappdev/ink-music/releases).
-Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues): what goes in says who asked.
+Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues): what goes in says who asked. Or come say hi at [r/inkmusic](https://www.reddit.com/r/inkmusic/): what you're playing, questions, ideas.
 
 ## On your computer
 
