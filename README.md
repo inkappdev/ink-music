@@ -57,13 +57,13 @@
 ## What you hear
 
 <p align="center">
-  <img src=".github/what-you-hear.gif" width="300" alt="ink music on a Denon receiver: a song changes, LOSSLESS types across its cover, then the signal path: from your server, the file, sent to the Denon, the receiver, Pure Direct, Audyssey bypassed, and EXACT? yes: the file as it is" />
+  <img src=".github/what-you-hear.gif" width="300" alt="ink music on a Denon receiver: a song changes, LOSSLESS types across its cover, then the signal path: from your server, the file, sent to the Denon, the receiver, Direct, Audyssey bypassed, and EXACT? yes: the file as it is" />
 </p>
 
 Tap the format over any cover and ink music shows the sound's whole way to your ears: where it came from,
 the file, which decoder, even volume and the equalizer (turn them off right there and watch it change),
 what Android does to it, and where it plays. Casting to a receiver, it asks the receiver itself: a Denon
-in Pure Direct says so, and the page says **exact: yes**. Covers move where a record has a moving one,
+in Direct says so, and the page says **exact: yes**. Covers move where a record has a moving one,
 a song's Spotify Canvas plays behind, and each takes its own effect in settings, *the look*.
 
 ---
