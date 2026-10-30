@@ -147,6 +147,7 @@ class Main : ComponentActivity() {
         YouTubeMusic.attach(this)
         Server.start(this)
         YouTubeAccount.start(this)
+        HiddenLists.load(this)
         ListenBrainz.start(this)
         LastFm.start(this)
         Offline.start(this)
@@ -518,6 +519,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
             "lists" -> {
                 val lists by Server.playlists.collectAsState()
                 val tubeLists by YouTubeAccount.playlists.collectAsState()
+                val hidden by HiddenLists.ids.collectAsState()
+                var showHidden by remember { mutableStateOf(false) }
                 val lovedIds by Loved.ids.collectAsState()
                 val account by Server.account.collectAsState()
                 val ctx = LocalContext.current
@@ -541,11 +544,19 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
                             BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
                         }
                     }
-                    // your youtube music: its playlists, liked music first as YouTube lists them (read only)
-                    items(tubeLists, key = { "y" + it.id }) { pl ->
+                    // your youtube music: its playlists, liked music first as YouTube lists them (read only); the ones
+                    // you've hidden after the rest, dim, only once asked for (#1)
+                    items(tubeLists.filter { it.id !in hidden }, key = { "y" + it.id }) { pl ->
                         ListRow(pl.name, listOf("youtube music", pl.said.lowercase()).filter { it.isNotEmpty() }.joinToString("   ")) {
                             pages.open(Page.TubeList(pl))
                         }
+                    }
+                    val hiddenLists = tubeLists.filter { it.id in hidden }
+                    if (hiddenLists.isNotEmpty()) item {
+                        Word(if (showHidden) "hide them again" else "${hiddenLists.size} hidden", pixel(12.sp, Ink.dim), Modifier.padding(vertical = 12.dp), touch = 8.dp) { showHidden = !showHidden }
+                    }
+                    if (showHidden) items(hiddenLists, key = { "yh" + it.id }) { pl ->
+                        Box(Modifier.alpha(0.5f)) { ListRow(pl.name, "hidden   youtube music") { pages.open(Page.TubeList(pl)) } }
                     }
                 }
             }
@@ -1506,7 +1517,8 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     val foundSongs = remember(q, songs) { if (q.isEmpty()) emptyList() else songs.mapNotNull { s -> Search.rank(q, s.title, s.artist, s.album)?.let { it to s } }.sortedBy { it.first }.map { it.second }.take(50) }
     // your playlists: the server's, and YouTube Music's (signed in)
     val foundLists = remember(q, serverLists) { if (q.isEmpty()) emptyList() else serverLists.mapNotNull { l -> Search.rank(l.name, q)?.let { it to l } }.sortedBy { it.first }.map { it.second }.take(8) }
-    val foundTubeLists = remember(q, tubeLists) { if (q.isEmpty()) emptyList() else tubeLists.mapNotNull { l -> Search.rank(l.name, q)?.let { it to l } }.sortedBy { it.first }.map { it.second }.take(8) }
+    val hiddenLists by HiddenLists.ids.collectAsState()
+    val foundTubeLists = remember(q, tubeLists, hiddenLists) { if (q.isEmpty()) emptyList() else tubeLists.filter { it.id !in hiddenLists }.mapNotNull { l -> Search.rank(l.name, q)?.let { it to l } }.sortedBy { it.first }.map { it.second }.take(8) }
     // YouTube Music's artists, their faces (any you have already shown as yours); else whose its songs and records are
     // (Bronson, 2026-10-29: Mac DeMarco found, no page of his to open)
     val tubeArtists = remember(q, tube, foundArtists) {
@@ -1733,13 +1745,22 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
                 KeepOffline(all)
             }
-            // yours (not a mix, not someone else's): "delete", then "delete it" lit a moment, as a server playlist's
+            // hide: out of ink music's lists and find, YouTube untouched (#1: "delete" alone read as that, and wasn't).
+            // Yours (not a mix, not someone else's) can also be deleted from YouTube itself: said so, then "delete it
+            // from youtube" lit a moment, as a server playlist's
+            val hidden by HiddenLists.ids.collectAsState()
             val mine by androidx.compose.runtime.produceState(false, pl.id) { value = YouTubeAccount.mine(pl.id) }
             var sure by remember { mutableStateOf(false) }
             LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
             val scope = rememberCoroutineScope()
-            if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
-                if (!sure) sure = true else scope.launch { if (YouTubeAccount.deletePlaylist(pl.id)) pages.back() }
+            Row(Modifier.padding(top = 10.dp)) {
+                val off = pl.id in hidden
+                Word(if (off) "show in ink music" else "hide", pixel(12.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) {
+                    HiddenLists.set(pl.id, !off); if (!off) pages.back()
+                }
+                if (mine) Word(if (sure) "delete it from youtube" else "delete from youtube", pixel(12.sp, if (sure) Ink.ink else Ink.mid), touch = 8.dp) {
+                    if (!sure) sure = true else scope.launch { if (YouTubeAccount.deletePlaylist(pl.id)) pages.back() }
+                }
             }
             Spacer(Modifier.height(14.dp))
         }}
