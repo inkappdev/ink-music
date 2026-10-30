@@ -752,7 +752,8 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
  */
 @Composable
 private fun Moment(t: Now, onTyping: (Boolean) -> Unit) {
-    val h = t.heard
+    // on a speaker the phone isn't decoding: what's sent says it ("flac 24/96 on denon", Bronson's ask)
+    val h = if (t.device.isNotEmpty()) sent(t.quality, t.song?.id.orEmpty()) else t.heard
     val key = t.song?.id ?: (t.title + t.artist)
     var big by remember(key) { mutableStateOf("") }
     var small by remember(key) { mutableStateOf("") }
@@ -782,6 +783,16 @@ private fun Moment(t: Now, onTyping: (Boolean) -> Unit) {
             BasicText(small, style = pixel(14.sp))
         }
     }
+}
+
+/** What's sent to a speaker, as its quality line says it ("flac 24/96", "flac 16/44.1", "mp3 320"), as a [Heard]. */
+private fun sent(quality: String, id: String): Heard? {
+    val m = Regex("^(\\w+)(?:\\s+(?:(\\d+)/)?([\\d.]+))?").find(quality.trim().lowercase()) ?: return null
+    val codec = m.groupValues[1]
+    val bits = m.groupValues[2].toIntOrNull() ?: 0
+    val lossless = codec in setOf("flac", "alac", "wav")
+    val rate = if (lossless) m.groupValues[3].toFloatOrNull()?.let { (it * 1000).toInt() } ?: 0 else 0
+    return Heard(id, codec, bits, rate, 0, if (lossless) 0 else m.groupValues[3].toIntOrNull() ?: 0, "", "", -1, false, null)
 }
 
 /** The moment's fade, and the word's fade in after it: slow, gentle at both ends. */
