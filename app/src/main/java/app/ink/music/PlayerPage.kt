@@ -817,10 +817,33 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
             h.kbps.takeIf { it > 0 }?.let { "%,d kbps".format(java.util.Locale.ROOT, it) },
         ).joinToString(" · ") + "\n" + (if (h.hires) "hi-res lossless" else if (h.lossless) "lossless" else "lossy")
     }
+    // on a speaker: the receiver as it says of itself, read again every few seconds (a Denon's sound mode changes
+    // under you); the song as its source has it (the phone's player isn't decoding it)
+    val speaker by Casting.on.collectAsState()
+    val said by produceState<Receiver.Said?>(null, speaker) {
+        val sp = speaker ?: return@produceState
+        while (true) { Receiver.read(sp)?.let { value = it }; kotlinx.coroutines.delay(5_000) }
+    }
     if (n.device.isNotEmpty()) {
-        // on a speaker: what's sent, and the speaker's own playing of it
-        steps += "sent" to "to ${n.device.lowercase()}" + (n.quality.takeIf { it.isNotBlank() }?.let { ", $it" } ?: "")
-        steps += "the speaker" to "plays it itself: its own decoder, its own dac"
+        val song = n.song
+        val from = song?.id?.let { when { it.startsWith("n") -> "server"; it.startsWith("y") -> "youtube"; it.startsWith("s") -> "station"; else -> "phone" } }
+        if (h == null && from != null) {
+            steps += "from" to when (from) { "server" -> "your server"; "youtube" -> "youtube music"; "station" -> "the station"; else -> "this phone" }
+            listOfNotNull(song.format.takeIf { it.isNotBlank() }, song.bits.takeIf { it > 0 }?.let { "$it bit" }, song.rate.takeIf { it > 0 }?.let(k))
+                .takeIf { it.isNotEmpty() }?.let { steps += "the file" to it.joinToString(" · ") }
+        }
+        steps += "sent" to "to ${n.device.lowercase()}" + (n.quality.takeIf { it.isNotBlank() }?.let { ", $it" } ?: "") + when (from) {
+            "server" -> "\nstreamed from your server"
+            "phone" -> "\nserved by this phone"
+            "youtube" -> "\nyoutube's stream, found by this phone"
+            else -> ""
+        }
+        val r = said
+        val model = speaker?.model?.takeIf { it.isNotBlank() } ?: n.device
+        steps += "the receiver" to model.lowercase() + (r?.takes?.takeIf { it.isNotEmpty() }?.let { "\ntakes ${it.joinToString(", ")}" } ?: "")
+        if (r?.live == true) {
+            r.lines.forEach { steps += it }
+        } else steps += "the speaker" to "plays it itself: its own decoder, its own dac"
     } else if (h != null) {
         h.decoder.takeIf { it.isNotEmpty() }?.let { d ->
             val who = when {
@@ -854,6 +877,10 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
     }
     // exact? plainly: yes only when every step left it be, else the first thing that touched it
     val verdict = when {
+        n.device.isNotEmpty() && said?.live == true -> said!!.touching.let { t ->
+            if (t.isEmpty()) "close: the ${(speaker?.maker ?: "receiver").lowercase().substringBefore(',')} plays it as it comes" + (said!!.mode.takeIf { it.isNotEmpty() }?.let { ", in $it" } ?: "")
+            else "no: the ${(speaker?.maker ?: "receiver").lowercase().substringBefore(',')}'s " + (if (t.size > 1) t.dropLast(1).joinToString(", ") + " and " + t.last() else t[0]) + " shape it"
+        }
         n.device.isNotEmpty() -> "the phone hands it on; what happens next is the speaker's"
         h == null -> ""
         h.exact.startsWith("yes") && h.bits > 16 -> "close: bit-perfect to your dac, but ${h.bits} bit made 16 on the way"
