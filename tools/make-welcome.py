@@ -47,7 +47,7 @@ d.text((W - M, 112), "FREE  ·  OPEN SOURCE  ·  ANDROID, MAC, WINDOWS, LINUX", 
 
 # three columns, each its number and words over its screen; the screens run off the foot
 col = (W - 2 * M) // 3
-words = [("1", "HOW IT LOOKS", "YOUR ART, THE ONLY COLOR"),
+words = [("1", "HOW IT LOOKS", "MADE TO BE LOOKED AT"),
          ("2", "WHAT'S NEXT", "PICKED BY PEOPLE, NOT A FEED"),
          ("3", "IT'S YOURS", "PHONE AND COMPUTER, IN STEP")]
 top = 300

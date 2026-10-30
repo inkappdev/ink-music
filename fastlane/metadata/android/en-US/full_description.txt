@@ -1,4 +1,4 @@
-<p>A music player that looks like nothing else on your phone. Pure black, warm white type, no chrome: the album art is the only color on screen. Your files, your own server, YouTube Music and independent radio, in one place. Nothing to pay, ever.</p>
+<p>A music player that looks like nothing else on your phone. Your files, your own server, YouTube Music and independent radio, in one place. Nothing to pay, ever.</p>
 
 <p><b>Picked by people, not a feed</b></p>
 <p>INK is where to find something new: ink weekly, what we're listening to at ink, every Friday night; the record of the day; what critics and DJs are picking right now (Pitchfork, Bandcamp Daily, NPR, the Quietus and more); what's out this Friday; festivals coming up; moods made by ink. Every song plays from your own copy when you have it, and from YouTube Music when you don't.</p>
