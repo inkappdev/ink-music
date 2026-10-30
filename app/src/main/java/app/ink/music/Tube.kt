@@ -29,3 +29,23 @@ data class ArtistInfo(
     val id: String, val name: String, val photo: String?, val about: String, val audience: String,
     val top: List<Song>, val albums: List<TubeAlbum>, val singles: List<TubeAlbum>, val like: List<TubeArtist>,
 )
+
+/**
+ * YouTube Music playlists hidden from ink music (#1, 2026-10-30: a signed-in library brings every playlist, music or
+ * not): out of lists and find, your YouTube untouched. Their ids, kept in files/youtube-hidden.json.
+ */
+object HiddenLists {
+    val ids = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
+    private var file: java.io.File? = null
+
+    fun load(c: android.content.Context) {
+        if (file != null) return
+        val f = java.io.File(c.filesDir, "youtube-hidden.json").also { file = it }
+        ids.value = runCatching { org.json.JSONArray(f.readText()).let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } }.getOrDefault(emptySet())
+    }
+
+    fun set(id: String, hidden: Boolean) {
+        ids.value = if (hidden) ids.value + id else ids.value - id
+        runCatching { file?.writeText(org.json.JSONArray(ids.value.toList()).toString()) }
+    }
+}
