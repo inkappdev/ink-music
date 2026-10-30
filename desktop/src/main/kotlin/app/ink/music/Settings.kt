@@ -1,6 +1,13 @@
 package app.ink.music
 
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +82,7 @@ fun SettingsPage(onClose: () -> Unit) {
                             Spacer(Modifier.height(36.dp)); YouTubeSetting()
                             Spacer(Modifier.height(36.dp)); FilesSetting()
                         }
+                        "the look" -> LookSetting()
                         "sound" -> { SoundSetting(); Spacer(Modifier.height(36.dp)); KeptSetting() }
                         "listening" -> {
                             PrivateSetting()
@@ -91,7 +99,7 @@ fun SettingsPage(onClose: () -> Unit) {
 
 /** The settings' parts, and how each stands in a line. */
 object Settings {
-    val PARTS = listOf("your phone", "your music", "sound", "listening", "about")
+    val PARTS = listOf("your phone", "your music", "the look", "sound", "listening", "about")
     /** The part last open, for the next time (this run). */
     var last = "your music"
 
@@ -112,6 +120,13 @@ object Settings {
             val kept by Offline.kept.collectAsState()
             listOfNotNull(if (sound.device == "auto") "the ${if (Home.mac) "mac" else "computer"}'s choice" else "its own output",
                 if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded", kept.size.takeIf { it > 0 }?.let { "$it kept" }).joinToString(" · ")
+        }
+        "the look" -> {
+            val behind by Looks.on.collectAsState()
+            val cover by Moving.cover.collectAsState()
+            val moving by Moving.on.collectAsState()
+            listOf("cover ${cover?.word ?: "as it is"}", if (behind == Look.PLAIN) "its print beside it" else "${behind.word} behind",
+                if (moving) "moving covers" else "still covers").joinToString(" · ")
         }
         "listening" -> {
             val hidden by Private.on.collectAsState()
@@ -564,5 +579,91 @@ fun NetworkShut(modifier: Modifier = Modifier) {
         BasicText("so your server can't be reached, its covers and songs with it. system settings, privacy and security, " +
             "local network: switch ink music on (off and on again if it is), then open ink music again", style = pixel(13.sp, Ink.mid),
             modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/**
+ * The look: a preview of the player (what plays, else a record of yours) over the choices, each its own: the cover's
+ * effect, the background behind the player, moving covers, the big names moving or still.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LookSetting() {
+    val behind by Looks.on.collectAsState()
+    val cover by Moving.cover.collectAsState()
+    val moving by Moving.on.collectAsState()
+    val names by Marquees.on.collectAsState()
+    LookPreview()
+    Spacer(Modifier.height(28.dp))
+    BasicText("THE COVER", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("the record's cover, still or moving, in an effect of its own", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    FlowRow(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Word("as it is", pixel(14.sp, if (cover == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(cover = null) }
+        for (l in Moving.coverLooks) Word(l.word, pixel(14.sp, if (cover == l) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(cover = l) }
+    }
+    Spacer(Modifier.height(36.dp))
+    BasicText("BEHIND IT", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText(if (behind == Look.PLAIN) "plain: the cover's print in the dither beside it, on black"
+        else "the cover across the whole window behind the player, in this effect", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    FlowRow(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (l in listOf(Look.PLAIN, Look.BLUR, Look.FLUTED, Look.PIXELS, Look.DITHER, Look.AS_IS))
+            Word(l.word, pixel(14.sp, if (behind == l) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Looks.set(l) }
+    }
+    Spacer(Modifier.height(36.dp))
+    BasicText("MOVING COVERS", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("where a label made one, apple music's looping cover plays while the music does", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    Row {
+        Word("on", pixel(14.sp, if (moving) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(on = true) }
+        Word("off", pixel(14.sp, if (!moving) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(on = false) }
+    }
+    Spacer(Modifier.height(36.dp))
+    BasicText("THE NAME", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("the big artist names along the player's foot and on their pages", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    Row {
+        Word("moving", pixel(14.sp, if (names) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Marquees.set(true) }
+        Word("still", pixel(14.sp, if (!names) Ink.ink else Ink.dim), touch = 8.dp) { Marquees.set(false) }
+    }
+}
+
+/** The player small: the background, the cover in its effect (moving where it can), the name along the foot. */
+@Composable
+private fun LookPreview() {
+    val now by Player.now.collectAsState()
+    val albums by Library.albums.collectAsState()
+    val song = now?.song?.takeUnless { it.station } ?: remember(albums.isEmpty()) { albums.randomOrNull()?.songs?.firstOrNull() } ?: return
+    val c = rememberCover(song, 800)
+    val accent = c?.accent ?: Ink.ink
+    val behind by Looks.on.collectAsState()
+    val look by Moving.cover.collectAsState()
+    val names by Marquees.on.collectAsState()
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(16 / 10f)
+        .background(Ink.black).border(1.dp, Ink.line).clipToBounds()) {
+        if (behind != Look.PLAIN) Backdrop(c, behind)
+        val side = maxHeight * .58f
+        val off = side * .05f
+        Box(Modifier.padding(start = 28.dp, top = 28.dp)) {
+            if (behind == Look.PLAIN) Dithered(song, Modifier.offset(off, off).size(side), px = 800)
+            Box(Modifier.size(side)) {
+                CoverOf(song, song.album.ifEmpty { song.title }, Modifier.fillMaxSize().graphicsLayer {
+                    renderEffect = look?.let { Effects.of(it, accent, density, 1f, size.width) }
+                }, px = 800)
+                MovingCover(song.albumArtist.ifBlank { song.artist.substringBefore(", ") }, song.album, song.title, accent, true, Modifier.fillMaxSize())
+            }
+        }
+        Column(Modifier.padding(start = 28.dp + side + 28.dp, top = 30.dp, end = 20.dp)) {
+            BasicText(song.title.uppercase(), style = headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(6.dp))
+            BasicText(song.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1)
+        }
+        Marquee(song.artist.substringBefore(", "), names, Modifier.align(Alignment.BottomStart).fillMaxWidth(), size = 56.sp)
     }
 }

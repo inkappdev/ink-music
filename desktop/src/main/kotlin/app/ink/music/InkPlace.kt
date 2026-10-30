@@ -70,7 +70,7 @@ fun InkWeekly() {
             Spacer(Modifier.height(26.dp))
             // who's on it, running off both edges (still under less motion)
             val names = remember(w) { w.songs.map { it.artist.substringBefore(",").trim() }.distinct().joinToString("  ·  ") }
-            Marquee(names, true, Modifier.fillMaxWidth(), size = 84.sp)
+            Marquee(names, Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 84.sp)
             Spacer(Modifier.height(22.dp))
             // the songs as a chart: three columns wide, the place big beside each
             val across = if (room >= 1100.dp) 3 else if (wide) 2 else 1

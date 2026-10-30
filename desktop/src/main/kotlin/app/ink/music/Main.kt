@@ -94,6 +94,7 @@ fun main() {
     Sorts.start()
     Lyrics.start()
     Keys.start()
+    LookFile.start()
     ListenBrainz.start(Home.dir)
     LastFm.start(Home.dir)
     Listened.read()

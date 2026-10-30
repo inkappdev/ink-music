@@ -103,9 +103,14 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
     var typing by remember { mutableStateOf(false) }
     var heardUp by remember { mutableStateOf(false) }
     val artist = n.song.takeUnless { it.station }?.let { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
+    val behind by Looks.on.collectAsState()
+    val coverLook by Moving.cover.collectAsState()
+    val names by Marquees.on.collectAsState()
     Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
+        // the background (settings, the look): the cover across the whole window in its effect
+        if (!n.song.station && behind != Look.PLAIN) Backdrop(cover, behind)
         // the artist's name, big, along the foot: a way to their page too
-        Marquee(said(n).second, n.playing, Modifier.align(Alignment.BottomStart).fillMaxWidth()
+        Marquee(said(n).second, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth()
             .clickable(remember { MutableInteractionSource() }, indication = null) { artist?.let { open(Page.Artist(it)) } }, size = 150.sp)
         Column(Modifier.fillMaxSize()) {
             // close; where in the queue, where it plays (the pixel speaker, lit on one), the whole screen
@@ -127,9 +132,16 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             if (on == null) HeardWord(heard?.takeIf { it.id == n.song.id }, typing) { heardUp = true }
                         }
                         Box(Modifier.size(side + off)) {
-                            if (!n.song.station) Dithered(n.song, Modifier.offset(off, off).size(side), px = 1200)
+                            // its print beside it, while there's no background (the background takes its place)
+                            if (!n.song.station && behind == Look.PLAIN) Dithered(n.song, Modifier.offset(off, off).size(side), px = 1200)
                             Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }) {
-                                CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize(), px = 1200, moving = n.playing)
+                                val density = androidx.compose.ui.platform.LocalDensity.current.density
+                                CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize().graphicsLayer {
+                                    renderEffect = coverLook?.takeIf { !n.song.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
+                                }, px = 1200, moving = n.playing)
+                                // the record's moving cover over it, where it has one (settings, the look)
+                                if (!n.song.station) MovingCover(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }, n.song.album, n.song.title,
+                                    accent, n.playing, Modifier.fillMaxSize())
                                 Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
                             }
                         }
@@ -208,6 +220,19 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) { heard?.let { HeardPage(it) { heardUp = false } } }
     }
+}
+
+/** The cover across the whole window behind the player, in the look's effect, faded in at the look's own strength. */
+@Composable
+fun Backdrop(cover: Cover?, look: Look) {
+    val c = cover ?: return
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val fade = remember(c.image) { Animatable(0f) }
+    LaunchedEffect(c.image, look) { fade.animateTo(look.alpha, tween(600)) }
+    androidx.compose.foundation.Image(c.image, null, Modifier.fillMaxSize().graphicsLayer {
+        alpha = fade.value
+        renderEffect = Effects.of(look, c.accent, density, 1f, size.width, big = true)
+    }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
 }
 
 /**
@@ -428,7 +453,7 @@ fun RemotePlayerPage(o: Continue.Offer, open: (Page) -> Unit, onClose: () -> Uni
     val pos by androidx.compose.runtime.produceState(o.positionNow(), o) { while (true) { value = o.positionNow(); kotlinx.coroutines.delay(250) } }
     val artist = o.song.takeUnless { it.station }?.let { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
     Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
-        Marquee(o.song.artist, o.playing, Modifier.align(Alignment.BottomStart).fillMaxWidth()
+        Marquee(o.song.artist, o.playing && Marquees.on.collectAsState().value, Modifier.align(Alignment.BottomStart).fillMaxWidth()
             .clickable(remember { MutableInteractionSource() }, indication = null) { artist?.let { open(Page.Artist(it)) } }, size = 150.sp)
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = SIDE - 8.dp, end = SIDE - 8.dp, top = TOP), verticalAlignment = Alignment.CenterVertically) {
