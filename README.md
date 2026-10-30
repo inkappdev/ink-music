@@ -87,7 +87,7 @@ Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues): wha
 </p>
 <p align="center">
   <img src=".github/desktop/artist.png" width="49%" alt="An artist's page on a computer: Wild Nothing's photo in dither, top songs, records, what's said of them" />
-  <img src=".github/desktop/record.png" width="49%" alt="The player's record side: the cover marked lossless, 16 bit at 44.1 kHz, the record's songs" />
+  <img src=".github/desktop/record.png" width="49%" alt="The player on a computer: Sneaker Pimps' 6 Underground, the cover marked lossless, 16 bit at 44.1 kHz, radio's songs up next" />
 </p>
 
 The same ink music, made for a big screen and a keyboard:
