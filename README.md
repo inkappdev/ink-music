@@ -5,21 +5,33 @@
 <h1 align="center">ink music</h1>
 
 <p align="center">
-  A free, open-source music player for Android.<br />
-  Pure black, warm white type, no chrome: the album art is the only color on screen.
+  A music player that looks like nothing else. Free and open source, for Android, Mac, Windows and Linux.<br />
+  Pure black, warm white type, no chrome: the album art is the only color on screen.<br />
+  Your files, your server, YouTube Music and independent radio; new music picked by people, not a feed.
 </p>
 
 <p align="center">
   <a href="https://github.com/inkappdev/ink-music/releases/latest"><img src="https://img.shields.io/github/v/release/inkappdev/ink-music?style=flat-square&color=000000&label=release" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-000000?style=flat-square" alt="GPL-3.0" /></a>
   <img src="https://img.shields.io/badge/android-12%2B-000000?style=flat-square" alt="Android 12+" />
+  <img src="https://img.shields.io/badge/mac%20%C2%B7%20windows%20%C2%B7%20linux-000000?style=flat-square" alt="Mac, Windows, Linux" />
   <img src="https://img.shields.io/badge/ads%20%26%20tracking-none-000000?style=flat-square" alt="No ads, no tracking" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/inkappdev/ink-music/releases/latest"><img src="https://img.shields.io/badge/Download-APK-f2f0eb?style=for-the-badge&logo=android&logoColor=000000&labelColor=f2f0eb" alt="Download the APK" height="40" /></a>
+  <a href="https://github.com/inkappdev/ink-music/releases/latest"><img src="https://img.shields.io/badge/Android-APK-f2f0eb?style=for-the-badge&logo=android&logoColor=000000&labelColor=f2f0eb" alt="Download for Android" height="40" /></a>
+  &nbsp;
+  <a href="https://github.com/inkappdev/ink-music/releases/latest"><img src="https://img.shields.io/badge/Mac-dmg-f2f0eb?style=for-the-badge&logo=apple&logoColor=000000&labelColor=f2f0eb" alt="Download for Mac" height="40" /></a>
+  &nbsp;
+  <a href="https://github.com/inkappdev/ink-music/releases/latest"><img src="https://img.shields.io/badge/Windows-msi-f2f0eb?style=for-the-badge&logo=windows&logoColor=000000&labelColor=f2f0eb" alt="Download for Windows" height="40" /></a>
+  &nbsp;
+  <a href="https://github.com/inkappdev/ink-music/releases/latest"><img src="https://img.shields.io/badge/Linux-deb%20%C2%B7%20rpm-f2f0eb?style=for-the-badge&logo=linux&logoColor=000000&labelColor=f2f0eb" alt="Download for Linux" height="40" /></a>
   &nbsp;
   <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/inkappdev/ink-music"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="40" /></a>
+</p>
+
+<p align="center">
+  <img src=".github/desktop/radio.png" width="100%" alt="ink music on a Mac: the rail of words down the side, radio's tower over KEXP, ink radio's stations each on its own sleeve" />
 </p>
 
 <p align="center">
@@ -27,24 +39,32 @@
 </p>
 
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="18.5%" alt="A lossless song's moment: LOSSLESS, 16 bit, 44.1 kHz across the cover" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="18.5%" alt="Welcome: INK MUSIC over records developing in dither" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/9.png" width="18.5%" alt="The player in the dither look: Madvillainy" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="18.5%" alt="Listen: jump back in, your YouTube Music mixes and mixes for you, in dither" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="18.5%" alt="Synced lyrics over the cover in dither" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="18.5%" alt="The player: Ginger Root's Call It Home, HI-RES, 24 bit, 44.1 kHz across the cover, the dither look in its red" />&nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="18.5%" alt="INK: ink weekly's cover, four records in dither, VOL 1, the week's artists in the giant marquee" />&nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="18.5%" alt="Synced lyrics, big, over Action Bronson's cover in the blur look" />&nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="18.5%" alt="The player: Pale Blue's Dive, its accent along the line" />&nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="18.5%" alt="An artist: Swiss Portrait, their records and yours, play, shuffle, radio, follow" />
 </p>
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/8.png" width="18.5%" alt="The player in the blur look" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="18.5%" alt="An artist: their photo in dither, top songs as a chart" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7.png" width="18.5%" alt="ink radio: WFMU on its moving sleeve, saying what it plays" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="18.5%" alt="A record" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/10.png" width="18.5%" alt="The player, plain" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="18.5%" alt="ink radio: KUTX 98.9 on its moving sleeve, saying the Rolling Stones' Moonlight Mile is on" />&nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7.png" width="18.5%" alt="Lyrics in the dither: Steely Dan's Dirty Work, the cover small beside the song" />&nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/8.png" width="18.5%" alt="The player in the dither's grid: Triathalon's Courtside, FLAC 16/44.1" />&nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/9.png" width="18.5%" alt="Play on: this phone, the house's speakers and TV, a Denon receiver, everywhere at once" />&nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/10.png" width="18.5%" alt="The player in the dither: Reece Myers' Farm, its green all round" />
 </p>
 
 ---
 
-## New in 1.4.10
+## New in 2.0
 
+- **ink music on your computer.** Mac, Windows and Linux, in the same look: a rail of words down the
+  side, the page, and what's playing beside it. Your music folder, your server, YouTube Music and the
+  radio, all there.
+- **Your phone and your computer in step.** Pair them once with a code, and they keep each other
+  current over your wifi: what you've heard, what you love, your sign-ins, what you were playing.
+  Nothing goes through anyone else's server.
+- **Continue here.** Start a record on your phone, pick it up on your computer where you left off (or
+  the other way round), and steer the phone's music from the computer's bottom bar.
 - **INK**, a place of its own: ink weekly as its cover, the record of the day, what critics and DJs are
   picking (Pitchfork, Bandcamp Daily, NPR, the Quietus and more), what's out this Friday, festivals
   coming up, and moods made by ink.
@@ -53,13 +73,34 @@
 - **New from your artists** at the top of listen.
 - **YouTube Music kept offline**: a song, a record or a whole playlist.
 - **Private listening**: while it's on, nothing you play is kept or sent.
-- **A playlist from the player**, and play next really comes next.
-- **ink music keeps itself up to date**: a new version shows on listen, with what's new in it; one
-  tap, and the phone's installer checks it's ink music's before it goes in.
+- **ink music keeps itself up to date**: a new version shows on listen, with what's new in it.
 - Easter eggs. We said we wouldn't tell.
 
 Every version's changes are in [the releases](https://github.com/inkappdev/ink-music/releases).
 Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues): what goes in says who asked.
+
+## On your computer
+
+<p align="center">
+  <img src=".github/desktop/player.png" width="49%" alt="The player full screen on a computer: Turnstile's Holiday, the lyrics big, the artist's name running across the foot" />
+  <img src=".github/desktop/ink.png" width="49%" alt="INK on a computer: ink weekly's cover, its mosaic in dither, the artists in the giant marquee" />
+</p>
+<p align="center">
+  <img src=".github/desktop/artist.png" width="49%" alt="An artist's page on a computer: Wild Nothing's photo in dither, top songs, records, what's said of them" />
+  <img src=".github/desktop/record.png" width="49%" alt="The player's record side: the cover marked lossless, 16 bit at 44.1 kHz, the record's songs" />
+</p>
+
+The same ink music, made for a big screen and a keyboard:
+
+- **The player full screen** as a record's inner sleeve: the cover, the lyrics big, up next, the notes.
+- **A mini player**, a small strip that stays over your other windows.
+- **On a Mac, the media keys** and Now Playing in Control Center and on the lock screen.
+- **Exact sound**: pick the output, take it over alone (exclusive), and play files as recorded, at
+  their own rate and depth. Sound by [mpv](https://mpv.io): FLAC, ALAC, AAC, Opus, gapless.
+- **Play on** your speakers from the computer too: Chromecast, Google Nest and DLNA.
+- **Your year** a keystroke away (⌘Y on a Mac, Ctrl+Y elsewhere).
+- **YouTube Music signed in from your phone**: the computer has no browser to sign in with, so the
+  phone hands its sign-in over, sealed, when you pair.
 
 ## Your music, from wherever it lives
 
@@ -125,8 +166,9 @@ listening to at ink, picked by real people.
 
 ## Privacy
 
-No ads, no accounts, no analytics, no tracking. Nothing of yours leaves the phone except to your
-own server, and to the services that answer what you ask for:
+No ads, no accounts, no analytics, no tracking. Nothing of yours leaves your phone or computer except
+to your own server, to your other devices on your own wifi, and to the services that answer what you
+ask for:
 
 | Service | What it receives | Why |
 |---|---|---|
@@ -137,14 +179,22 @@ own server, and to the services that answer what you ask for:
 | [AutoEq](https://github.com/jaakkopasanen/AutoEq) on GitHub | Nothing personal, when you look up your headphones | Their tuning |
 | [radio-browser.info](https://www.radio-browser.info) | Nothing personal | The station list |
 | The stations' own playlists | Nothing personal | The indie chart, what's on air |
+| Your paired phone or computer, on your wifi | What you've heard, loves, sign-ins, what's playing, sealed with a key only the two of them have | Keeping them in step |
+| Publications' and stations' own feeds (Pitchfork, Bandcamp Daily, NPR and others) | Nothing personal | INK's picks |
+| iTunes, Deezer and YouTube Music | A record's artist and title | Covers where your files have none |
+| [Last.fm](https://www.last.fm)'s tags | Nothing personal | INK's moods |
+| GitHub | Nothing personal, every six hours (`full` build and computers) | Whether there's a new version |
 
-What you've played is kept on the phone only.
+What you've played is kept on your own devices only.
 
 ## Download
 
-Signed APKs are attached to every [GitHub release](https://github.com/inkappdev/ink-music/releases),
-with their SHA-256 sums. [Obtainium](https://github.com/ImranR98/Obtainium) keeps it up to date.
-F-Droid is next. The `full` apks from releases have Last.fm; a build from source needs its own key.
+Everything is on the [GitHub releases](https://github.com/inkappdev/ink-music/releases), signed, with
+SHA-256 sums.
+
+**Android 12 or later.** [Obtainium](https://github.com/ImranR98/Obtainium) keeps it up to date, and the
+`full` build updates itself. F-Droid is next. The `full` apks from releases have Last.fm; a build from
+source needs its own key.
 
 | Build | Sources | Where |
 |---|---|---|
@@ -155,7 +205,15 @@ The release certificate's SHA-256:
 `92eb2c4ea8d70b897db7cf000356f72cc2f3e698c39bb31f4b62ba717747e663`
 (check with `apksigner verify --print-certs`).
 
-Android 12 or later.
+**Mac** (Apple silicon): the `.dmg`. It isn't signed by Apple yet, so the first time, macOS stops it:
+System Settings, Privacy & Security, **Open Anyway**.
+
+**Windows**: the `.msi`, installed just for you, no administrator needed. Windows SmartScreen
+doesn't know it yet: **More info**, then **Run anyway**. To pair your phone, Windows' firewall has to let
+it in: ink music asks, in settings under your phone.
+
+**Linux**: the `.deb` (Debian, Ubuntu) or `.rpm` (Fedora). It plays through your system's libmpv
+(`libmpv2` on Debian and Ubuntu, `mpv-libs` on Fedora).
 
 ## From the makers of ink
 
@@ -187,13 +245,19 @@ No accounts, no ads, no analytics. ink is in a free test on Google Play now, eve
 
 ## Building
 
-JDK 21 and the Android SDK (API 37).
+JDK 21. The phone also needs the Android SDK (API 37); the computer's app needs a libmpv to play.
 
 ```sh
-./gradlew :app:assembleFullDebug      # a debug build
-./gradlew :app:assembleFullRelease    # a release build (R8)
-tools/release.sh                      # both builds, signed, with SHA256SUMS, in build/release/
+./gradlew :app:assembleFullDebug      # the phone: a debug build
+./gradlew :app:assembleFullRelease    # the phone: a release build (R8)
+tools/release.sh                      # both phone builds, signed, with SHA256SUMS, in build/release/
+
+./gradlew :desktop:run -PdesktopOnly  # the computer's app, without the Android SDK
 ```
+
+The computer's installers are each made on their own system (`.github/workflows/`): the Mac's `.dmg`
+on macOS, the `.msi` on Windows (`:desktop:packageInkMsi`, ink's own installer pages), the `.deb` and
+`.rpm` on Linux.
 
 Release builds are signed with the key named in `keystore.properties` beside `settings.gradle.kts`
 (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`; never committed). Without it they're
@@ -204,12 +268,14 @@ The icon and store graphics are drawn from the bundled fonts: `python3 tools/mak
 (fontTools, Pillow).
 
 Built with Kotlin and Jetpack Compose, [Media3](https://github.com/androidx/media) (ExoPlayer and a
-MediaLibrarySession in its own process) and [Haze](https://github.com/chrisbanes/haze).
+MediaLibrarySession in its own process) and [Haze](https://github.com/chrisbanes/haze) on the phone;
+[Compose Multiplatform](https://www.jetbrains.com/compose-multiplatform/) and [mpv](https://mpv.io) on
+the computer, with what the two share in `core/`.
 
 ## How it's made
 
 Built by Bronson with Claude (Anthropic's AI) as a coding partner: the design, the decisions and the
-testing are mine. Every feature is tried on a real phone before it ships, testers' notes come back as
+testing are mine. Every feature is tried on a real phone and computer before it ships, testers' notes come back as
 fixes within days, and ink weekly is picked by hand. It's all here to read, under the GPL, and every
 piece of someone else's work it stands on is named below, with its license.
 
@@ -230,7 +296,13 @@ talk it through.
 - [AutoEq](https://github.com/jaakkopasanen/AutoEq) (MIT), for the headphone tunings, from measurements by
   oratory1990, crinacle, Rtings and others.
 - [Media3](https://github.com/androidx/media) and [Haze](https://github.com/chrisbanes/haze) (Apache-2.0).
+- On the computer: [mpv](https://mpv.io) (LGPL-2.1+, its Windows builds from
+  [shinchiro](https://github.com/shinchiro/mpv-winbuild-cmake)), [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform)
+  (Apache-2.0), [JNA](https://github.com/java-native-access/jna) (Apache-2.0), [JmDNS](https://github.com/jmdns/jmdns)
+  (Apache-2.0) and [jaudiotagger](https://bitbucket.org/ijabz/jaudiotagger) (LGPL-2.1).
 - Archivo Black and Silkscreen, both under the SIL Open Font License.
+- INK's picks from the publications and DJs who make them: Pitchfork, Stereogum, Bandcamp Daily, NPR,
+  NME, the Quietus, Aquarium Drunkard, Gorilla vs. Bear, Dusted, Stereofox, The FADER and more. Go read them.
 - Lyrics from [lrclib.net](https://lrclib.net) and YouTube Music; stations from
   [radio-browser.info](https://www.radio-browser.info) and the stations themselves; scrobbling to
   [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm).
@@ -238,7 +310,7 @@ talk it through.
 ## Not affiliated
 
 ink music is not affiliated with, funded, authorized or endorsed by YouTube, Google LLC, Spotify,
-Navidrome or any radio station. Trademarks belong to their owners.
+Apple, Microsoft, Navidrome, any publication or any radio station. Trademarks belong to their owners.
 
 ## License
 

@@ -1,41 +1,39 @@
-<p>A music player in ink's look: pure black, warm white type, no chrome. The album art is the only color on screen.</p>
+<p>A music player that looks like nothing else on your phone. Pure black, warm white type, no chrome: the album art is the only color on screen. Your files, your own server, YouTube Music and independent radio, in one place. Nothing to pay, ever.</p>
+
+<p><b>Picked by people, not a feed</b></p>
+<p>INK is where to find something new: ink weekly, what we're listening to at ink, every Friday night; the record of the day; what critics and DJs are picking right now (Pitchfork, Bandcamp Daily, NPR, the Quietus and more); what's out this Friday; festivals coming up; moods made by ink. Every song plays from your own copy when you have it, and from YouTube Music when you don't.</p>
+
+<p><b>Made for you, from your listening alone</b></p>
+<p>Fresh finds, deep cuts, loved long ago, a year ago today, new to you, and what's new from your artists at the top of listen. Worked out on your phone, from what you play.</p>
 
 <p><b>Your music, from wherever it lives</b></p>
 <ul>
-<li><b>The phone's files</b>, filed by record and artist, with the covers they carry.</li>
-<li><b>Your own server</b>: Navidrome or any Subsonic server, your whole library streamed from home, or kept on the phone to play with no signal. Loves are its stars, playlists are its playlists, so every app agrees.</li>
-<li><b>YouTube Music</b>: search and play without an account, through NewPipe Extractor. Signed in: your playlists, likes, mixes, artists and uploads, both ways, and Premium's 256 kbps if you have it.</li>
-<li><b>Spotify playlists</b>, brought in from a file (Exportify, or Spotify's own data download).</li>
-<li><b>ink radio</b>: independent, listener-powered stations chosen by hand, from KEXP in Seattle to NTS in London and Radio alHara in Bethlehem. And thousands more by genre.</li>
+<li><b>The phone's files</b>, filed by record and artist, FLAC and hi-res as they are. No cover? It finds one.</li>
+<li><b>Your own server</b>: Navidrome or any Subsonic server, your whole library from home, or kept on the phone for no signal. Loves are its stars and playlists its playlists, so every app agrees.</li>
+<li><b>YouTube Music</b>: search and play without an account. Signed in: your playlists, likes, mixes and uploads, both ways, Premium's 256 kbps if you have it, and songs kept offline.</li>
+<li><b>Spotify playlists</b>, brought in from a file, each song found in your music or on YouTube Music.</li>
+<li><b>ink radio</b>: sixty-odd listener-powered stations chosen by hand, KEXP to NTS to Radio alHara, each saying what it's playing.</li>
 </ul>
 
-<p><b>Something to play the moment it opens</b></p>
-<p>Pick a few artists you love and the listen page fills with their mixes and records, the songs indie radio played most this week (KEXP, KCRW, WXPN), ink radio (with what each station is playing), and what you played lately. Even with nothing on the phone. And every Friday night, ink weekly: what we're listening to at ink, picked by real people.</p>
-
-<p><b>What it does</b></p>
+<p><b>The player</b></p>
 <ul>
-<li>The player whole-screen over the cover, in one of five looks (blur, fluted glass, pixels, dither, plain), with an iPod clickwheel on the cover to scrub.</li>
-<li>Synced lyrics from lrclib, or YouTube Music's where lrclib has none.</li>
-<li>An equalizer of its own, ten bands, with tunings for thousands of headphones (AutoEq).</li>
-<li>Soft pause: the music eases out and back in.</li>
-<li>Artist pages: their photo in dither, top songs, records, their story, who fans also like.</li>
-<li>Scrobbling to ListenBrainz and Last.fm.</li>
-<li>Even volume (ReplayGain): every song as loud as the next; a record played through keeps its own quiet and loud.</li>
-<li>Radio: when the queue runs out, more like it, from your server first.</li>
-<li>Your playlists, made and changed here, kept on your server.</li>
-<li>Your year, any day of it: the minutes, the songs, artists and records you played most.</li>
-<li>Share a song or your year as a poster for a story.</li>
-<li>Play on: Chromecast speakers and TVs, speaker groups, and DLNA receivers (Denon HEOS and others), hi-res where the speaker can take it.</li>
-<li>Android Auto, and a home-screen widget.</li>
-<li>A sleep timer that eases the music out, shuffle and repeat, up next you can reorder.</li>
-<li>The library shuffled anew each time you open it, if you like.</li>
+<li>Whole-screen over the cover in five looks: blur, fluted glass, pixels, dither, plain. Circle the cover to scrub, as on an iPod.</li>
+<li>Synced lyrics, big, over the cover.</li>
+<li>It says exactly what you're hearing: lossless, hi-res, the bit depth and rate.</li>
+<li>An equalizer with tunings for thousands of headphones (AutoEq), even volume (ReplayGain), soft pause.</li>
+<li>Play on Chromecast and Nest speakers, TVs and DLNA receivers, hi-res where they take it. No Google Play services needed.</li>
+<li>Android Auto, a home-screen widget, a sleep timer that eases the music out.</li>
 </ul>
 
-<p><b>Free, and yours</b></p>
-<p>No ads, no accounts, no tracking. Nothing of yours leaves the phone except to your own server; a song's artist and title go to lrclib.net for its lyrics, what you search for and the artists you pick go to YouTube Music (and, signed in, the songs you play, for your history there), the radio list comes from radio-browser.info, and the indie chart and what a station is playing from the stations' own playlists. What you've played is kept on the phone only.</p>
+<p><b>And on your computer</b></p>
+<p>ink music for Mac, Windows and Linux, in the same look. Pair your phone once and the two keep in step over your wifi: what you've heard, what you love, your sign-ins. Start a record on one, pick it up on the other.</p>
 
-<p>Free and open source (GPL-3.0). From the makers of ink, the launcher for people who listen.</p>
+<p><b>Yours</b></p>
+<p>Your year, any day of it. Artist pages with their photo in dither, top songs and their story. Scrobbling to ListenBrainz and Last.fm. Private listening, when you'd rather it wasn't kept.</p>
 
-<p>ink music is not affiliated with, funded, authorized or endorsed by YouTube, Google LLC, Spotify or Navidrome. Trademarks belong to their owners.</p>
+<p><b>Free, and private</b></p>
+<p>No ads, no accounts, no tracking, no paywall, ever. Free and open source (GPL-3.0). Nothing of yours leaves the phone except to your own server, your own computer on your wifi, and the services that answer what you ask for: lyrics from lrclib.net, your searches (and, signed in, your plays) to YouTube Music, covers and picks from the catalogs and publications. What you've played stays on your devices.</p>
+
+<p>ink music is not affiliated with, funded, authorized or endorsed by YouTube, Google LLC, Spotify, Navidrome, or any publication or station. Trademarks belong to their owners.</p>
 
 <p>From the makers of ink, a typographic home screen for Android phones and TVs in the same look: inkhome.app</p>
