@@ -396,6 +396,8 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics" + (if (YouTubeMusic.available) " (and to youtube music when lrclib has none)" else "") + "; " +
                             (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library, and the youtube songs you play, for your history there); " else "") +
                             "with listenbrainz or last.fm connected, what you play goes there. " +
+                            (if (Moving.available) "with moving covers on, the record playing goes to apple music, for its moving cover; " +
+                                "signed in to spotify, the song playing goes to spotify, for its canvas (and your playlists, when you bring one in). " else "") +
                             "the radio list comes from radio-browser.info, the indie chart and what a station is playing from the stations' own playlists; headphone tunings from autoeq (github), when you look for yours. no accounts of ours, no tracking, no ads.",
                         style = pixel(12.sp, Ink.mid),
                     )

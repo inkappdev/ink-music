@@ -103,7 +103,7 @@ object Spotify {
     }
 
     /** Signed in: Spotify's session cookie is there (a visitor's player asks with an anonymous pass, no use here). */
-    fun signedIn() = CookieManager.getInstance().getCookie("https://open.spotify.com")?.contains("sp_dc=") == true
+    fun signedIn() = runCatching { CookieManager.getInstance().getCookie("https://open.spotify.com")?.contains("sp_dc=") == true }.getOrDefault(false)
 
     /** One of the web player's asks of Spotify: the first signed-in one carries both passes, taken. True if taken. */
     internal fun caught(request: WebResourceRequest): Boolean {
