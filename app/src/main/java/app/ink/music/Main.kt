@@ -2182,10 +2182,12 @@ fun CoverOf(song: Song?, name: String, modifier: Modifier) {
     val cover = rememberCover(song)
     // 1-bit mode (the clickwheel three turns backwards): every cover in the dither, its own colour
     if (OneBit.on.collectAsState().value && cover != null && song != null && !song.station) return Dithered(song, modifier, px = 600)
+    // a cover on its way: black a moment, the name cover only for a record with none (it flashed at each new song)
+    val late by androidx.compose.runtime.produceState(false, song?.albumId) { kotlinx.coroutines.delay(1_500); value = true }
     BoxWithConstraints(modifier) {
         if (cover != null) Image(cover.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else if (song?.station == true) StationCover(song, Modifier.fillMaxSize())
-        else NameCover(name, maxWidth)
+        else if (late || song == null) NameCover(name, maxWidth)
     }
 }
 
