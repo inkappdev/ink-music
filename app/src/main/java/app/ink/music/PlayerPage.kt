@@ -961,12 +961,12 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
 /**
  * What's heard, between the song's times on the cover's top edge ("flac 24/96", lit when lossless; at 75%
  * when lossy); a tap tells all of it. After a lossless song's moment it fades in slowly (Bronson's ask,
- * 2026-10-26: once the moment has faded, as slowly). Not on a speaker:
- * the line under the title says what reaches it there.
+ * 2026-10-26: once the moment has faded, as slowly). On a speaker, what's sent there.
  */
 @Composable
 private fun HeardWord(n: Now, typing: Boolean, onOpen: () -> Unit) {
-    val h = n.heard?.takeIf { n.device.isEmpty() }
+    // on a speaker, what's sent ("flac 24/96"): up here too, a tap to its path (Bronson: easier than the line under the title)
+    val h = if (n.device.isNotEmpty()) sent(n.quality, n.song?.id.orEmpty()) else n.heard
     var last by remember { mutableStateOf(h) }
     if (h != null) last = h
     androidx.compose.animation.AnimatedVisibility(h != null && !typing,
