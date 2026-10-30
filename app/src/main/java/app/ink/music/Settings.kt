@@ -103,6 +103,27 @@ fun SettingsPage(pages: Pages, part: String? = null) {
             } else Spacer(Modifier.height(30.dp))
 
             if (part == "music") {
+                // the phone's own music: every folder, or only the ones chosen (Android's folder chooser picks them)
+                Column(Modifier.cascade(1)) {
+                    val folders by Folders.chosen.collectAsState()
+                    val pick = androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+                    ) { uri -> uri?.let(Folders::pathOf)?.let { Folders.add(ctx, it) } }
+                    BasicText("THE PHONE'S MUSIC", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText(
+                        if (folders.isEmpty()) "every folder on the phone. voice notes, recordings and clips under 30 seconds are left out"
+                        else "only these folders. a tap takes one off",
+                        style = pixel(12.sp, Ink.mid),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    if (folders.isEmpty()) BasicText("every folder", style = pixel(14.sp))
+                    folders.forEach { f -> Word(f.trimEnd('/').lowercase(), pixel(14.sp), Modifier.padding(bottom = 6.dp), touch = 6.dp) { Folders.remove(ctx, f) } }
+                    Spacer(Modifier.height(8.dp))
+                    Word("add a folder >", pixel(14.sp, Ink.mid), touch = 8.dp) { runCatching { pick.launch(null) } }
+                    Spacer(Modifier.height(40.dp))
+                }
+
                 Column(Modifier.cascade(1)) {
                     BasicText("YOUR SERVER", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
