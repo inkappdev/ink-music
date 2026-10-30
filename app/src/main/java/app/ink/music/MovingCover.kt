@@ -40,23 +40,32 @@ import java.io.File
 import kotlin.math.roundToInt
 
 /**
- * Moving covers (settings, your music: the full build's): a record's own looping sleeve, Apple Music's motion artwork
- * ([MotionCover]), in the player in the still cover's place, silent, round and round. On wifi only (the default),
- * always, or off; as it is, or in the player's look (Android 13 and up: a shader over each frame; before, as it is).
+ * Moving covers and canvases (settings, the look), and the effect each layer takes, each its own (Bronson, 2026-10-30:
+ * "nothing tied to each other"): the cover (as it is, dither, pixels, fluted glass: still or moving, Apple Music's
+ * motion artwork, [MotionCover], where a record has one), and a song's Spotify canvas behind the player (off, as it is,
+ * or blur, fluted glass, pixels, dither). The still background behind it is Looks' own. Moving (the full build's): on
+ * wifi only (the default), always, or off. The effects over a moving picture are Android 13's shaders (before, as it is).
  */
 object Moving {
     val available = BuildConfig.FLAVOR == "full"
     const val WIFI = "on wifi"; const val ALWAYS = "always"; const val OFF = "off"
 
+    /** The effects a cover takes (blur would hide it; plain is as it is). */
+    val coverLooks = listOf(Look.DITHER, Look.PIXELS, Look.FLUTED)
+    /** The effects a canvas takes. */
+    val canvasLooks = listOf(Look.BLUR, Look.FLUTED, Look.PIXELS, Look.DITHER)
+
     private val _when = MutableStateFlow(WIFI)
     val whenOn: StateFlow<String> = _when
-    const val CANVAS_OFF = "off"; const val CANVAS_LOOK = "in the look"; const val CANVAS_PLAIN = "as it is"
-    private val _canvas = MutableStateFlow(CANVAS_LOOK)
-    /** A song's Spotify canvas behind the player (signed in to Spotify): off, in the look, or as it is (no effect). */
-    val canvas: StateFlow<String> = _canvas
-    private val _inLook = MutableStateFlow(false)
-    /** The cover (still or moving) in the player's look (dither, pixels, fluted glass), or as it is. */
-    val inLook: StateFlow<Boolean> = _inLook
+    private val _cover = MutableStateFlow<Look?>(null)
+    /** The cover's effect, or null: as it is. */
+    val cover: StateFlow<Look?> = _cover
+    private val _canvasOn = MutableStateFlow(true)
+    /** A song's Spotify canvas behind the player (signed in to Spotify), or none. */
+    val canvasOn: StateFlow<Boolean> = _canvasOn
+    private val _canvas = MutableStateFlow<Look?>(null)
+    /** The canvas's effect, or null: as it is. */
+    val canvas: StateFlow<Look?> = _canvas
 
     private fun file(c: Context) = File(c.filesDir, "moving-covers")
 
@@ -64,15 +73,24 @@ object Moving {
         MotionCover.dir = c.cacheDir
         val said = runCatching { file(c).readText().lines() }.getOrDefault(emptyList())
         _when.value = said.getOrNull(0)?.takeIf { it == WIFI || it == ALWAYS || it == OFF } ?: WIFI
-        // "dithered" was the first word for it (2.0.3's first build)
-        _inLook.value = said.getOrNull(1) == "in the look" || said.getOrNull(1) == "dithered"
-        _canvas.value = when (said.getOrNull(2)) { "no canvas" -> CANVAS_OFF; "canvas as it is" -> CANVAS_PLAIN; else -> CANVAS_LOOK }
+        // the first builds' words: "in the look" (or "dithered") meant the background's look; it's taken as it was then
+        val look = Looks.on.value
+        _cover.value = when (val w = said.getOrNull(1)) {
+            "in the look", "dithered" -> look.takeIf { it in coverLooks }
+            else -> coverLooks.firstOrNull { it.name == w }
+        }
+        val canvas = said.getOrNull(2).orEmpty()
+        _canvasOn.value = canvas != "no canvas"
+        _canvas.value = when (canvas) {
+            "canvas" -> look.takeIf { it in canvasLooks }
+            else -> canvasLooks.firstOrNull { "canvas ${it.name}" == canvas }
+        }
     }
 
-    fun set(c: Context, whenOn: String = _when.value, inLook: Boolean = _inLook.value, canvas: String = _canvas.value) {
-        _when.value = whenOn; _inLook.value = inLook; _canvas.value = canvas
-        val said = when (canvas) { CANVAS_OFF -> "no canvas"; CANVAS_PLAIN -> "canvas as it is"; else -> "canvas" }
-        runCatching { file(c).writeText(listOf(whenOn, if (inLook) "in the look" else "as it is", said).joinToString("\n")) }
+    fun set(c: Context, whenOn: String = _when.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value, canvas: Look? = _canvas.value) {
+        _when.value = whenOn; _cover.value = cover; _canvasOn.value = canvasOn; _canvas.value = canvas
+        val said = if (!canvasOn) "no canvas" else canvas?.let { "canvas ${it.name}" } ?: "canvas as it is"
+        runCatching { file(c).writeText(listOf(whenOn, cover?.name ?: "as it is", said).joinToString("\n")) }
     }
 
     /** Whether to show them on the network the phone is on now. */
@@ -81,46 +99,43 @@ object Moving {
 
 /**
  * The record's moving cover over its still one, once its first frame is drawn (till then, and where there's none, the
- * still one shows): in the player's look if chosen (dither, pixels, fluted glass; not blur, which would hide the
- * sleeve), else as it is.
+ * still one shows), in the cover's own effect (Moving.cover: dither, pixels, fluted glass), else as it is.
  */
 @Composable
 fun MovingCover(artist: String, album: String, title: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
-    val inLook by Moving.inLook.collectAsState()
-    val look by Looks.on.collectAsState()
+    val shape by Moving.cover.collectAsState()
     val url by produceState<String?>(null, artist, album, title, whenOn) {
         // a song without its record's name (YouTube's search finds them so): the record found from the song
         value = if (Moving.wanted(ctx)) withContext(Dispatchers.IO) { if (album.isNotBlank()) MotionCover.of(artist, album) else MotionCover.ofSong(artist, title) } else null
         android.util.Log.i("ink-moving", "cover for $artist / $album: ${if (value != null) "found" else "none"}")
     }
     val u = url ?: return
-    val shape = if (inLook) look.takeIf { it == Look.DITHER || it == Look.PIXELS || it == Look.FLUTED } else null
     Loop(u, playing, shape, accent, 1f, crop = false, modifier)
 }
 
 /**
  * Behind the player, a song's Spotify canvas (its tall looping clip; signed in to Spotify, the full build's) across the
- * whole page: in the look, as the still cover is drawn there (dither, pixels, fluted glass, blur, at the look's own
- * strength; plain has no backdrop, so none), or as it is, no effect, whatever the look (Bronson, 2026-10-30).
+ * whole page, in its own effect (Moving.canvas: as it is, or blur, fluted glass, pixels, dither), over the still
+ * background's place.
  */
 @Composable
 fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier, onShown: () -> Unit = {}) {
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
-    val behind by Moving.canvas.collectAsState()
-    val look by Looks.on.collectAsState()
-    if (behind == Moving.CANVAS_OFF || (behind == Moving.CANVAS_LOOK && look == Look.PLAIN)) return
+    val on by Moving.canvasOn.collectAsState()
+    val shape by Moving.canvas.collectAsState()
+    if (!on) return
     val url by produceState<String?>(null, title, artist, whenOn) {
         value = if (Moving.wanted(ctx)) Spotify.canvas(ctx, title, artist) else null
         android.util.Log.i("ink-moving", "canvas for $artist / $title: ${if (value != null) "found" else "none"}")
     }
     val u = url ?: return
     // as it is: the clip itself, held to half over the black so the white words over it still read (at full, a light
-    // canvas took the title; Spotify's own app darkens it too, by a gradient: here evenly, as ink's look has none)
-    if (behind == Moving.CANVAS_PLAIN) Loop(u, playing, null, accent, .5f, crop = true, modifier, onShown)
-    else Loop(u, playing, look, accent, look.alpha, crop = true, modifier, onShown)
+    // canvas took the title; Spotify's own app darkens it too, by a gradient: here evenly, as ink's look has none);
+    // an effect, at that look's own strength, as the still background's
+    Loop(u, playing, shape, accent, shape?.alpha ?: .5f, crop = true, modifier, onShown)
 }
 
 /**

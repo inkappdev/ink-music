@@ -33,9 +33,10 @@ import dev.chrisbanes.haze.hazeSource
 fun LookPage(pages: Pages) {
     val ctx = LocalContext.current
     val look by Looks.on.collectAsState()
-    val inLook by Moving.inLook.collectAsState()
+    val cover by Moving.cover.collectAsState()
     val whenOn by Moving.whenOn.collectAsState()
-    val behind by Moving.canvas.collectAsState()
+    val canvasOn by Moving.canvasOn.collectAsState()
+    val canvas by Moving.canvas.collectAsState()
     val spotifyAt by Spotify.at.collectAsState()
     val signed = remember(spotifyAt) { Spotify.signedIn() }
     val tall = LocalConfiguration.current.screenHeightDp.dp
@@ -53,59 +54,54 @@ fun LookPage(pages: Pages) {
                 style = pixel(12.sp, Ink.mid), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp))
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 28.dp, bottom = 40.dp)) {
-                // the cover: as it is, or drawn in the look as the page behind it is
+                // three layers, each its own effect, none following another (Bronson, 2026-10-30): the cover, the
+                // still background, spotify's canvas over it; each a row of words, the chosen one lit
+                @Composable
+                fun Choices(words: List<Pair<String, Boolean>>, pick: (Int) -> Unit) {
+                    FlowRow {
+                        words.forEachIndexed { i, (w, lit) ->
+                            Word(w, pixel(14.sp, if (lit) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp, bottom = 4.dp), touch = 8.dp) { pick(i) }
+                        }
+                    }
+                }
                 Column(Modifier.cascade(1)) {
                     BasicText("THE COVER", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText(if (inLook) "drawn in the look, as behind it: dither, pixels or fluted glass (blur and plain leave it as it is)"
-                        else "the record's own cover, the look only behind it", style = pixel(12.sp, Ink.mid))
+                    BasicText("the record's cover in the player, moving where it has a moving one", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
-                    Row {
-                        Word("as it is", pixel(14.sp, if (!inLook) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, inLook = false) }
-                        Word("in the look", pixel(14.sp, if (inLook) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(ctx, inLook = true) }
-                    }
+                    val options = listOf<Look?>(null) + Moving.coverLooks
+                    Choices(options.map { (it?.word ?: "as it is") to (it == cover) }) { Moving.set(ctx, cover = options[it]) }
                     Spacer(Modifier.height(40.dp))
                 }
-                // behind it: the looks, then spotify's canvas over the look (signed in to spotify)
                 Column(Modifier.cascade(2)) {
                     BasicText("BEHIND IT", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText(if (Spotify.available && signed && behind == Moving.CANVAS_PLAIN)
-                        "the cover across the page, in a look, where a song has no canvas (a canvas shows as it is, below)"
-                        else "the cover across the page, in a look. the square in the player's top row turns through them too", style = pixel(12.sp, Ink.mid))
+                    BasicText("the cover across the page, still" + if (Spotify.available && signed && canvasOn) ", where a song has no canvas" else "", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
-                    FlowRow {
-                        Look.entries.forEach { l ->
-                            Word(l.word, pixel(14.sp, if (look == l) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp, bottom = 4.dp), touch = 8.dp) { Looks.set(ctx, l) }
-                        }
-                    }
-                    if (Spotify.available) {
-                        Spacer(Modifier.height(24.dp))
-                        BasicText("SPOTIFY'S CANVAS", style = headline(18.sp))
-                        Spacer(Modifier.height(6.dp))
-                        if (!signed) {
-                            BasicText("a song's own looping clip, over the look, where it has one. it asks as you: sign in to spotify " +
-                                "(the same sign-in that brings your playlists in)", style = pixel(12.sp, Ink.mid))
-                            Spacer(Modifier.height(8.dp))
-                            Word("SIGN IN", headline(40.sp), touch = 8.dp) { Spotify.signIn(ctx) }
-                        } else {
-                            BasicText(when (behind) {
-                                Moving.CANVAS_LOOK -> "a song's own looping clip, drawn in the look (plain: none)"
-                                Moving.CANVAS_PLAIN -> "a song's own looping clip itself, no effect, whatever the look"
-                                else -> "none: the look's still cover behind the player"
-                            }, style = pixel(12.sp, Ink.mid))
-                            Spacer(Modifier.height(10.dp))
-                            Row {
-                                listOf(Moving.CANVAS_LOOK, Moving.CANVAS_PLAIN, Moving.CANVAS_OFF).forEach { w ->
-                                    Word(w, pixel(14.sp, if (behind == w) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, canvas = w) }
-                                }
-                            }
+                    Choices(Look.entries.map { it.word to (it == look) }) { Looks.set(ctx, Look.entries[it]) }
+                    Spacer(Modifier.height(40.dp))
+                }
+                // spotify's canvas over the background (signed in to spotify)
+                if (Spotify.available) Column(Modifier.cascade(3)) {
+                    BasicText("SPOTIFY'S CANVAS", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    if (!signed) {
+                        BasicText("a song's own looping clip behind the player, where it has one. it asks as you: sign in to spotify " +
+                            "(the same sign-in that brings your playlists in)", style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(8.dp))
+                        Word("SIGN IN", headline(40.sp), touch = 8.dp) { Spotify.signIn(ctx) }
+                    } else {
+                        BasicText("a song's own looping clip behind the player, where it has one", style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(10.dp))
+                        val options = listOf<Look?>(null) + Moving.canvasLooks
+                        Choices(listOf("off" to !canvasOn) + options.map { (it?.word ?: "as it is") to (canvasOn && it == canvas) }) { i ->
+                            if (i == 0) Moving.set(ctx, canvasOn = false) else Moving.set(ctx, canvasOn = true, canvas = options[i - 1])
                         }
                     }
                     Spacer(Modifier.height(40.dp))
                 }
                 // whether covers and canvases move: they're video, so on wifi unless you say
-                if (Moving.available) Column(Modifier.cascade(3)) {
+                if (Moving.available) Column(Modifier.cascade(4)) {
                     BasicText("MOVING", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
                     BasicText("a record's moving cover (apple music's) and a song's canvas, where they have them. silent; " +

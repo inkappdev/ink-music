@@ -465,7 +465,7 @@ private fun SettingsIndex(pages: Pages) {
     Entry("THE LOOK", listOfNotNull(
         look.word,
         if (Moving.available) (if (moving == Moving.OFF) "covers still" else "moving covers ${moving}") else null,
-        if (Spotify.available && Spotify.signedIn() && Moving.canvas.collectAsState().value != Moving.CANVAS_OFF) "spotify canvas" else null,
+        if (Spotify.available && Spotify.signedIn() && Moving.canvasOn.collectAsState().value) "spotify canvas" else null,
     ).joinToString(" · "), "look", 2)
     Entry("SOUND", listOfNotNull(
         Quality.words.getOrNull(quality.first)?.let { "$it on wifi" },
