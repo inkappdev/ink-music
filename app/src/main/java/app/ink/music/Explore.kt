@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -488,12 +489,21 @@ private fun MoodsAndGenres(all: List<TubeMood>, pages: Pages) {
     Spacer(Modifier.height(12.dp))
 }
 
-/** A genre as a tile: its name big in the pixel face on black in a hairline frame (as ink radio's kinds are), lit if it's yours. */
+/**
+ * A genre as a tile: its name big in the pixel face on black in a hairline frame (as ink radio's kinds are), lit if it's
+ * yours. As big as its longest word fits the tile's 96 dp across, at the phone's own text size (#1: on a phone set to
+ * larger text, "alternative" broke as "alternati / ve"): a Silkscreen letter is about 0.68 of its size wide, 0.72 to be safe.
+ */
 @Composable
 private fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
+    val scale = LocalDensity.current.fontScale
+    val size = remember(name, scale) {
+        val longest = name.split(' ').maxOf { it.length }.coerceAtLeast(1)
+        (96f / (longest * 0.72f) / scale).coerceIn(12f, 19f).sp
+    }
     Box(Modifier.width(120.dp).aspectRatio(1f).border(1.dp, if (yours) Ink.mid else Ink.line)
         .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(12.dp)) {
-        BasicText(name.lowercase(), style = pixel(if (name.length > 12) 15.sp else 19.sp, if (yours) Ink.ink else Ink.mid), maxLines = 4, overflow = TextOverflow.Ellipsis)
+        BasicText(name.lowercase(), style = pixel(size, if (yours) Ink.ink else Ink.mid), maxLines = 4, overflow = TextOverflow.Ellipsis)
     }
 }
 
