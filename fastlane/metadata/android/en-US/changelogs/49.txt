@@ -1,5 +1,5 @@
 - Tap the format over the cover: the sound's whole path, and whether it's exact
-- Receivers too: what they do to the sound (Denon, Yamaha, Onkyo, Sonos and more)
+- Receivers and Cast speakers too: what they do to the sound
 - Turn even volume and the equalizer off right there and watch it change
 - Exact to a USB DAC on Android 14 and up
 - The big moving names can stand still (settings, the look)
