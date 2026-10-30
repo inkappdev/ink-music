@@ -546,7 +546,9 @@ fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
         BasicText(a.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         BasicText(
-            listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
+            // none of theirs here: one YouTube Music has (find)
+            if (a.records == 0 && a.songs == 0) "on youtube music"
+            else listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
             style = pixel(12.sp, Ink.mid),
         )
     }

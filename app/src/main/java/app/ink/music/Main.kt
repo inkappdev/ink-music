@@ -683,7 +683,9 @@ private fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(src, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
         BasicText(a.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         BasicText(
-            listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
+            // none of theirs here: one YouTube Music has (find)
+            if (a.records == 0 && a.songs == 0) "on youtube music"
+            else listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
             style = pixel(12.sp, Ink.mid),
         )
     }
@@ -1468,6 +1470,13 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     fun rank(s: String): Int? { val l = s.lowercase(); return when { l.startsWith(q) -> 0; l.contains(" $q") -> 1; l.contains(q) -> 2; else -> null } }
     val foundArtists = remember(q, artists) { if (q.isEmpty()) emptyList() else artists.mapNotNull { a -> rank(a.name)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(8) }
     val foundRecords = remember(q, albums) { if (q.isEmpty()) emptyList() else albums.mapNotNull { a -> listOfNotNull(rank(a.title), rank(a.artist)?.plus(1)).minOrNull()?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(12) }
+    // artists YouTube Music has by that name and you don't (Bronson, 2026-10-29: Mac DeMarco found, no page to open):
+    // read from whose its songs and records are
+    val tubeArtists = remember(q, tube, foundArtists) {
+        if (q.isEmpty()) emptyList() else (tube.songs.flatMap { it.artist.split(", ") } + tube.albums.map { it.artist })
+            .map { it.trim() }.filter { it.isNotEmpty() && rank(it) != null && foundArtists.none { a -> a.name.equals(it, true) } }
+            .distinctBy { it.lowercase() }.sortedBy { rank(it) }.take(3).map { ArtistEntry(it, 0, 0) }
+    }
     val foundSongs = remember(q, songs) { if (q.isEmpty()) emptyList() else songs.mapNotNull { s -> listOfNotNull(rank(s.title), rank(s.artist)?.plus(1), rank(s.album)?.plus(2)).minOrNull()?.let { it to s } }.sortedBy { it.first }.map { it.second }.take(50) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -1516,6 +1525,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         }
         // what YouTube Music has: its records, then its songs
         if (tube.albums.isNotEmpty() || tube.songs.isNotEmpty()) item { Label("on youtube music") }
+        items(tubeArtists, key = { "ta-" + it.name }) { a -> Box(Modifier.padding(horizontal = 20.dp)) { ArtistRow(a) { pages.open(Page.Artist(a.name)) } } }
         if (tube.albums.isNotEmpty()) item {
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(tube.albums, key = { "ta" + it.url }) { a -> TubeTile(a, Modifier.width(130.dp)) { pages.open(Page.Tube(a)) } }
