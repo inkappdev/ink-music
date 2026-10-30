@@ -71,7 +71,7 @@ object Receiver {
             lines = listOfNotNull(
                 (listOfNotNull(signal.takeIf { it.isNotEmpty() }, rate.takeIf { it > 0 }?.let(::khz)).joinToString(" · ")).takeIf { it.isNotEmpty() }?.let { "it's getting" to it },
                 "sound mode" to mode,
-                "audyssey" to "multeq ${multEq.ifEmpty { "off" }}\ndynamic eq ${onOff(dynEq)}\ndynamic volume ${onOff(dynVol)}",
+                "audyssey" to if (direct) "bypassed by $mode" else "multeq ${multEq.ifEmpty { "off" }}\ndynamic eq ${onOff(dynEq)}\ndynamic volume ${onOff(dynVol)}",
                 db?.let { "volume" to "$it db" },
             ),
             touching = listOfNotNull(
@@ -152,7 +152,7 @@ object Receiver {
             lines = listOfNotNull(
                 coming.takeIf { it.isNotEmpty() }?.let { "it's getting" to it },
                 lm.takeIf { it.isNotEmpty() }?.let { "listening mode" to it },
-                if (ady != null || adq != null || adv != null) "audyssey" to "room eq ${onOff(ady)}\ndynamic eq ${onOff(adq)}\ndynamic volume ${onOff(adv)}" else null,
+                if (ady != null || adq != null || adv != null) "audyssey" to (if (direct) "bypassed by $lm" else "room eq ${onOff(ady)}\ndynamic eq ${onOff(adq)}\ndynamic volume ${onOff(adv)}") else null,
                 vol?.let { "volume" to "$it" },
             ),
             touching = if (direct) emptyList() else listOfNotNull(
