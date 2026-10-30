@@ -858,15 +858,16 @@ object Moments {
  * player shows; each word chosen there shows here at once. Centred under the page's title.
  */
 @Composable
-fun PlayerPreview(modifier: Modifier = Modifier) {
+fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
     val now by Playback.now.collectAsState()
-    // always the same song, one with every moving thing (a moving cover, a spotify canvas; Bronson, 2026-10-30), so
-    // each choice shows; till it's found, and in the play build (no YouTube), what plays now
-    val shown by produceState(Showcase.song) {
-        if (value == null) value = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.find(Showcase.TITLE, Showcase.ARTIST) }.getOrNull() }?.also { Showcase.song = it }
+    // one of the example songs (Showcase); till it's found, and in the play build (no YouTube), what plays now
+    val pick = Showcase.picks[which.coerceIn(0, Showcase.picks.size - 1)]
+    val shown by produceState(Showcase.found[pick.title], pick) {
+        if (value == null && YouTubeMusic.available)
+            value = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.find(pick.title, pick.artist) }.getOrNull() }?.also { Showcase.found[pick.title] = it }
     }
     // its moving covers and canvas keep moving here though the music's paused: a preview shows what they do
-    val n = shown?.let { s -> Now(s, s.title, s.artist, s.album.ifBlank { Showcase.ALBUM }, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1) }
+    val n = shown?.let { s -> Now(s, s.title, s.artist, s.album.ifBlank { pick.album }, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1) }
         ?: now?.copy(moving = true)
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         val full = LocalContext.current.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
@@ -896,11 +897,17 @@ fun PlayerPreview(modifier: Modifier = Modifier) {
     }
 }
 
-/** The preview's song: Fontaines D.C.'s Starburster (Bronson's pick, 2026-10-30): Romance's moving heart, a canvas behind it. */
-private object Showcase {
-    const val TITLE = "Starburster"
-    const val ARTIST = "Fontaines D.C."
-    // YouTube's search can find the song without its record, and the moving cover is the record's
-    const val ALBUM = "Romance"
-    @Volatile var song: Song? = null
+/**
+ * The look's example songs: Fontaines D.C.'s Starburster (Bronson's pick, 2026-10-30: Romance's moving heart, a canvas
+ * behind it), and Tame Impala's The Less I Know the Better (Currents' moving cover, and no canvas: the still look
+ * behind it shows, which a canvas covers; "behind it" changed nothing in sight with Starburster alone). The record named
+ * too: YouTube's search can find a song without it, and the moving cover is the record's.
+ */
+object Showcase {
+    class Pick(val title: String, val artist: String, val album: String, val said: String)
+    val picks = listOf(
+        Pick("Starburster", "Fontaines D.C.", "Romance", "fontaines d.c., starburster: a moving cover, a canvas behind it"),
+        Pick("The Less I Know the Better", "Tame Impala", "Currents", "tame impala, the less i know the better: no canvas, so the look behind it shows"),
+    )
+    val found = java.util.concurrent.ConcurrentHashMap<String, Song>()
 }
