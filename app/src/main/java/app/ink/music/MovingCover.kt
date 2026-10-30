@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * Moving covers (settings, your music: the full build's): a record's own looping sleeve, Apple Music's motion artwork
@@ -189,7 +190,11 @@ private object Shaders {
                 setFloatUniform("cell", 3 * density); setFloatUniform("gain", gain)
                 setFloatUniform("ink", accent.red, accent.green, accent.blue, 1f)
             }
-            Look.PIXELS -> RuntimeShader(PIXELS).apply { setFloatUniform("cell", 18 * density) }
+            // a whole number of squares across the cover, about 18 dp each (an 18 dp square left a strip at the
+            // right and foot where none fit, the still cover showing through)
+            Look.PIXELS -> RuntimeShader(PIXELS).apply {
+                setFloatUniform("cell", if (wide > 0) wide / (wide / (18 * density)).roundToInt().coerceAtLeast(4) else 18 * density)
+            }
             Look.FLUTED -> RuntimeShader(FLUTED).apply { setFloatUniform("rib", 20 * density); setFloatUniform("wide", wide) }
             else -> return@runCatching null
         }
