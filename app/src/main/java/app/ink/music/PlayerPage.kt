@@ -866,7 +866,13 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         steps += "the receiver" to model.lowercase() + (r?.takes?.takeIf { it.isNotEmpty() }?.let { "\ntakes ${it.joinToString(", ")}" } ?: "")
         // asked, not answered yet: a step the signal waits at, its answer unfolding in its place
         if (r == null && speaker?.kind == "dlna") steps += "asking" to "asking the ${(speaker?.maker ?: "receiver").lowercase().substringBefore(',')}…"
-        if (r?.live == true) {
+        // a cast speaker: its volume is digital, so said with the rest (below full, it changes the bits)
+        val castVolume by Casting.volume.collectAsState()
+        if (speaker?.kind == "cast") {
+            r?.lines?.forEach { steps += it }
+            castVolume?.let { steps += "volume" to "${Math.round(it * 100)}%, the speaker's own" + if (it < .995f) " (digital)" else "" }
+            steps += "the speaker" to "plays it itself: its own decoder, its own dac"
+        } else if (r?.live == true) {
             r.lines.forEach { steps += it }
         } else steps += "the speaker" to "plays it itself: its own decoder, its own dac"
     } else if (h != null) {
@@ -902,6 +908,17 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
     }
     // exact? plainly: yes only when every step left it be, else the first thing that touched it
     val verdict = when {
+        n.device.isNotEmpty() && speaker?.kind == "cast" -> {
+            val file = sent(n.quality, "")
+            val asIs = file?.lossless == true && n.song?.let { song -> song.format.isBlank() || song.format.equals(file.codec, true) } != false
+            val v = Casting.volume.value
+            when {
+                file?.lossless != true -> "as good as its stream: lossy to begin with"
+                !asIs -> "no: made smaller on the way"
+                v != null && v < .995f -> "no: the speaker's own volume (${Math.round(v * 100)}%) turns it down digitally\nat 100% (and the receiver after it turned up), it'd be the file as it is"
+                else -> "close: the file as it is, at the speaker's full volume; what it does inside, google doesn't say"
+            }
+        }
         n.device.isNotEmpty() && said?.live == true -> said!!.touching.let { t ->
             val who = (speaker?.maker ?: "receiver").lowercase().substringBefore(',')
             // yes: the file as it is (nothing made of it on the way), at its own rate, and the receiver doing nothing to it

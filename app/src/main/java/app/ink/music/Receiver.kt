@@ -32,6 +32,7 @@ object Receiver {
     }
 
     suspend fun read(s: Casting.Speaker): Said? = withContext(Dispatchers.IO) {
+        if (s.kind == "cast") return@withContext runCatching { cast(s) }.onFailure { android.util.Log.d("ink-receiver", "cast: $it") }.getOrNull()
         if (s.kind != "dlna") return@withContext null
         val host = s.address.hostString
         val takes = runCatching { protocols(s.control.replace("AVTransport", "ConnectionManager")) }.getOrDefault(emptyList())
@@ -209,6 +210,36 @@ object Receiver {
                 "night sound".takeIf { night == true }, "speech enhancement".takeIf { speech == true },
             ),
             mode = "",
+        )
+    }
+
+    // ---- Google Cast ----
+
+    /** Google Cast's own list of what every Cast device plays (its "supported media" page). */
+    private val CAST_TAKES = listOf("flac (to 24/96)", "wav", "aac", "mp3", "opus", "ogg")
+
+    /**
+     * A Cast speaker's own page (port 8008's eureka_info, open on the network): its software, and how it's connected,
+     * the wifi's strength where it says (a Chromecast Audio does; a Nest doesn't). Its sound settings (full dynamic
+     * range, a Nest's bass and treble) it doesn't tell: kept to Google's app. Tried on the house's Chromecast Audio
+     * (1.56, -59 dBm) and Nest Audio (3.78).
+     */
+    private fun cast(s: Casting.Speaker): Said {
+        val o = JSONObject(get("http://${s.address.hostString}:8008/setup/eureka_info?params=version,name,build_info,net,wifi"))
+        val signal = o.optInt("signal_level", 0).takeIf { it < 0 }
+        val link = when {
+            o.optBoolean("ethernet_connected") -> "ethernet"
+            signal != null -> "wifi · $signal dbm, " + when { signal >= -60 -> "strong"; signal >= -70 -> "good"; signal >= -78 -> "fair"; else -> "weak" }
+            else -> "wifi"
+        }
+        val build = o.optString("cast_build_revision").split('.').take(2).joinToString(".")
+        return Said(
+            takes = CAST_TAKES,
+            lines = listOfNotNull(
+                "a group".takeIf { s.group }?.let { it to "every speaker in it plays together, in step" },
+                "connected" to link,
+                build.takeIf { it.isNotBlank() }?.let { "software" to "google cast $it" },
+            ),
         )
     }
 
