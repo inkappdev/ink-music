@@ -127,6 +127,14 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     val ctx = LocalContext.current
     val now by Playback.now.collectAsState()
     val n = now
+    // the songs either side read ahead, their covers at the sleeve's size, so a push lands on a cover, not a wait
+    LaunchedEffect(n?.song?.id, n?.index) {
+        val at = n?.index ?: return@LaunchedEffect
+        val px = ctx.resources.displayMetrics.widthPixels.coerceIn(640, 1440)
+        val q = Playback.queue.value
+        listOfNotNull(q.getOrNull(at + 1)?.song, q.getOrNull(at - 1)?.song).filter { !it.station && Covers.kept(it.albumId) == null }
+            .forEach { runCatching { Covers.of(ctx, it, px) } }
+    }
     var dir by remember { mutableIntStateOf(1) }   // the push's way: next in from the right, back from the left
     var queueUp by remember { mutableStateOf(false) }
     // into a playlist, from here (Bronson, 2026-10-29: "an easier way"): your lists over the player, and back
@@ -412,11 +420,14 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
         val l = look
         value = if (c != null && l != null) withContext(Dispatchers.Default) { Looks.draw(c.image.asAndroidBitmap(), l, c.accent, px, density)?.asImageBitmap() } else null
     }
+    // a cover still on its way: black a moment, never the gray name cover flashing first (Bronson); that only for a
+    // record with none to be found
+    val late by produceState(false, t.song?.albumId) { delay(1_500); value = true }
     Box(modifier.size(side)) {
         if (c != null) Image(drawn ?: c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
             filterQuality = if (drawn != null && look?.crisp == true) FilterQuality.None else FilterQuality.Low)
         else if (t.song?.station == true) StationCover(t.song, Modifier.fillMaxSize(), moving = t.moving)
-        else NameCover(t.album.ifEmpty { t.title }, side)
+        else if (late || t.song == null) NameCover(t.album.ifEmpty { t.title }, side)
         // the record's own moving sleeve over it, where it has one (settings: moving covers)
         if (t.song?.station != true) MovingCover(t.artist, t.album, t.title, c?.accent ?: Ink.ink, t.moving, Modifier.fillMaxSize())
     }
