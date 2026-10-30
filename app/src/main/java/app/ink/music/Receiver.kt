@@ -19,6 +19,9 @@ import java.net.URL
  * - Onkyo, Integra, Pioneer (2016 on): eISCP (port 60128; LMD listening mode, IFA the audio in, ADY Audyssey, ADQ
  *   Dynamic EQ, ADV Dynamic Volume, MVL volume). From the protocol's lists; untried.
  * - Sonos: its RenderingControl (loudness, bass, treble, Trueplay, night mode, speech). From its libraries; untried.
+ * - Bluesound and NAD (BluOS), Cambridge Audio (StreamMagic), Sony (its audio service), WiiM, Arylic and Audio Pro
+ *   (LinkPlay): what each says is playing, and its sound settings where it says them. From their interfaces; untried.
+ * - Google Cast: its own page (eureka_info), Google's list of what Cast plays. Tried on a Chromecast Audio, a Nest Audio.
  */
 object Receiver {
     data class Said(
@@ -26,6 +29,7 @@ object Receiver {
         val lines: List<Pair<String, String>> = emptyList(), // its live state, as steps: "sound mode" to "stereo"
         val touching: List<String> = emptyList(),       // what it's doing to the sound ("audyssey multeq"); empty: nothing
         val mode: String = "",                          // its sound mode, said in the verdict ("stereo", "pure direct")
+        val tells: Boolean = true,                      // it says what it does to the sound (else only what it's getting)
     ) {
         /** It said how it's playing (a maker read live), not only what it takes. */
         val live get() = lines.isNotEmpty()
@@ -43,6 +47,10 @@ object Receiver {
                 "yamaha" in maker -> yamaha(host)
                 "onkyo" in maker || "integra" in maker || "pioneer" in maker -> onkyo(host)
                 "sonos" in maker -> sonos(s)
+                "bluesound" in maker || "nad" in maker.split(' ', ',') || "bluos" in maker -> bluos(host)
+                "cambridge" in maker -> streamMagic(host)
+                "sony" in maker -> sony(host)
+                "wiim" in maker || "linkplay" in maker || "arylic" in maker || "audio pro" in maker -> linkplay(host)
                 else -> null
             }
         }.onFailure { android.util.Log.d("ink-receiver", "${s.maker}: $it") }.getOrNull()
@@ -211,6 +219,81 @@ object Receiver {
             ),
             mode = "",
         )
+    }
+
+    // ---- Bluesound, NAD (BluOS) ----
+
+    /** BluOS's own interface (port 11000, Status): the stream's format and quality, the volume in dB. Untried. */
+    private fun bluos(host: String): Said {
+        val x = get("http://$host:11000/Status")
+        fun tag(t: String) = Regex("<$t[^>]*>([^<]*)</$t>").find(x)?.groupValues?.get(1)?.trim().orEmpty()
+        val format = tag("streamFormat").lowercase()
+        val quality = tag("quality").lowercase()
+        val db = Regex("<volume[^>]*\\bdb=\"([^\"]+)\"").find(x)?.groupValues?.get(1)
+        return Said(lines = listOfNotNull(
+            format.takeIf { it.isNotEmpty() }?.let { "it's getting" to it },
+            quality.takeIf { it.isNotEmpty() }?.let { "quality" to it },
+            db?.let { "volume" to "$it db" },
+        ), tells = false)
+    }
+
+    // ---- Cambridge Audio (StreamMagic) ----
+
+    /** StreamMagic's own interface (smoip): what plays (codec, rate, depth) and the zone's volume. Untried. */
+    private fun streamMagic(host: String): Said {
+        val play = runCatching { JSONObject(get("http://$host/smoip/zone/play_state")).optJSONObject("data") }.getOrNull()
+        val meta = play?.optJSONObject("metadata")
+        val zone = runCatching { JSONObject(get("http://$host/smoip/zone/state")).optJSONObject("data") }.getOrNull()
+        val coming = listOfNotNull(
+            meta?.optString("codec")?.takeIf { it.isNotBlank() }?.lowercase(),
+            meta?.optInt("bit_depth", 0)?.takeIf { it > 0 }?.let { "$it bit" },
+            meta?.optInt("sample_rate", 0)?.takeIf { it > 0 }?.let(::khz),
+        ).joinToString(" · ")
+        return Said(lines = listOfNotNull(
+            coming.takeIf { it.isNotEmpty() }?.let { "it's getting" to it },
+            zone?.optString("source")?.takeIf { it.isNotBlank() }?.let { "input" to it.lowercase() },
+            zone?.optInt("volume_percent", -1)?.takeIf { it >= 0 }?.let { "volume" to "$it%" },
+        ), tells = false)
+    }
+
+    // ---- Sony ----
+
+    /** Sony's own interface (port 10000's audio service): its sound field, Pure Direct, the volume. Untried. */
+    private fun sony(host: String): Said {
+        fun call(method: String, params: String) = runCatching {
+            val c = URL("http://$host:10000/sony/audio").openConnection() as HttpURLConnection
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 2_000; c.readTimeout = 3_000
+            c.setRequestProperty("Content-Type", "application/json")
+            c.outputStream.use { it.write("{\"method\":\"$method\",\"params\":[$params],\"id\":1,\"version\":\"1.1\"}".toByteArray()) }
+            JSONObject(c.inputStream.use { it.bufferedReader().readText() }).optJSONArray("result")?.optJSONArray(0)
+        }.getOrNull()
+        val settings = call("getSoundSettings", "{\"target\":\"\"}")
+        fun setting(t: String) = settings?.let { a -> (0 until a.length()).map { a.optJSONObject(it) }.firstOrNull { it?.optString("target") == t }?.optString("currentValue") }
+        val field = setting("soundField").orEmpty()
+        val pure = setting("pureDirect")?.let { it == "on" }
+        val vol = call("getVolumeInformation", "{\"output\":\"\"}")?.optJSONObject(0)?.optInt("volume", -1)?.takeIf { it >= 0 }
+        val readable = field.replace(Regex("([a-z])([A-Z0-9])"), "$1 $2").lowercase()
+        return Said(
+            lines = listOfNotNull(
+                readable.takeIf { it.isNotEmpty() }?.let { "sound field" to it },
+                pure?.let { "pure direct" to onOff(it) },
+                vol?.let { "volume" to "$it" },
+            ),
+            touching = if (pure == true) emptyList() else listOfNotNull("its $readable sound field".takeIf { readable.isNotEmpty() && "stereo" !in readable }),
+            mode = if (pure == true) "pure direct" else readable,
+        )
+    }
+
+    // ---- WiiM, Arylic, Audio Pro (LinkPlay) ----
+
+    /** LinkPlay's own interface (httpapi.asp, getMetaInfo): the rate, depth and bitrate playing. Untried. */
+    private fun linkplay(host: String): Said {
+        val m = runCatching { JSONObject(get("http://$host/httpapi.asp?command=getMetaInfo")).optJSONObject("metaData") }.getOrNull()
+        val rate = m?.optString("sampleRate")?.toIntOrNull() ?: 0
+        val bits = m?.optString("bitDepth")?.toIntOrNull() ?: 0
+        val kbps = m?.optString("bitRate")?.toIntOrNull() ?: 0
+        val coming = listOfNotNull(bits.takeIf { it > 0 }?.let { "$it bit" }, rate.takeIf { it > 0 }?.let(::khz), kbps.takeIf { it > 0 }?.let { "$it kbps" }).joinToString(" · ")
+        return Said(lines = listOfNotNull(coming.takeIf { it.isNotEmpty() }?.let { "it's getting" to it }), tells = false)
     }
 
     // ---- Google Cast ----

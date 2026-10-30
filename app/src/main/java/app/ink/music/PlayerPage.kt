@@ -919,6 +919,10 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
                 else -> "close: the file as it is, at the speaker's full volume; what it does inside, google doesn't say"
             }
         }
+        // a receiver that says what it's getting, not what it does to it
+        n.device.isNotEmpty() && said?.live == true && !said!!.tells ->
+            if (sent(n.quality, "")?.lossless == true) "close: the file reaches the ${(speaker?.maker ?: "receiver").lowercase().substringBefore(',')} as it is; what it does inside, it doesn't say"
+            else "as good as its stream: lossy to begin with"
         n.device.isNotEmpty() && said?.live == true -> said!!.touching.let { t ->
             val who = (speaker?.maker ?: "receiver").lowercase().substringBefore(',')
             // yes: the file as it is (nothing made of it on the way), at its own rate, and the receiver doing nothing to it
