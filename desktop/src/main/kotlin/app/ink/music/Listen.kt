@@ -215,10 +215,10 @@ private fun partOfDay(at: Long): String {
 
 /** A list as words: its name, how many songs. */
 @Composable
-fun ListRow(p: Server.Playlist, onClick: () -> Unit) {
+fun ListRow(p: Server.Playlist, said: String? = null, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 8.dp)) {
         BasicText(p.name.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        BasicText("${p.count} ${if (p.count == 1) "song" else "songs"}" + if (p.mine) "" else "   shared with you", style = pixel(12.sp, Ink.mid))
+        BasicText(said ?: ("${p.count} ${if (p.count == 1) "song" else "songs"}" + if (p.mine) "" else "   shared with you"), style = pixel(12.sp, Ink.mid))
     }
 }
 

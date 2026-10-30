@@ -172,7 +172,7 @@ object Picks {
 
     /** A picked record's page on YouTube Music, its name and artist matched; null when it hasn't it. */
     suspend fun record(p: Curation.Pick): TubeAlbum? = withContext(Dispatchers.IO) {
-        YouTube.search("${p.artist} ${p.title}")?.second?.firstOrNull { Pipe.same(it.title, it.artist, p.title, p.artist) }
+        YouTube.search("${p.artist} ${p.title}")?.albums?.firstOrNull { Pipe.same(it.title, it.artist, p.title, p.artist) }
     }
 
     /** The picked songs, found and played in turn (each found as the list is made: a moment). */

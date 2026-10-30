@@ -1450,65 +1450,114 @@ private fun NameOn(name: String, modifier: Modifier) {
 /** An artist's wide photo as a song-shaped picture, kept apart from their small face. */
 fun photoSong(name: String, photo: String) = faceSong(name, photo).copy(id = "yphoto:$name", albumId = "photo:$name")
 
+/** What was looked for lately, the latest first, eight at most (as the computer's): kept as find closes, and as go plays. */
+private object Searches {
+    val recent = MutableStateFlow<List<String>>(emptyList())
+    private var file: java.io.File? = null
+
+    fun load(c: android.content.Context) {
+        if (file != null) return
+        val f = java.io.File(c.filesDir, "searches.json").also { file = it }
+        recent.value = runCatching { org.json.JSONArray(f.readText()).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList())
+    }
+
+    fun keep(q: String) {
+        val t = q.trim()
+        if (t.length < 2) return
+        recent.value = (listOf(t) + recent.value.filterNot { it.equals(t, true) }).take(8)
+        runCatching { file?.writeText(org.json.JSONArray(recent.value).toString()) }
+    }
+
+    fun forget() { recent.value = emptyList(); file?.delete() }
+}
+
 /**
- * Find, as ink's run menu: "find >" and what's typed; records, artists and songs whose names
- * hold it, the ones that start with it first. Go plays the first song found.
+ * Find, as ink's run menu: "find >" and what's typed; your artists, records, playlists and songs, radio's stations, and
+ * all YouTube Music has (its artists, records, songs and playlists). Forgiving ([Search]): accents, "&", words in any
+ * order. Go plays the songs found (yours, else YouTube Music's).
  */
 @Composable
 private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
+    val ctx = LocalContext.current
     val albums by Library.albums.collectAsState()
     val songs by Library.songs.collectAsState()
+    val serverLists by Server.playlists.collectAsState()
+    val tubeLists by YouTubeAccount.playlists.collectAsState()
+    LaunchedEffect(Unit) { Searches.load(ctx) }
+    val recent by Searches.recent.collectAsState()
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Searches.keep(pages.query) } }
+    val typed = query.trim()
+    val q = Search.fold(typed)
     // YouTube Music too (the full build), once the typing rests
-    val tube by androidx.compose.runtime.produceState(TubeFound(), query) {
-        val typed = query.trim()
-        if (!YouTubeMusic.available || typed.length < 2) { value = TubeFound(); return@produceState }
+    val tube by androidx.compose.runtime.produceState(TubeFound(), q) {
+        if (!YouTubeMusic.available || q.length < 2) { value = TubeFound(); return@produceState }
         kotlinx.coroutines.delay(300)
-        value = YouTubeMusic.search(typed)
+        value = YouTubeMusic.search(typed, all = true)
+    }
+    // radio's stations by that name (ink radio's own first)
+    val stations by androidx.compose.runtime.produceState(emptyList<Song>(), q) {
+        if (q.length < 2) { value = emptyList(); return@produceState }
+        kotlinx.coroutines.delay(300)
+        value = Stations.search(ctx, typed)
     }
     val artists = remember(albums, songs) { artistsOf(albums, songs) }
-    val q = query.trim().lowercase()
-    fun rank(s: String): Int? { val l = s.lowercase(); return when { l.startsWith(q) -> 0; l.contains(" $q") -> 1; l.contains(q) -> 2; else -> null } }
-    val foundArtists = remember(q, artists) { if (q.isEmpty()) emptyList() else artists.mapNotNull { a -> rank(a.name)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(8) }
-    val foundRecords = remember(q, albums) { if (q.isEmpty()) emptyList() else albums.mapNotNull { a -> listOfNotNull(rank(a.title), rank(a.artist)?.plus(1)).minOrNull()?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(12) }
-    // artists YouTube Music has by that name and you don't (Bronson, 2026-10-29: Mac DeMarco found, no page to open):
-    // read from whose its songs and records are
+    val foundArtists = remember(q, artists) { if (q.isEmpty()) emptyList() else artists.mapNotNull { a -> Search.rank(a.name, q)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(8) }
+    val foundRecords = remember(q, albums) { if (q.isEmpty()) emptyList() else albums.mapNotNull { a -> Search.rank(q, a.title, a.artist)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(12) }
+    val foundSongs = remember(q, songs) { if (q.isEmpty()) emptyList() else songs.mapNotNull { s -> Search.rank(q, s.title, s.artist, s.album)?.let { it to s } }.sortedBy { it.first }.map { it.second }.take(50) }
+    // your playlists: the server's, and YouTube Music's (signed in)
+    val foundLists = remember(q, serverLists) { if (q.isEmpty()) emptyList() else serverLists.mapNotNull { l -> Search.rank(l.name, q)?.let { it to l } }.sortedBy { it.first }.map { it.second }.take(8) }
+    val foundTubeLists = remember(q, tubeLists) { if (q.isEmpty()) emptyList() else tubeLists.mapNotNull { l -> Search.rank(l.name, q)?.let { it to l } }.sortedBy { it.first }.map { it.second }.take(8) }
+    // YouTube Music's artists, their faces (any you have already shown as yours); else whose its songs and records are
+    // (Bronson, 2026-10-29: Mac DeMarco found, no page of his to open)
     val tubeArtists = remember(q, tube, foundArtists) {
-        if (q.isEmpty()) emptyList() else (tube.songs.flatMap { it.artist.split(", ") } + tube.albums.map { it.artist })
-            .map { it.trim() }.filter { it.isNotEmpty() && rank(it) != null && foundArtists.none { a -> a.name.equals(it, true) } }
-            .distinctBy { it.lowercase() }.sortedBy { rank(it) }.take(3).map { ArtistEntry(it, 0, 0) }
+        if (q.isEmpty()) emptyList()
+        else tube.artists.ifEmpty { (tube.songs.flatMap { it.artist.split(", ") } + tube.albums.map { it.artist }).map { TubeArtist(it.trim(), null) } }
+            .filter { a -> a.name.isNotEmpty() && Search.rank(a.name, q) != null && foundArtists.none { it.name.equals(a.name, true) } }
+            .distinctBy { it.name.lowercase() }.take(8)
     }
-    val foundSongs = remember(q, songs) { if (q.isEmpty()) emptyList() else songs.mapNotNull { s -> listOfNotNull(rank(s.title), rank(s.artist)?.plus(1), rank(s.album)?.plus(2)).minOrNull()?.let { it to s } }.sortedBy { it.first }.map { it.second }.take(50) }
+    // go plays what's found: your songs, else YouTube Music's
+    val go = foundSongs.ifEmpty { tube.songs }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val list = rememberLazyListState()
+    val row = Modifier.padding(horizontal = 20.dp)
     FrostedPage { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
         item {
-            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(row, verticalAlignment = Alignment.CenterVertically) {
                 BasicText("find > ", style = pixel(14.sp, Ink.dim))
                 // back from a result, what was typed is there, the cursor at its end (it came back at the start)
                 var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(query, androidx.compose.ui.text.TextRange(query.length))) }
+                // a recent search chosen: in the field, the cursor at its end
+                LaunchedEffect(query) { if (field.text != query) field = androidx.compose.ui.text.input.TextFieldValue(query, androidx.compose.ui.text.TextRange(query.length)) }
                 BasicTextField(
                     field, { field = it; if (it.text != query) onQuery(it.text) }, singleLine = true,
                     textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { foundSongs.firstOrNull()?.let { Playback.play(foundSongs, 0) } }),
+                    keyboardActions = KeyboardActions(onGo = { if (go.isNotEmpty()) { Searches.keep(query); Playback.play(go, 0) } }),
                     modifier = Modifier.weight(1f).focusRequester(focus),
                 )
+                if (query.isNotEmpty()) Word("clear", pixel(12.sp, Ink.mid), Modifier.padding(end = 14.dp), touch = 10.dp) { onQuery("") }
                 CloseArrow { pages.close() }
             }
             Spacer(Modifier.height(18.dp))
             // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
-            if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() &&
-                tube.songs.isEmpty() && tube.albums.isEmpty())
-                BasicText("nothing called that", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp))
+            if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() &&
+                foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty())
+                BasicText("nothing called that", style = pixel(12.sp, Ink.mid), modifier = row)
+            // what you looked for lately, a tap to look again
+            if (q.isEmpty() && recent.isNotEmpty()) FlowRow(row, horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                BasicText("recent", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(top = 3.dp))
+                recent.forEach { r -> Word(r.lowercase(), pixel(14.sp, Ink.mid), touch = 6.dp) { onQuery(r) } }
+                Word("clear", pixel(12.sp, Ink.dim), Modifier.padding(top = 2.dp), touch = 6.dp) { Searches.forget() }
+            }
         }
         if (foundArtists.isNotEmpty()) {
             item { Label("artists") }
-            items(foundArtists, key = { "a" + it.name }) { a -> Box(Modifier.padding(horizontal = 20.dp)) { ArtistRow(a) { pages.open(Page.Artist(a.name)) } } }
+            items(foundArtists, key = { "a" + it.name }) { a -> Box(row) { ArtistRow(a) { pages.open(Page.Artist(a.name)) } } }
         }
         if (foundRecords.isNotEmpty()) item {
             Label("records")
@@ -1517,25 +1566,76 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             }
             Spacer(Modifier.height(10.dp))
         }
-        if (foundSongs.isNotEmpty()) {
+        if (foundLists.isNotEmpty() || foundTubeLists.isNotEmpty()) {
+            item { Label("your playlists") }
+            items(foundLists, key = { "l" + it.id }) { l -> FoundList(l.name, "${l.count} ${if (l.count == 1) "song" else "songs"}") { pages.open(Page.Playlist(l.id, l.name)) } }
+            items(foundTubeLists, key = { "tl" + it.id }) { l -> FoundList(l.name, "on youtube music") { pages.open(Page.TubeList(l)) } }
+        }
+        // your songs, the first few; then the rest after YouTube Music's (below a whole library's worth, it went unseen)
+        val (first, rest) = foundSongs.take(10) to foundSongs.drop(10)
+        if (first.isNotEmpty()) {
             item { Label("songs") }
-            itemsIndexed(foundSongs, key = { _, s -> "s" + s.id }) { i, s ->
-                Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(foundSongs, i) } }
+            itemsIndexed(first, key = { _, s -> "s" + s.id }) { i, s ->
+                Box(row) { SongRow(s, pages = pages) { Playback.play(foundSongs, i) } }
             }
         }
-        // what YouTube Music has: its records, then its songs
-        if (tube.albums.isNotEmpty() || tube.songs.isNotEmpty()) item { Label("on youtube music") }
-        items(tubeArtists, key = { "ta-" + it.name }) { a -> Box(Modifier.padding(horizontal = 20.dp)) { ArtistRow(a) { pages.open(Page.Artist(a.name)) } } }
+        if (stations.isNotEmpty()) item {
+            Label("radio")
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(stations, key = { "r" + it.id }) { s -> StationTile(s, false, false, s.artist) { Playback.play(listOf(s), 0) } }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        // what YouTube Music has: its artists, records, songs, then playlists
+        if (tubeArtists.isNotEmpty()) item {
+            Label("artists on youtube music")
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(tubeArtists, key = { "f" + it.id.ifEmpty { it.name } }) { a ->
+                    Column(Modifier.width(130.dp).clickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = felt { pages.open(if (a.id.isNotEmpty()) Page.TubeArtist(a) else Page.Artist(a.name)) })) {
+                        CoverOf(remember(a.face) { a.face?.let { faceSong(a.name, it) } }, a.name, Modifier.fillMaxWidth().aspectRatio(1f))
+                        Spacer(Modifier.height(8.dp))
+                        UnderCover(a.name, "artist", pixel(12.sp, Ink.mid))
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
         if (tube.albums.isNotEmpty()) item {
+            Label("records on youtube music")
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(tube.albums, key = { "ta" + it.url }) { a -> TubeTile(a, Modifier.width(130.dp)) { pages.open(Page.Tube(a)) } }
             }
             Spacer(Modifier.height(10.dp))
         }
+        if (tube.songs.isNotEmpty()) item { Label("songs on youtube music") }
         itemsIndexed(tube.songs, key = { _, s -> "t" + s.id }) { i, s ->
-            Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s) { Playback.play(tube.songs, i) } }
+            Box(row) { SongRow(s, pages = pages) { Playback.play(tube.songs, i) } }
+        }
+        if (tube.lists.isNotEmpty()) item {
+            Label("playlists on youtube music")
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(tube.lists, key = { "tp" + it.url }) { a -> TubeTile(a, Modifier.width(130.dp)) { pages.open(Page.Tube(a)) } }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        if (rest.isNotEmpty()) {
+            item { Label("more of your songs") }
+            itemsIndexed(rest, key = { _, s -> "s" + s.id }) { i, s ->
+                Box(row) { SongRow(s, pages = pages) { Playback.play(foundSongs, i + first.size) } }
+            }
         }
     } }
+}
+
+/** A playlist found: its name big, a word on it under. */
+@Composable
+private fun FoundList(name: String, said: String, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))
+        .padding(horizontal = 20.dp, vertical = 9.dp)) {
+        BasicText(name.uppercase(), style = headline(19.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        BasicText(said, style = pixel(12.sp, Ink.mid))
+    }
 }
 
 /** A YouTube Music record as a tile: its cover (from its link), name and artist. */
