@@ -326,7 +326,22 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     Spacer(Modifier.height(40.dp))
                 }
 
-                Column(Modifier.cascade(6)) {
+                // exact to a usb dac: android 14's bit-perfect path (Exact), the equalizer and even volume resting
+                if (Exact.available) Column(Modifier.cascade(6)) {
+                    BasicText("EXACT TO A USB DAC", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("with a usb dac plugged in, the song's own bits at its own rate, past android's mixer. the equalizer and " +
+                        "even volume rest while it's on. whether your phone allows it, tap the format over the cover and see", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    var exact by remember { mutableStateOf(Exact.on(ctx)) }
+                    Row {
+                        Word("on", pixel(14.sp, if (exact) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { exact = true; Playback.exact(ctx, true) }
+                        Word("off", pixel(14.sp, if (!exact) Ink.ink else Ink.dim), touch = 8.dp) { exact = false; Playback.exact(ctx, false) }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+                Column(Modifier.cascade(7)) {
                     // the hi-res moment: a lossless song's format typed across the cover as it starts
                     BasicText("HI-RES MOMENT", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))

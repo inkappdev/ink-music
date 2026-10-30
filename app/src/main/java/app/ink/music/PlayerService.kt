@@ -150,8 +150,11 @@ class PlayerService : MediaLibraryService() {
             }.onFailure { android.util.Log.d("ink-eq", "none: $it") }.getOrNull()
             eqSession = id
         }
+        // exact to a usb dac: even volume rests too (both change the bits)
+        val exact = Exact.on(this)
+        levelling?.let { l -> val want = prefs.getBoolean("levelling", true) && !exact; if (l.on != want) { l.on = want; l.apply() } }
         val e = eq ?: return
-        val st = Eq.read(this)
+        val st = Eq.read(this).let { if (exact) it.copy(on = false) else it }
         runCatching {
             if (st.on) {
                 val levels = Eq.TEN.indices.map { st.levels.getOrElse(it) { 0 }.coerceIn(-Eq.RANGE, Eq.RANGE) }
@@ -205,6 +208,7 @@ class PlayerService : MediaLibraryService() {
         val uri = item.localConfiguration?.uri?.toString().orEmpty()
         val c = chosen[uri]
         val id = item.mediaId
+        val out = Exact.output(this)
         val from = when {
             id.startsWith("s") -> "station"
             id.startsWith("y") -> "youtube"
@@ -227,8 +231,18 @@ class PlayerService : MediaLibraryService() {
             channels = f.channelCount.coerceAtLeast(0), kbps = kbps, from = from, made = made,
             quality = if (from == "server" || from == "youtube") c?.quality ?: -1 else -1, metered = c?.metered == true,
             gain = levelling?.takeIf { it.on }?.db,
+            decoder = decoder, outBits = outBits, outRate = outRate,
+            device = out.first, kind = out.second, mixer = Exact.mixer(this),
+            eq = Eq.read(this).takeIf { it.on && !Exact.on(this) }?.let { it.phones.ifEmpty { it.preset } }.orEmpty(),
+            exact = exactSaid,
         )
     }
+
+    // the signal path's facts, as the player reads them (Heard)
+    private var decoder = ""
+    private var outBits = 0
+    private var outRate = 0
+    private var exactSaid = ""
 
     // radio: on, the queue's last songs bring more like them (Radio); asked once per seed
     private var radio = true
@@ -424,7 +438,7 @@ class PlayerService : MediaLibraryService() {
         kept()?.let { (items, index, at) -> player.setMediaItems(items, index, at); if (!prefs.getBoolean("stopped", false)) player.prepare() }
         player.shuffleModeEnabled = prefs.getBoolean("shuffle", false)
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
-        levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true); it.onApply = { tell() } }
+        levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true) && !Exact.on(this); it.onApply = { tell() } }
         // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
             override fun onAudioInputFormatChanged(
@@ -436,6 +450,27 @@ class PlayerService : MediaLibraryService() {
                 val id = eventTime.timeline.getWindow(eventTime.windowIndex, androidx.media3.common.Timeline.Window()).mediaItem.mediaId
                 if (formats.size > 50) formats.clear()
                 formats[id] = format
+                // exact to a usb dac: asked for this format before the player opens Android's track for it
+                exactSaid = Exact.request(this@PlayerService, format)
+                tell()
+            }
+
+            // the signal path: which decoder, and what the player sends Android
+            override fun onAudioDecoderInitialized(
+                eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime, decoderName: String,
+                initializedTimestampMs: Long, initializationDurationMs: Long,
+            ) { decoder = decoderName; tell() }
+
+            override fun onAudioTrackInitialized(
+                eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig,
+            ) {
+                outBits = when (audioTrackConfig.encoding) {
+                    android.media.AudioFormat.ENCODING_PCM_16BIT -> 16; android.media.AudioFormat.ENCODING_PCM_24BIT_PACKED -> 24
+                    android.media.AudioFormat.ENCODING_PCM_32BIT, android.media.AudioFormat.ENCODING_PCM_FLOAT -> 32
+                    android.media.AudioFormat.ENCODING_PCM_8BIT -> 8; else -> 0
+                }
+                outRate = audioTrackConfig.sampleRate
                 tell()
             }
         })
@@ -602,7 +637,12 @@ class PlayerService : MediaLibraryService() {
                         live.changed()
                     }
                     // the equalizer changed on the screens: read again and applied
-                    if (customCommand.customAction == EQ) { equalize(); tell() }
+                    if (customCommand.customAction == EQ) {
+                        equalize()
+                        // exact switched: asked (or let go) for this song's format; Android's track takes it from the next
+                        session.player.currentMediaItem?.mediaId?.let { formats[it] }?.let { exactSaid = Exact.request(this@PlayerService, it) }
+                        tell()
+                    }
                     // a YouTube song about to be played (its page is up): its stream found now, so play starts at once
                     if (customCommand.customAction == WARM) args.getString(WARM)?.takeIf { it.startsWith("y") }?.let { id ->
                         ahead.execute { YouTubeMusic.stream(id, false, small = Quality.now(this@PlayerService) == Quality.SAVER) }
@@ -610,7 +650,7 @@ class PlayerService : MediaLibraryService() {
                     if (customCommand.customAction == LEVEL) {
                         val on = args.getBoolean(LEVEL, true)
                         prefs.edit().putBoolean("levelling", on).apply()
-                        levelling?.on = on
+                        levelling?.on = on && !Exact.on(this@PlayerService)
                     }
                     if (customCommand.customAction == RADIO) {
                         radio = args.getBoolean(RADIO, true)

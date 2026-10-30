@@ -315,6 +315,12 @@ object Playback {
         controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.EQ, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
     }
 
+    /** Exact to a usb dac, set here (Exact's file): the player told, as for the equalizer (it reads both again). */
+    fun exact(c: Context, on: Boolean) {
+        Exact.set(c, on)
+        controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.EQ, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
+    }
+
     /** The player's audio session (in its own process), for the phone's equalizer. */
     @Volatile var audioSession = 0
     /** The player's session as Android knows it (its volume buttons are handed to it while casting: Main). */
