@@ -5,7 +5,8 @@ any screen; a jpg, as GitHub takes 1 MB at most): INK MUSIC and what it is on th
 player (a window shot from the Mac, .github/desktop/) running off the edge, a phone (one of the store's screenshots)
 standing in front of its right side. Set by hand in the repo's settings (Settings, Social preview) after it's made.
 
-    python3 tools/make-social.py [phone] [window]   # a phone screenshot's number (default 1), a desktop shot (default player)
+    python3 tools/make-social.py [phone] [window]   # a phone screenshot's number or a picture's path (default 1),
+                                                    # a desktop shot (default westside)
 """
 import os
 import sys
@@ -21,7 +22,7 @@ EDGE = (40, 40, 39)                       # the 12% hairline
 
 W, H = 2560, 1280
 phone = sys.argv[1] if len(sys.argv) > 1 else "1"
-window = sys.argv[2] if len(sys.argv) > 2 else "player"
+window = sys.argv[2] if len(sys.argv) > 2 else "westside"
 
 img = Image.new("RGB", (W, H), (0, 0, 0))
 d = ImageDraw.Draw(img)
@@ -39,10 +40,10 @@ img.paste(shot, (wx, wy), shot)
 d.rounded_rectangle((wx - 1, wy - 1, wx + ww, wy + shot.height), radius=22, outline=EDGE, width=2)
 
 # the phone: in front of the window's right side (the cover and title left clear), a hairline round it and black between them
-p = Image.open(os.path.join(SHOTS, f"{phone}.png")).convert("RGB")
+p = Image.open(phone if os.path.isfile(phone) else os.path.join(SHOTS, f"{phone}.png")).convert("RGB")
 pw = 440
 p = p.resize((pw, p.height * pw // p.width), Image.LANCZOS)
-px, py = W - pw - 120, H - p.height - 70
+px, py = W - pw - 120, 400   # below the title, running just off the foot
 d.rectangle((px - 14, py - 14, px + pw + 13, py + p.height + 13), fill=(0, 0, 0))
 img.paste(p, (px, py))
 d.rectangle((px - 2, py - 2, px + pw + 1, py + p.height + 1), outline=EDGE, width=2)
@@ -60,4 +61,4 @@ d.text((x, 1140), "GITHUB.COM/INKAPPDEV/INK-MUSIC", font=silk(26), fill=INK)
 
 out = os.path.join(ROOT, ".github/social-preview.jpg")
 img.save(out, quality=90, optimize=True, progressive=True, subsampling=0)
-print(f"made {out} ({os.path.getsize(out) // 1024} KB) from phone {phone} and the computer's {window}")
+print(f"made {out} ({os.path.getsize(out) // 1024} KB) from phone {os.path.basename(phone)} and the computer's {window}")
