@@ -889,7 +889,13 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
     // exact? plainly: yes only when every step left it be, else the first thing that touched it
     val verdict = when {
         n.device.isNotEmpty() && said?.live == true -> said!!.touching.let { t ->
-            if (t.isEmpty()) "close: the ${(speaker?.maker ?: "receiver").lowercase().substringBefore(',')} plays it as it comes" + (said!!.mode.takeIf { it.isNotEmpty() }?.let { ", in $it" } ?: "")
+            val who = (speaker?.maker ?: "receiver").lowercase().substringBefore(',')
+            // yes: the file as it is (nothing made of it on the way), at its own rate, and the receiver doing nothing to it
+            val file = sent(n.quality, "")
+            val asIs = file?.lossless == true && n.song?.let { song -> song.format.isBlank() || song.format.equals(file.codec, true) } != false &&
+                (file.rate == 0 || said!!.lines.none { it.first == "it's getting" } || said!!.lines.first { it.first == "it's getting" }.second.contains(Heard.khz(file.rate)))
+            if (t.isEmpty() && asIs && "direct" in said!!.mode) "yes: the file as it is, the $who's ${said!!.mode}"
+            else if (t.isEmpty()) "close: the $who plays it as it comes" + (said!!.mode.takeIf { it.isNotEmpty() }?.let { ", in $it" } ?: "")
             else "no: the ${(speaker?.maker ?: "receiver").lowercase().substringBefore(',')}'s " + (if (t.size > 1) t.dropLast(1).joinToString(", ") + " and " + t.last() else t[0]) + " shape it"
         }
         n.device.isNotEmpty() -> "the phone hands it on; what happens next is the speaker's"
@@ -931,7 +937,11 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         val less by Moves.less.collectAsState()
         val per = 160
         val travel = remember { Animatable(if (less) steps.size.toFloat() else 0f) }
-        LaunchedEffect(Unit) { if (!less) travel.animateTo(steps.size.toFloat(), tween(per * steps.size, easing = androidx.compose.animation.core.LinearEasing)) }
+        // on: a receiver's own steps arrive a moment after it opens, and the signal carries on down to them
+        LaunchedEffect(steps.size) {
+            if (less) travel.snapTo(steps.size.toFloat())
+            else travel.animateTo(steps.size.toFloat(), tween((per * (steps.size - travel.value)).toInt().coerceAtLeast(per), easing = androidx.compose.animation.core.LinearEasing))
+        }
         steps.forEachIndexed { i, (label, value) ->
             val reached = (travel.value - i).coerceIn(0f, 1f)
             // a hairline from one step to the next, under the labels, filling as the signal passes down it
