@@ -10,6 +10,8 @@ on:
 
 jobs:
   dmg:
+    # built where the signing secrets are (the private ink-music-mac, which releases take them from): not on the public repo
+    if: github.repository == 'inkappdev/ink-music-mac'
     runs-on: macos-15   # Apple Silicon
     # the signing certificate (below); empty, the build stays ad hoc as before
     env:

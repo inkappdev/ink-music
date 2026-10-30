@@ -10,6 +10,8 @@ on:
 
 jobs:
   windows:
+    # built where the signing secrets are (the private ink-music-mac, which releases take them from): not on the public repo
+    if: github.repository == 'inkappdev/ink-music-mac'
     runs-on: windows-latest
     defaults: { run: { shell: bash } }
     steps:
@@ -42,6 +44,8 @@ jobs:
           path: desktop/build/compose/binaries/main/msi/*.msi
 
   linux:
+    # built where the signing secrets are (the private ink-music-mac, which releases take them from): not on the public repo
+    if: github.repository == 'inkappdev/ink-music-mac'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

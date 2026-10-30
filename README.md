@@ -31,7 +31,7 @@
 </p>
 
 <p align="center">
-  <img src=".github/desktop/radio.png" width="100%" alt="ink music on a Mac: the rail of words down the side, radio's tower over KEXP, ink radio's stations each on its own sleeve" />
+  <img src=".github/desktop/westside.png" width="100%" alt="ink music full screen on a Mac: Westside Cowboy's Kick Stones, the record's songs beside the cover, the name running across the foot" />
 </p>
 
 <p align="center">
@@ -86,7 +86,7 @@ Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues): wha
   <img src=".github/desktop/ink.png" width="49%" alt="INK on a computer: ink weekly's cover, its mosaic in dither, the artists in the giant marquee" />
 </p>
 <p align="center">
-  <img src=".github/desktop/artist.png" width="49%" alt="An artist's page on a computer: Wild Nothing's photo in dither, top songs, records, what's said of them" />
+  <img src=".github/desktop/radio.png" width="49%" alt="Radio on a computer: the rail of words, radio's tower over KEXP, ink radio's stations each on its own sleeve" />
   <img src=".github/desktop/record.png" width="49%" alt="The player on a computer: Sneaker Pimps' 6 Underground, the cover marked lossless, 16 bit at 44.1 kHz, radio's songs up next" />
 </p>
 
