@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -852,6 +853,8 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         val r = said
         val model = speaker?.model?.takeIf { it.isNotBlank() } ?: n.device
         steps += "the receiver" to model.lowercase() + (r?.takes?.takeIf { it.isNotEmpty() }?.let { "\ntakes ${it.joinToString(", ")}" } ?: "")
+        // asked, not answered yet: a step the signal waits at, its answer unfolding in its place
+        if (r == null && speaker?.kind == "dlna") steps += "asking" to "asking the ${(speaker?.maker ?: "receiver").lowercase().substringBefore(',')}…"
         if (r?.live == true) {
             r.lines.forEach { steps += it }
         } else steps += "the speaker" to "plays it itself: its own decoder, its own dac"
@@ -940,29 +943,45 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         // on: a receiver's own steps arrive a moment after it opens, and the signal carries on down to them
         LaunchedEffect(steps.size) {
             if (less) travel.snapTo(steps.size.toFloat())
-            else travel.animateTo(steps.size.toFloat(), tween((per * (steps.size - travel.value)).toInt().coerceAtLeast(per), easing = androidx.compose.animation.core.LinearEasing))
+            else travel.animateTo(steps.size.toFloat(), tween((per * (steps.size - travel.value)).toInt().coerceAtLeast(per * 2), easing = androidx.compose.animation.core.FastOutSlowInEasing))
         }
-        steps.forEachIndexed { i, (label, value) ->
-            val reached = (travel.value - i).coerceIn(0f, 1f)
-            // a hairline from one step to the next, under the labels, filling as the signal passes down it
-            if (i > 0) Box(Modifier.padding(start = 3.dp).width(1.dp).height(14.dp).background(Ink.line)) {
-                Box(Modifier.fillMaxWidth().fillMaxHeight(((travel.value - i + 1) * 2).coerceIn(0f, 1f)).background(Ink.ink))
-            }
-            val lit = Ink.ink.copy(alpha = .35f + .65f * reached)
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                BasicText(label, style = pixel(12.sp, Ink.mid.copy(alpha = Ink.mid.alpha * (.5f + .5f * reached))), modifier = Modifier.width(120.dp).padding(top = 2.dp))
-                Column(Modifier.weight(1f)) {
-                    BasicText(value, style = pixel(14.sp, lit).copy(lineHeight = 20.sp))
-                    acts[label]?.let { (word, act) -> Word(word, pixel(12.sp, Ink.mid), Modifier.padding(top = 2.dp), touch = 8.dp, onClick = act) }
+        // the steps unfold (a receiver's answer arriving makes the page taller: eased, not jumped)
+        Column(Modifier.animateContentSize(tween(Motion.ENTER * 2, easing = Motion.expo))) {
+            steps.forEachIndexed { i, (label, value) ->
+                androidx.compose.runtime.key(label) {
+                    // brightened on a soft curve as the signal reaches it, never a hard edge
+                    val reached = (travel.value - i).coerceIn(0f, 1f).let { it * it * (3 - 2 * it) }
+                    // a step new to the page fades up as it unfolds
+                    val appear = remember { Animatable(0f) }
+                    LaunchedEffect(Unit) { appear.animateTo(1f, tween(Motion.ENTER * 2, easing = Motion.expo)) }
+                    Column(Modifier.graphicsLayer { alpha = appear.value; translationY = (1f - appear.value) * 6.dp.toPx() }) {
+                        // a hairline from one step to the next, under the labels, filling as the signal passes down it
+                        if (i > 0) Box(Modifier.padding(start = 3.dp).width(1.dp).height(14.dp).background(Ink.line)) {
+                            Box(Modifier.fillMaxWidth().fillMaxHeight(((travel.value - i + 1) * 2).coerceIn(0f, 1f)).background(Ink.ink))
+                        }
+                        val lit = Ink.ink.copy(alpha = (if (label == "asking") .35f else .35f + .65f * reached))
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            BasicText(if (label == "asking") "" else label, style = pixel(12.sp, Ink.mid.copy(alpha = Ink.mid.alpha * (.5f + .5f * reached))), modifier = Modifier.width(120.dp).padding(top = 2.dp))
+                            Column(Modifier.weight(1f)) {
+                                // a value that changes (the volume, read again) crossfades
+                                androidx.compose.animation.Crossfade(value, animationSpec = tween(Motion.ENTER * 2), label = "value") { v ->
+                                    BasicText(v, style = pixel(14.sp, lit).copy(lineHeight = 20.sp))
+                                }
+                                acts[label]?.let { (word, act) -> Word(word, pixel(12.sp, Ink.mid), Modifier.padding(top = 2.dp), touch = 8.dp, onClick = act) }
+                            }
+                        }
+                    }
                 }
             }
-        }
-        val arrived = (travel.value - steps.size + 1).coerceIn(0f, 1f)
-        if (verdict.isNotEmpty()) Column(Modifier.graphicsLayer { alpha = arrived }) {
-            Spacer(Modifier.height(28.dp))
-            BasicText("EXACT?", style = headline(24.sp))
-            Spacer(Modifier.height(6.dp))
-            BasicText(verdict, style = pixel(14.sp).copy(lineHeight = 20.sp))
+            val arrived = (travel.value - steps.size + 1).coerceIn(0f, 1f).let { it * it * (3 - 2 * it) }
+            if (verdict.isNotEmpty() && steps.none { it.first == "asking" }) Column(Modifier.graphicsLayer { alpha = arrived }) {
+                Spacer(Modifier.height(28.dp))
+                BasicText("EXACT?", style = headline(24.sp))
+                Spacer(Modifier.height(6.dp))
+                androidx.compose.animation.Crossfade(verdict, animationSpec = tween(Motion.ENTER * 2), label = "verdict") { v ->
+                    BasicText(v, style = pixel(14.sp).copy(lineHeight = 20.sp))
+                }
+            }
         }
         Spacer(Modifier.height(24.dp))
     }
