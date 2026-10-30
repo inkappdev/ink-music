@@ -123,6 +123,8 @@ object Picks {
             var unasked = false
             withContext(Dispatchers.IO) {
                 Curation.coverAt(link) ?: runCatching { Curation.coverOrThrow(title, artist, record) }.onFailure { unasked = true }.getOrNull()
+                    // the review's own picture of it, when it's square (a sleeve, not a press photo)
+                    ?: Curation.squareImageAt(link)
                     // the last place: YouTube Music's own search (where it'd play from anyway; the full build)
                     ?: runCatching { if (record) YouTubeMusic.findRecord(title, artist)?.art else YouTubeMusic.find(title, artist)?.art }.getOrNull()
             }.also {

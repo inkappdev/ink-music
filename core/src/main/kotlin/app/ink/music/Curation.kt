@@ -301,6 +301,20 @@ object Curation {
         }
     }.getOrNull()
 
+    /**
+     * A review page's own picture of the record, when nothing else has one (2026-10-30: A Closer Listen's Serene Din,
+     * Inverted Audio's premiere of Masaka Masaka's "Say"): its link preview (og:image), only when it says it's square,
+     * as a sleeve is (a press photo is wider, and would be taken for the cover).
+     */
+    fun squareImageAt(link: String): String? = runCatching {
+        if (!link.startsWith("http")) return null
+        val html = get(link)
+        fun meta(name: String) = Regex("""<meta[^>]+property="$name"[^>]+content="([^"]+)"""").find(html)?.groupValues?.get(1)
+        val w = meta("og:image:width")?.toIntOrNull(); val h = meta("og:image:height")?.toIntOrNull()
+        if (w == null || w != h || w < 300) return null
+        meta("og:image")?.replace("&#038;", "&")?.replace("&amp;", "&")
+    }.getOrNull()
+
     /** A week's records by kind (a record can be in several), the kinds with three or more, the most first. */
     fun kinds(releases: List<Release>): List<Pair<String, List<Release>>> = KINDS.map { (name, words) ->
         name to releases.filter { r -> r.genres.any { g -> words.any { w -> w in g.lowercase() } } }

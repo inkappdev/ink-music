@@ -326,7 +326,9 @@ internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit) {
             a?.let { open(Page.Tube(it)) } ?: song?.let { Player.play(listOf(it)) }
         }
     }) {
-        CoverOf(s.face, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        // a cover the read didn't find (it asks for forty), asked for as the tile comes into sight
+        val art by androidx.compose.runtime.produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+        CoverOf(remember(s, art) { if (art == s.art) s.face else s.copy(art = art).face }, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(s.pick.title, s.pick.artist)
         BasicText(said ?: s.by.joinToString(" · "), style = pixel(12.sp, if (s.by.size > 1) Ink.ink else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -377,7 +379,8 @@ private fun PickedSongs(songs: List<Picks.Shown>, modifier: Modifier) {
             Word("play all", pixel(14.sp), touch = 8.dp) { scope.launch { said = "finding them on youtube music"; Picks.playSongs(songs); said = null } }
         }
         songs.take(10).forEach { s ->
-            PickedRow(null, "", s.face, s.pick.title, s.pick.artist, s.by.joinToString(" · ").lowercase()) {
+            val art by androidx.compose.runtime.produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, false) }
+            PickedRow(null, "", remember(s, art) { if (art == s.art) s.face else s.copy(art = art).face }, s.pick.title, s.pick.artist, s.by.joinToString(" · ").lowercase()) {
                 scope.launch { Picks.song(s.pick.title, s.pick.artist)?.let { Player.play(listOf(it)) } ?: run { said = "${s.pick.title.lowercase()}: not on youtube music" } }
             }
         }

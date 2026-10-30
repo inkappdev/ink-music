@@ -111,7 +111,9 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             }
             said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp)) }
             ShelfIndexed(songs.take(20)) { _, s ->
-                Tile(s.face, s.pick.title, "${s.pick.artist.lowercase()} · ${s.by.joinToString(" · ")}") {
+                // a cover the read didn't find (it asks for forty), asked for as the tile comes into sight
+                val art by produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, false) }
+                Tile(remember(s, art) { if (art == s.art) s.face else s.copy(art = art).face }, s.pick.title, "${s.pick.artist.lowercase()} · ${s.by.joinToString(" · ")}") {
                     scope.launch { Picks.song(s.pick.title, s.pick.artist)?.let { Playback.play(listOf(it), 0) } }
                 }
             }
