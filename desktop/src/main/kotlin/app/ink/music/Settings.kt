@@ -614,6 +614,21 @@ private fun LookSetting() {
             Word(l.word, pixel(14.sp, if (behind == l) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Looks.set(l) }
     }
     Spacer(Modifier.height(36.dp))
+    BasicText("SPOTIFY'S CANVAS", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    val pass by SpotifyHanded.pass.collectAsState()
+    val canvasOn by Moving.canvasOn.collectAsState()
+    BasicText(when {
+        pass != null -> "the looping clip spotify shows behind a song, behind the player in place of the cover. signed in on your phone"
+        SpotifyHanded.handedAt > 0 -> "signed in on your phone: open ink music there, paired, and its canvases show here again"
+        else -> "sign in to spotify on your phone (settings, the look), paired with this one, and a song's canvas shows here too"
+    }, style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    Row {
+        Word("on", pixel(14.sp, if (canvasOn) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(canvasOn = true) }
+        Word("off", pixel(14.sp, if (!canvasOn) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(canvasOn = false) }
+    }
+    Spacer(Modifier.height(36.dp))
     BasicText("MOVING COVERS", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     BasicText("where a label made one, apple music's looping cover plays while the music does", style = pixel(12.sp, Ink.mid))
@@ -647,7 +662,7 @@ private fun LookPreview() {
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(16 / 10f)
         .background(Ink.black).border(1.dp, Ink.line).clipToBounds()) {
-        if (behind != Look.PLAIN) Backdrop(c, behind)
+        if (behind != Look.PLAIN) Backdrop(c, behind, song, true)
         val side = maxHeight * .58f
         val off = side * .05f
         Box(Modifier.padding(start = 28.dp, top = 28.dp)) {

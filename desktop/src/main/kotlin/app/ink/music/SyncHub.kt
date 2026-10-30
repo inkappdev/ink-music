@@ -258,6 +258,8 @@ object SyncHub {
             TubeAccount.take(o)
         }
 
+        override fun takeSpotify(pass: String) = SpotifyHanded.take(pass)
+
         override fun signedIn(what: String) {
             when (what) {
                 "server" -> Server.start()

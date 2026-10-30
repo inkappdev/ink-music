@@ -216,6 +216,9 @@ object SyncPhone {
 
         override fun youtube(): String? = YouTubeAccount.handover(c)
 
+        // Spotify's passes, so the computer shows canvases too (it can't sign in to Spotify itself)
+        override fun spotify(): String? = Spotify.handover(c, scope)
+
         override fun signedIn(what: String) {
             when (what) {
                 "server" -> Server.reload(c)

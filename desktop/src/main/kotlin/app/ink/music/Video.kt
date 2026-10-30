@@ -45,18 +45,19 @@ import kotlin.math.roundToInt
 /**
  * A silent looping clip (a record's moving cover), played by an mpv of its own and drawn by its software renderer into
  * pictures the window shows: no window of mpv's, the same on the Mac, Windows and Linux, and a shader can go over each
- * frame as over any picture. `side` is the frames' size, square (the clip scaled into it, as a cover is).
+ * frame as over any picture. The frames are `wide` by `high`, the clip scaled into them (`fill`: scaled to fill them,
+ the overflow cut off evenly, as a canvas fills the window).
  */
-class Video(url: String, private val side: Int) {
+class Video(url: String, private val wide: Int, private val high: Int = wide, fill: Boolean = false) {
     private val mpv = Mpv(mapOf(
         "vo" to "libmpv", "aid" to "no", "mute" to "yes", "loop-file" to "inf", "hwdec" to "no",
         "terminal" to "no", "config" to "no", "load-scripts" to "no", "ytdl" to "no", "osc" to "no",
         "input-default-bindings" to "no", "keep-open" to "yes",
-    ))
+    ) + (if (fill) mapOf("panscan" to "1.0") else emptyMap()))
     private val ctx: Pointer
     // three frames in turn: one drawn into while the window shows another; mpv's "rgb0" leaves the fourth byte 0, read
     // as see-through by any effect over it (all of them came out black): Skia's 888X, that byte not read
-    private val frames = List(3) { Bitmap().apply { allocPixels(ImageInfo(side, side, ColorType.RGB_888X, ColorAlphaType.OPAQUE)) } }
+    private val frames = List(3) { Bitmap().apply { allocPixels(ImageInfo(wide, high, ColorType.RGB_888X, ColorAlphaType.OPAQUE)) } }
     private val _frame = MutableStateFlow<ImageBitmap?>(null)
     /** The latest frame, null till the first. */
     val frame: StateFlow<ImageBitmap?> = _frame
@@ -75,7 +76,7 @@ class Video(url: String, private val side: Int) {
     }
 
     private fun run() {
-        val size = Memory(8).apply { setInt(0, side); setInt(4, side) }
+        val size = Memory(8).apply { setInt(0, wide); setInt(4, high) }
         val format = Memory(8).apply { setString(0, "rgb0") }
         val stride = Memory(8)
         val params = Memory(16L * 5)
@@ -145,7 +146,25 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
         Log.d("moving cover for $artist / $album: ${if (value != null) "found" else "none"}")
     }
     val u = url ?: return
-    Loop(u, playing, shape, accent, modifier)
+    Loop(u, playing, shape, accent, 1f, crop = false, modifier)
+}
+
+/**
+ * Behind the player, a song's Spotify canvas (its tall looping clip) across the whole window, in the background's
+ * effect, in the still cover's place: one background, the canvas where a song has one. The computer can't sign in to
+ * Spotify: the phone, paired and signed in, hands it the passes ([SpotifyHanded]).
+ */
+@Composable
+fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier, onShown: () -> Unit = {}) {
+    val on by Moving.on.collectAsState()
+    val canvasOn by Moving.canvasOn.collectAsState()
+    val look by Looks.on.collectAsState()
+    val pass by SpotifyHanded.pass.collectAsState()
+    if (!on || !canvasOn || look == Look.PLAIN) return
+    val url by produceState<String?>(null, title, artist, pass != null) { value = SpotifyHanded.canvas(title, artist) }
+    val u = url ?: return
+    // as it is: the clip itself, held to half over the black so the words over it read; an effect at its own strength
+    Loop(u, playing, look.takeUnless { it == Look.AS_IS }, accent, look.alpha, crop = true, modifier, onShown, big = true)
 }
 
 /**
@@ -153,23 +172,28 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
  * faded in), and settles with the music: paused, it slows to a stop over a second and holds; played, it picks up.
  */
 @Composable
-private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, modifier: Modifier) {
+private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, strength: Float, crop: Boolean, modifier: Modifier,
+                 onShown: () -> Unit = {}, big: Boolean = false) {
     val density = LocalDensity.current.density
     BoxWithConstraints(modifier.clipToBounds()) {
-        val px = (constraints.maxWidth.coerceAtMost(constraints.maxHeight)).coerceIn(64, 1024)
-        val one by produceState<String?>(null, url, px) { value = withContext(Dispatchers.IO) { Video.pick(url, px) } }
+        // a cover square, at most 1024 a side; a canvas the window's shape, at most 960 across (it's behind, softened)
+        val k = if (crop) (960f / constraints.maxWidth).coerceAtMost(1f) else 1f
+        val w = if (crop) (constraints.maxWidth * k).toInt().coerceAtLeast(64) else constraints.maxWidth.coerceAtMost(constraints.maxHeight).coerceIn(64, 1024)
+        val h = if (crop) (constraints.maxHeight * k).toInt().coerceAtLeast(64) else w
+        val one by produceState<String?>(null, url, w) { value = if (url.contains(".m3u8")) withContext(Dispatchers.IO) { Video.pick(url, w) } else url }
         val u = one ?: return@BoxWithConstraints
-        val video = remember(u, px) { runCatching { Video(u, px) }.onFailure { Log.d("moving cover: $it") }.getOrNull() } ?: return@BoxWithConstraints
+        val video = remember(u, w, h) { runCatching { Video(u, w, h, fill = crop) }.onFailure { Log.d("moving: $it") }.getOrNull() } ?: return@BoxWithConstraints
         DisposableEffect(video) { onDispose { video.close() } }
         val frame by video.frame.collectAsState()
         val speed by animateFloatAsState(if (playing) 1f else 0f, tween(1_000, easing = LinearEasing), label = "settle")
         LaunchedEffect(video) { snapshotFlow { speed }.collect { video.speed(it) } }
         val shown = frame != null
+        LaunchedEffect(shown) { if (shown) onShown() }
         val come by animateFloatAsState(if (shown) 1f else 0f, if (shown) tween(if (shape == Look.DITHER) 1_400 else 600) else snap(), label = "come")
         val f = frame ?: return@BoxWithConstraints
         Image(f, null, Modifier.fillMaxSize().graphicsLayer {
-            alpha = if (shape == Look.DITHER) 1f else come
-            renderEffect = shape?.let { Effects.of(it, accent, density, come, size.width) }
+            alpha = (if (shape == Look.DITHER) 1f else come) * strength
+            renderEffect = shape?.let { Effects.of(it, accent, density, come, size.width, big) }
         }, contentScale = ContentScale.Crop)
     }
 }

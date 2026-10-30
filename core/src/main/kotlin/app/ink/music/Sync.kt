@@ -166,6 +166,10 @@ object Sync {
         fun youtube(): String? = null
         /** A YouTube Music sign-in from the phone (the computer). */
         fun takeYoutube(auth: String) {}
+        /** The phone's Spotify passes (an hour's), for the computer's canvases ([SpotifyCanvas.Pass]); null: none. */
+        fun spotify(): String? = null
+        /** Spotify passes from the phone (the computer). */
+        fun takeSpotify(pass: String) {}
         /** A sign-in's file written from the other: read it again ("server", "listenbrainz", "lastfm"). */
         fun signedIn(what: String)
         /** heard.jsonl has the other's listens in it now. */
@@ -194,6 +198,7 @@ object Sync {
         return JSONObject().put("id", kept.id()).put("name", side.name)
             .put("heard", JSONObject().put("lines", lines).put("upto", upto).put("want", want))
             .put("loves", kept.loves()).put("signed", signed).put("youtube", side.youtube() ?: "")
+            .put("spotify", side.spotify() ?: "")
             .put("now", side.now() ?: JSONObject.NULL).put("handed", kept.handedAt(peer.id))
     }
 
@@ -225,6 +230,7 @@ object Sync {
             }
         }
         m.optString("youtube").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeYoutube(it) } }
+        m.optString("spotify").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeSpotify(it) } }
         side.theirs(peer, m.optJSONObject("now"))
         // the other carried on with what plays here, since it was last pressed play: it stops here
         val handed = m.optLong("handed")
