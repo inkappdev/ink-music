@@ -1,0 +1,8 @@
+- Hide a YouTube playlist from ink music; delete now says "from youtube" (#1)
+- Voice notes, recordings and short clips stay out of your library (#1)
+- Pick your music folders in settings (#1)
+- Hide a record without deleting its files (#1)
+- INK's covers fill in, no more gray tiles (#1)
+- Genre names fit their tiles; the player's top row lines up (#1)
+- Issue #1 was a good one. We're framing it.
+- Do something nice for someone today. Call your grandma, ask her what her favorite record is
