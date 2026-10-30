@@ -83,6 +83,14 @@ object Library {
     val songs: StateFlow<List<Song>> = _songs
     private val _albums = MutableStateFlow<List<Album>>(emptyList())
     val albums: StateFlow<List<Album>> = _albums
+    /**
+     * Records you've hidden (#1, 2026-10-30: albums made of stray audio files), kept out of every tab, find and radio,
+     * the files untouched; their songs still known by id (a queue that holds one plays on). Ids in files/hidden-records.json.
+     */
+    val hidden = MutableStateFlow<Set<String>>(emptySet())
+    private val _hiddenAlbums = MutableStateFlow<List<Album>>(emptyList())
+    val hiddenAlbums: StateFlow<List<Album>> = _hiddenAlbums
+    private var hiddenFile: java.io.File? = null
     /** Read at least once (an empty library is then really empty). */
     val read = MutableStateFlow(false)
     private var byId: Map<String, Song> = emptyMap()
@@ -116,8 +124,19 @@ object Library {
     /** Read the phone's songs again now (the folders chosen changed). */
     fun again(ctx: Context) { if (started) scope.launch { read(ctx.applicationContext) } }
 
+    /** A record hidden from ink music, or shown again. */
+    fun hide(ctx: Context, albumId: String, on: Boolean) {
+        hidden.value = if (on) hidden.value + albumId else hidden.value - albumId
+        runCatching { (hiddenFile ?: java.io.File(ctx.filesDir, "hidden-records.json")).writeText(org.json.JSONArray(hidden.value.toList()).toString()) }
+        synchronized(this) { publish() }
+    }
+
     fun start(ctx: Context) {
         Folders.load(ctx)
+        if (hiddenFile == null) {
+            val f = java.io.File(ctx.filesDir, "hidden-records.json").also { hiddenFile = it }
+            hidden.value = runCatching { org.json.JSONArray(f.readText()).let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } }.getOrDefault(emptySet())
+        }
         if (started || !allowed(ctx)) return
         started = true
         val app = ctx.applicationContext
@@ -216,8 +235,10 @@ object Library {
         // the twins stay findable by id (a queue kept, a playlist), though not listed
         byId = (all + remote.filter { it.id in pairs.values }).associateBy { it.id }
         twins = pairs
-        _songs.value = all.sortedBy { sortName(it.title) }
-        _albums.value = albums
+        val off = hidden.value
+        _songs.value = all.filter { it.albumId !in off }.sortedBy { sortName(it.title) }
+        _albums.value = albums.filter { it.id !in off }
+        _hiddenAlbums.value = albums.filter { it.id in off }
         Loved.relink()
     }
 
