@@ -17,7 +17,7 @@ android {
 
     defaultConfig {
         applicationId = "app.ink.music"
-        minSdk = 31
+        minSdk = 30
         targetSdk = 37
         // each release: both up (the code by one), and a changelog in fastlane/.../changelogs/<code>.txt
         versionCode = 47

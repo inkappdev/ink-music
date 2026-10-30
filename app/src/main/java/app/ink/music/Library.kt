@@ -103,8 +103,11 @@ object Library {
     private var started = false
     private var again: Job? = null
 
+    /** What reading the phone's music asks for: its own permission from Android 13, the storage one before (#2). */
+    val permission = if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+
     fun allowed(ctx: Context) =
-        ctx.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+        ctx.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     fun song(id: String): Song? = byId[id] ?: when {
         id.startsWith("y") -> YouTubeMusic.known(id)
@@ -153,10 +156,11 @@ object Library {
 
     /**
      * What counts as a song (#1, 2026-10-30: a library full of WhatsApp voice notes and clips): music, not a recording
-     * (Android's own mark), and 30 seconds or more; nor anything kept where messaging apps and recorders keep their sound.
+     * (Android's own mark, from Android 12: 11 hasn't the column), and 30 seconds or more; nor anything kept where messaging apps and recorders keep their sound.
      * And, once you've chosen folders (settings, music folders), only what's in them ([Folders]).
      */
-    private val SONGS = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.IS_RECORDING} = 0" +
+    private val SONGS = "${MediaStore.Audio.Media.IS_MUSIC} != 0" +
+        (if (android.os.Build.VERSION.SDK_INT >= 31) " AND ${MediaStore.Audio.Media.IS_RECORDING} = 0" else "") +
         // a length the index never read (0) isn't short: three of the S26's songs are so
         " AND (${MediaStore.Audio.Media.DURATION} >= 30000 OR ${MediaStore.Audio.Media.DURATION} = 0 OR ${MediaStore.Audio.Media.DURATION} IS NULL)"
     // the folders as those apps name them, matched whole (a band called Voices, a folder called Callum, stay)

@@ -275,7 +275,7 @@ private fun Sources(onAllowed: () -> Unit, onNext: () -> Unit) {
             BasicText("all of these, or any. you can change it later in settings", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(26.dp))
             Source("this phone", if (phone) "its music files, read" else "the music files on it", phone) {
-                if (!phone) ask.launch(Manifest.permission.READ_MEDIA_AUDIO)
+                if (!phone) ask.launch(Library.permission)
             }
             Source("your server", account?.let { "signed in at ${it.base.substringAfter("://")}" } ?: "navidrome or any subsonic server", account != null) {
                 server = !server
