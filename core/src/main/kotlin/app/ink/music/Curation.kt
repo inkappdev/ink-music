@@ -336,8 +336,9 @@ object Curation {
     fun recordOfTheDay(picks: List<Pick>, day: LocalDate = LocalDate.now()): Pick? = recordsOfTheDay(picks, day).firstOrNull()
 
     /**
-     * The day's record and the ones to fall back on, in turn: the most named of the last two weeks (today's turn through
-     * them first), then the rest of the fortnight's by how many named them, the newest first. The apps show the first
+     * The day's record and the ones to fall back on, in turn: a turn a day through the fortnight's most named (every one
+     * more than one critic named, and seven at the least: with one far ahead it stayed two weeks, Bronson 2026-10-30:
+     * "it feels stale"), then the rest by how many named them, the newest first. The apps show the first
      * that YouTube Music has (a record's often reviewed before it's on streaming, or sold only on Bandcamp: Josh
      * Johnson's Animative, 2026-10-29).
      */
@@ -346,11 +347,15 @@ object Curation {
         val records = picks.filter { it.record && it.at >= since }.ifEmpty { picks.filter { it.record } }
         if (records.isEmpty()) return emptyList()
         val named = records.groupBy { key(it) }.values.sortedWith(compareByDescending<List<Pick>> { it.size }.thenByDescending { g -> g.maxOf { it.at } })
-        val best = named.filter { it.size == named.first().size }
+        val best = named.take(maxOf(7, named.count { it.size > 1 }))
         val turn = (day.toEpochDay() % best.size).toInt()
         // the first who picked each, with what was said (the line said, where any did)
         return (best.drop(turn) + best.take(turn) + named.drop(best.size)).map { g -> g.firstOrNull { it.said.isNotBlank() } ?: g.first() }
     }
+
+    /** Whether picks read at `at` want reading again: half a day old, or read before today. */
+    fun stale(at: Long): Boolean = System.currentTimeMillis() - at > 12 * 3_600_000L ||
+        java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault()).toLocalDate() != LocalDate.now()
 
     /** Who else named the same record ("pitchfork, nme"). */
     fun namedBy(p: Pick, picks: List<Pick>): List<String> = picks.filter { key(it) == key(p) }.map { it.from }.distinct()

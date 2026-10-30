@@ -39,15 +39,21 @@ object Picks {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var readAt = 0L
 
+    /**
+     * Kept ones at once; read again when they're half a day old or yesterday's (the record of the day turns at midnight),
+     * on any visit, not only the first: an app left open for days kept its first (Bronson, 2026-10-30).
+     */
     fun start(c: Context) {
-        if (readAt > 0L) return
         val file = File(c.cacheDir, "picks.json")
-        val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
-        kept?.let(::show)
-        // a day kept before it was checked against YouTube Music: read again now
-        readAt = kept?.takeIf { it.optBoolean("checked") }?.optLong("at") ?: 1L
-        if (System.currentTimeMillis() - readAt > 12 * 3_600_000L) scope.launch { read(file) }
+        if (readAt == 0L) {
+            val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
+            kept?.let(::show)
+            // a day kept before it was checked against YouTube Music: read again now
+            readAt = kept?.takeIf { it.optBoolean("checked") }?.optLong("at") ?: 1L
+        }
+        if (Curation.stale(readAt) && reading?.isActive != true) reading = scope.launch { read(file) }
     }
+    private var reading: kotlinx.coroutines.Job? = null
 
     private suspend fun read(file: File) = coroutineScope {
         val all = Curation.picks()

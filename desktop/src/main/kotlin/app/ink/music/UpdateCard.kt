@@ -41,10 +41,11 @@ fun UpdateCard(u: Update) {
         BasicText(u.version, style = headline(56.sp), maxLines = 1, modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
         shown.forEach { BasicText(it.lowercase(), style = pixel(13.sp, Ink.mid), modifier = Modifier.padding(bottom = 6.dp)) }
         if (!all && u.notes.size > 3) Word("${u.notes.size - 3} more", pixel(13.sp, Ink.mid), Modifier.offset(x = (-4).dp), touch = 8.dp) { all = true }
+        // 4 dp left, so UPDATE's touch room lines up with the words above; plain words in it take the 4 dp back
         Row(Modifier.padding(top = 12.dp).offset(x = (-4).dp), verticalAlignment = Alignment.CenterVertically) {
             when (val s = step) {
-                is Updating.Down -> BasicText("downloading ${(s.part * 100).toInt()}%", style = pixel(13.sp))
-                Updating.Installing -> BasicText("installing: ink music opens again in a moment", style = pixel(13.sp))
+                is Updating.Down -> BasicText("downloading ${(s.part * 100).toInt()}%", style = pixel(13.sp), modifier = Modifier.padding(start = 4.dp))
+                Updating.Installing -> BasicText("installing: ink music opens again in a moment", style = pixel(13.sp), modifier = Modifier.padding(start = 4.dp))
                 is Updating.Failed -> {
                     Word("TRY AGAIN", headline(20.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { Updates.take() }
                     BasicText(s.why, style = pixel(13.sp, Ink.mid))

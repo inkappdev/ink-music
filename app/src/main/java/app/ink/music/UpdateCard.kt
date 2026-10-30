@@ -55,10 +55,11 @@ fun UpdateCard(u: Update) {
         shown.forEach { BasicText(it.lowercase(), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 5.dp)) }
         if (!all && u.notes.size > 3) Word("${u.notes.size - 3} more", pixel(12.sp, Ink.mid), Modifier.offset(x = (-4).dp), touch = 8.dp) { all = true }
         // the words' reach pulled back, so they line up with the version over them
+        // 4 dp left, so UPDATE's touch room lines up with the words above; plain words in it take the 4 dp back
         Row(Modifier.padding(top = 10.dp).offset(x = (-4).dp), verticalAlignment = Alignment.CenterVertically) {
             when (val s = step) {
-                is Updating.Down -> BasicText("downloading ${(s.part * 100).toInt()}%", style = pixel(12.sp))
-                Updating.Asking -> BasicText("installing", style = pixel(12.sp))
+                is Updating.Down -> BasicText("downloading ${(s.part * 100).toInt()}%", style = pixel(12.sp), modifier = Modifier.padding(start = 4.dp))
+                Updating.Asking -> BasicText("installing", style = pixel(12.sp), modifier = Modifier.padding(start = 4.dp))
                 is Updating.Failed -> {
                     Word("TRY AGAIN", headline(18.sp), Modifier.padding(end = 18.dp), touch = 8.dp) { Updates.take(ctx) }
                     BasicText(s.why, style = pixel(12.sp, Ink.mid))
