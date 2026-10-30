@@ -364,7 +364,7 @@ private fun App() {
                         Page.HandOver -> HandOverPage(pages)
                         is Page.Mood -> MoodPage(p.mood, pages)
                         is Page.Festival -> FestivalPage(p.name, pages)
-                        is Page.SettingsPart -> SettingsPage(pages, p.part)
+                        is Page.SettingsPart -> if (p.part == "look") LookPage(pages) else SettingsPage(pages, p.part)
                     }
                     }
                 }

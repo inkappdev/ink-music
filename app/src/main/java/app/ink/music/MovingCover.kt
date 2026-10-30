@@ -50,8 +50,12 @@ object Moving {
 
     private val _when = MutableStateFlow(WIFI)
     val whenOn: StateFlow<String> = _when
+    const val CANVAS_OFF = "off"; const val CANVAS_LOOK = "in the look"; const val CANVAS_PLAIN = "as it is"
+    private val _canvas = MutableStateFlow(CANVAS_LOOK)
+    /** A song's Spotify canvas behind the player (signed in to Spotify): off, in the look, or as it is (no effect). */
+    val canvas: StateFlow<String> = _canvas
     private val _inLook = MutableStateFlow(false)
-    /** In the player's look (dither, pixels, fluted glass), or as it is. */
+    /** The cover (still or moving) in the player's look (dither, pixels, fluted glass), or as it is. */
     val inLook: StateFlow<Boolean> = _inLook
 
     private fun file(c: Context) = File(c.filesDir, "moving-covers")
@@ -62,11 +66,13 @@ object Moving {
         _when.value = said.getOrNull(0)?.takeIf { it == WIFI || it == ALWAYS || it == OFF } ?: WIFI
         // "dithered" was the first word for it (2.0.3's first build)
         _inLook.value = said.getOrNull(1) == "in the look" || said.getOrNull(1) == "dithered"
+        _canvas.value = when (said.getOrNull(2)) { "no canvas" -> CANVAS_OFF; "canvas as it is" -> CANVAS_PLAIN; else -> CANVAS_LOOK }
     }
 
-    fun set(c: Context, whenOn: String = _when.value, inLook: Boolean = _inLook.value) {
-        _when.value = whenOn; _inLook.value = inLook
-        runCatching { file(c).writeText(whenOn + "\n" + if (inLook) "in the look" else "as it is") }
+    fun set(c: Context, whenOn: String = _when.value, inLook: Boolean = _inLook.value, canvas: String = _canvas.value) {
+        _when.value = whenOn; _inLook.value = inLook; _canvas.value = canvas
+        val said = when (canvas) { CANVAS_OFF -> "no canvas"; CANVAS_PLAIN -> "canvas as it is"; else -> "canvas" }
+        runCatching { file(c).writeText(listOf(whenOn, if (inLook) "in the look" else "as it is", said).joinToString("\n")) }
     }
 
     /** Whether to show them on the network the phone is on now. */
@@ -75,31 +81,72 @@ object Moving {
 
 /**
  * The record's moving cover over its still one, once its first frame is drawn (till then, and where there's none, the
- * still one shows). A TextureView, so a shader can draw over it: the player's look (dither, pixels, fluted glass; not
- * blur, which would hide the sleeve). It comes in as a print develops (dithered: the brightest dots first; else faded
- * in), and settles with the music: paused, it slows to a stop over a second and holds; played, it picks up again.
+ * still one shows): in the player's look if chosen (dither, pixels, fluted glass; not blur, which would hide the
+ * sleeve), else as it is.
  */
-@OptIn(UnstableApi::class)
 @Composable
 fun MovingCover(artist: String, album: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
     val inLook by Moving.inLook.collectAsState()
     val look by Looks.on.collectAsState()
-    val less by Moves.less.collectAsState()
     val url by produceState<String?>(null, artist, album, whenOn) {
         value = if (Moving.wanted(ctx)) withContext(Dispatchers.IO) { MotionCover.of(artist, album) } else null
+        android.util.Log.i("ink-moving", "cover for $artist / $album: ${if (value != null) "found" else "none"}")
     }
     val u = url ?: return
-    var shown by remember(u) { mutableStateOf(false) }
-    val player = remember(u) {
+    val shape = if (inLook) look.takeIf { it == Look.DITHER || it == Look.PIXELS || it == Look.FLUTED } else null
+    Loop(u, playing, shape, accent, 1f, crop = false, modifier)
+}
+
+/**
+ * Behind the player, a song's Spotify canvas (its tall looping clip; signed in to Spotify, the full build's) across the
+ * whole page: in the look, as the still cover is drawn there (dither, pixels, fluted glass, blur, at the look's own
+ * strength; plain has no backdrop, so none), or as it is, no effect, whatever the look (Bronson, 2026-10-30).
+ */
+@Composable
+fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val whenOn by Moving.whenOn.collectAsState()
+    val behind by Moving.canvas.collectAsState()
+    val look by Looks.on.collectAsState()
+    if (behind == Moving.CANVAS_OFF || (behind == Moving.CANVAS_LOOK && look == Look.PLAIN)) return
+    val url by produceState<String?>(null, title, artist, whenOn) {
+        value = if (Moving.wanted(ctx)) Spotify.canvas(ctx, title, artist) else null
+        android.util.Log.i("ink-moving", "canvas for $artist / $title: ${if (value != null) "found" else "none"}")
+    }
+    val u = url ?: return
+    // as it is: the clip itself, held to half over the black so the white words over it still read (at full, a light
+    // canvas took the title; Spotify's own app darkens it too, by a gradient: here evenly, as ink's look has none)
+    if (behind == Moving.CANVAS_PLAIN) Loop(u, playing, null, accent, .5f, crop = true, modifier)
+    else Loop(u, playing, look, accent, look.alpha, crop = true, modifier)
+}
+
+/**
+ * A silent looping clip in a TextureView, so a shader can draw over it (`shape`: a look, or null as it is). It comes
+ * in as a print develops (dithered: the brightest dots first; else faded in, to `strength`), and settles with the
+ * music: paused, it slows to a stop over a second and holds; played, it picks up again. `crop` fills its space as a
+ * picture cropped to fill would (a canvas is tall, the page another shape).
+ */
+@OptIn(UnstableApi::class)
+@Composable
+private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, strength: Float, crop: Boolean, modifier: Modifier) {
+    val ctx = LocalContext.current
+    val less by Moves.less.collectAsState()
+    var shown by remember(url) { mutableStateOf(false) }
+    var video by remember(url) { mutableStateOf(androidx.media3.common.VideoSize.UNKNOWN) }
+    val player = remember(url) {
         ExoPlayer.Builder(ctx).build().apply {
             // a picture, never a sound: no audio track, no focus taken from the music
             trackSelectionParameters = trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
             volume = 0f
             repeatMode = Player.REPEAT_MODE_ONE
-            addListener(object : Player.Listener { override fun onRenderedFirstFrame() { shown = true } })
-            setMediaItem(MediaItem.fromUri(u))
+            addListener(object : Player.Listener {
+                override fun onRenderedFirstFrame() { shown = true; android.util.Log.i("ink-moving", "playing ${if (crop) "canvas" else "cover"}") }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) { android.util.Log.w("ink-moving", "${if (crop) "canvas" else "cover"}: ${error.errorCodeName}") }
+                override fun onVideoSizeChanged(size: androidx.media3.common.VideoSize) { video = size }
+            })
+            setMediaItem(MediaItem.fromUri(url))
             prepare()
             playWhenReady = true
         }
@@ -112,15 +159,29 @@ fun MovingCover(artist: String, album: String, accent: Color, playing: Boolean, 
             if (v < .05f) player.pause() else { player.setPlaybackSpeed(v); player.play() }
         }
     }
-    // coming in: developing (its dots, brightest first, as the still dither's do), else a fade
-    val shape = if (inLook && Build.VERSION.SDK_INT >= 33) look.takeIf { it == Look.DITHER || it == Look.PIXELS || it == Look.FLUTED } else null
-    val come by animateFloatAsState(if (shown) 1f else 0f, if (less) snap() else tween(if (shape == Look.DITHER) 1_400 else 600), label = "come")
+    // the shaders are Android 13's: before it, as it is (and blur too: Android 12's own blur)
+    val drawn = shape?.takeIf { Build.VERSION.SDK_INT >= 33 || (it == Look.BLUR && Build.VERSION.SDK_INT >= 31) }
+    val come by animateFloatAsState(if (shown) 1f else 0f, if (less) snap() else tween(if (drawn == Look.DITHER) 1_400 else 600), label = "come")
     val density = LocalDensity.current.density
-    var wide by remember { mutableStateOf(0) }
+    var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     AndroidView(
         factory = { c -> TextureView(c).also { player.setVideoTextureView(it) } },
-        update = { tv -> if (Build.VERSION.SDK_INT >= 33) tv.setRenderEffect(shape?.let { Shaders.effect(it, accent, density, come, wide.toFloat()) }) },
-        modifier = modifier.onSizeChanged { wide = it.width }.clipToBounds().graphicsLayer { alpha = if (shape == Look.DITHER) (if (shown) 1f else 0f) else come },
+        update = { tv ->
+            if (crop && size.width > 0 && video.width > 0) {
+                // scaled up to fill, the overflow cut off evenly (TextureView stretches to fit by itself)
+                val vw = video.width * video.pixelWidthHeightRatio; val vh = video.height.toFloat()
+                val k = maxOf(size.width / vw, size.height / vh)
+                tv.setTransform(android.graphics.Matrix().apply { setScale(vw * k / size.width, vh * k / size.height, size.width / 2f, size.height / 2f) })
+            }
+            if (Build.VERSION.SDK_INT >= 31) tv.setRenderEffect(when {
+                drawn == Look.BLUR -> android.graphics.RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP)
+                drawn != null -> Shaders.effect(drawn, accent, density, come, size.width.toFloat())
+                else -> null
+            })
+        },
+        modifier = modifier.onSizeChanged { size = it }.clipToBounds().graphicsLayer {
+            alpha = if (drawn == Look.DITHER) (if (shown) strength else 0f) else come * strength
+        },
     )
 }
 

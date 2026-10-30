@@ -202,34 +202,6 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 // your computer: paired, kept in step on the wifi (Sync)
                 Column(Modifier.cascade(3)) { ComputerSetting(pages) }
 
-                // moving covers: a record's own looping sleeve in the player, where it has one (the full build)
-                if (Moving.available) Column(Modifier.cascade(3)) {
-                    val whenOn by Moving.whenOn.collectAsState()
-                    val inLook by Moving.inLook.collectAsState()
-                    BasicText("MOVING COVERS", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("where a record has one, its own looping sleeve in the player (apple music's). silent", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    Row {
-                        listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF).forEach { w ->
-                            Word(w, pixel(14.sp, if (whenOn == w) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, whenOn = w) }
-                        }
-                    }
-                    if (whenOn != Moving.OFF) {
-                        Spacer(Modifier.height(6.dp))
-                        // the shaders are Android 13's: before it, as it is
-                        if (android.os.Build.VERSION.SDK_INT >= 33) Row {
-                            Word("as it is", pixel(14.sp, if (!inLook) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, inLook = false) }
-                            Word("in the look", pixel(14.sp, if (inLook) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(ctx, inLook = true) }
-                        }
-                        if (inLook && android.os.Build.VERSION.SDK_INT >= 33) {
-                            Spacer(Modifier.height(6.dp))
-                            BasicText("the player's look over it: dither, pixels or fluted glass (blur and plain leave it as it is)", style = pixel(12.sp, Ink.mid))
-                        }
-                    }
-                    Spacer(Modifier.height(40.dp))
-                }
-
                 // private listening: a switch, nothing kept or told while it's on
                 Column(Modifier.cascade(3)) {
                     var hidden by remember { mutableStateOf(Private.on(ctx)) }
@@ -488,19 +460,26 @@ private fun SettingsIndex(pages: Pages) {
         if (YouTubeMusic.available) (if (who != null) "youtube music, signed in" else "youtube music") else null,
         "from spotify",
     ).joinToString(" · "), "music", 1)
+    val look by Looks.on.collectAsState()
+    val moving by Moving.whenOn.collectAsState()
+    Entry("THE LOOK", listOfNotNull(
+        look.word,
+        if (Moving.available) (if (moving == Moving.OFF) "covers still" else "moving covers ${moving}") else null,
+        if (Spotify.available && Spotify.signedIn() && Moving.canvas.collectAsState().value != Moving.CANVAS_OFF) "spotify canvas" else null,
+    ).joinToString(" · "), "look", 2)
     Entry("SOUND", listOfNotNull(
         Quality.words.getOrNull(quality.first)?.let { "$it on wifi" },
         if (eq.on) "equalizer on" else "equalizer off",
         if (soft) "soft pause" else null,
         kept.size.takeIf { it > 0 }?.let { "$it kept offline" },
-    ).joinToString(" · "), "sound", 2)
+    ).joinToString(" · "), "sound", 3)
     Entry("LISTENING", listOfNotNull(
         seeds.size.takeIf { it > 0 }?.let { "$it artists" },
         if (lb != null) "listenbrainz on" else null,
         if (lastfm != null) "last.fm on" else null,
         if (Moves.less.value) "moving less" else null,
-    ).joinToString(" · "), "listening", 3)
-    Entry("ABOUT", "version ${BuildConfig.VERSION_NAME} · what leaves the phone · free and open", "about", 4)
+    ).joinToString(" · "), "listening", 4)
+    Entry("ABOUT", "version ${BuildConfig.VERSION_NAME} · what leaves the phone · free and open", "about", 5)
 }
 
 /** Signing in to your server: its address, your name and password; what went wrong, said plainly. */
