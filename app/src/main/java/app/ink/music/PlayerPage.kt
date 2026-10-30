@@ -455,7 +455,9 @@ private fun Backdrop(cover: Cover?, n: Now) {
         // (a new song resets it; a look or setting changed doesn't: its clip plays on, and its first frame isn't seen
         // again till it loops, the still one showing through meanwhile)
         var canvasUp by remember(n.title, n.artist) { mutableStateOf(false) }
-        val canvasShown = canvasUp && canvasOn
+        // in the look's preview, "behind it" just chosen: the canvas fades aside, the still look shown under it
+        val peek = LocalPreview.current && Showcase.peeking.collectAsState().value
+        val canvasShown = canvasUp && canvasOn && !peek
         drawn?.takeIf { !canvasShown }?.let { (img, shape) ->
             val fade = remember(img) { Animatable(0f) }
             LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
@@ -466,7 +468,8 @@ private fun Backdrop(cover: Cover?, n: Now) {
             )
         }
         // the song's spotify canvas over it, moving, in the same look (signed in to spotify: settings, the look)
-        if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
+        val aside by androidx.compose.animation.core.animateFloatAsState(if (peek) 0f else 1f, tween(600, easing = Motion.expo), label = "aside")
+        if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize().graphicsLayer { alpha = aside }) { canvasUp = true }
         // the grain over a still look, or a canvas in one (not dither's, nor a canvas as it is)
         if (if (canvasShown) canvasLook != null && canvasLook != Look.DITHER else drawn?.second?.let { it != Look.DITHER } == true) Grain()
     }
@@ -1072,7 +1075,7 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
             if (n == null) BasicText("play something, and see it here", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(12.dp))
             // drawn small from the start, a smaller density, not a full one scaled down: a moving cover's shader
             // inside a scaled layer stopped moving (and its dots and squares come out in proportion)
-            else androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides androidx.compose.ui.unit.Density(d.density * k, d.fontScale)) {
+            else androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides androidx.compose.ui.unit.Density(d.density * k, d.fontScale), LocalPreview provides true) {
                 Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredSize(full.first, full.second)) {
                     val cover = rememberCover(n.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
                     Box(Modifier.fillMaxSize().background(Ink.black)) { Backdrop(cover, n) }
@@ -1091,16 +1094,26 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * The look's example songs: Fontaines D.C.'s Starburster (Bronson's pick, 2026-10-30: Romance's moving heart, a canvas
- * behind it), and Tame Impala's The Less I Know the Better (Currents' moving cover, and no canvas: the still look
- * behind it shows, which a canvas covers; "behind it" changed nothing in sight with Starburster alone). The record named
- * too: YouTube's search can find a song without it, and the moving cover is the record's.
+ * The look's example song: Fontaines D.C.'s Starburster (Bronson's pick, 2026-10-30: Romance's moving heart, a canvas
+ * behind it). Its canvas covers the still look behind it, so "behind it" chosen, the canvas steps aside a few seconds
+ * (peek). The record named too: YouTube's search can find a song without it, and the moving cover is the record's.
  */
 object Showcase {
     class Pick(val title: String, val artist: String, val album: String, val said: String)
     val picks = listOf(
         Pick("Starburster", "Fontaines D.C.", "Romance", "fontaines d.c., starburster: a moving cover, a canvas behind it"),
-        Pick("The Less I Know the Better", "Tame Impala", "Currents", "tame impala, the less i know the better: no canvas, so the look behind it shows"),
     )
     val found = java.util.concurrent.ConcurrentHashMap<String, Song>()
+
+    private val _peek = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** "Behind it" just chosen: the preview's canvas steps aside a few seconds, the still look behind it shown. */
+    val peeking: kotlinx.coroutines.flow.StateFlow<Boolean> = _peek
+    private var peekJob: kotlinx.coroutines.Job? = null
+    fun peek() {
+        peekJob?.cancel()
+        peekJob = kotlinx.coroutines.MainScope().launch { _peek.value = true; delay(3_500); _peek.value = false }
+    }
 }
+
+/** Inside the look's preview (not the player): its canvas steps aside when "behind it" is chosen. */
+val LocalPreview = androidx.compose.runtime.staticCompositionLocalOf { false }

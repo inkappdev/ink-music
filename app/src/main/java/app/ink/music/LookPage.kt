@@ -50,8 +50,9 @@ fun LookPage(pages: Pages) {
             Spacer(Modifier.height(14.dp))
             // the player in small, pinned: what's chosen below shows here
             // two songs, swiped between: one with a canvas, one without (where the look behind it shows); a choice
-            // tapped below turns to the one it shows on. Only the one in sight plays its clips
-            val many = YouTubeMusic.available
+            // tapped below changes the song in sight, never the song (Bronson). Only the one in sight plays its clips
+            // one song with every moving thing; "behind it" chosen, its canvas steps aside a moment to show it (Bronson)
+            val many = YouTubeMusic.available && Showcase.picks.size > 1
             val pager = androidx.compose.foundation.pager.rememberPagerState { if (many) Showcase.picks.size else 1 }
             val scope = androidx.compose.runtime.rememberCoroutineScope()
             fun turn(to: Int) { if (many && pager.currentPage != to) scope.launch { pager.animateScrollToPage(to, animationSpec = androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) } }
@@ -62,11 +63,11 @@ fun LookPage(pages: Pages) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 val at = pager.currentPage
                 if (many) Word("<", pixel(14.sp, if (at > 0) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 10.dp) { turn(at - 1) }
-                BasicText(if (many) Showcase.picks[at].said else "what plays now", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+                BasicText(if (YouTubeMusic.available) Showcase.picks[at].said else "what plays now", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
                 if (many) Word(">", pixel(14.sp, if (at < Showcase.picks.size - 1) Ink.ink else Ink.dim), Modifier.padding(start = 14.dp), touch = 10.dp) { turn(at + 1) }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 28.dp, bottom = 40.dp)) {
+            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 28.dp, bottom = LocalFoot.current + 40.dp)) {
                 // three layers, each its own effect, none following another (Bronson, 2026-10-30): the cover, the
                 // still background, spotify's canvas over it; each a row of words, the chosen one lit
                 @Composable
@@ -83,7 +84,7 @@ fun LookPage(pages: Pages) {
                     BasicText("the record's cover in the player, moving where it has a moving one", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     val options = listOf<Look?>(null) + Moving.coverLooks
-                    Choices(options.map { (it?.word ?: "as it is") to (it == cover) }) { Moving.set(ctx, cover = options[it]); turn(0) }
+                    Choices(options.map { (it?.word ?: "as it is") to (it == cover) }) { Moving.set(ctx, cover = options[it]) }
                     Spacer(Modifier.height(40.dp))
                 }
                 Column(Modifier.cascade(2)) {
@@ -91,7 +92,7 @@ fun LookPage(pages: Pages) {
                     Spacer(Modifier.height(6.dp))
                     BasicText("the cover across the page, still" + if (Spotify.available && signed && canvasOn) ", where a song has no canvas" else "", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
-                    Choices(Look.entries.map { it.word to (it == look) }) { Looks.set(ctx, Look.entries[it]); turn(if (signed && canvasOn) 1 else 0) }
+                    Choices(Look.entries.map { it.word to (it == look) }) { Looks.set(ctx, Look.entries[it]); Showcase.peek() }
                     Spacer(Modifier.height(40.dp))
                 }
                 // spotify's canvas over the background (signed in to spotify)
@@ -109,7 +110,6 @@ fun LookPage(pages: Pages) {
                         val options = listOf<Look?>(null) + Moving.canvasLooks
                         Choices(listOf("off" to !canvasOn) + options.map { (it?.word ?: "as it is") to (canvasOn && it == canvas) }) { i ->
                             if (i == 0) Moving.set(ctx, canvasOn = false) else Moving.set(ctx, canvasOn = true, canvas = options[i - 1])
-                            turn(0)
                         }
                     }
                     Spacer(Modifier.height(40.dp))
