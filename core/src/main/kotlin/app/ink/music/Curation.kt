@@ -400,19 +400,35 @@ object Curation {
      */
     fun cover(title: String, artist: String, record: Boolean): String? = itunes(title, artist, record) ?: deezer(title, artist, record)
 
+    /**
+     * As [cover], but throws when neither iTunes nor Deezer could be asked (offline, or turned away for asking too
+     * much), so a cover not found is told apart from one not looked for (#1, 2026-10-30: INK's covers gray, a refusal
+     * kept as "none").
+     */
+    fun coverOrThrow(title: String, artist: String, record: Boolean): String? {
+        val i = runCatching { itunesOrThrow(title, artist, record) }
+        i.getOrNull()?.let { return it }
+        val d = runCatching { deezerOrThrow(title, artist, record) }
+        d.getOrNull()?.let { return it }
+        if (i.isFailure && d.isFailure) throw i.exceptionOrNull()!!
+        return null
+    }
+
     /** Deezer's cover for a record or song (its open search, no key): the same artist and name, at its largest. */
-    fun deezer(title: String, artist: String, record: Boolean): String? = runCatching {
+    fun deezer(title: String, artist: String, record: Boolean): String? = runCatching { deezerOrThrow(title, artist, record) }.getOrNull()
+
+    private fun deezerOrThrow(title: String, artist: String, record: Boolean): String? {
         fun plainName(s: String) = s.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
         val q = java.net.URLEncoder.encode("artist:\"${artist.substringBefore(",").trim()}\" ${if (record) "album" else "track"}:\"$title\"", "UTF-8")
         val o = org.json.JSONObject(get("https://api.deezer.com/search/${if (record) "album" else "track"}?q=$q&limit=8"))
         val results = o.optJSONArray("data") ?: return null
         val want = plainName(artist.substringBefore(",")); val wt = plainName(title)
-        (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
+        return (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
             val a = plainName(r.optJSONObject("artist")?.optString("name").orEmpty())
             val t = plainName(r.optString("title"))
             a.isNotEmpty() && (a.contains(want) || want.contains(a)) && wt.isNotEmpty() && (t.startsWith(wt) || wt.startsWith(t))
         }?.let { r -> (if (record) r else r.optJSONObject("album"))?.optString("cover_xl")?.takeIf { it.isNotEmpty() } }
-    }.getOrNull()
+    }
 
     /**
      * Whether a YouTube Music playlist is YouTube's own (shown in the dither, its lettering made ink's): its mixes
@@ -423,17 +439,19 @@ object Curation {
             by.trim().lowercase() in setOf("youtube music", "youtube", "chart", "charts")
 
     /** A record's (or song's) cover from Apple's iTunes search (no key), artist and name matched, at its largest. */
-    fun itunes(title: String, artist: String, record: Boolean): String? = runCatching {
+    fun itunes(title: String, artist: String, record: Boolean): String? = runCatching { itunesOrThrow(title, artist, record) }.getOrNull()
+
+    private fun itunesOrThrow(title: String, artist: String, record: Boolean): String? {
         fun plainName(s: String) = s.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
         val term = java.net.URLEncoder.encode("$artist $title", "UTF-8")
         val o = org.json.JSONObject(get("https://itunes.apple.com/search?term=$term&entity=${if (record) "album" else "song"}&limit=8"))
         val results = o.optJSONArray("results") ?: return null
-        (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
+        return (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
             val a = plainName(r.optString("artistName")); val want = plainName(artist.substringBefore(","))
             val t = plainName(r.optString(if (record) "collectionName" else "trackName")); val wt = plainName(title)
             a.isNotEmpty() && (a.contains(want) || want.contains(a)) && wt.isNotEmpty() && (t.startsWith(wt) || wt.startsWith(t))
         }?.optString("artworkUrl100")?.takeIf { it.isNotEmpty() }?.replace(Regex("/\\d+x\\d+[a-z-]*\\.(jpg|png)$"), "/1200x1200bb.$1")
-    }.getOrNull()
+    }
 
     // ---- text ----
 

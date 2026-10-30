@@ -116,11 +116,14 @@ object Picks {
         arts[k]?.let { return it.orElse(null) }
         return asking.withPermit {
             arts[k]?.let { return@withPermit it.orElse(null) }
+            // a cover found, or none anywhere, is kept; a lookup that couldn't be made (offline, iTunes turning a crowd
+            // away) isn't, so the tile asks again next time it's shown (#1: INK's covers gray for good)
+            var unasked = false
             withContext(Dispatchers.IO) {
-                Curation.coverAt(link) ?: Curation.cover(title, artist, record)
+                Curation.coverAt(link) ?: runCatching { Curation.coverOrThrow(title, artist, record) }.onFailure { unasked = true }.getOrNull()
                     // the last place: YouTube Music's own search (where it'd play from anyway; the full build)
                     ?: runCatching { if (record) YouTubeMusic.findRecord(title, artist)?.art else YouTubeMusic.find(title, artist)?.art }.getOrNull()
-            }.also { arts[k] = java.util.Optional.ofNullable(it) }
+            }.also { if (it != null || !unasked) arts[k] = java.util.Optional.ofNullable(it) }
         }
     }
 
