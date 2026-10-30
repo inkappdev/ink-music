@@ -845,7 +845,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
     val speaker by Casting.on.collectAsState()
     val said by produceState<Receiver.Said?>(null, speaker) {
         val sp = speaker ?: return@produceState
-        while (true) { Receiver.read(sp)?.let { value = it }; kotlinx.coroutines.delay(5_000) }
+        while (true) { Receiver.read(with(Casting) { sp.device() })?.let { value = it }; kotlinx.coroutines.delay(5_000) }
     }
     if (n.device.isNotEmpty()) {
         val song = n.song

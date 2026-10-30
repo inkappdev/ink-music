@@ -129,7 +129,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 Row {
                     Column(Modifier.width(side + off)) {
                         Scrubber(n, accent, Modifier.width(side)) {
-                            if (on == null) HeardWord(heard?.takeIf { it.id == n.song.id }, typing) { heardUp = true }
+                            // on a speaker, what's sent there: a click to its path too
+                            val castQuality by Casting.quality.collectAsState()
+                            HeardWord(if (on != null) sent(castQuality, n.song.id) else heard?.takeIf { it.id == n.song.id }, typing) { heardUp = true }
                         }
                         Box(Modifier.size(side + off)) {
                             // its print beside it, while there's no background (the background takes its place)
@@ -215,10 +217,10 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
             }
         }
         AnimatedVisibility(
-            heardUp && heard != null,
+            heardUp && (heard != null || on != null),
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { heard?.let { HeardPage(it) { heardUp = false } } }
+        ) { SignalPath(heard?.takeIf { on == null && it.id == n.song.id }) { heardUp = false } }
     }
 }
 
@@ -337,51 +339,6 @@ private const val SETTLE = 1_400
 private val SETTLING = CubicBezierEasing(.45f, 0f, .2f, 1f)
 
 /** All of what reaches your ears: the stream's format, where it came from, the volume and even volume. */
-@Composable
-private fun HeardPage(h: Heard, onClose: () -> Unit) {
-    val volume by Player.volume.collectAsState()
-    val muted by Player.muted.collectAsState()
-    val sound by Player.sound.collectAsState()
-    val lines = listOfNotNull(
-        "format" to (h.codec + if (h.hires) ", hi-res lossless" else if (h.lossless) ", lossless" else ", lossy"),
-        h.bits.takeIf { it > 0 }?.let { "bit depth" to "$it bit" },
-        h.rate.takeIf { it > 0 }?.let { "sample rate" to "${Heard.khz(it)} khz" },
-        h.channels.takeIf { it > 0 }?.let { "channels" to when (it) { 1 -> "mono"; 2 -> "stereo"; else -> "$it" } },
-        h.kbps.takeIf { it > 0 }?.let { "bitrate" to "$it kbps" },
-        "from" to when (h.from) {
-            "server" -> "your server, the file as it is"
-            "youtube" -> "youtube music, its best stream"
-            "station" -> "the station's stream"
-            else -> "this ${if (Home.mac) "mac" else "computer"}, the file as it is"
-        },
-        "even volume" to (if (!sound.even) "off, as recorded" else h.gain?.let { "%+.1f db".format(java.util.Locale.ROOT, it) } ?: "none in the file"),
-        "volume" to "$volume",
-        // whether the file's samples reach the output unchanged, and what's in the way if not
-        "exact" to when {
-            !h.lossless -> "no: a lossy file is never the recording exactly"
-            muted || volume < 100 -> "no: volume at ${if (muted) "mute" else volume}"
-            sound.even && h.gain != null -> "no: even volume"
-            !sound.exclusive -> "no: shared, mixed at the ${if (Home.mac) "mac" else "computer"}'s rate (settings, sound: alone)"
-            else -> "yes: the file's samples, at its own rate"
-        },
-    )
-    Column(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
-        Close(onClose)
-        Column(Modifier.padding(start = SIDE, end = SIDE, top = 16.dp)) {
-            BasicText("WHAT YOU HEAR", style = headline(64.sp))
-            Spacer(Modifier.height(8.dp))
-            BasicText(h.word, style = pixel(16.sp, if (h.lossless) Ink.ink else Ink.mid))
-            Spacer(Modifier.height(32.dp))
-            lines.forEach { (label, value) ->
-                Row(Modifier.padding(vertical = 7.dp)) {
-                    BasicText(label, style = pixel(12.sp, Ink.mid), modifier = Modifier.width(160.dp).padding(top = 2.dp))
-                    BasicText(value, style = pixel(14.sp))
-                }
-            }
-        }
-    }
-}
-
 /**
  * The record, on the inner sleeve: its songs in order, numbered, this one lit (and marked), each its length; a click
  * plays the record from there. A song whose record isn't here says so, and offers its page.
