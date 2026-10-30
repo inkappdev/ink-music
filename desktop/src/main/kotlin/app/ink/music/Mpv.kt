@@ -27,6 +27,11 @@ internal interface MpvApi : Library {
     fun mpv_hook_continue(h: Pointer, id: Long): Int
     fun mpv_terminate_destroy(h: Pointer)
     fun mpv_error_string(error: Int): String
+    // the render API, its software way (a moving cover's frames drawn into memory the app shows: [Video])
+    fun mpv_render_context_create(res: com.sun.jna.ptr.PointerByReference, h: Pointer, params: Pointer): Int
+    fun mpv_render_context_update(ctx: Pointer): Long
+    fun mpv_render_context_render(ctx: Pointer, params: Pointer): Int
+    fun mpv_render_context_free(ctx: Pointer)
 }
 
 internal interface Libc : Library {
@@ -34,7 +39,7 @@ internal interface Libc : Library {
 }
 
 class Mpv(options: Map<String, String>) {
-    private val api: MpvApi = load()
+    internal val api: MpvApi = load()
 
     init {
         // mpv won't start under a locale that writes 1,5 for 1.5 (the JVM takes the system's): numbers the C way
@@ -43,7 +48,7 @@ class Mpv(options: Map<String, String>) {
         }
     }
 
-    private val h: Pointer = api.mpv_create() ?: error("libmpv wouldn't start")
+    internal val h: Pointer = api.mpv_create() ?: error("libmpv wouldn't start")
 
     init {
         // what this mpv can't take (an older one, another OS's option) it says no to; the rest stands
