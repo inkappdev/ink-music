@@ -129,6 +129,13 @@ fun FindTab(open: (Page) -> Unit) {
         }
     }
     val (tubeSongs, tubeRecords) = tube ?: (emptyList<Song>() to emptyList())
+    // artists YouTube Music has by that name and you don't (Bronson, 2026-10-29: Mac DeMarco found, no page to open):
+    // read from whose its songs and records are
+    val tubeArtists = remember(q, tube, foundArtists) {
+        if (q.isEmpty()) emptyList() else (tubeSongs.flatMap { it.artist.split(", ") } + tubeRecords.map { it.artist })
+            .map { it.trim() }.filter { it.isNotEmpty() && rank(it) != null && foundArtists.none { a -> a.name.equals(it, true) } }
+            .distinctBy { it.lowercase() }.sortedBy { rank(it) }.take(3).map { ArtistEntry(it, 0, 0) }
+    }
     val records = @Composable { rs: List<Album>, ts: List<TubeAlbum> ->
         LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             items(rs, key = { it.id }) { a -> RecordTile(a, Modifier.width(160.dp)) { open(Page.Record(a.id)) } }
@@ -159,6 +166,10 @@ fun FindTab(open: (Page) -> Unit) {
                 Spacer(Modifier.width(40.dp))
                 val theirs = rememberLazyListState()
                 LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(theirs), theirs, contentPadding = PaddingValues(bottom = 32.dp)) {
+                    if (tubeArtists.isNotEmpty()) {
+                        item { Label("artists on youtube music") }
+                        items(tubeArtists, key = { "ta-" + it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }
+                    }
                     if (tubeRecords.isNotEmpty()) item { Label("records on youtube music"); records(emptyList(), tubeRecords) }
                     if (tubeSongs.isNotEmpty()) {
                         item { Label("songs on youtube music") }
@@ -186,6 +197,7 @@ fun FindTab(open: (Page) -> Unit) {
                 }
                 // what YouTube Music has: its records, then its songs
                 if (tubeSongs.isNotEmpty() || tubeRecords.isNotEmpty()) item { Label("on youtube music") }
+                items(tubeArtists, key = { "ta-" + it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }
                 if (tubeRecords.isNotEmpty()) item { records(emptyList(), tubeRecords) }
                 itemsIndexed(tubeSongs, key = { _, s -> "t" + s.id }) { i, s ->
                     SongRow(s, said = s.artist.lowercase()) { Player.play(tubeSongs, i) }
