@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-The GitHub social preview (.github/social-preview.png, 1280 x 640): INK MUSIC and what it is on the
-left, three of the store's screenshots on the right, stepped down and running off the edge. Set by
-hand in the repo's settings (Settings, Social preview) after it's made.
+The GitHub social preview (.github/social-preview.jpg, 2560 x 1280: GitHub's 1280 x 640 at twice the size, sharp on
+any screen; a jpg, as GitHub takes 1 MB at most): INK MUSIC and what it is on the left; on the right the computer's
+player (a window shot from the Mac, .github/desktop/) running off the edge, a phone (one of the store's screenshots)
+standing in front of its right side. Set by hand in the repo's settings (Settings, Social preview) after it's made.
 
-    python3 tools/make-social.py [first second third]   # screenshot numbers, default 2 3 4
+    python3 tools/make-social.py [phone] [window]   # a phone screenshot's number (default 1), a desktop shot (default player)
 """
 import os
 import sys
@@ -12,38 +13,51 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 SHOTS = os.path.join(ROOT, "fastlane/metadata/android/en-US/images/phoneScreenshots")
+DESK = os.path.join(ROOT, ".github/desktop")
 FONTS = os.path.join(ROOT, "app/src/main/res/font")
 INK = (242, 240, 235)
-MID = (242 * 55 // 100, 240 * 55 // 100, 235 * 55 // 100)   # ink at 55%, as the app's secondary words
+MID = tuple(c * 70 // 100 for c in INK)   # ink at 70%, as the app's hints
+EDGE = (40, 40, 39)                       # the 12% hairline
 
-W, H = 1280, 640
-picked = [int(a) for a in sys.argv[1:4]] or [2, 3, 4]
+W, H = 2560, 1280
+phone = sys.argv[1] if len(sys.argv) > 1 else "1"
+window = sys.argv[2] if len(sys.argv) > 2 else "player"
 
 img = Image.new("RGB", (W, H), (0, 0, 0))
 d = ImageDraw.Draw(img)
 archivo = lambda size: ImageFont.truetype(os.path.join(FONTS, "archivo_black.ttf"), size)
 silk = lambda size: ImageFont.truetype(os.path.join(FONTS, "silkscreen.ttf"), size)
 
+# the computer: the window alone (its shadow, made for a light page, cut away), big, running off the right edge
+shot = Image.open(os.path.join(DESK, f"{window}.png")).convert("RGBA")
+box = shot.getchannel("A").point(lambda a: 255 if a > 250 else 0).getbbox()
+shot = shot.crop(box)
+ww = 1700
+shot = shot.resize((ww, shot.height * ww // shot.width), Image.LANCZOS)
+wx, wy = 980, 130
+img.paste(shot, (wx, wy), shot)
+d.rounded_rectangle((wx - 1, wy - 1, wx + ww, wy + shot.height), radius=22, outline=EDGE, width=2)
+
+# the phone: in front of the window's right side (the cover and title left clear), a hairline round it and black between them
+p = Image.open(os.path.join(SHOTS, f"{phone}.png")).convert("RGB")
+pw = 440
+p = p.resize((pw, p.height * pw // p.width), Image.LANCZOS)
+px, py = W - pw - 120, H - p.height - 70
+d.rectangle((px - 14, py - 14, px + pw + 13, py + p.height + 13), fill=(0, 0, 0))
+img.paste(p, (px, py))
+d.rectangle((px - 2, py - 2, px + pw + 1, py + p.height + 1), outline=EDGE, width=2)
+
 # the words
-x = 78
-d.text((x, 88), "INK", font=archivo(118), fill=INK)
-d.text((x, 205), "MUSIC", font=archivo(118), fill=INK)
-for i, line in enumerate(["A FREE MUSIC PLAYER", "FOR ANDROID"]):
-    d.text((x, 366 + i * 30), line, font=silk(19), fill=INK)
-for i, line in enumerate(["YOUR FILES, NAVIDROME,", "YOUTUBE MUSIC, INDIE RADIO"]):
-    d.text((x, 452 + i * 30), line, font=silk(19), fill=MID)
-d.text((x, 568), "NO ADS. NO ACCOUNTS. OPEN SOURCE.", font=silk(15), fill=MID)
-d.text((x, 594), "GITHUB.COM/INKAPPDEV/INK-MUSIC", font=silk(15), fill=INK)
+x = 150
+d.text((x, 170), "INK", font=archivo(200), fill=INK)
+d.text((x, 370), "MUSIC", font=archivo(200), fill=INK)
+for i, line in enumerate(["A FREE MUSIC PLAYER", "FOR YOUR PHONE", "AND YOUR COMPUTER"]):
+    d.text((x, 650 + i * 56), line, font=silk(36), fill=INK)
+for i, line in enumerate(["ANDROID, MAC,", "WINDOWS, LINUX"]):
+    d.text((x, 860 + i * 56), line, font=silk(36), fill=MID)
+d.text((x, 1094), "NO ADS. NO ACCOUNTS. OPEN SOURCE.", font=silk(26), fill=MID)
+d.text((x, 1140), "GITHUB.COM/INKAPPDEV/INK-MUSIC", font=silk(26), fill=INK)
 
-# the phones: each a screenshot at 270 px wide with a hairline edge, stepped, the last running off the page
-w = 272
-for i, n in enumerate(picked):
-    shot = Image.open(os.path.join(SHOTS, f"{n}.png")).convert("RGB")
-    h = shot.height * w // shot.width
-    shot = shot.resize((w, h), Image.LANCZOS)
-    px, py = 530 + i * 288, 130 - i * 65
-    img.paste(shot, (px, py))
-    d.rectangle((px - 1, py - 1, px + w, py + h), outline=(40, 40, 39))   # the 12% hairline round each
-
-img.save(os.path.join(ROOT, ".github/social-preview.png"), optimize=True)
-print("made .github/social-preview.png from screenshots", picked)
+out = os.path.join(ROOT, ".github/social-preview.jpg")
+img.save(out, quality=90, optimize=True, progressive=True, subsampling=0)
+print(f"made {out} ({os.path.getsize(out) // 1024} KB) from phone {phone} and the computer's {window}")

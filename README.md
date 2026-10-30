@@ -114,7 +114,7 @@ The same ink music, made for a big screen and a keyboard:
 
 ## ink radio
 
-<img src=".github/radio.gif" width="240" align="right" alt="WFMU playing, its name sending out rings in 1-bit dither" />
+<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="240" align="right" alt="KUTX 98.9 playing on its own sleeve, its rings in its own color, saying the song on the air: Moonlight Mile" />
 
 Sixty-two independent, listener-powered and community stations, chosen by hand: KEXP in
 Seattle, NTS in London, dublab in Los Angeles, WFMU in Jersey City, Radio alHara in Bethlehem,
