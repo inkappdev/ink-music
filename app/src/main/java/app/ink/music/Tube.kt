@@ -3,11 +3,14 @@ package app.ink.music
 /** A YouTube Music record found: its link, name, artist and cover (the full build's only). */
 data class TubeAlbum(val url: String, val title: String, val artist: String, val art: String?)
 
-/** What a YouTube Music search found: songs and records. */
 /** A mood or genre on YouTube Music's own page of them (chill, focus...; african to soundtracks); its `params` open it. */
 data class TubeMood(val title: String, val params: String, val genre: Boolean)
 
-data class TubeFound(val songs: List<Song> = emptyList(), val albums: List<TubeAlbum> = emptyList())
+/** What a YouTube Music search found: songs, records, artists, playlists. */
+data class TubeFound(
+    val songs: List<Song> = emptyList(), val albums: List<TubeAlbum> = emptyList(),
+    val artists: List<TubeArtist> = emptyList(), val lists: List<TubeAlbum> = emptyList(),
+)
 
 /** An artist on YouTube Music: their name and photo (the onboarding's faces), and their page ("UC...") when known. */
 data class TubeArtist(val name: String, val face: String?, val id: String = "")

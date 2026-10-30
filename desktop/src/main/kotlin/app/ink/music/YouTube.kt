@@ -14,6 +14,12 @@ import java.util.concurrent.ConcurrentHashMap
 /** A YouTube Music record found: its link, name, artist and cover. */
 data class TubeAlbum(val url: String, val title: String, val artist: String, val art: String?)
 
+/** What YouTube Music found for find: songs, records, artists, playlists. */
+data class TubeFound(
+    val songs: List<Song> = emptyList(), val albums: List<TubeAlbum> = emptyList(),
+    val artists: List<TubeArtist> = emptyList(), val lists: List<TubeAlbum> = emptyList(),
+)
+
 /**
  * YouTube Music on the desktop, signed out (the phone's YouTubeMusic, the parts so far): search songs and
  * records, open a record, songs like one (radio), and a song's stream as it starts (they expire, so each is
@@ -32,24 +38,32 @@ object YouTube {
     fun known(id: String): Song? = known[id]
     fun remember(s: Song) { known[s.id] = s }
 
-    /** Songs and records by these words, both asked at once; null when YouTube Music didn't answer at all. */
-    suspend fun search(q: String): Pair<List<Song>, List<TubeAlbum>>? = withContext(Dispatchers.IO) {
+    /**
+     * Songs and records by these words, and for find (`all`) artists and playlists too, all asked at once; null when
+     * YouTube Music didn't answer at all.
+     */
+    suspend fun search(q: String, all: Boolean = false): TubeFound? = withContext(Dispatchers.IO) {
         runCatching { Pipe.init() }.onFailure { Log.d("youtube: $it"); return@withContext null }
         val f = yt.searchQHFactory
-        val songs = async {
-            runCatching {
-                SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")).relatedItems
-                    .filterIsInstance<StreamInfoItem>().map { song(it) }
-            }.onFailure { Log.d("youtube songs: $it") }.getOrNull()
+        fun <T> ask(filter: String, what: String, read: (List<org.schabi.newpipe.extractor.InfoItem>) -> List<T>) = async {
+            runCatching { read(SearchInfo.getInfo(yt, f.fromQuery(q, listOf(filter), "")).relatedItems) }
+                .onFailure { Log.d("youtube $what: $it") }.getOrNull()
         }
-        val records = async {
-            runCatching {
-                SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS), "")).relatedItems
-                    .filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), Pipe.best(it.thumbnails)) }
-            }.onFailure { Log.d("youtube records: $it") }.getOrNull()
+        val songs = ask(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS, "songs") { l -> l.filterIsInstance<StreamInfoItem>().map { song(it) } }
+        val records = ask(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS, "records") { l ->
+            l.filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), Pipe.best(it.thumbnails)) }
         }
-        val (s, r) = songs.await() to records.await()
-        if (s == null && r == null) null else s.orEmpty().take(20) to r.orEmpty().take(12)
+        val artists = if (!all) null else ask(YoutubeSearchQueryHandlerFactory.MUSIC_ARTISTS, "artists") { l ->
+            l.filterIsInstance<org.schabi.newpipe.extractor.channel.ChannelInfoItem>().map {
+                TubeArtist(it.name, Pipe.best(it.thumbnails), Regex("/channel/(UC[A-Za-z0-9_-]+)").find(it.url)?.groupValues?.get(1).orEmpty())
+            }
+        }
+        val lists = if (!all) null else ask(YoutubeSearchQueryHandlerFactory.MUSIC_PLAYLISTS, "playlists") { l ->
+            l.filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), Pipe.best(it.thumbnails)) }
+        }
+        val (s, r, a) = Triple(songs.await(), records.await(), artists?.await())
+        if (s == null && r == null && a == null) null
+        else TubeFound(s.orEmpty().take(20), r.orEmpty().take(12), a.orEmpty().take(8), lists?.await().orEmpty().take(12))
     }
 
     /**

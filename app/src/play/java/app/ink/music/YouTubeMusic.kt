@@ -6,7 +6,7 @@ object YouTubeMusic {
     fun attach(c: android.content.Context) {}
     fun known(id: String): Song? = null
     fun remember(s: Song) {}
-    suspend fun search(q: String) = TubeFound()
+    suspend fun search(q: String, all: Boolean = false) = TubeFound()
     suspend fun album(a: TubeAlbum): List<Song> = emptyList()
     fun lyrics(id: String, title: String, artist: String): List<Line>? = emptyList()
     fun stream(id: String, forSpeaker: Boolean, small: Boolean = false): Pair<String, String>? = null

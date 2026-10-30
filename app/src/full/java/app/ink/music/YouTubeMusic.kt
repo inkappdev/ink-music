@@ -49,8 +49,8 @@ object YouTubeMusic {
     fun known(id: String): Song? = known[id]
     fun remember(s: Song) { known[s.id] = s }
 
-    /** Songs and records by these words, both asked at once. */
-    suspend fun search(q: String): TubeFound = withContext(Dispatchers.IO) {
+    /** Songs and records by these words, and for find (`all`) artists and playlists too, all asked at once. */
+    suspend fun search(q: String, all: Boolean = false): TubeFound = withContext(Dispatchers.IO) {
         init()
         val t0 = System.currentTimeMillis()
         val f = yt.searchQHFactory
@@ -66,8 +66,25 @@ object YouTubeMusic {
                     .filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), Pipe.best(it.thumbnails)) }
             }.getOrDefault(emptyList())
         }
-        TubeFound(songs.await().take(20), albums.await().take(12))
-            .also { android.util.Log.d("ink-youtube", "search \"$q\": ${it.songs.size} songs, ${it.albums.size} records in ${System.currentTimeMillis() - t0} ms") }
+        // and for find, who (artists, their faces and pages) and playlists by those words
+        val artists = async {
+            if (!all) return@async emptyList()
+            runCatching {
+                SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ARTISTS), "")).relatedItems
+                    .filterIsInstance<org.schabi.newpipe.extractor.channel.ChannelInfoItem>().map {
+                        TubeArtist(it.name, Pipe.best(it.thumbnails), Regex("/channel/(UC[A-Za-z0-9_-]+)").find(it.url)?.groupValues?.get(1).orEmpty())
+                    }
+            }.getOrDefault(emptyList())
+        }
+        val lists = async {
+            if (!all) return@async emptyList()
+            runCatching {
+                SearchInfo.getInfo(yt, f.fromQuery(q, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_PLAYLISTS), "")).relatedItems
+                    .filterIsInstance<PlaylistInfoItem>().map { TubeAlbum(it.url, it.name, it.uploaderName.orEmpty(), Pipe.best(it.thumbnails)) }
+            }.getOrDefault(emptyList())
+        }
+        TubeFound(songs.await().take(20), albums.await().take(12), artists.await().take(8), lists.await().take(12))
+            .also { android.util.Log.d("ink-youtube", "search \"$q\": ${it.songs.size} songs, ${it.albums.size} records, ${it.artists.size} artists, ${it.lists.size} playlists in ${System.currentTimeMillis() - t0} ms") }
     }
 
     private val albums = ConcurrentHashMap<String, List<Song>>()
