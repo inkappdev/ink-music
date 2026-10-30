@@ -446,6 +446,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     }
     // the colour order asks for the colours it doesn't know yet (worked out in the background, kept)
     LaunchedEffect(rc.sort, albums) { if (rc.sort == Sort.COLOUR) Colours.fill(ctx, albums) }
+    val hiddenAlbums by Library.hiddenAlbums.collectAsState()
+    var showHiddenRecords by remember { mutableStateOf(false) }
     val records = remember(albums, rc, seed, heard, colours) {
         Sorts.order(albums, rc, seed, { it.id },
             compareBy<Album>({ Library.sortName(it.artist) }, { it.year }, { Library.sortName(it.title) })) { a ->
@@ -510,6 +512,16 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
                         at = end
                     }
                 } else items(records, key = { it.id }) { a -> RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
+                // the records you've hidden: a dim word at the foot, then them, dim, once asked for (#1)
+                val hiddenRecords = hiddenAlbums
+                if (hiddenRecords.isNotEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "hidden") {
+                    Word(if (showHiddenRecords) "hide them again" else "${hiddenRecords.size} hidden", pixel(12.sp, Ink.dim), Modifier.padding(vertical = 12.dp), touch = 8.dp) {
+                        showHiddenRecords = !showHiddenRecords
+                    }
+                }
+                if (showHiddenRecords) items(hiddenRecords, key = { "h" + it.id }) { a ->
+                    Box(Modifier.alpha(0.5f)) { RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
+                }
             }
             "artists" -> LazyColumn(state = artistList, contentPadding = pad) {
                 item(key = "sort") { SortRow("artists", Sorts.ARTISTS) }
@@ -826,7 +838,9 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
 @Composable
 private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
     val albums by Library.albums.collectAsState()
-    val a = albums.firstOrNull { it.id == id } ?: return
+    val hiddenAlbums by Library.hiddenAlbums.collectAsState()
+    val off = albums.none { it.id == id }
+    val a = albums.firstOrNull { it.id == id } ?: hiddenAlbums.firstOrNull { it.id == id } ?: return
     // the whole record, where YouTube Music has it: your songs in their places (they play from the phone or the
     // server), the ones you don't have from YouTube; a tester had one song of a record and saw only that
     val whole by androidx.compose.runtime.produceState(a.songs, a) {
@@ -867,6 +881,11 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(whole, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(whole.shuffled(), 0) }
                 KeepOffline(a.songs)
+            }
+            // out of ink music, the files untouched (#1); a hidden one's page says so and brings it back
+            val ctx = LocalContext.current
+            Word(if (off) "hidden: show it again" else "hide", pixel(12.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
+                Library.hide(ctx, a.id, !off); if (!off) pages.back()
             }
             Spacer(Modifier.height(14.dp))
         }}
