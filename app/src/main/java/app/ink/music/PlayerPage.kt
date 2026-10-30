@@ -444,7 +444,10 @@ private fun Backdrop(cover: Cover?, n: Now) {
             withContext(Dispatchers.Default) { Looks.draw(cover.image.asAndroidBitmap(), look, cover.accent, shown, density) }
                 ?.let { value = it.asImageBitmap() to look }
         }
-        drawn?.let { (img, shape) ->
+        // a canvas playing over it: the still one not drawn under it (its look came through the canvas)
+        val behind by Moving.canvas.collectAsState()
+        var canvasUp by remember(n.title, n.artist, behind, look) { mutableStateOf(false) }
+        drawn?.takeIf { !canvasUp }?.let { (img, shape) ->
             val fade = remember(img) { Animatable(0f) }
             LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
             Image(
@@ -454,8 +457,8 @@ private fun Backdrop(cover: Cover?, n: Now) {
             )
         }
         // the song's spotify canvas over it, moving, in the same look (signed in to spotify: settings, the look)
-        if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize())
-        drawn?.let { (_, shape) -> if (shape != Look.DITHER) Grain() }
+        if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
+        drawn?.let { (_, shape) -> if (shape != Look.DITHER && !(canvasUp && behind == Moving.CANVAS_PLAIN)) Grain() }
     }
 }
 
@@ -908,25 +911,30 @@ fun PlayerPreview(modifier: Modifier = Modifier) {
         if (value == null) value = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.find(Showcase.TITLE, Showcase.ARTIST) }.getOrNull() }?.also { Showcase.song = it }
     }
     // its moving covers and canvas keep moving here though the music's paused: a preview shows what they do
-    val n = shown?.let { s -> Now(s, s.title, s.artist, s.album, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1) }
+    val n = shown?.let { s -> Now(s, s.title, s.artist, s.album.ifBlank { Showcase.ALBUM }, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1) }
         ?: now?.copy(moving = true)
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         val full = LocalContext.current.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
-        val k = minOf(maxWidth / full.first, maxHeight / full.second, .6f)
-        Box(Modifier.size(full.first * k, full.second * k).clipToBounds().border(1.dp, Ink.line)) {
+        // only its top shown: the cover and the title (under them are the player's own controls, the same whatever's chosen)
+        val top = full.second * .8f
+        val k = minOf(maxWidth / full.first, maxHeight / top, 1f)
+        val d = LocalDensity.current
+        Box(Modifier.size(full.first * k, top * k).clipToBounds().border(1.dp, Ink.line)) {
             if (n == null) BasicText("play something, and see it here", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(12.dp))
-            else Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredSize(full.first, full.second).graphicsLayer {
-                scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-            }) {
-                val cover = rememberCover(n.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
-                Box(Modifier.fillMaxSize().background(Ink.black)) { Backdrop(cover, n) }
-                Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 110.dp)) {
-                    val side = minOf(full.first - 40.dp, 420.dp)
-                    Sleeve(n, side, Modifier)
-                    Spacer(Modifier.height(20.dp))
-                    BasicText(n.title.uppercase(), style = headline(32.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(8.dp))
-                    BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
+            // drawn small from the start, a smaller density, not a full one scaled down: a moving cover's shader
+            // inside a scaled layer stopped moving (and its dots and squares come out in proportion)
+            else androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides androidx.compose.ui.unit.Density(d.density * k, d.fontScale)) {
+                Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredSize(full.first, full.second)) {
+                    val cover = rememberCover(n.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
+                    Box(Modifier.fillMaxSize().background(Ink.black)) { Backdrop(cover, n) }
+                    Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 110.dp)) {
+                        val side = minOf(full.first - 40.dp, 420.dp)
+                        Sleeve(n, side, Modifier)
+                        Spacer(Modifier.height(20.dp))
+                        BasicText(n.title.uppercase(), style = headline(32.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(8.dp))
+                        BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
+                    }
                 }
             }
         }
@@ -937,5 +945,7 @@ fun PlayerPreview(modifier: Modifier = Modifier) {
 private object Showcase {
     const val TITLE = "Vida"
     const val ARTIST = "The Avalanches"
+    // YouTube's search finds the song without its record, and the moving cover is the record's
+    const val ALBUM = "No Bad Memories"
     @Volatile var song: Song? = null
 }

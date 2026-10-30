@@ -105,7 +105,7 @@ fun MovingCover(artist: String, album: String, accent: Color, playing: Boolean, 
  * strength; plain has no backdrop, so none), or as it is, no effect, whatever the look (Bronson, 2026-10-30).
  */
 @Composable
-fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier) {
+fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier, onShown: () -> Unit = {}) {
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
     val behind by Moving.canvas.collectAsState()
@@ -118,8 +118,8 @@ fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean,
     val u = url ?: return
     // as it is: the clip itself, held to half over the black so the white words over it still read (at full, a light
     // canvas took the title; Spotify's own app darkens it too, by a gradient: here evenly, as ink's look has none)
-    if (behind == Moving.CANVAS_PLAIN) Loop(u, playing, null, accent, .5f, crop = true, modifier)
-    else Loop(u, playing, look, accent, look.alpha, crop = true, modifier)
+    if (behind == Moving.CANVAS_PLAIN) Loop(u, playing, null, accent, .5f, crop = true, modifier, onShown)
+    else Loop(u, playing, look, accent, look.alpha, crop = true, modifier, onShown)
 }
 
 /**
@@ -130,7 +130,7 @@ fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean,
  */
 @OptIn(UnstableApi::class)
 @Composable
-private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, strength: Float, crop: Boolean, modifier: Modifier) {
+private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, strength: Float, crop: Boolean, modifier: Modifier, onShown: () -> Unit = {}) {
     val ctx = LocalContext.current
     val less by Moves.less.collectAsState()
     var shown by remember(url) { mutableStateOf(false) }
@@ -142,7 +142,10 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
             volume = 0f
             repeatMode = Player.REPEAT_MODE_ONE
             addListener(object : Player.Listener {
-                override fun onRenderedFirstFrame() { shown = true; android.util.Log.i("ink-moving", "playing ${if (crop) "canvas" else "cover"}") }
+                override fun onRenderedFirstFrame() {
+                    if (!shown) android.util.Log.i("ink-moving", "playing ${if (crop) "canvas" else "cover"}")
+                    shown = true; onShown()
+                }
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) { android.util.Log.w("ink-moving", "${if (crop) "canvas" else "cover"}: ${error.errorCodeName}") }
                 override fun onVideoSizeChanged(size: androidx.media3.common.VideoSize) { video = size }
             })
