@@ -117,16 +117,17 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
 
 /**
  * Behind the player, a song's Spotify canvas (its tall looping clip; signed in to Spotify, the full build's) across the
- * whole page, in its own effect (Moving.canvas: as it is, or blur, fluted glass, pixels, dither), over the still
- * background's place.
+ * whole page, in the background's effect (the look: blur, fluted glass, pixels, dither, as it is; plain, none), in the
+ * still cover's place: one background, the canvas where a song has one.
  */
 @Composable
 fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier, onShown: () -> Unit = {}) {
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
     val on by Moving.canvasOn.collectAsState()
-    val shape by Moving.canvas.collectAsState()
-    if (!on) return
+    // the background's own effect (one background: the canvas when a song has one, else the cover; Bronson)
+    val look by Looks.on.collectAsState()
+    if (!on || look == Look.PLAIN) return
     val url by produceState<String?>(null, title, artist, whenOn) {
         value = if (Moving.wanted(ctx)) Spotify.canvas(ctx, title, artist) else null
         android.util.Log.i("ink-moving", "canvas for $artist / $title: ${if (value != null) "found" else "none"}")
@@ -135,7 +136,7 @@ fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean,
     // as it is: the clip itself, held to half over the black so the white words over it still read (at full, a light
     // canvas took the title; Spotify's own app darkens it too, by a gradient: here evenly, as ink's look has none);
     // an effect, at that look's own strength, as the still background's
-    Loop(u, playing, shape, accent, shape?.alpha ?: .5f, crop = true, modifier, onShown)
+    Loop(u, playing, look.takeUnless { it == Look.AS_IS }, accent, look.alpha, crop = true, modifier, onShown)
 }
 
 /**

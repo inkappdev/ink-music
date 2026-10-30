@@ -42,6 +42,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.statusBars
@@ -451,13 +452,10 @@ private fun Backdrop(cover: Cover?, n: Now) {
         }
         // a canvas playing over it: the still one not drawn under it (its look came through the canvas)
         val canvasOn by Moving.canvasOn.collectAsState()
-        val canvasLook by Moving.canvas.collectAsState()
         // (a new song resets it; a look or setting changed doesn't: its clip plays on, and its first frame isn't seen
         // again till it loops, the still one showing through meanwhile)
         var canvasUp by remember(n.title, n.artist) { mutableStateOf(false) }
-        // in the look's preview, "behind it" just chosen: the canvas fades aside, the still look shown under it
-        val peek = LocalPreview.current && Showcase.peeking.collectAsState().value
-        val canvasShown = canvasUp && canvasOn && !peek
+        val canvasShown = canvasUp && canvasOn && look != Look.PLAIN
         drawn?.takeIf { !canvasShown }?.let { (img, shape) ->
             val fade = remember(img) { Animatable(0f) }
             LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
@@ -467,11 +465,10 @@ private fun Backdrop(cover: Cover?, n: Now) {
                 filterQuality = if (shape.crisp) FilterQuality.None else FilterQuality.Low,
             )
         }
-        // the song's spotify canvas over it, moving, in the same look (signed in to spotify: settings, the look)
-        val aside by androidx.compose.animation.core.animateFloatAsState(if (peek) 0f else 1f, tween(600, easing = Motion.expo), label = "aside")
-        if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize().graphicsLayer { alpha = aside }) { canvasUp = true }
-        // the grain over a still look, or a canvas in one (not dither's, nor a canvas as it is)
-        if (if (canvasShown) canvasLook != null && canvasLook != Look.DITHER else drawn?.second?.let { it != Look.DITHER } == true) Grain()
+        // the song's spotify canvas in its place, moving, in the same look (signed in to spotify: settings, the look)
+        if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
+        // the grain over the look (not dither's, nor as it is)
+        if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN) Grain()
     }
 }
 
@@ -1068,7 +1065,7 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         val full = LocalContext.current.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
         // only its top shown: the cover and the title (under them are the player's own controls, the same whatever's chosen)
-        val top = full.second * .8f
+        val top = full.second * .92f
         val k = minOf(maxWidth / full.first, maxHeight / top, 1f)
         val d = LocalDensity.current
         Box(Modifier.size(full.first * k, top * k).clipToBounds().border(1.dp, Ink.line)) {
@@ -1086,6 +1083,10 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
                         BasicText(n.title.uppercase(), style = headline(32.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(8.dp))
                         BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
+                        // the giant name, under the title here (the player's controls between them left out), edge to edge,
+                        // moving or still as set (Bronson)
+                        Spacer(Modifier.height(28.dp))
+                        Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.requiredWidth(full.first))
                     }
                 }
             }
@@ -1095,8 +1096,7 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
 
 /**
  * The look's example song: Fontaines D.C.'s Starburster (Bronson's pick, 2026-10-30: Romance's moving heart, a canvas
- * behind it). Its canvas covers the still look behind it, so "behind it" chosen, the canvas steps aside a few seconds
- * (peek). The record named too: YouTube's search can find a song without it, and the moving cover is the record's.
+ * behind it, in the look as the still cover would be). The record named too: YouTube's search can find a song without it, and the moving cover is the record's.
  */
 object Showcase {
     class Pick(val title: String, val artist: String, val album: String, val said: String)
@@ -1104,16 +1104,7 @@ object Showcase {
         Pick("Starburster", "Fontaines D.C.", "Romance", "fontaines d.c., starburster: a moving cover, a canvas behind it"),
     )
     val found = java.util.concurrent.ConcurrentHashMap<String, Song>()
-
-    private val _peek = kotlinx.coroutines.flow.MutableStateFlow(false)
-    /** "Behind it" just chosen: the preview's canvas steps aside a few seconds, the still look behind it shown. */
-    val peeking: kotlinx.coroutines.flow.StateFlow<Boolean> = _peek
-    private var peekJob: kotlinx.coroutines.Job? = null
-    fun peek() {
-        peekJob?.cancel()
-        peekJob = kotlinx.coroutines.MainScope().launch { _peek.value = true; delay(3_500); _peek.value = false }
-    }
 }
 
-/** Inside the look's preview (not the player): its canvas steps aside when "behind it" is chosen. */
+/** Inside the look's preview (not the player). */
 val LocalPreview = androidx.compose.runtime.staticCompositionLocalOf { false }

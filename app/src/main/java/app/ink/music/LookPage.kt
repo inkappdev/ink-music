@@ -37,7 +37,6 @@ fun LookPage(pages: Pages) {
     val cover by Moving.cover.collectAsState()
     val whenOn by Moving.whenOn.collectAsState()
     val canvasOn by Moving.canvasOn.collectAsState()
-    val canvas by Moving.canvas.collectAsState()
     val spotifyAt by Spotify.at.collectAsState()
     val signed = remember(spotifyAt) { Spotify.signedIn() }
     val tall = LocalConfiguration.current.screenHeightDp.dp
@@ -90,9 +89,10 @@ fun LookPage(pages: Pages) {
                 Column(Modifier.cascade(2)) {
                     BasicText("BEHIND IT", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText("the cover across the page, still" + if (Spotify.available && signed && canvasOn) ", where a song has no canvas" else "", style = pixel(12.sp, Ink.mid))
+                    BasicText("one background behind the player: a song's spotify canvas where it has one" +
+                        (if (Spotify.available && signed && canvasOn) "" else " (canvas off)") + ", else its cover, in this effect", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
-                    Choices(Look.entries.map { it.word to (it == look) }) { Looks.set(ctx, Look.entries[it]); Showcase.peek() }
+                    Choices(Look.entries.map { it.word to (it == look) }) { Looks.set(ctx, Look.entries[it]) }
                     Spacer(Modifier.height(40.dp))
                 }
                 // spotify's canvas over the background (signed in to spotify)
@@ -105,12 +105,9 @@ fun LookPage(pages: Pages) {
                         Spacer(Modifier.height(8.dp))
                         Word("SIGN IN", headline(40.sp), touch = 8.dp) { Spotify.signIn(ctx) }
                     } else {
-                        BasicText("a song's own looping clip behind the player, where it has one", style = pixel(12.sp, Ink.mid))
+                        BasicText("a song's own looping clip as the background, where it has one, in the effect above", style = pixel(12.sp, Ink.mid))
                         Spacer(Modifier.height(10.dp))
-                        val options = listOf<Look?>(null) + Moving.canvasLooks
-                        Choices(listOf("off" to !canvasOn) + options.map { (it?.word ?: "as it is") to (canvasOn && it == canvas) }) { i ->
-                            if (i == 0) Moving.set(ctx, canvasOn = false) else Moving.set(ctx, canvasOn = true, canvas = options[i - 1])
-                        }
+                        Choices(listOf("on" to canvasOn, "off" to !canvasOn)) { Moving.set(ctx, canvasOn = it == 0) }
                     }
                     Spacer(Modifier.height(40.dp))
                 }
