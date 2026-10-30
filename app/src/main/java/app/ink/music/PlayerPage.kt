@@ -38,6 +38,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
@@ -177,7 +180,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         val frost = dev.chrisbanes.haze.rememberHazeState()
         // black inside the source: the look and its grain are drawn over black there as on the screen (over
         // nothing, the grain's overlay blend came out lighter, a light strip over the bar)
-        Box(Modifier.fillMaxSize().hazeSource(frost).background(Ink.black)) { Backdrop(cover) }
+        Box(Modifier.fillMaxSize().hazeSource(frost).background(Ink.black)) { Backdrop(cover, n) }
         val sing by Lyrics.on.collectAsState()
         val lines = rememberLines(n, sing)
         val lyric = rememberLyric(n, lines)
@@ -405,8 +408,19 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
 @Composable
 private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
     val c = rememberCover(t.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
+    // the cover in the look (settings, the look: the cover "in the look"), as the page behind it is drawn: dither,
+    // pixels, fluted glass at the cover's own size (blur and plain leave it as it is)
+    val inLook by Moving.inLook.collectAsState()
+    val look by Looks.on.collectAsState()
+    val density = LocalDensity.current.density
+    val px = side.value * density
+    val drawn by produceState<ImageBitmap?>(null, c, inLook, look, px) {
+        value = if (c != null && inLook && (look == Look.DITHER || look == Look.PIXELS || look == Look.FLUTED))
+            withContext(Dispatchers.Default) { Looks.draw(c.image.asAndroidBitmap(), look, c.accent, px, density)?.asImageBitmap() } else null
+    }
     Box(modifier.size(side)) {
-        if (c != null) Image(c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (c != null) Image(drawn ?: c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+            filterQuality = if (drawn != null && look.crisp) FilterQuality.None else FilterQuality.Low)
         else if (t.song?.station == true) StationCover(t.song, Modifier.fillMaxSize(), moving = t.moving)
         else NameCover(t.album.ifEmpty { t.title }, side)
         // the record's own moving sleeve over it, where it has one (settings: moving covers)
@@ -419,7 +433,7 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
  * the one up stays until the next is ready, then fades in. The grain over it (not dither's).
  */
 @Composable
-private fun Backdrop(cover: Cover?) {
+private fun Backdrop(cover: Cover?, n: Now) {
     val look by Looks.on.collectAsState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current.density
@@ -438,8 +452,10 @@ private fun Backdrop(cover: Cover?) {
                 contentScale = ContentScale.Crop,
                 filterQuality = if (shape.crisp) FilterQuality.None else FilterQuality.Low,
             )
-            if (shape != Look.DITHER) Grain()
         }
+        // the song's spotify canvas over it, moving, in the same look (signed in to spotify: settings, the look)
+        if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize())
+        drawn?.let { (_, shape) -> if (shape != Look.DITHER) Grain() }
     }
 }
 
@@ -876,4 +892,50 @@ object Moments {
     private fun prefs(c: android.content.Context) = c.getSharedPreferences("player", android.content.Context.MODE_PRIVATE)
     fun start(c: android.content.Context) { _on.value = prefs(c).getBoolean("moment", true) }
     fun set(c: android.content.Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("moment", on).apply() }
+}
+
+/**
+ * The player in small, for settings, the look: what plays now (else a word to play something), drawn by the player's
+ * own pieces (its backdrop, canvas, cover, moving cover) at a phone's full size and scaled down, so it's what the
+ * player shows; each word chosen there shows here at once. Centred under the page's title.
+ */
+@Composable
+fun PlayerPreview(modifier: Modifier = Modifier) {
+    val now by Playback.now.collectAsState()
+    // always the same song, one with every moving thing (a moving cover, a spotify canvas; Bronson, 2026-10-30), so
+    // each choice shows; till it's found, and in the play build (no YouTube), what plays now
+    val shown by produceState(Showcase.song) {
+        if (value == null) value = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.find(Showcase.TITLE, Showcase.ARTIST) }.getOrNull() }?.also { Showcase.song = it }
+    }
+    // its moving covers and canvas keep moving here though the music's paused: a preview shows what they do
+    val n = shown?.let { s -> Now(s, s.title, s.artist, s.album, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1) }
+        ?: now?.copy(moving = true)
+    BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
+        val full = LocalContext.current.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
+        val k = minOf(maxWidth / full.first, maxHeight / full.second, .6f)
+        Box(Modifier.size(full.first * k, full.second * k).clipToBounds().border(1.dp, Ink.line)) {
+            if (n == null) BasicText("play something, and see it here", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(12.dp))
+            else Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredSize(full.first, full.second).graphicsLayer {
+                scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+            }) {
+                val cover = rememberCover(n.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
+                Box(Modifier.fillMaxSize().background(Ink.black)) { Backdrop(cover, n) }
+                Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 110.dp)) {
+                    val side = minOf(full.first - 40.dp, 420.dp)
+                    Sleeve(n, side, Modifier)
+                    Spacer(Modifier.height(20.dp))
+                    BasicText(n.title.uppercase(), style = headline(32.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(8.dp))
+                    BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/** The preview's song: The Avalanches' Vida (feat. Erick the Architect): a moving cover, and a canvas behind it. */
+private object Showcase {
+    const val TITLE = "Vida"
+    const val ARTIST = "The Avalanches"
+    @Volatile var song: Song? = null
 }

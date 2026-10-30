@@ -34,6 +34,10 @@ object Looks {
 
     private fun prefs(c: Context) = c.getSharedPreferences("look", Context.MODE_PRIVATE)
     fun start(c: Context) { _on.value = Look.entries.firstOrNull { it.name == prefs(c).getString("art", null) } ?: Look.BLUR }
+    fun set(c: Context, look: Look) {
+        _on.value = look
+        prefs(c).edit().putString("art", look.name).apply()
+    }
     fun next(c: Context) {
         _on.value = Look.entries[(_on.value.ordinal + 1) % Look.entries.size]
         prefs(c).edit().putString("art", _on.value.name).apply()

@@ -10,6 +10,8 @@ object Spotify {
     const val LIKED_ID = "liked"
     val at: StateFlow<Long> = MutableStateFlow(0L)
     fun ready() = false
+    fun signedIn() = false
+    suspend fun canvas(c: Context, title: String, artist: String): String? = null
     fun signIn(c: Context) {}
     suspend fun playlists(): List<Import.Theirs>? = null
     suspend fun songs(id: String, got: (Int) -> Unit = {}): List<Import.Said>? = null
