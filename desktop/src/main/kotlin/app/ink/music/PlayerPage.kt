@@ -108,7 +108,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
     val names by Marquees.on.collectAsState()
     Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
         // the background (settings, the look): the cover across the whole window in its effect
-        if (!n.song.station && behind != Look.PLAIN) Backdrop(cover, behind)
+        if (!n.song.station && behind != Look.PLAIN) Backdrop(cover, behind, n.song, n.playing)
         // the artist's name, big, along the foot: a way to their page too
         Marquee(said(n).second, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth()
             .clickable(remember { MutableInteractionSource() }, indication = null) { artist?.let { open(Page.Artist(it)) } }, size = 150.sp)
@@ -224,15 +224,22 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
 
 /** The cover across the whole window behind the player, in the look's effect, faded in at the look's own strength. */
 @Composable
-fun Backdrop(cover: Cover?, look: Look) {
-    val c = cover ?: return
+fun Backdrop(cover: Cover?, look: Look, song: Song? = null, playing: Boolean = false) {
     val density = androidx.compose.ui.platform.LocalDensity.current.density
-    val fade = remember(c.image) { Animatable(0f) }
-    LaunchedEffect(c.image, look) { fade.animateTo(look.alpha, tween(600)) }
-    androidx.compose.foundation.Image(c.image, null, Modifier.fillMaxSize().graphicsLayer {
-        alpha = fade.value
-        renderEffect = Effects.of(look, c.accent, density, 1f, size.width, big = true)
-    }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+    // a canvas playing over it: the still one not drawn under it (one background)
+    var canvasUp by remember(song?.title, song?.artist) { mutableStateOf(false) }
+    val canvasOn by Moving.canvasOn.collectAsState()
+    val c = cover
+    if (c != null && !(canvasUp && canvasOn)) {
+        val fade = remember(c.image) { Animatable(0f) }
+        LaunchedEffect(c.image, look) { fade.animateTo(look.alpha, tween(600)) }
+        androidx.compose.foundation.Image(c.image, null, Modifier.fillMaxSize().graphicsLayer {
+            alpha = fade.value
+            renderEffect = Effects.of(look, c.accent, density, 1f, size.width, big = true)
+        }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+    }
+    // the song's spotify canvas in its place, moving, in the same look
+    if (song != null && !song.station) CanvasBehind(song.title, song.artist.substringBefore(", "), c?.accent ?: Ink.ink, playing, Modifier.fillMaxSize()) { canvasUp = true }
 }
 
 /**

@@ -41,6 +41,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -49,8 +50,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Your Spotify playlists, read the way Spotify's own web player reads them (its API is closed to small apps; the
@@ -63,7 +62,6 @@ import java.net.URL
 object Spotify {
     const val available = true
 
-    private const val QUERY = "https://api-partner.spotify.com/pathfinder/v2/query"
     // the web player's queries, by hash (BitChord's, 2026-10-30): its library, a playlist, your liked songs
     private const val LIBRARY = "973e511ca44261fda7eebac8b653155e7caee3675abb4fb110cc1b8c78b091c3"
     private const val PLAYLIST = "346811f856fb0b7e4f6c59f8ebea78dd081c6e2fb01b77c954b26259d5fc6763"
@@ -149,122 +147,41 @@ object Spotify {
         ready()
     }
 
-    // ---- canvas: the looping clip Spotify shows behind a song ----
+    // ---- canvas: the looping clip Spotify shows behind a song (SpotifyCanvas, shared with the computer) ----
 
-    private const val CANVAS = "575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f"
-    @Volatile private var canvasHash: String? = null
-    private val canvases = HashMap<String, Pair<String?, Long>>()
-    private var canvasFile: java.io.File? = null
+    /** The passes as the shared lookup takes them, or null. */
+    private fun pass(): SpotifyCanvas.Pass? = bearer?.let { SpotifyCanvas.Pass(it, client, agent, _at.value) }
 
     /**
-     * A song's Canvas (an .mp4, tall, looping), or null: none, signed out, or Spotify wouldn't say. The song found on
-     * Spotify by title and artist (the same artist), then its canvas asked as the web player asks. Kept, a found one
-     * and a none (a week: one may come), so a song is asked about once.
+     * The passes for a paired computer (sync hands them over: it has no web player of its own to take them from), or
+     * null signed out. Out of their hour, new ones are fetched out of sight for the next sync to carry.
+     */
+    fun handover(c: Context, scope: kotlinx.coroutines.CoroutineScope): String? {
+        if (!signedIn()) return null
+        if (!ready()) { scope.launch { fresh(c) }; return null }
+        return pass()?.json()
+    }
+
+    /**
+     * A song's Canvas (an .mp4, tall, looping), or null: none, signed out, or Spotify wouldn't say. Kept (a found one
+     * and a none, a week), so a song is asked about once.
      */
     suspend fun canvas(c: Context, title: String, artist: String): String? {
         if (title.isBlank() || artist.isBlank()) return null
-        val key = Search.fold("$artist / $title")
-        synchronized(canvases) {
-            if (canvasFile == null) {
-                canvasFile = java.io.File(c.cacheDir, "spotify-canvas.json")
-                runCatching { JSONObject(canvasFile!!.readText()).let { o -> o.keys().forEach { k -> val e = o.getJSONObject(k); canvases[k] = e.optString("url").ifEmpty { null } to e.optLong("at") } } }
-            }
-            canvases[key]?.let { (url, at) -> if (url != null || System.currentTimeMillis() - at < 7 * 86_400_000L) return url }
-        }
+        SpotifyCanvas.keepIn(java.io.File(c.cacheDir, "spotify-canvas.json"))
+        SpotifyCanvas.known(title, artist).let { (asked, url) -> if (asked) return url }
         if (!fresh(c)) return null
-        var asked = withContext(Dispatchers.IO) { runCatching { track(title, artist)?.let { canvasOf(it) } } }
+        var asked = withContext(Dispatchers.IO) { runCatching { SpotifyCanvas.find(title, artist, pass() ?: error("not signed in")) } }
         // turned away (Spotify ended the passes before their hour): new ones, out of sight, and once more
-        if ("http 401" in asked.exceptionOrNull()?.message.orEmpty()) {
+        if (asked.exceptionOrNull() is SpotifyCanvas.Refused) {
             bearer = null; _at.value = 0L
             if (!fresh(c)) return null
-            asked = withContext(Dispatchers.IO) { runCatching { track(title, artist)?.let { canvasOf(it) } } }
+            asked = withContext(Dispatchers.IO) { runCatching { SpotifyCanvas.find(title, artist, pass() ?: error("not signed in")) } }
         }
         asked.onFailure { android.util.Log.w("ink-spotify", "canvas: $it") }
-        if (asked.isFailure) return null
         val url = asked.getOrNull()
-        android.util.Log.i("ink-spotify", "canvas $artist / $title: ${if (url != null) "found" else "none"}")
-        synchronized(canvases) {
-            canvases[key] = url to System.currentTimeMillis()
-            runCatching {
-                val o = JSONObject(); canvases.forEach { (k, v) -> o.put(k, JSONObject().put("url", v.first ?: "").put("at", v.second)) }
-                canvasFile?.writeText(o.toString())
-            }
-        }
+        if (asked.isSuccess) android.util.Log.i("ink-spotify", "canvas $artist / $title: ${if (url != null) "found" else "none"}")
         return url
-    }
-
-    private const val SEARCH = "bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428"
-    @Volatile private var searchHash: String? = null
-
-    /**
-     * The song on Spotify (its uri), by the web player's own search (its public API turns the web player's pass away,
-     * a 429): the first with the same title and artist.
-     */
-    private fun track(title: String, artist: String): String? {
-        val vars = JSONObject().put("searchTerm", "$title $artist").put("offset", 0).put("limit", 10).put("numberOfTopResults", 5)
-            .put("includeAudiobooks", false).put("includePreReleases", false)
-        val root = runCatching { ask("searchTracks", searchHash ?: SEARCH, vars) }.getOrElse { e ->
-            if ("PersistedQuery" !in e.message.orEmpty()) throw e
-            searchHash = liveHash("searchTracks") ?: throw e
-            ask("searchTracks", searchHash!!, vars)
-        }
-        val items = root.optJSONObject("data")?.optJSONObject("searchV2")?.optJSONObject("tracksV2")?.optJSONArray("items") ?: return null
-        val a = Search.fold(artist); val t = Search.fold(title.substringBefore(" (").substringBefore(" - "))
-        for (i in 0 until items.length()) {
-            val d = items.optJSONObject(i)?.optJSONObject("item")?.optJSONObject("data") ?: continue
-            val name = Search.fold(d.optString("name").substringBefore(" (").substringBefore(" - "))
-            val artists = d.optJSONObject("artists")?.optJSONArray("items") ?: continue
-            val same = (0 until artists.length()).any { j ->
-                Search.fold(artists.optJSONObject(j)?.optJSONObject("profile")?.optString("name").orEmpty()).let { n -> n == a || a.startsWith("$n ") || n.startsWith("$a ") }
-            }
-            if (same && (name == t || name.startsWith(t) || t.startsWith(name))) return d.optString("uri").takeIf { it.startsWith("spotify:track:") }
-        }
-        android.util.Log.i("ink-spotify", "search: no match of ${items.length()} for $artist / $title")
-        return null
-    }
-
-    /** The song's canvas by the web player's own query; its hash read again from the player's scripts once stale. */
-    private fun canvasOf(uri: String): String? {
-        repeat(2) { n ->
-            val hash = canvasHash ?: CANVAS
-            val root = runCatching { ask("canvas", hash, JSONObject().put("trackUri", uri)) }
-            val failed = root.exceptionOrNull()
-            if (failed != null) {
-                if (n == 0 && "PersistedQuery" in failed.message.orEmpty()) { canvasHash = liveHash("canvas") ?: return null; return@repeat }
-                throw failed
-            }
-            val canvas = root.getOrThrow().optJSONObject("data")?.optJSONObject("trackUnion")?.optJSONObject("canvas") ?: return null
-            // a video only (some are still pictures)
-            return canvas.optString("url").takeIf { it.startsWith("https://") && Regex("\\.mp4(?:[?#]|$)", RegexOption.IGNORE_CASE).containsMatchIn(it) }
-        }
-        return null
-    }
-
-    /** A query's current hash, from the web player's own scripts (it changes when Spotify rebuilds the player). */
-    private fun liveHash(operation: String): String? = runCatching {
-        val html = get("https://open.spotify.com/", auth = false)
-        Regex("https://open\\.spotifycdn\\.com/cdn/build/web-player/[A-Za-z0-9._~-]+\\.js").findAll(html).map { it.value }.distinct().take(8)
-            .firstNotNullOfOrNull { js ->
-                val body = runCatching { get(js, auth = false) }.getOrNull() ?: return@firstNotNullOfOrNull null
-                Regex("[\"'](\\w+)[\"']\\s*,\\s*[\"']query[\"']\\s*,\\s*[\"']([0-9a-f]{64})[\"']").findAll(body)
-                    .firstOrNull { it.groupValues[1] == operation }?.groupValues?.get(2)
-            }
-    }.getOrNull()
-
-    private fun get(url: String, auth: Boolean = true): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 10_000; c.readTimeout = 15_000
-        c.setRequestProperty("User-Agent", agent)
-        if (auth) {
-            c.setRequestProperty("Authorization", "Bearer ${bearer ?: error("not signed in")}")
-            client?.let { c.setRequestProperty("client-token", it) }
-            c.setRequestProperty("app-platform", "WebPlayer")
-            c.setRequestProperty("Origin", "https://open.spotify.com")
-            c.setRequestProperty("Referer", "https://open.spotify.com/")
-        }
-        val code = c.responseCode
-        if (code >= 400) error("get: http $code")
-        return c.inputStream.use { it.bufferedReader().readText() }
     }
 
     /** Your playlists, Liked Songs first; null when Spotify wouldn't say (signed out, or its queries changed). */
@@ -323,28 +240,8 @@ object Spotify {
         }.onFailure { android.util.Log.w("ink-spotify", "songs: $it") }.getOrNull()
     }
 
-    private fun ask(operation: String, hash: String, vars: JSONObject): JSONObject {
-        val b = bearer ?: error("not signed in")
-        val body = JSONObject().put("variables", vars).put("operationName", operation)
-            .put("extensions", JSONObject().put("persistedQuery", JSONObject().put("version", 1).put("sha256Hash", hash)))
-        val c = URL(QUERY).openConnection() as HttpURLConnection
-        c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 10_000; c.readTimeout = 20_000
-        c.setRequestProperty("Authorization", "Bearer $b")
-        client?.let { c.setRequestProperty("client-token", it) }
-        c.setRequestProperty("Content-Type", "application/json;charset=UTF-8")
-        c.setRequestProperty("Accept", "application/json")
-        c.setRequestProperty("app-platform", "WebPlayer")
-        c.setRequestProperty("Origin", "https://open.spotify.com")
-        c.setRequestProperty("Referer", "https://open.spotify.com/")
-        c.setRequestProperty("User-Agent", agent)
-        c.outputStream.use { it.write(body.toString().toByteArray()) }
-        val code = c.responseCode
-        val text = (if (code < 400) c.inputStream else c.errorStream)?.use { it.bufferedReader().readText() }.orEmpty()
-        if (code >= 400) error("$operation: http $code")
-        val root = JSONObject(text)
-        root.optJSONArray("errors")?.optJSONObject(0)?.optString("message")?.takeIf { it.isNotBlank() }?.let { error("$operation: $it") }
-        return root
-    }
+    private fun ask(operation: String, hash: String, vars: JSONObject): JSONObject =
+        SpotifyCanvas.ask(operation, hash, vars, pass() ?: error("not signed in"))
 }
 
 /**

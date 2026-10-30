@@ -36,8 +36,13 @@ object Moving {
     val on: StateFlow<Boolean> = _on
     private val _cover = MutableStateFlow<Look?>(null)
     val cover: StateFlow<Look?> = _cover
-    fun set(on: Boolean = _on.value, cover: Look? = _cover.value) { _on.value = on; _cover.value = cover; LookFile.save() }
-    internal fun put(on: Boolean, cover: Look?) { _on.value = on; _cover.value = cover }
+    private val _canvasOn = MutableStateFlow(true)
+    /** A song's Spotify canvas behind the player (handed over by the phone), or none. */
+    val canvasOn: StateFlow<Boolean> = _canvasOn
+    fun set(on: Boolean = _on.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value) {
+        _on.value = on; _cover.value = cover; _canvasOn.value = canvasOn; LookFile.save()
+    }
+    internal fun put(on: Boolean, cover: Look?, canvasOn: Boolean) { _on.value = on; _cover.value = cover; _canvasOn.value = canvasOn }
 }
 
 /** Whether the big names (the player's artist along the foot, ink weekly's, a long one on an artist's page) move. */
@@ -54,16 +59,56 @@ internal object LookFile {
 
     fun start() {
         MotionCover.dir = Home.cache
+        SpotifyHanded.start()
         val o = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
         Looks.put(Look.entries.firstOrNull { it.name == o.optString("behind") } ?: Look.PLAIN)
-        Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") })
+        Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true))
         Marquees.put(o.optBoolean("marquee", true))
     }
 
     fun save() {
         runCatching {
             file.writeText(JSONObject().put("behind", Looks.on.value.name).put("moving", Moving.on.value)
-                .put("cover", Moving.cover.value?.name ?: "AS_IS").put("marquee", Marquees.on.value).toString())
+                .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value).put("marquee", Marquees.on.value).toString())
         }
+    }
+}
+
+/**
+ * Spotify's passes, handed over by the phone in sync (the computer can't sign in to Spotify: its sign-in is the
+ * phone's web player). They last an hour; the phone hands new ones while it's open and in step. Kept in a file
+ * only you can read, so a restart within the hour keeps them.
+ */
+object SpotifyHanded {
+    private val file get() = File(Home.dir, "spotify-pass.json")
+    private val _pass = MutableStateFlow<SpotifyCanvas.Pass?>(null)
+    /** The passes, while within their hour. */
+    val pass: StateFlow<SpotifyCanvas.Pass?> = _pass
+    /** When the phone last handed passes (0: never): settings say so. */
+    @Volatile var handedAt = 0L
+        private set
+
+    fun start() {
+        SpotifyCanvas.keepIn(File(Home.cache, "spotify-canvas.json"))
+        SpotifyCanvas.Pass.of(runCatching { file.readText() }.getOrDefault(""))?.let { handedAt = it.at; if (it.fresh) _pass.value = it }
+    }
+
+    fun take(text: String) {
+        val p = SpotifyCanvas.Pass.of(text) ?: return
+        if (p.bearer == _pass.value?.bearer) return
+        handedAt = p.at
+        _pass.value = p.takeIf { it.fresh }
+        runCatching { file.writeText(text); file.setReadable(false, false); file.setReadable(true, true) }
+        Log.d("spotify passes from the phone")
+    }
+
+    /** A song's canvas: as known, else asked with the phone's passes (none in hand: none). */
+    suspend fun canvas(title: String, artist: String): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (title.isBlank() || artist.isBlank()) return@withContext null
+        SpotifyCanvas.known(title, artist).let { (asked, url) -> if (asked) return@withContext url }
+        val p = _pass.value?.takeIf { it.fresh } ?: return@withContext null
+        runCatching { SpotifyCanvas.find(title, artist, p) }
+            .onFailure { e -> Log.d("canvas: $e"); if (e is SpotifyCanvas.Refused) _pass.value = null }
+            .getOrNull().also { Log.d("canvas for $artist / $title: ${if (it != null) "found" else "none"}") }
     }
 }
