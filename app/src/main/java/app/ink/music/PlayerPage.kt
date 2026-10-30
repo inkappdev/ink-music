@@ -190,26 +190,19 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         val look by Looks.on.collectAsState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val share = { scope.launch { ShareCard.share(ctx, n, look) }; Unit }
-        // in the pixels look the top row moves as one onto the backdrop's tile row, so the look's glyph sits on a tile
-        // and the rest stay in line with it (#1: the glyph alone moved, and looked out of line)
-        var rowY by remember(look) { androidx.compose.runtime.mutableIntStateOf(0) }
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)),
         ) {
             Fit(least = 12f / 13) {
                 // where in the queue (a tap opens it); where it plays, a pixel speaker (as the heart is drawn) in the
                 // middle, lit while it's a speaker, dim on the phone, a tap opens every speaker (its name is under the
-                // title: "flac on bedroom speaker", a long one here pushed close off the row); the look; close
+                // title: "flac on bedroom speaker", a long one here pushed close off the row); close. The look is chosen
+                // in settings, the look, now (its three layers there, each its own: Bronson, 2026-10-30)
                 Centred(
                     start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true } },
                     middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
-                    end = { Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                        // the look drawn, not named ("fluted glass" was a lot of words up here): the backdrop changes
-                        // behind it as it's tapped, so its picture is all the saying it needs
-                        LookGlyph(look, rowY, { rowY = it }) { Looks.next(ctx) }
-                        Pixel(CLOSE, "close", SAID, Modifier.align(Alignment.CenterVertically), onClick = onClose)
-                    } },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp).offset { androidx.compose.ui.unit.IntOffset(0, rowY) },
+                    end = { Pixel(CLOSE, "close", SAID, onClick = onClose) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
             }
             val words = lyric != null
@@ -408,19 +401,17 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
 @Composable
 private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
     val c = rememberCover(t.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
-    // the cover in the look (settings, the look: the cover "in the look"), as the page behind it is drawn: dither,
-    // pixels, fluted glass at the cover's own size (blur and plain leave it as it is)
-    val inLook by Moving.inLook.collectAsState()
-    val look by Looks.on.collectAsState()
+    // the cover in its own effect (settings, the look: the cover's): dither, pixels, fluted glass, drawn at its own size
+    val look by Moving.cover.collectAsState()
     val density = LocalDensity.current.density
     val px = side.value * density
-    val drawn by produceState<ImageBitmap?>(null, c, inLook, look, px) {
-        value = if (c != null && inLook && (look == Look.DITHER || look == Look.PIXELS || look == Look.FLUTED))
-            withContext(Dispatchers.Default) { Looks.draw(c.image.asAndroidBitmap(), look, c.accent, px, density)?.asImageBitmap() } else null
+    val drawn by produceState<ImageBitmap?>(null, c, look, px) {
+        val l = look
+        value = if (c != null && l != null) withContext(Dispatchers.Default) { Looks.draw(c.image.asAndroidBitmap(), l, c.accent, px, density)?.asImageBitmap() } else null
     }
     Box(modifier.size(side)) {
         if (c != null) Image(drawn ?: c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
-            filterQuality = if (drawn != null && look.crisp) FilterQuality.None else FilterQuality.Low)
+            filterQuality = if (drawn != null && look?.crisp == true) FilterQuality.None else FilterQuality.Low)
         else if (t.song?.station == true) StationCover(t.song, Modifier.fillMaxSize(), moving = t.moving)
         else NameCover(t.album.ifEmpty { t.title }, side)
         // the record's own moving sleeve over it, where it has one (settings: moving covers)
@@ -445,11 +436,12 @@ private fun Backdrop(cover: Cover?, n: Now) {
                 ?.let { value = it.asImageBitmap() to look }
         }
         // a canvas playing over it: the still one not drawn under it (its look came through the canvas)
-        val behind by Moving.canvas.collectAsState()
+        val canvasOn by Moving.canvasOn.collectAsState()
+        val canvasLook by Moving.canvas.collectAsState()
         // (a new song resets it; a look or setting changed doesn't: its clip plays on, and its first frame isn't seen
         // again till it loops, the still one showing through meanwhile)
         var canvasUp by remember(n.title, n.artist) { mutableStateOf(false) }
-        val canvasShown = canvasUp && behind != Moving.CANVAS_OFF && !(behind == Moving.CANVAS_LOOK && look == Look.PLAIN)
+        val canvasShown = canvasUp && canvasOn
         drawn?.takeIf { !canvasShown }?.let { (img, shape) ->
             val fade = remember(img) { Animatable(0f) }
             LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
@@ -461,7 +453,8 @@ private fun Backdrop(cover: Cover?, n: Now) {
         }
         // the song's spotify canvas over it, moving, in the same look (signed in to spotify: settings, the look)
         if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
-        drawn?.let { (_, shape) -> if (shape != Look.DITHER && !(canvasShown && behind == Moving.CANVAS_PLAIN)) Grain() }
+        // the grain over a still look, or a canvas in one (not dither's, nor a canvas as it is)
+        if (if (canvasShown) canvasLook != null && canvasLook != Look.DITHER else drawn?.second?.let { it != Look.DITHER } == true) Grain()
     }
 }
 
@@ -638,47 +631,6 @@ private val NEXT = listOf("#...#", "##..#", "###.#", "#####", "###.#", "##..#", 
 private val SHUFFLE = listOf("........#..", "##....#####", "..#..#..#..", "...##......", "..#..#..#..", "##....#####", "........#..")
 private val REPEAT = listOf("..#........", ".##########", "#.#.......#", "#.........#", "#.......#.#", "##########.", "........#..")
 private val REPEAT_ONE = listOf("..#........", ".##########", "#.#.......#", "#....#....#", "#.......#.#", "##########.", "........#..")
-/** Each look as a tile in a frame: plain empty, blur a soft blot, fluted glass its ribs, pixels its blocks, dither its checks. */
-private val LOOKS = mapOf(
-    Look.PLAIN to listOf("#########", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#.......#", "#########"),
-    Look.BLUR to listOf("#########", "#.......#", "#...#...#", "#..###..#", "#.#####.#", "#..###..#", "#...#...#", "#.......#", "#########"),
-    Look.FLUTED to listOf("#########", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#.#.#.#.#", "#########"),
-    Look.PIXELS to listOf("#########", "####....#", "####....#", "####....#", "#.......#", "#....####", "#....####", "#....####", "#########"),
-    Look.DITHER to listOf("#########", "##.#.#.##", "#.#.#.#.#", "##.#.#.##", "#.#.#.#.#", "##.#.#.##", "#.#.#.#.#", "##.#.#.##", "#########"),
-)
-
-/**
- * The look's glyph. In the pixels look it's one of the backdrop's own tiles, exactly their size and sat on one, its
- * frame on their gutters (at 2 dp it was nearly a tile, astride two). The tiles: the page's longer side, cut into
- * about 18 dp squares (Looks.pixels), the square centred on the page. It moves across to its tile itself; up or down,
- * it's the whole row that moves (`rowY`, told back through `onRowY`), so the row stays in line.
- */
-@Composable
-private fun LookGlyph(look: Look, rowY: Int, onRowY: (Int) -> Unit, onClick: () -> Unit) {
-    val win = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
-    val d = LocalDensity.current
-    val side = maxOf(win.width, win.height).toFloat()
-    val tile = if (look == Look.PIXELS && side > 0) side / (side / (18 * d.density)).roundToInt().coerceIn(4, 80) else 0f
-    var nudge by remember(look) { androidx.compose.runtime.mutableIntStateOf(0) }
-    val rows = LOOKS.getValue(look)
-    Pixel(
-        rows, "look, ${look.word}", SAID,
-        modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset(nudge, 0) },
-        cell = if (tile > 0) with(d) { (tile / rows.size).toDp() } else 2.dp,
-        inner = if (tile > 0) Modifier.onGloballyPositioned { c ->
-            // where it would be without the nudges (its own across, the row's down), then the nearest tile's corner
-            val p = c.positionInWindow() - androidx.compose.ui.geometry.Offset(nudge.toFloat(), rowY.toFloat())
-            val ox = (win.width - side) / 2f; val oy = (win.height - side) / 2f
-            val tx = ox + kotlin.math.round((p.x - ox) / tile) * tile
-            val ty = oy + kotlin.math.round((p.y - oy) / tile) * tile
-            val nx = kotlin.math.round(tx - p.x).toInt(); val ny = kotlin.math.round(ty - p.y).toInt()
-            if (nx != nudge) nudge = nx
-            if (ny != rowY) onRowY(ny)
-        } else Modifier,
-        onClick = onClick,
-    )
-}
-
 /** close: the player goes down, as it's pulled. */
 private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
 
