@@ -1,8 +1,9 @@
-- INK: ink weekly, the record of the day, critics' picks, out this Friday, festivals, moods
-- Made for you, from your listening: fresh finds, deep cuts, loved long ago
+- ink music 2.0: on Mac, Windows and Linux too
+- Phone and computer in step over your wifi: listens, loves, sign-ins
+- Continue here: pick up on one where the other left off
+- INK: ink weekly, critics' picks, out this Friday, festivals, moods
+- Made for you, from your listening
+- Find finds everything: artists, playlists, stations
 - YouTube Music songs kept offline
-- Private listening: nothing kept while it's on
-- Add to a playlist from the player; play next comes next
-- New versions show on listen, one tap to update
 - There are easter eggs now. We said we wouldn't tell.
 - Do something nice for someone today. Leave a note for a neighbor
