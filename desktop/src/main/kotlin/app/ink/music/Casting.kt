@@ -134,8 +134,58 @@ object Casting {
                 })
             }
         }, "cast find").apply { isDaemon = true }.start()
+        // a Mac: its own mDNS asked too (JmDNS, beside macOS's mDNSResponder, found no Cast speaker on Bronson's Mac;
+        // the pairing's announcing had the same trouble), through dns-sd as Finder asks
+        if (Home.mac && browsing == null) Thread({ runCatching { browse() }.onFailure { Log.d("dns-sd: $it") } }, "cast find mac").apply { isDaemon = true }.start()
         // and the receivers that speak DLNA instead (a Denon, a Samsung TV)
         Dlna.find { r -> main.post { found[r.key] = r; publish() } }
+    }
+
+    @Volatile private var browsing: Process? = null
+
+    /** The app quitting: the Mac's dns-sd let go of (it would go on browsing after). */
+    fun stopFinding() { browsing?.destroy(); browsing = null }
+
+    /**
+     * Cast speakers by macOS's own dns-sd: `-B` says each one there (and gone) as it comes, `-L` where it is and its
+     * words (fn, its name; md, its model), its host resolved by the Mac's own resolver (.local names work there).
+     */
+    private fun browse() {
+        val p = ProcessBuilder("/usr/bin/dns-sd", "-B", "_googlecast._tcp", "local").redirectErrorStream(true).start()
+        browsing = p
+        p.inputStream.bufferedReader().forEachLine { line ->
+            // "18:20:01.123  Add        3  14 local.               _googlecast._tcp.    Google-Nest-Audio-1f2e…"
+            val f = line.trim().split(Regex("\\s+"), limit = 7)
+            if (f.size < 7 || f[5] != "_googlecast._tcp.") return@forEachLine
+            val name = f[6].trim()
+            when (f[1]) {
+                "Add" -> Thread({ runCatching { lookUp(name) }.onFailure { Log.d("dns-sd $name: $it") } }, "cast look up").apply { isDaemon = true }.start()
+                "Rmv" -> main.post { found.remove(name); publish() }
+            }
+        }
+    }
+
+    private fun lookUp(name: String) {
+        val p = ProcessBuilder("/usr/bin/dns-sd", "-L", name, "_googlecast._tcp", "local").redirectErrorStream(true).start()
+        try {
+            val lines = p.inputStream.bufferedReader()
+            var host: String? = null; var port = 0
+            val deadline = System.currentTimeMillis() + 5_000
+            while (System.currentTimeMillis() < deadline) {
+                val line = lines.readLine() ?: break
+                // "… can be reached at 3a6f….local.:8009 (interface 14)", then its words on the next line
+                val m = Regex("can be reached at (\\S+?)\\.?:(\\d+)").find(line)
+                if (m != null) { host = m.groupValues[1]; port = m.groupValues[2].toInt(); continue }
+                val h = host ?: continue
+                // words separated by spaces, a space within one escaped ("fn=Dining\\ Room\\ speaker")
+                val words = Regex("(\\w+)=((?:\\\\.|\\S)*)").findAll(line).associate { it.groupValues[1] to it.groupValues[2].replace(Regex("\\\\(.)"), "$1") }
+                val at = java.net.InetAddress.getAllByName(h).firstOrNull { it is java.net.Inet4Address } ?: return
+                val s = Speaker(name, words["fn"]?.trim().takeUnless { it.isNullOrEmpty() } ?: name, port != 8009,
+                    InetSocketAddress(at, port), words["md"]?.trim().orEmpty())
+                main.post { found[name] = s; publish() }
+                return
+            }
+        } finally { p.destroy() }
     }
 
     private fun publish() {
