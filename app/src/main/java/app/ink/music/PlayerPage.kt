@@ -187,6 +187,9 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         val look by Looks.on.collectAsState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val share = { scope.launch { ShareCard.share(ctx, n, look) }; Unit }
+        // in the pixels look the top row moves as one onto the backdrop's tile row, so the look's glyph sits on a tile
+        // and the rest stay in line with it (#1: the glyph alone moved, and looked out of line)
+        var rowY by remember(look) { androidx.compose.runtime.mutableIntStateOf(0) }
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)),
         ) {
@@ -200,10 +203,10 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                     end = { Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                         // the look drawn, not named ("fluted glass" was a lot of words up here): the backdrop changes
                         // behind it as it's tapped, so its picture is all the saying it needs
-                        LookGlyph(look) { Looks.next(ctx) }
+                        LookGlyph(look, rowY, { rowY = it }) { Looks.next(ctx) }
                         Pixel(CLOSE, "close", SAID, Modifier.align(Alignment.CenterVertically), onClick = onClose)
                     } },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp).offset { androidx.compose.ui.unit.IntOffset(0, rowY) },
                 )
             }
             val words = lyric != null
@@ -623,28 +626,30 @@ private val LOOKS = mapOf(
 /**
  * The look's glyph. In the pixels look it's one of the backdrop's own tiles, exactly their size and sat on one, its
  * frame on their gutters (at 2 dp it was nearly a tile, astride two). The tiles: the page's longer side, cut into
- * about 18 dp squares (Looks.pixels), the square centred on the page.
+ * about 18 dp squares (Looks.pixels), the square centred on the page. It moves across to its tile itself; up or down,
+ * it's the whole row that moves (`rowY`, told back through `onRowY`), so the row stays in line.
  */
 @Composable
-private fun LookGlyph(look: Look, onClick: () -> Unit) {
+private fun LookGlyph(look: Look, rowY: Int, onRowY: (Int) -> Unit, onClick: () -> Unit) {
     val win = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
     val d = LocalDensity.current
     val side = maxOf(win.width, win.height).toFloat()
     val tile = if (look == Look.PIXELS && side > 0) side / (side / (18 * d.density)).roundToInt().coerceIn(4, 80) else 0f
-    var nudge by remember(look) { mutableStateOf(androidx.compose.ui.unit.IntOffset.Zero) }
+    var nudge by remember(look) { androidx.compose.runtime.mutableIntStateOf(0) }
     val rows = LOOKS.getValue(look)
     Pixel(
         rows, "look, ${look.word}", SAID,
-        modifier = Modifier.offset { nudge },
+        modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset(nudge, 0) },
         cell = if (tile > 0) with(d) { (tile / rows.size).toDp() } else 2.dp,
         inner = if (tile > 0) Modifier.onGloballyPositioned { c ->
-            // where it would be without the nudge, then the nearest tile's corner
-            val p = c.positionInWindow() - androidx.compose.ui.geometry.Offset(nudge.x.toFloat(), nudge.y.toFloat())
+            // where it would be without the nudges (its own across, the row's down), then the nearest tile's corner
+            val p = c.positionInWindow() - androidx.compose.ui.geometry.Offset(nudge.toFloat(), rowY.toFloat())
             val ox = (win.width - side) / 2f; val oy = (win.height - side) / 2f
             val tx = ox + kotlin.math.round((p.x - ox) / tile) * tile
             val ty = oy + kotlin.math.round((p.y - oy) / tile) * tile
-            val n = androidx.compose.ui.unit.IntOffset(kotlin.math.round(tx - p.x).toInt(), kotlin.math.round(ty - p.y).toInt())
-            if (n != nudge) nudge = n
+            val nx = kotlin.math.round(tx - p.x).toInt(); val ny = kotlin.math.round(ty - p.y).toInt()
+            if (nx != nudge) nudge = nx
+            if (ny != rowY) onRowY(ny)
         } else Modifier,
         onClick = onClick,
     )
