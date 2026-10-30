@@ -1,7 +1,7 @@
 - Tap the format over the cover: the sound's whole path, and whether it's exact
+- On a receiver too: what it's doing to the sound (Denon, Marantz, Yamaha, Onkyo, Sonos)
 - Turn even volume and the equalizer off right there, and watch it change
-- On a receiver: what it's doing to the sound (Denon, Marantz, Yamaha, Onkyo, Sonos)
 - Exact to a USB DAC: bit-perfect on Android 14 and up
-- The look's preview shows the background too
+- No more gray covers between songs
 - Bit-perfect, finally. Our DAC is still in the mail.
 - Do something nice for someone today. Lend someone your good headphones for one whole song
