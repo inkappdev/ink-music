@@ -4,8 +4,8 @@ r/inkmusic's pictures, in build/reddit/: the community icon (icon.png, 512 px: R
 banners, the desktop's (banner-desktop.png, 1920 x 384) and the phone's (banner-mobile.png, 1600 x 480).
 
 The icon is the app's (INK over MUSIC), with the player's own glow round it: the cover's colour in 1-bit dots,
-thinning out from the middle (ordered dither, as the app's). The banners are the giant marquee: artists' names in
-Archivo Black, bigger than the banner, cut off at both ends, a colour dot between each.
+thinning out from the middle (ordered dither, as the app's). The banners are the giant marquee: INK MUSIC over and over in
+Archivo Black, cut off at both ends, a colour dot between each.
 
     python3 tools/make-reddit.py
 """
@@ -79,7 +79,7 @@ def banner(w, h, names, size):
 
 os.makedirs(OUT, exist_ok=True)
 icon().save(os.path.join(OUT, "icon.png"), optimize=True)
-names = ["ALMOST HEAVEN", "WESTSIDE COWBOY", "TURNSTILE", "SNEAKER PIMPS", "GINGER ROOT", "PALE BLUE"]
+names = ["INK MUSIC"]   # the name, over and over, as the marquee runs an artist's (Bronson, 2026-10-29)
 banner(1920, 384, names, 150).save(os.path.join(OUT, "banner-desktop.png"), optimize=True)
 banner(1600, 480, names, 170).save(os.path.join(OUT, "banner-mobile.png"), optimize=True)
 for f in sorted(os.listdir(OUT)):
