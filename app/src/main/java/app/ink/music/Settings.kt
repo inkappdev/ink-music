@@ -205,7 +205,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 // moving covers: a record's own looping sleeve in the player, where it has one (the full build)
                 if (Moving.available) Column(Modifier.cascade(3)) {
                     val whenOn by Moving.whenOn.collectAsState()
-                    val dither by Moving.dither.collectAsState()
+                    val inLook by Moving.inLook.collectAsState()
                     BasicText("MOVING COVERS", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
                     BasicText("where a record has one, its own looping sleeve in the player (apple music's). silent", style = pixel(12.sp, Ink.mid))
@@ -217,11 +217,14 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     }
                     if (whenOn != Moving.OFF) {
                         Spacer(Modifier.height(6.dp))
-                        Row {
-                            Word("as it is", pixel(14.sp, if (!dither) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, dither = false) }
-                            // the shader is Android 13's: before it, as it is
-                            if (android.os.Build.VERSION.SDK_INT >= 33)
-                                Word("dithered", pixel(14.sp, if (dither) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(ctx, dither = true) }
+                        // the shaders are Android 13's: before it, as it is
+                        if (android.os.Build.VERSION.SDK_INT >= 33) Row {
+                            Word("as it is", pixel(14.sp, if (!inLook) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, inLook = false) }
+                            Word("in the look", pixel(14.sp, if (inLook) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(ctx, inLook = true) }
+                        }
+                        if (inLook && android.os.Build.VERSION.SDK_INT >= 33) {
+                            Spacer(Modifier.height(6.dp))
+                            BasicText("the player's look over it: dither, pixels or fluted glass (blur and plain leave it as it is)", style = pixel(12.sp, Ink.mid))
                         }
                     }
                     Spacer(Modifier.height(40.dp))
