@@ -9,6 +9,12 @@
             android:screenOrientation="portrait"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+        <!-- signing in to Spotify on its own page, to read your playlists in -->
+        <activity
+            android:name=".SpotifySignIn"
+            android:screenOrientation="portrait"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
         <!-- what the phone's installer says about an update: ask, done, refused -->
         <receiver android:name=".Updates$Installed" android:exported="false" />
     </application>
