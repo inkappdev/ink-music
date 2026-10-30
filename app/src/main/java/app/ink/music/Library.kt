@@ -113,7 +113,11 @@ object Library {
     /** The server's songs, all of them (an empty list: signed out). */
     @Synchronized fun putServer(songs: List<Song>) { remote = songs; publish() }
 
+    /** Read the phone's songs again now (the folders chosen changed). */
+    fun again(ctx: Context) { if (started) scope.launch { read(ctx.applicationContext) } }
+
     fun start(ctx: Context) {
+        Folders.load(ctx)
         if (started || !allowed(ctx)) return
         started = true
         val app = ctx.applicationContext
@@ -128,19 +132,42 @@ object Library {
             })
     }
 
+    /**
+     * What counts as a song (#1, 2026-10-30: a library full of WhatsApp voice notes and clips): music, not a recording
+     * (Android's own mark), and 30 seconds or more; nor anything kept where messaging apps and recorders keep their sound.
+     * And, once you've chosen folders (settings, music folders), only what's in them ([Folders]).
+     */
+    private val SONGS = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.IS_RECORDING} = 0" +
+        // a length the index never read (0) isn't short: three of the S26's songs are so
+        " AND (${MediaStore.Audio.Media.DURATION} >= 30000 OR ${MediaStore.Audio.Media.DURATION} = 0 OR ${MediaStore.Audio.Media.DURATION} IS NULL)"
+    // the folders as those apps name them, matched whole (a band called Voices, a folder called Callum, stay)
+    private val apps = listOf("com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger", "org.thoughtcrime.securesms",
+        "com.viber.voip", "whatsapp", "whatsapp business", "telegram", "signal")
+    private val kept = setOf("recordings", "call recordings", "call", "voice recorder", "voice recordings", "sound recorder",
+        "notifications", "ringtones", "alarms")
+
+    private fun notMusic(path: String?): Boolean {
+        val folders = path.orEmpty().lowercase().split('/').map { it.trim() }.filter { it.isNotEmpty() }
+        return folders.any { it in kept || it in apps || apps.any { a -> it.startsWith("$a ") } }   // "whatsapp audio", "telegram audio"
+    }
+
     private fun read(ctx: Context) {
         val cols = arrayOf(
             MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.ALBUM_ARTIST,
             MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.TRACK, MediaStore.Audio.Media.YEAR,
-            MediaStore.Audio.Media.DISC_NUMBER,
+            MediaStore.Audio.Media.DISC_NUMBER, MediaStore.Audio.Media.RELATIVE_PATH,
         )
         val out = ArrayList<Song>()
         try {
             ctx.contentResolver.query(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cols, "${MediaStore.Audio.Media.IS_MUSIC} != 0", null, null,
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cols, SONGS, null, null,
             )?.use { c ->
                 while (c.moveToNext()) {
+                    val path = c.getString(10)
+                    if (notMusic(path)) continue
+                    val chosen = Folders.chosen.value
+                    if (chosen.isNotEmpty() && chosen.none { path.orEmpty().startsWith(it, ignoreCase = true) }) continue
                     val id = c.getLong(0)
                     val artist = said(c.getString(2))
                     // the index packs the disc into the track (1009: disc 1, track 9), or keeps it apart
@@ -209,4 +236,33 @@ object Library {
 
     /** Filed as a shop files it: "The" and "A" set aside, case ignored. */
     fun sortName(s: String) = s.lowercase().removePrefix("the ").removePrefix("a ").trim()
+}
+
+/**
+ * The phone's folders that hold your music, chosen in settings (Bronson, 2026-10-30, after #1): their paths as the
+ * index keeps them ("Music/Phone/"), in files/folders.json. None chosen: every folder (less what [Library] leaves out).
+ */
+object Folders {
+    val chosen = kotlinx.coroutines.flow.MutableStateFlow<List<String>>(emptyList())
+    private var file: java.io.File? = null
+
+    fun load(c: Context) {
+        if (file != null) return
+        val f = java.io.File(c.filesDir, "folders.json").also { file = it }
+        chosen.value = runCatching { org.json.JSONArray(f.readText()).let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrDefault(emptyList())
+    }
+
+    /** A folder picked in Android's own chooser: its tree's path ("primary:Music/Phone" is "Music/Phone/"); the whole card, none. */
+    fun pathOf(tree: android.net.Uri): String? = runCatching {
+        android.provider.DocumentsContract.getTreeDocumentId(tree).substringAfter(':').trim('/').takeIf { it.isNotEmpty() }?.let { "$it/" }
+    }.getOrNull()
+
+    fun add(c: Context, path: String) = set(c, (chosen.value.filterNot { path.startsWith(it, true) || it.startsWith(path, true) } + path).sorted())
+    fun remove(c: Context, path: String) = set(c, chosen.value - path)
+
+    private fun set(c: Context, paths: List<String>) {
+        chosen.value = paths
+        runCatching { (file ?: java.io.File(c.filesDir, "folders.json")).writeText(org.json.JSONArray(paths).toString()) }
+        Library.again(c)
+    }
 }
