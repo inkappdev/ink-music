@@ -172,8 +172,14 @@ object Spotify {
             canvases[key]?.let { (url, at) -> if (url != null || System.currentTimeMillis() - at < 7 * 86_400_000L) return url }
         }
         if (!fresh(c)) return null
-        val asked = withContext(Dispatchers.IO) { runCatching { track(title, artist)?.let { canvasOf(it) } } }
-            .onFailure { android.util.Log.w("ink-spotify", "canvas: $it") }
+        var asked = withContext(Dispatchers.IO) { runCatching { track(title, artist)?.let { canvasOf(it) } } }
+        // turned away (Spotify ended the passes before their hour): new ones, out of sight, and once more
+        if ("http 401" in asked.exceptionOrNull()?.message.orEmpty()) {
+            bearer = null; _at.value = 0L
+            if (!fresh(c)) return null
+            asked = withContext(Dispatchers.IO) { runCatching { track(title, artist)?.let { canvasOf(it) } } }
+        }
+        asked.onFailure { android.util.Log.w("ink-spotify", "canvas: $it") }
         if (asked.isFailure) return null
         val url = asked.getOrNull()
         android.util.Log.i("ink-spotify", "canvas $artist / $title: ${if (url != null) "found" else "none"}")
