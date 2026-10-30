@@ -150,6 +150,7 @@ class Main : ComponentActivity() {
         YouTubeAccount.start(this)
         HiddenLists.load(this)
         Moving.start(this)
+        Receiver.log = { android.util.Log.d("ink-receiver", it) }
         ListenBrainz.start(this)
         LastFm.start(this)
         Offline.start(this)

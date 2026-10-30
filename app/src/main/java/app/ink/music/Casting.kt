@@ -48,6 +48,8 @@ object Casting {
         val kind: String = "cast", val control: String = "", val maker: String = "",
         val volumeControl: String = "",   // a DLNA receiver's RenderingControl, where its volume's set ("": none)
     )
+    /** As the receivers' readings take it (core's Receiver). */
+    fun Speaker.device() = Receiver.Device(kind, address, maker, model, control, volumeControl, group)
 
     /** One speaker being played on, whichever way it's spoken to. */
     interface Remote {

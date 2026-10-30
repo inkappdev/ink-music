@@ -24,6 +24,15 @@ import java.net.URL
  * - Google Cast: its own page (eureka_info), Google's list of what Cast plays. Tried on a Chromecast Audio, a Nest Audio.
  */
 object Receiver {
+    /** A speaker as the apps' casting found it (each app's Casting.Speaker, the same fields). */
+    data class Device(
+        val kind: String, val address: InetSocketAddress, val maker: String = "", val model: String = "",
+        val control: String = "", val volumeControl: String = "", val group: Boolean = false,
+    )
+
+    /** Where each app says what went wrong (the phone's log, the computer's). */
+    @Volatile var log: (String) -> Unit = {}
+
     data class Said(
         val takes: List<String> = emptyList(),          // the formats it plays ("flac", "wav", "aac", "mp3")
         val lines: List<Pair<String, String>> = emptyList(), // its live state, as steps: "sound mode" to "stereo"
@@ -35,8 +44,8 @@ object Receiver {
         val live get() = lines.isNotEmpty()
     }
 
-    suspend fun read(s: Casting.Speaker): Said? = withContext(Dispatchers.IO) {
-        if (s.kind == "cast") return@withContext runCatching { cast(s) }.onFailure { android.util.Log.d("ink-receiver", "cast: $it") }.getOrNull()
+    suspend fun read(s: Device): Said? = withContext(Dispatchers.IO) {
+        if (s.kind == "cast") return@withContext runCatching { cast(s) }.onFailure { log("cast: $it") }.getOrNull()
         if (s.kind != "dlna") return@withContext null
         val host = s.address.hostString
         val takes = runCatching { protocols(s.control.replace("AVTransport", "ConnectionManager")) }.getOrDefault(emptyList())
@@ -53,12 +62,12 @@ object Receiver {
                 "wiim" in maker || "linkplay" in maker || "arylic" in maker || "audio pro" in maker -> linkplay(host)
                 else -> null
             }
-        }.onFailure { android.util.Log.d("ink-receiver", "${s.maker}: $it") }.getOrNull()
+        }.onFailure { log("${s.maker}: $it") }.getOrNull()
         (live ?: Said()).copy(takes = takes)
     }
 
     private fun onOff(b: Boolean?) = if (b == true) "on" else "off"
-    private fun khz(hz: Int) = "${Heard.khz(hz)} khz"
+    private fun khz(hz: Int) = (if (hz % 1000 == 0) "${hz / 1000}" else "%.1f".format(java.util.Locale.ROOT, hz / 1000f)) + " khz"
 
     // ---- Denon, Marantz ----
 
@@ -193,7 +202,7 @@ object Receiver {
 
     // ---- Sonos ----
 
-    private fun sonos(s: Casting.Speaker): Said {
+    private fun sonos(s: Device): Said {
         val rc = s.volumeControl.ifEmpty { "http://${s.address.hostString}:1400/MediaRenderer/RenderingControl/Control" }
         fun ask(action: String, args: String, out: String) = runCatching {
             Regex("<$out>([^<]*)</$out>").find(soap(rc, "urn:schemas-upnp-org:service:RenderingControl:1", action, args))?.groupValues?.get(1)
@@ -307,7 +316,7 @@ object Receiver {
      * range, a Nest's bass and treble) it doesn't tell: kept to Google's app. Tried on the house's Chromecast Audio
      * (1.56, -59 dBm) and Nest Audio (3.78).
      */
-    private fun cast(s: Casting.Speaker): Said {
+    private fun cast(s: Device): Said {
         val o = JSONObject(get("http://${s.address.hostString}:8008/setup/eureka_info?params=version,name,build_info,net,wifi"))
         val signal = o.optInt("signal_level", 0).takeIf { it < 0 }
         val link = when {

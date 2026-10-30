@@ -39,6 +39,8 @@ object Casting {
         val kind: String = "cast", val control: String = "", val maker: String = "",
         val volumeControl: String = "",   // a DLNA receiver's RenderingControl, where its volume's set ("": none)
     )
+    /** As the receivers' readings take it (core's Receiver). */
+    fun Speaker.device() = Receiver.Device(kind, address, maker, model, control, volumeControl, group)
 
     /** One speaker being played on, whichever way it's spoken to. */
     interface Remote {
@@ -204,6 +206,8 @@ object Casting {
 
     /** The speaker's volume, 0 to 1, as it says it (null: not heard yet, or not casting). */
     val volume = MutableStateFlow<Float?>(null)
+    /** What's sent to the speaker, as said ("flac 16/44.1", "mp3 320"): the signal path's. */
+    val quality = MutableStateFlow("")
     private var volumeSetAt = 0L
 
     /** The speaker's volume set from here, in 5% steps. */
@@ -257,6 +261,7 @@ object Casting {
     internal fun show(n: Now?) = main.post {
         if (link == null) return@post
         connecting.value = false
+        n?.let { quality.value = it.quality }
         if (n != null) Player.showCast(n)
     }
 

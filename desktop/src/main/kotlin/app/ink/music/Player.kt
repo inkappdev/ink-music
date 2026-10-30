@@ -258,6 +258,28 @@ object Player {
         }
     }
 
+    /**
+     * The path past the file, as mpv says it now (for the signal path): its decoder, what it decodes to ("s16",
+     * "s32", "floatp"), what it hands the system (format, rate, channels), the system's sound (mpv's name for it:
+     * "coreaudio", "wasapi", "pipewire", "pulse", "alsa"), and the output (as it's called; "" for the system's choice).
+     */
+    data class Out(val decoder: String, val decoded: String, val format: String, val rate: Int, val channels: Int, val ao: String, val device: String)
+
+    fun out(): Out? {
+        val m = mpv ?: return null
+        val chosen = m.get("audio-device").orEmpty()
+        val device = if (chosen == "auto" || chosen.isEmpty()) "" else outputs().firstOrNull { it.first == chosen }?.second?.ifEmpty { chosen } ?: chosen
+        return Out(
+            decoder = m.get("current-tracks/audio/decoder-desc").orEmpty(),
+            decoded = m.get("audio-params/format").orEmpty(),
+            format = m.get("audio-out-params/format").orEmpty(),
+            rate = m.get("audio-out-params/samplerate")?.toIntOrNull() ?: 0,
+            channels = m.get("audio-out-params/channel-count")?.toIntOrNull() ?: 0,
+            ao = m.get("current-ao").orEmpty(),
+            device = device,
+        )
+    }
+
     /** The app's volume (0 to 100), kept; on a speaker, the speaker's. */
     fun volume(v: Int) {
         val to = v.coerceIn(0, 100)
