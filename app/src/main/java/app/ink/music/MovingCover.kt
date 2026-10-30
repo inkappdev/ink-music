@@ -168,7 +168,9 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
     val come by animateFloatAsState(if (shown) 1f else 0f, if (less) snap() else tween(if (drawn == Look.DITHER) 1_400 else 600), label = "come")
     val density = LocalDensity.current.density
     var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
-    AndroidView(
+    // a view of its own for each clip: the view is made once, and a new clip's player handed the old one drew nowhere
+    // (a song changed under it: its moving cover and canvas never showed)
+    androidx.compose.runtime.key(url) { AndroidView(
         factory = { c -> TextureView(c).also { player.setVideoTextureView(it) } },
         update = { tv ->
             if (crop && size.width > 0 && video.width > 0) {
@@ -186,7 +188,7 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
         modifier = modifier.onSizeChanged { size = it }.clipToBounds().graphicsLayer {
             alpha = if (drawn == Look.DITHER) (if (shown) strength else 0f) else come * strength
         },
-    )
+    ) }
 }
 
 /**

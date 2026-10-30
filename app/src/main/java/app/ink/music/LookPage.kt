@@ -49,7 +49,7 @@ fun LookPage(pages: Pages) {
             // the player in small, pinned: what's chosen below shows here
             Box(Modifier.fillMaxWidth().height(tall * .38f)) { PlayerPreview(Modifier.fillMaxSize()) }
             Spacer(Modifier.height(8.dp))
-            BasicText(if (Moving.available) "the avalanches, vida: a moving cover, and spotify's canvas behind it" else "what plays now",
+            BasicText(if (Moving.available) "fontaines d.c., starburster: a moving cover, and spotify's canvas behind it" else "what plays now",
                 style = pixel(12.sp, Ink.mid), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp))
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 28.dp, bottom = 40.dp)) {
@@ -70,7 +70,9 @@ fun LookPage(pages: Pages) {
                 Column(Modifier.cascade(2)) {
                     BasicText("BEHIND IT", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText("the cover across the page, in a look. the square in the player's top row turns through them too", style = pixel(12.sp, Ink.mid))
+                    BasicText(if (Spotify.available && signed && behind == Moving.CANVAS_PLAIN)
+                        "the cover across the page, in a look, where a song has no canvas (a canvas shows as it is, below)"
+                        else "the cover across the page, in a look. the square in the player's top row turns through them too", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     FlowRow {
                         Look.entries.forEach { l ->

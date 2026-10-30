@@ -446,8 +446,11 @@ private fun Backdrop(cover: Cover?, n: Now) {
         }
         // a canvas playing over it: the still one not drawn under it (its look came through the canvas)
         val behind by Moving.canvas.collectAsState()
-        var canvasUp by remember(n.title, n.artist, behind, look) { mutableStateOf(false) }
-        drawn?.takeIf { !canvasUp }?.let { (img, shape) ->
+        // (a new song resets it; a look or setting changed doesn't: its clip plays on, and its first frame isn't seen
+        // again till it loops, the still one showing through meanwhile)
+        var canvasUp by remember(n.title, n.artist) { mutableStateOf(false) }
+        val canvasShown = canvasUp && behind != Moving.CANVAS_OFF && !(behind == Moving.CANVAS_LOOK && look == Look.PLAIN)
+        drawn?.takeIf { !canvasShown }?.let { (img, shape) ->
             val fade = remember(img) { Animatable(0f) }
             LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
             Image(
@@ -458,7 +461,7 @@ private fun Backdrop(cover: Cover?, n: Now) {
         }
         // the song's spotify canvas over it, moving, in the same look (signed in to spotify: settings, the look)
         if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
-        drawn?.let { (_, shape) -> if (shape != Look.DITHER && !(canvasUp && behind == Moving.CANVAS_PLAIN)) Grain() }
+        drawn?.let { (_, shape) -> if (shape != Look.DITHER && !(canvasShown && behind == Moving.CANVAS_PLAIN)) Grain() }
     }
 }
 
@@ -941,11 +944,11 @@ fun PlayerPreview(modifier: Modifier = Modifier) {
     }
 }
 
-/** The preview's song: The Avalanches' Vida (feat. Erick the Architect): a moving cover, and a canvas behind it. */
+/** The preview's song: Fontaines D.C.'s Starburster (Bronson's pick, 2026-10-30): Romance's moving heart, a canvas behind it. */
 private object Showcase {
-    const val TITLE = "Vida"
-    const val ARTIST = "The Avalanches"
-    // YouTube's search finds the song without its record, and the moving cover is the record's
-    const val ALBUM = "No Bad Memories"
+    const val TITLE = "Starburster"
+    const val ARTIST = "Fontaines D.C."
+    // YouTube's search can find the song without its record, and the moving cover is the record's
+    const val ALBUM = "Romance"
     @Volatile var song: Song? = null
 }
