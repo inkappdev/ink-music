@@ -25,6 +25,8 @@ enum class Look(val word: String, val alpha: Float, val crisp: Boolean) {
     FLUTED("fluted glass", .45f, false),
     PIXELS("pixels", .4f, true),
     DITHER("dither", .4f, true),
+    // the cover (or a song's canvas) itself, no effect, held to half over the black so the words over it read
+    AS_IS("as it is", .5f, false),
     PLAIN("plain", 0f, false),
 }
 
@@ -55,6 +57,7 @@ object Looks {
             Look.FLUTED -> fluted(src, 540, 20 * density * 540 / shown)
             Look.PIXELS -> pixels(src, (shown / (18 * density)).roundToInt().coerceIn(4, 80))
             Look.DITHER -> dither(src, (shown / (3 * density)).roundToInt().coerceIn(24, 400), accent.toArgb())
+            Look.AS_IS -> src
             Look.PLAIN -> null
         }
     } catch (e: Exception) { null }
