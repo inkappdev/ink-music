@@ -24,6 +24,15 @@ data class Heard(
     val quality: Int,         // Quality's choice it was played at (-1: not one Quality chooses for)
     val metered: Boolean,     // on mobile data when it started
     val gain: Float?,         // even volume's dB, null when off
+    // the signal path (2026-10-30): what decoded it, what went to Android, where it went
+    val decoder: String = "", // the decoder's name ("c2.android.flac.decoder")
+    val outBits: Int = 0,     // what the player sent Android: bit depth (32: float) and rate (0: not known yet)
+    val outRate: Int = 0,
+    val device: String = "",  // where it plays: "sony wh-1000xm5", "the phone's speaker"
+    val kind: String = "",    // "usb", "bluetooth", "wired", "speaker"
+    val mixer: Int = 0,       // the rate Android's mixer runs at
+    val eq: String = "",      // the equalizer: "" off, else its preset or headphone
+    val exact: String = "",   // exact to a usb dac: "" off, "yes 16/44.1", or why not
 ) {
     val lossless get() = codec in LOSSLESS
     val hires get() = lossless && (bits > 16 || rate > 48_000)
@@ -37,6 +46,8 @@ data class Heard(
 
     fun json(): String = JSONObject().put("id", id).put("codec", codec).put("bits", bits).put("rate", rate).put("channels", channels)
         .put("kbps", kbps).put("from", from).put("made", made).put("quality", quality).put("metered", metered)
+        .put("decoder", decoder).put("outBits", outBits).put("outRate", outRate).put("device", device).put("kind", kind)
+        .put("mixer", mixer).put("eq", eq).put("exact", exact)
         .apply { gain?.let { put("gain", it.toDouble()) } }.toString()
 
     companion object {
@@ -47,7 +58,9 @@ data class Heard(
                 val o = JSONObject(s)
                 Heard(o.optString("id"), o.getString("codec"), o.optInt("bits"), o.optInt("rate"), o.optInt("channels"), o.optInt("kbps"),
                     o.optString("from"), o.optString("made"), o.optInt("quality", -1), o.optBoolean("metered"),
-                    if (o.has("gain")) o.getDouble("gain").toFloat() else null)
+                    if (o.has("gain")) o.getDouble("gain").toFloat() else null,
+                    o.optString("decoder"), o.optInt("outBits"), o.optInt("outRate"), o.optString("device"), o.optString("kind"),
+                    o.optInt("mixer"), o.optString("eq"), o.optString("exact"))
             }.getOrNull()
         }
 

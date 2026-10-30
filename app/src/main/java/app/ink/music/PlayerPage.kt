@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredSize
@@ -216,7 +218,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                         LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
                         // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
                         Scrubber(n, accent, scrub, line = 2.dp) { HeardWord(n, typing) { heardUp = true } }
-                        Song(n, dir, small = true, scrub, onOpen, share)
+                        Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true })
                     } else {
                         // the cover as big as the width allows, unless the song's words under it would then run
                         // under the controls (Android's own display size, a short phone): then it gives up just
@@ -225,7 +227,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                             androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
                                 Column {
                                     Scrubber(n, accent, scrub) { HeardWord(n, typing) { heardUp = true } }
-                                    Song(n, dir, small = false, scrub, onOpen, share) { t -> Moment(t) { typing = it } }
+                                    Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }) { t -> Moment(t) { typing = it } }
                                 }
                             }
                         }
@@ -295,10 +297,10 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) { PlayOnPage(onClose = { playOnUp = false }) }
         androidx.compose.animation.AnimatedVisibility(
-            heardUp && n.heard != null,
+            heardUp && (n.heard != null || n.device.isNotEmpty()),
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { n.heard?.let { HeardPage(it, onClose = { heardUp = false }) } }
+        ) { SignalPath(n, onClose = { heardUp = false }) }
     }
 }
 
@@ -326,7 +328,7 @@ private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit
  * lyrics up), the cover at 96 dp (72, the mini player's, read as too small under the lines) with the words beside it. A new song pushes in.
  */
 @Composable
-private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit, over: @Composable (Now) -> Unit = {}) {
+private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit, onHeard: () -> Unit = {}, over: @Composable (Now) -> Unit = {}) {
     AnimatedContent(
         targetState = n,
         // a station's new song pushes in too
@@ -371,10 +373,10 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
             Spacer(Modifier.height(8.dp))
             // an easter egg's word, when one's due (on repeat, a 100th time, a promise kept)
             EggsNow.line(t.song)?.let { BasicText(it, style = pixel(SMALL, Ink.ink)); Spacer(Modifier.height(4.dp)) }
-            // on a speaker: what reaches it ("flac 24/96 on dining room speaker")
+            // on a speaker: what reaches it ("flac 24/96 on dining room speaker"); a tap, its signal path
             if (t.device.isNotEmpty()) {
-                BasicText(listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" "),
-                    style = pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Word(listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" "),
+                    pixel(SMALL, SAID), onClick = onHeard)
                 Spacer(Modifier.height(4.dp))
             }
             // the artist and the record, each a way to its page
@@ -786,27 +788,96 @@ private fun Moment(t: Now, onTyping: (Boolean) -> Unit) {
 private const val SETTLE = 1_400
 private val SETTLING = androidx.compose.animation.core.CubicBezierEasing(.45f, 0f, .2f, 1f)
 
-/** All of what reaches your ears: the stream's format, where it came from and how, the quality and even volume. */
+/**
+ * The signal path (Bronson, 2026-10-30, "an audio pipeline of information as nice text"): what reaches your ears, step by
+ * step, from where the song came to where it plays, each as the player read it, a hairline between; then plainly
+ * whether it's exact, and if not what touched it. On a speaker, the path ends there: the speaker plays it itself.
+ */
 @Composable
-private fun HeardPage(h: Heard, onClose: () -> Unit) {
-    val lines = listOfNotNull(
-        "format" to (h.codec + if (h.hires) ", hi-res lossless" else if (h.lossless) ", lossless" else ", lossy"),
-        h.bits.takeIf { it > 0 }?.let { "bit depth" to "$it bit" },
-        h.rate.takeIf { it > 0 }?.let { "sample rate" to "${Heard.khz(it)} khz" },
-        h.channels.takeIf { it > 0 }?.let { "channels" to when (it) { 1 -> "mono"; 2 -> "stereo"; else -> "$it" } },
-        h.kbps.takeIf { it > 0 }?.let { "bitrate" to "$it kbps" },
-        "from" to when (h.from) {
+private fun SignalPath(n: Now, onClose: () -> Unit) {
+    val h = n.heard
+    val ctx = LocalContext.current
+    val k = { hz: Int -> "${Heard.khz(hz)} khz" }
+    // what's yours to change sits on its step, a word to tap (Bronson's ask): the path and "exact?" follow at once
+    var levelOn by remember { mutableStateOf(Playback.levelling(ctx)) }
+    var eqState by remember { mutableStateOf(Eq.read(ctx)) }
+    var exactOn by remember { mutableStateOf(Exact.on(ctx)) }
+    val acts = HashMap<String, Pair<String, () -> Unit>>()
+    val steps = mutableListOf<Pair<String, String>>()
+    if (h != null) {
+        steps += "from" to (when (h.from) {
             "server" -> if (h.made.isEmpty()) "your server, the file as it is" else "your server, made ${h.made} for you"
             "youtube" -> "youtube music, its ${h.made.ifEmpty { "best" }} stream"
             "station" -> "the station's stream"
             else -> "this phone, the file as it is"
-        },
-        h.quality.takeIf { it >= 0 }?.let { "quality" to "${Quality.words[it]} on ${if (h.metered) "mobile data" else "wifi"}" },
-        "even volume" to (h.gain?.let { "%+.1f db".format(java.util.Locale.ROOT, it) } ?: "off"),
-    )
+        } + (h.quality.takeIf { it >= 0 }?.let { "\n${Quality.words[it]} on ${if (h.metered) "mobile data" else "wifi"}" } ?: ""))
+        steps += (if (h.from == "youtube" || h.from == "station") "the stream" else "the file") to listOfNotNull(
+            h.codec, h.bits.takeIf { it > 0 }?.let { "$it bit" }, h.rate.takeIf { it > 0 }?.let(k),
+            h.channels.takeIf { it > 0 }?.let { when (it) { 1 -> "mono"; 2 -> "stereo"; else -> "$it channels" } },
+            h.kbps.takeIf { it > 0 }?.let { "%,d kbps".format(java.util.Locale.ROOT, it) },
+        ).joinToString(" · ") + "\n" + (if (h.hires) "hi-res lossless" else if (h.lossless) "lossless" else "lossy")
+    }
+    if (n.device.isNotEmpty()) {
+        // on a speaker: what's sent, and the speaker's own playing of it
+        steps += "sent" to "to ${n.device.lowercase()}" + (n.quality.takeIf { it.isNotBlank() }?.let { ", $it" } ?: "")
+        steps += "the speaker" to "plays it itself: its own decoder, its own dac"
+    } else if (h != null) {
+        h.decoder.takeIf { it.isNotEmpty() }?.let { d ->
+            val who = when {
+                d.startsWith("c2.android.") || d.startsWith("OMX.google.") -> "android's ${h.codec} decoder"
+                d.startsWith("c2.sec.") || d.startsWith("OMX.SEC.") -> "samsung's ${h.codec} decoder"
+                d.contains("ffmpeg", true) || d.contains("lib", true) -> "ink music's own ${h.codec} decoder"
+                else -> d.lowercase()
+            }
+            steps += "decoded" to who + (h.outBits.takeIf { it > 0 }?.let { ", to ${if (it == 32) "32 bit float" else "$it bit"}" } ?: "")
+        }
+        steps += "even volume" to (if (exactOn) "resting: exact to a usb dac" else h.gain?.let { "%+.1f db".format(java.util.Locale.ROOT, it) + if (it == 0f) "" else ", so it sits with the rest" } ?: "off")
+        if (!exactOn) acts["even volume"] = (if (levelOn) "turn off" else "turn on") to { levelOn = !levelOn; Playback.level(levelOn) }
+        steps += "equalizer" to (if (exactOn) "resting: exact to a usb dac" else h.eq.ifEmpty { "off" })
+        // the equalizer's word only once there's one set (its own page sets it up)
+        if (!exactOn && (eqState.on || eqState.levels.any { it != 0 })) acts["equalizer"] = (if (eqState.on) "turn off" else "turn on") to {
+            eqState = eqState.copy(on = !eqState.on); Playback.equalize(ctx, eqState)
+        }
+        if (h.outRate > 0) steps += "to android" to "${if (h.outBits == 32) "32 bit float" else "${h.outBits} bit"} · ${k(h.outRate)}"
+        // exact's word with a usb dac in (or exact on, to turn it off): without one it would only rest the rest
+        if (Exact.available && (h.kind == "usb" || exactOn)) acts["android"] = (if (exactOn) "exact: off" else "exact to a dac") to { exactOn = !exactOn; Playback.exact(ctx, exactOn) }
+        steps += "android" to when {
+            h.exact.startsWith("yes") -> "steps aside: bit-perfect to the dac"
+            h.mixer > 0 && h.outRate > 0 && h.mixer != h.outRate -> "mixes at ${k(h.mixer)}: ${k(h.outRate)} resampled"
+            h.mixer > 0 -> "mixes at ${k(h.mixer)}, with its volume"
+            else -> "mixes it, with its volume"
+        }
+        if (h.device.isNotEmpty()) steps += "your ears" to h.device.lowercase() + when (h.kind) {
+            "bluetooth" -> "\nre-encoded for bluetooth on the way (android picks the codec)"
+            "usb" -> " · usb"; "wired" -> " · wired"; else -> ""
+        }
+    }
+    // exact? plainly: yes only when every step left it be, else the first thing that touched it
+    val verdict = when {
+        n.device.isNotEmpty() -> "the phone hands it on; what happens next is the speaker's"
+        h == null -> ""
+        h.exact.startsWith("yes") && h.bits > 16 -> "close: bit-perfect to your dac, but ${h.bits} bit made 16 on the way"
+        h.exact.startsWith("yes") -> "yes: ${h.exact.removePrefix("yes ")} to your dac, untouched"
+        else -> {
+            // everything that touched it, in the order it did
+            val touched = listOfNotNull(
+                "even volume moves it".takeIf { h.gain != null && h.gain != 0f },
+                "the equalizer shapes it".takeIf { h.eq.isNotEmpty() },
+                "android resamples ${Heard.khz(h.outRate)} to ${k(h.mixer)}".takeIf { h.mixer > 0 && h.outRate > 0 && h.mixer != h.outRate },
+                "bluetooth re-encodes it".takeIf { h.kind == "bluetooth" },
+            )
+            when {
+                touched.isNotEmpty() -> "no: " + touched.joinToString(", ").let { t -> touched.takeIf { it.size > 1 }?.let { t.replaceAfterLast(", ", "").removeSuffix(", ") + " and " + it.last() } ?: t } +
+                    if (!h.lossless) "\nand lossy to begin with" else ""
+                !h.lossless -> "as good as its stream: lossy to begin with"
+                else -> "close: the same rate, but android's mixer and volume still touch it"
+            }
+        }
+    } + (h?.exact?.takeIf { it.isNotEmpty() && !it.startsWith("yes") }?.let { "\nexact to a usb dac: $it" } ?: "")
     Column(
         Modifier.fillMaxSize().background(Ink.black).windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
-            .navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp),
+            .navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)
+            .verticalScroll(androidx.compose.foundation.rememberScrollState()),
     ) {
         Row(Modifier.fillMaxWidth()) {
             Spacer(Modifier.weight(1f))
@@ -815,14 +886,37 @@ private fun HeardPage(h: Heard, onClose: () -> Unit) {
         Spacer(Modifier.height(28.dp))
         BasicText("WHAT YOU HEAR", style = headline(44.sp))
         Spacer(Modifier.height(8.dp))
-        BasicText(h.word, style = pixel(16.sp, if (h.lossless) Ink.ink else SAID))
-        Spacer(Modifier.height(32.dp))
-        lines.forEach { (label, value) ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
-                BasicText(label, style = pixel(12.sp, Ink.mid), modifier = Modifier.width(130.dp).padding(top = 2.dp))
-                BasicText(value, style = pixel(14.sp), modifier = Modifier.weight(1f))
+        BasicText(h?.word ?: n.quality, style = pixel(16.sp, if (h?.lossless == true) Ink.ink else SAID))
+        Spacer(Modifier.height(28.dp))
+        // the signal travelling down it, once as it opens (Bronson's ask): each step lit in turn from dim, the hairline
+        // to the next filling with ink as the progress line does; then "exact?". Moving less, all of it at once
+        val less by Moves.less.collectAsState()
+        val per = 160
+        val travel = remember { Animatable(if (less) steps.size.toFloat() else 0f) }
+        LaunchedEffect(Unit) { if (!less) travel.animateTo(steps.size.toFloat(), tween(per * steps.size, easing = androidx.compose.animation.core.LinearEasing)) }
+        steps.forEachIndexed { i, (label, value) ->
+            val reached = (travel.value - i).coerceIn(0f, 1f)
+            // a hairline from one step to the next, under the labels, filling as the signal passes down it
+            if (i > 0) Box(Modifier.padding(start = 3.dp).width(1.dp).height(14.dp).background(Ink.line)) {
+                Box(Modifier.fillMaxWidth().fillMaxHeight(((travel.value - i + 1) * 2).coerceIn(0f, 1f)).background(Ink.ink))
+            }
+            val lit = Ink.ink.copy(alpha = .35f + .65f * reached)
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                BasicText(label, style = pixel(12.sp, Ink.mid.copy(alpha = Ink.mid.alpha * (.5f + .5f * reached))), modifier = Modifier.width(120.dp).padding(top = 2.dp))
+                Column(Modifier.weight(1f)) {
+                    BasicText(value, style = pixel(14.sp, lit).copy(lineHeight = 20.sp))
+                    acts[label]?.let { (word, act) -> Word(word, pixel(12.sp, Ink.mid), Modifier.padding(top = 2.dp), touch = 8.dp, onClick = act) }
+                }
             }
         }
+        val arrived = (travel.value - steps.size + 1).coerceIn(0f, 1f)
+        if (verdict.isNotEmpty()) Column(Modifier.graphicsLayer { alpha = arrived }) {
+            Spacer(Modifier.height(28.dp))
+            BasicText("EXACT?", style = headline(24.sp))
+            Spacer(Modifier.height(6.dp))
+            BasicText(verdict, style = pixel(14.sp).copy(lineHeight = 20.sp))
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
