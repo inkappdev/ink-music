@@ -261,7 +261,7 @@ object Playback {
         if (songs.isNotEmpty() && songs.any { it.id !in ids }) c.setMediaItems(songs.map(::item), 0, 0)
     }
     /** The speaker's song, as it says it. */
-    fun showCast(n: Now) { casting = true; _now.value = n.copy(shuffle = Casting.shuffled); tellPlayer() }
+    fun showCast(n: Now) { casting = true; _now.value = n.copy(shuffle = Casting.shuffled, repeat = Casting.repeat); tellPlayer() }
     /** Casting over: the phone's own player shows again. */
     fun castEnded() {
         casting = false; tellPlayer(); _now.value = null; readQueue(); update()
@@ -301,6 +301,8 @@ object Playback {
     fun speed(v: Float) { if (!casting) controller?.setPlaybackSpeed(v) }
     /** Off, then the whole queue again, then this song again. */
     fun repeat() {
+        // on a speaker: the speaker's (Casting.repeat), lit at once
+        if (casting) { Casting.repeat(); _now.value = _now.value?.copy(repeat = Casting.repeat); return }
         controller?.run {
             repeatMode = when (repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
         }

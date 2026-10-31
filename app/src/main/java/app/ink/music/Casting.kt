@@ -67,6 +67,8 @@ object Casting {
         fun extend(songs: List<Song>) {}
         /** A song right after the one playing (play next). */
         fun playNext(s: Song) {}
+        /** Repeat as the phone's player has it (off, the queue, this song). */
+        fun repeat(mode: Int) {}
     }
 
     // ---- what a speaker can play ----
@@ -250,7 +252,7 @@ object Casting {
         Playback.mirror(handed)
         // the first YouTube song's stream looked up while the speaker connects, not after it asks (most of a second)
         handed.first().takeIf { it.tube }?.let { s -> Thread { runCatching { YouTubeMusic.stream(s.id, true) } }.start() }
-        link = (if (to.kind == "dlna") Dlna.Link(to, handed, at) else Link(to, handed, at)).also { it.open() }
+        link = (if (to.kind == "dlna") Dlna.Link(to, handed, at) else Link(to, handed, at)).also { it.repeat(repeat); it.open() }
         // what the phone's queue has after these (taken in before the speaker loads: one queue, from the first)
         Playback.toSpeaker()
     }
@@ -293,6 +295,7 @@ object Casting {
         _on.value = null
         connecting.value = false
         shuffled = false
+        repeat = androidx.media3.common.Player.REPEAT_MODE_OFF
         Playback.castEnded()
     }
 
@@ -341,6 +344,14 @@ object Casting {
     /** Shuffle while casting: on (the speaker plays its list in order, shuffle was the phone's own, paused player's). */
     var shuffled = false
         private set
+    /** Repeat while casting (off, the queue, this song), as the speaker's link carries it out. */
+    var repeat = androidx.media3.common.Player.REPEAT_MODE_OFF
+        private set
+    /** Repeat pressed while casting: off, the whole queue again, this song again (it went to the phone's paused player too). */
+    fun repeat() {
+        repeat = when (repeat) { androidx.media3.common.Player.REPEAT_MODE_OFF -> androidx.media3.common.Player.REPEAT_MODE_ALL; androidx.media3.common.Player.REPEAT_MODE_ALL -> androidx.media3.common.Player.REPEAT_MODE_ONE; else -> androidx.media3.common.Player.REPEAT_MODE_OFF }
+        link?.repeat(repeat)
+    }
     /** The speaker's queue in its own order, from before it was shuffled. */
     private var ordered: List<Song> = emptyList()
 
@@ -545,7 +556,17 @@ object Casting {
             val first = chunk(if (live) 1 else Int.MAX_VALUE)
             android.util.Log.d("ink-cast", "${to.name}: queue of ${first.length()} of ${songs.size}, the first ${first.optJSONObject(0)?.optJSONObject("media")?.let { it.optString("contentType") + " " + it.optString("contentId").substringBefore('?').take(80) }}")
             send(t, MEDIA, JSONObject().put("type", "QUEUE_LOAD").put("requestId", ++requests).put("items", first)
-                .put("startIndex", 0).put("currentTime", if (live) 0.0 else from / 1000.0).put("repeatMode", "REPEAT_OFF"))
+                .put("startIndex", 0).put("currentTime", if (live) 0.0 else from / 1000.0).put("repeatMode", repeatMode()))
+        }
+
+        /** Repeat, the speaker's own (its queue again: what's not yet handed over still goes in before its end, [nearEnd]). */
+        @Volatile private var repeat = androidx.media3.common.Player.REPEAT_MODE_OFF
+        private fun repeatMode() = when (repeat) { androidx.media3.common.Player.REPEAT_MODE_ONE -> "REPEAT_SINGLE"; androidx.media3.common.Player.REPEAT_MODE_ALL -> "REPEAT_ALL"; else -> "REPEAT_OFF" }
+        @Synchronized override fun repeat(mode: Int) {
+            repeat = mode
+            val t = transport ?: return
+            if (session == 0) return   // the load says it
+            io.execute { runCatching { send(t, MEDIA, JSONObject().put("type", "QUEUE_UPDATE").put("requestId", ++requests).put("mediaSessionId", session).put("repeatMode", repeatMode())) } }
         }
 
         @Synchronized private fun nearEnd() { current?.let { c -> if (pending.isNotEmpty() && queue.indexOf(c) >= handedOver - 3) more() } }

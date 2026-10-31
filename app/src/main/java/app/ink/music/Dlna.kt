@@ -141,10 +141,25 @@ object Dlna {
             return true
         }
 
+        /** Repeat (off, the queue, this song): a receiver has none of its own, so it's done here. */
+        @Volatile private var repeat = androidx.media3.common.Player.REPEAT_MODE_OFF
+        override fun repeat(mode: Int) = io.execute { repeat = mode; queueNext() }.let { }
+        /** The song after `i` as repeat has it (null: none, the queue's end). */
+        private fun after(i: Int): Int? = when (repeat) {
+            androidx.media3.common.Player.REPEAT_MODE_ONE -> i
+            androidx.media3.common.Player.REPEAT_MODE_ALL -> (i + 1) % queue.size
+            else -> (i + 1).takeIf { it in queue.indices }
+        }
+
         /** The song after the one playing, handed over so it carries on by itself (where the receiver can). */
         private fun queueNext() {
-            val n = index + 1
-            if (n !in queue.indices || nextSet == n) return
+            val n = after(index) ?: return
+            // the same song again: none handed over (it'd be the same link, its start unseen), started again once stopped
+            if (n == index) {
+                if (nextSet >= 0) { nextSet = -1; runCatching { soap("SetNextAVTransportURI", "<NextURI></NextURI><NextURIMetaData></NextURIMetaData>") } }
+                return
+            }
+            if (nextSet == n) return
             nextSet = n
             // a YouTube song's plain file made now, while this one plays (the receiver may ask for it at once: [Plain])
             Serve.appContext()?.let { Plain.prepare(it, queue[n]) }
@@ -164,7 +179,7 @@ object Dlna {
             urls.indexOfFirst { it.isNotEmpty() && it == track }.takeIf { it >= 0 && it != index }?.let { index = it; timeFrom(0); queueNext() }
             // it stopped at a song's end without taking the next: hand it over
             // (from "transitioning" too: a Denon said so all through a YouTube stream, and stopped at its end unseen)
-            if (st == "STOPPED" && (lastState == "PLAYING" || lastState == "TRANSITIONING") && index + 1 in queue.indices) { lastState = st; start(index + 1, 0); return }
+            if (st == "STOPPED" && (lastState == "PLAYING" || lastState == "TRANSITIONING")) after(index)?.let { lastState = st; start(it, 0); return }
             // something else is playing there now (another app took it): done
             if (track.isNotEmpty() && urls.none { it == track } && st == "PLAYING") { open = false; Casting.lost(this); return }
             lastState = st
@@ -192,7 +207,9 @@ object Dlna {
         }
 
         override fun toggle(playing: Boolean) = io.execute { runCatching { if (playing) soap("Pause", "") else soap("Play", "<Speed>1</Speed>") } }.let { }
-        override fun next() = io.execute { if (index + 1 in queue.indices) start(index + 1, 0) }.let { }
+        override fun next() = io.execute {
+            if (index + 1 in queue.indices) start(index + 1, 0) else if (repeat == androidx.media3.common.Player.REPEAT_MODE_ALL) start(0, 0)
+        }.let { }
         override fun previous() = io.execute { if (position > 3_000 || index == 0) runCatching { soap("Seek", "<Unit>REL_TIME</Unit><Target>0:00:00</Target>") } else start(index - 1, 0) }.let { }
         override fun seek(ms: Long) = io.execute { timeFrom(ms); runCatching { soap("Seek", "<Unit>REL_TIME</Unit><Target>${clock(ms)}</Target>") } }.let { }
         /** Radio's songs after the rest: the next one handed over, or, stopped at the end, played. */
