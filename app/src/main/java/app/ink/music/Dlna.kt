@@ -146,6 +146,9 @@ object Dlna {
             val n = index + 1
             if (n !in queue.indices || nextSet == n) return
             nextSet = n
+            // a YouTube song's stream found now, while this one plays, so the receiver's ask for it is answered at once:
+            // found only as it asked (0.6-1.5 s), a Denon raced through the song's start or skipped it whole (2026-10-30)
+            queue[n].takeIf { it.tube }?.let { s -> Thread({ runCatching { YouTubeMusic.stream(s.id, true) } }, "speaker ahead").apply { isDaemon = true }.start() }
             runCatching { soap("SetNextAVTransportURI", "<NextURI>${esc(urls[n])}</NextURI><NextURIMetaData>${esc(didl(queue[n], urls[n]))}</NextURIMetaData>") }
         }
 
