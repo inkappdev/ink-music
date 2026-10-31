@@ -1,7 +1,7 @@
-- On your computer: moving covers, effects and a background (settings, the look)
-- Spotify's canvas on your computer, via your phone
-- Your computer shows the sound's whole path (click the format)
-- Google Cast speakers on the Mac
-- Computer: opens maximized, one Navidrome library, albums by added (thanks, Reddit)
+- Your computer gets the look: moving covers, effects, a background
+- Spotify's canvas on your computer, via phone
+- The sound's whole path on your computer too (click the format)
+- Cast speakers on the Mac; covers beside a list's songs
+- Pick a Navidrome library, albums by added, opens maximized (thanks, Reddit)
 - Your Mac finally found the Google speakers. They were in the dining room the whole time.
 - Do something nice for someone today. Burn someone a mix like it's the computer room again

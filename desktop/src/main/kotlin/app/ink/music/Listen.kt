@@ -260,6 +260,7 @@ fun ListsPage(open: (Page) -> Unit) {
 /** A playlist: its name, its songs in its order, played from there. */
 @Composable
 fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit) {
+    val covers by ListCovers.on.collectAsState()
     val loved = lovedSongs()
     val keptNow by Offline.kept.collectAsState()
     val songs by produceState<List<Song>?>(null, id, loved, keptNow) { value = if (id == LOVED) loved else if (id == KEPT) Offline.songs() else Server.playlist(id) }
@@ -276,12 +277,13 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 if (!s.isNullOrEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                     Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
                     Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(s.shuffled()) }
+                    CoversWord()
                     KeepOffline(s)
                 }
                 Spacer(Modifier.height(14.dp))
             }
             val s = songs.orEmpty()
-            itemsIndexed(s, key = { i, x -> "$i" + x.id }) { i, x -> SongRow(x, said = "${x.artist}  ·  ${x.album}".lowercase(), open = open) { Player.play(s, i) } }
+            itemsIndexed(s, key = { i, x -> "$i" + x.id }) { i, x -> SongRow(x, said = "${x.artist}  ·  ${x.album}".lowercase(), open = open, cover = covers) { Player.play(s, i) } }
         }
     }
 }

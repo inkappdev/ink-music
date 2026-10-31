@@ -296,6 +296,8 @@ fun face(a: TubeAlbum) = Song(id = "yface", path = "", title = a.title, artist =
 /** A YouTube Music record: its songs read from YouTube Music, played from there. */
 @Composable
 fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
+    val playlist = "list=" in a.url
+    val covers by ListCovers.on.collectAsState()
     val songs by androidx.compose.runtime.produceState<List<Song>?>(null, a.url) { value = YouTube.album(a) }
     androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
         Close(onClose)
@@ -314,6 +316,8 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                 songs?.takeIf { it.isNotEmpty() }?.let { s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                         Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
+                        // a playlist's songs are from many records: their covers, if wanted
+                        if (playlist) CoversWord()
                         KeepOffline(s)
                     }
                 }
@@ -323,7 +327,7 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
             val s = songs.orEmpty()
             LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
                 itemsIndexed(s, key = { _, x -> x.id }) { i, x ->
-                    SongRow(x, number = "${i + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase()) { Player.play(s, i) }
+                    SongRow(x, number = "${i + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase(), cover = playlist && covers) { Player.play(s, i) }
                 }
             }
         }

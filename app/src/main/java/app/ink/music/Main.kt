@@ -144,6 +144,7 @@ class Main : ComponentActivity() {
         Moments.start(this)
         Looks.start(this)
         Marquees.start(this)
+        ListCovers.start(this)
         Loved.start(this)
         YouTubeMusic.attach(this)
         Server.start(this)
@@ -768,7 +769,8 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
  * Not where a swipe turns the page (the library's songs): there, held is the way.
  */
 @Composable
-private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, swipe: Boolean = true, yours: Boolean = true, onClick: () -> Unit) {
+private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, swipe: Boolean = true, yours: Boolean = true,
+                    cover: Boolean = false, onClick: () -> Unit) {
     val now by Playback.now.collectAsState()
     val on = now?.song?.id == s.id
     var open by remember { mutableStateOf(false) }
@@ -813,7 +815,10 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
             }
         }).padding(vertical = 9.dp),
     ) {
-        Row(verticalAlignment = Alignment.Bottom) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+        // its record's cover beside it, small and square (a list's covers word)
+        if (cover) { CoverOf(s, s.album.ifEmpty { s.title }, Modifier.size(44.dp), px = 160); Spacer(Modifier.width(14.dp)) }
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
             number?.let { BasicText(it, style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(30.dp).padding(bottom = 3.dp)) }
             Column(Modifier.weight(1f)) {
                 BasicText(s.title.uppercase(), style = headline(19.sp, when { on -> Ink.ink; !yours -> if (now == null) Ink.mid else Ink.dim; now == null -> Ink.ink; else -> Ink.mid }), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -823,7 +828,8 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
             done?.let { BasicText(it, style = pixel(12.sp), modifier = Modifier.padding(start = 12.dp, bottom = 3.dp)) }
                 ?: if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 12.dp, bottom = 3.dp)) else Unit
         }
-        if (open) FlowRow(Modifier.padding(start = if (number != null) 30.dp else 0.dp, top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        }
+        if (open) FlowRow(Modifier.padding(start = (if (cover) 58.dp else 0.dp) + (if (number != null) 30.dp else 0.dp), top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
             Word("play next", pixel(13.sp), touch = 8.dp) { open = false; Playback.playNext(s) }
             Word("add to queue", pixel(13.sp), touch = 8.dp) { open = false; Playback.add(s) }
             Word("radio", pixel(13.sp), touch = 8.dp) { open = false; Playback.startRadio(s) }
@@ -928,6 +934,7 @@ private fun ListRow(name: String, said: String, onClick: () -> Unit) {
  */
 @Composable
 private fun LovedPage(pages: Pages) {
+    val covers by ListCovers.on.collectAsState()
     val songs by Library.songs.collectAsState()
     val lovedIds by Loved.ids.collectAsState()
     val tube by Loved.tube.collectAsState()
@@ -951,7 +958,8 @@ private fun LovedPage(pages: Pages) {
             Spacer(Modifier.height(16.dp))
             if (theirs.isNotEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(theirs.shuffled(), 0) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs.shuffled(), 0) }
+                CoversWord()
                 Spacer(Modifier.weight(1f))
                 // the order: the one chosen lit
                 Word("latest", pixel(14.sp, if (recent) Ink.ink else Ink.dim), Modifier.padding(end = 20.dp), touch = 8.dp) { Loved.order(true) }
@@ -959,13 +967,14 @@ private fun LovedPage(pages: Pages) {
             }
             Spacer(Modifier.height(14.dp))
         }}
-        itemsIndexed(theirs, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, pages = pages) { Playback.play(theirs, i) } }}
+        itemsIndexed(theirs, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, pages = pages, cover = covers) { Playback.play(theirs, i) } }}
     } }
 }
 
 /** A playlist's page: its name big, play and shuffle, its songs in its order. */
 @Composable
 private fun PlaylistPage(id: String, name: String, pages: Pages) {
+    val covers by ListCovers.on.collectAsState()
     val edited by Server.edited.collectAsState()
     var songs by remember { mutableStateOf<List<Song>?>(null) }
     LaunchedEffect(id, edited) { songs = Server.playlist(id) }
@@ -993,6 +1002,7 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
             if (!all.isNullOrEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                CoversWord(Modifier.padding(end = 26.dp))
                 KeepOffline(all)
             }
             // deleting asks once more: the word says so, lit, for a moment
@@ -1004,7 +1014,7 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
         val all = songs.orEmpty()
         // no keys: a playlist can hold one song twice
         itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) {
-            SongRow(s, pages = pages, onRemove = if (mine) ({
+            SongRow(s, pages = pages, cover = covers, onRemove = if (mine) ({
                 songs = all.filterIndexed { j, _ -> j != i }    // gone at once; the server's answer reads it again
                 scope.launch { Server.removeFrom(id, i) }
             }) else null) { Playback.play(all, i) }
@@ -1169,6 +1179,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
 /** The songs kept on the phone (your server's, YouTube Music's), to play with no signal; each let go from its options. */
 @Composable
 private fun KeptPage(pages: Pages) {
+    val covers by ListCovers.on.collectAsState()
     val ctx = LocalContext.current
     val kept by Offline.kept.collectAsState()
     val songs = remember(kept) { kept.mapNotNull { Library.song(it) } + Offline.tubeSongs(ctx).filter { it.id in kept } }
@@ -1187,12 +1198,13 @@ private fun KeptPage(pages: Pages) {
                 Spacer(Modifier.height(14.dp))
                 if (songs.isNotEmpty()) Row {
                     Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs, 0) }
-                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                    CoversWord()
                 }
                 Spacer(Modifier.height(10.dp))
             }
         }
-        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages) { Playback.play(songs, i) } } }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(songs, i) } } }
     } }
 }
 
@@ -1807,6 +1819,7 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
 /** One of your playlists on YouTube Music: its name big, play and shuffle, its songs (read only: change it there). */
 @Composable
 private fun TubeListPage(pl: TubeList, pages: Pages) {
+    val covers by ListCovers.on.collectAsState()
     // as it was last read at once, else page by page as it comes
     val songs by androidx.compose.runtime.produceState<List<Song>?>(null, pl.id) {
         YouTubeAccount.playlist(pl.id).collect { value = it }
@@ -1832,6 +1845,7 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
             if (!all.isNullOrEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                CoversWord(Modifier.padding(end = 26.dp))
                 KeepOffline(all)
             }
             // hide: out of ink music's lists and find, YouTube untouched (#1: "delete" alone read as that, and wasn't).
@@ -1855,7 +1869,7 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
         }}
         val all = songs.orEmpty()
         // no keys: a playlist can hold one song twice
-        itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s) { Playback.play(all, i) } }}
+        itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, cover = covers) { Playback.play(all, i) } }}
     } }
 }
 
@@ -2192,8 +2206,8 @@ private val CLOSE_ROW = 40.dp
 
 /** A record's cover, or ink's own sleeve with its name when the files carry none (a station's, with its rings). */
 @Composable
-fun CoverOf(song: Song?, name: String, modifier: Modifier) {
-    val cover = rememberCover(song)
+fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640) {
+    val cover = rememberCover(song, px)
     // 1-bit mode (the clickwheel three turns backwards): every cover in the dither, its own colour
     if (OneBit.on.collectAsState().value && cover != null && song != null && !song.station) return Dithered(song, modifier, px = 600)
     // a cover on its way: black a moment, the name cover only for a record with none (it flashed at each new song)
@@ -2268,3 +2282,11 @@ private fun plainName(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
 
 /** How long the player takes to sink away on stop: with the music's own fade out (Soft, 250 ms). */
 private const val STOP_MS = 280
+
+/** A list's word for covers beside its songs, lit when on (one choice for every list: [ListCovers]). */
+@Composable
+private fun CoversWord(modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val on by ListCovers.on.collectAsState()
+    Word("covers", pixel(14.sp, if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { ListCovers.set(ctx, !on) }
+}

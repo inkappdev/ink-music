@@ -53,6 +53,14 @@ object Marquees {
     internal fun put(on: Boolean) { _on.value = on }
 }
 
+/** Covers beside a list's songs (playlists, loved, kept, YouTube's lists): one choice for them all, off at first. */
+object ListCovers {
+    private val _on = MutableStateFlow(false)
+    val on: StateFlow<Boolean> = _on
+    fun set(on: Boolean) { _on.value = on; LookFile.save() }
+    internal fun put(on: Boolean) { _on.value = on }
+}
+
 /** The three kept together (look.json). */
 internal object LookFile {
     private val file get() = File(Home.dir, "look.json")
@@ -64,12 +72,13 @@ internal object LookFile {
         Looks.put(Look.entries.firstOrNull { it.name == o.optString("behind") } ?: Look.PLAIN)
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true))
         Marquees.put(o.optBoolean("marquee", true))
+        ListCovers.put(o.optBoolean("listCovers", false))
     }
 
     fun save() {
         runCatching {
             file.writeText(JSONObject().put("behind", Looks.on.value.name).put("moving", Moving.on.value)
-                .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value).put("marquee", Marquees.on.value).toString())
+                .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).toString())
         }
     }
 }
