@@ -246,7 +246,7 @@ object Server {
     }
 
     /** A playlist on the server: its name, how many songs, and whether it's yours (only yours can change). */
-    data class Playlist(val id: String, val name: String, val count: Int, val mine: Boolean)
+    data class Playlist(val id: String, val name: String, val count: Int, val mine: Boolean, val art: String? = null)
 
     private val _playlists = MutableStateFlow<List<Playlist>>(emptyList())
     val playlists: StateFlow<List<Playlist>> = _playlists
@@ -263,7 +263,7 @@ object Server {
         val list = runCatching { call(a, "getPlaylists")?.optJSONObject("playlists")?.optJSONArray("playlist") }.getOrNull() ?: return
         _playlists.value = (0 until list.length()).mapNotNull { list.optJSONObject(it) }
             .map { Playlist(it.optString("id"), it.optString("name").ifEmpty { "untitled" }, it.optInt("songCount"),
-                it.optString("owner").let { o -> o.isEmpty() || o == a.user }) }
+                it.optString("owner").let { o -> o.isEmpty() || o == a.user }, it.optString("coverArt").ifEmpty { null }) }
             .sortedBy { Library.sortName(it.name) }
     }
 

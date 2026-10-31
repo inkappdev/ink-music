@@ -61,6 +61,14 @@ object ListCovers {
     internal fun put(on: Boolean) { _on.value = on }
 }
 
+/** Lists as words in a list, or a grid of tiles with each list's art. */
+object ListsGrid {
+    private val _on = MutableStateFlow(false)
+    val on: StateFlow<Boolean> = _on
+    fun set(on: Boolean) { _on.value = on; LookFile.save() }
+    internal fun put(on: Boolean) { _on.value = on }
+}
+
 /** The three kept together (look.json). */
 internal object LookFile {
     private val file get() = File(Home.dir, "look.json")
@@ -73,12 +81,13 @@ internal object LookFile {
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true))
         Marquees.put(o.optBoolean("marquee", true))
         ListCovers.put(o.optBoolean("listCovers", false))
+        ListsGrid.put(o.optBoolean("listsGrid", false))
     }
 
     fun save() {
         runCatching {
             file.writeText(JSONObject().put("behind", Looks.on.value.name).put("moving", Moving.on.value)
-                .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).toString())
+                .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).toString())
         }
     }
 }

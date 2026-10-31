@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
@@ -145,6 +146,7 @@ class Main : ComponentActivity() {
         Looks.start(this)
         Marquees.start(this)
         ListCovers.start(this)
+        ListsGrid.start(this)
         Loved.start(this)
         YouTubeMusic.attach(this)
         Server.start(this)
@@ -545,7 +547,10 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
                 val minutes by androidx.compose.runtime.produceState<Long?>(null) {
                     value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Year.of(History.read(ctx)).minutes }
                 }
+                val gridded by ListsGrid.on.collectAsState()
+                if (gridded) ListsTiles(pages, pad, minutes) else
                 LazyColumn(state = listsList, contentPadding = pad) {
+                    item { ListsView() }
                     item {
                         if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}") { pages.open(Page.Loved) }
                         // youtube music's liked songs by their own name: they're among the loved (no list of their own), and
@@ -2289,4 +2294,129 @@ private fun CoversWord(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val on by ListCovers.on.collectAsState()
     Word("covers", pixel(14.sp, if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { ListCovers.set(ctx, !on) }
+}
+
+/** Lists as a list or a grid: two words, the one chosen lit. */
+@Composable
+private fun ListsView() {
+    val ctx = LocalContext.current
+    val grid by ListsGrid.on.collectAsState()
+    Row(Modifier.padding(bottom = 10.dp)) {
+        Word("list", pixel(14.sp, if (!grid) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { ListsGrid.set(ctx, false) }
+        Word("grid", pixel(14.sp, if (grid) Ink.ink else Ink.dim), touch = 8.dp) { ListsGrid.set(ctx, true) }
+    }
+}
+
+/** A list as a tile: its art square, its name and what it holds under it. */
+@Composable
+private fun ListTile(name: String, said: String, onClick: () -> Unit, art: @Composable () -> Unit) {
+    Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) { art() }
+        Spacer(Modifier.height(8.dp))
+        UnderCover(name, said, pixel(12.sp, Ink.mid), gap = 3.dp)
+    }
+}
+
+/** A list's art from its songs: four of its records' covers, two by two; fewer records, the first; none, its name. */
+@Composable
+private fun Mosaic(songs: List<Song>, name: String) {
+    val four = remember(songs) { songs.distinctBy { it.albumId }.take(4) }
+    when {
+        four.size == 4 -> Column(Modifier.fillMaxSize()) {
+            four.chunked(2).forEach { row -> Row(Modifier.weight(1f)) { row.forEach { s -> CoverOf(s, s.album, Modifier.weight(1f).aspectRatio(1f), px = 320) } } }
+        }
+        four.isNotEmpty() -> CoverOf(four[0], four[0].album, Modifier.fillMaxSize(), px = 480)
+        else -> Lettered(name)
+    }
+}
+
+/**
+ * The lists tab as a grid: loved, liked on YouTube Music and kept as mosaics of their records; your year its name; your
+ * server's playlists their own art (Navidrome's mosaic); YouTube's lists theirs (YouTube's own made ink's, dithered).
+ */
+@Composable
+private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
+    val ctx = LocalContext.current
+    val songs by Library.songs.collectAsState()
+    val lovedIds by Loved.ids.collectAsState()
+    val lovedTube by Loved.tube.collectAsState()
+    val liked by YouTubeAccount.liked.collectAsState()
+    val tubeWho by YouTubeAccount.who.collectAsState()
+    val keptIds by Offline.kept.collectAsState()
+    val lists by Server.playlists.collectAsState()
+    val tubeLists by YouTubeAccount.playlists.collectAsState()
+    val hidden by HiddenLists.ids.collectAsState()
+    val account by Server.account.collectAsState()
+    val loved = remember(songs, lovedIds, lovedTube, liked) {
+        (songs.filter { it.id in lovedIds } + lovedTube + liked).distinctBy { it.id }.sortedByDescending { Loved.lovedAt(it) ?: Long.MIN_VALUE }
+    }
+    val kept = remember(keptIds) { (keptIds.mapNotNull { Library.song(it) } + Offline.tubeSongs(ctx).filter { it.id in keptIds }).distinctBy { it.id } }
+    LazyVerticalGrid(
+        GridCells.Adaptive(150.dp), contentPadding = pad,
+        horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "view") { ListsView() }
+        if (lovedIds.isNotEmpty()) item(key = "loved") {
+            ListTile("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", { pages.open(Page.Loved) }) { Mosaic(loved, "loved") }
+        }
+        if (tubeWho != null) item(key = "liked") {
+            ListTile("liked on youtube music", if (liked.isEmpty()) "none read yet" else "${liked.size} ${if (liked.size == 1) "song" else "songs"}",
+                { if (liked.isEmpty()) YouTubeAccount.sync() else pages.open(Page.Loved) }) { Mosaic(liked, "liked") }
+        }
+        item(key = "year") {
+            ListTile("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "", { pages.open(Page.Year) }) {
+                YearArt(minutes ?: 0)
+            }
+        }
+        if (kept.isNotEmpty()) item(key = "kept") {
+            ListTile("kept on this phone", "${kept.size} ${if (kept.size == 1) "song" else "songs"}, offline", { pages.open(Page.Kept) }) { Mosaic(kept, "kept") }
+        }
+        if (account != null) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "new") { NewPlaylist(null) {} }
+        items(lists, key = { it.id }) { pl ->
+            ListTile(pl.name, "${pl.count} ${if (pl.count == 1) "song" else "songs"}", { pages.open(Page.Playlist(pl.id, pl.name)) }) {
+                // the server's own art for it (Navidrome's mosaic of its songs), by a song-shaped stand-in
+                val face = remember(pl.id, pl.art) { pl.art?.let { Song("npl" + pl.id, android.net.Uri.EMPTY, pl.name, "", pl.name, "npl" + pl.id, "", 0, 1, 0, 0, art = it) } }
+                if (face != null) CoverOf(face, pl.name, Modifier.fillMaxSize(), px = 480) else Lettered(pl.name)
+            }
+        }
+        items(tubeLists.filter { it.id !in hidden }, key = { "y" + it.id }) { pl ->
+            ListTile(pl.name, listOf("youtube music", pl.said.lowercase()).filter { it.isNotEmpty() }.joinToString("   "), { pages.open(Page.TubeList(pl)) }) {
+                val a = remember(pl.id) { TubeAlbum("https://music.youtube.com/playlist?list=${pl.id}", pl.name, "", pl.art) }
+                val face = remember(pl.id) { tubeFace(a) }
+                if (pl.art == null) Lettered(pl.name)
+                else if (Curation.tubeBranded(a.url, pl.said)) Dithered(face, Modifier.fillMaxSize(), px = 400)
+                else CoverOf(face, pl.name, Modifier.fillMaxSize(), px = 480)
+            }
+        }
+    }
+}
+
+/**
+ * A list with no picture of its own: its name set big in ink's headline on black, from the foot up, a hairline round
+ * it (the grey name cover read as a missing picture).
+ */
+@Composable
+private fun Lettered(name: String) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
+        val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * .15f).toSp() }
+        BasicText(name.uppercase(), style = headline(size).copy(lineHeight = size * 1.02f), maxLines = 4, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+    }
+}
+
+/**
+ * Your year as a tile: the year big (the minutes under the tile), and along the top edge the line of how far the year
+ * has gone, filling as the progress line does.
+ */
+@Composable
+private fun YearArt(minutes: Long) {
+    val now = remember { java.time.LocalDate.now() }
+    val gone = (now.dayOfYear - 1f) / now.lengthOfYear()
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
+        Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line)) { Box(Modifier.fillMaxWidth(gone).fillMaxSize().background(Ink.ink)) }
+        val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * .3f).toSp() }
+        Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
+            BasicText("${now.year}", style = headline(size).copy(lineHeight = size), maxLines = 1)
+        }
+    }
 }

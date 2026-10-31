@@ -26,6 +26,10 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -233,8 +237,11 @@ fun ListsPage(open: (Page) -> Unit) {
     val keptIds by Offline.kept.collectAsState()
     val tubeListsNow by TubeAccount.playlists.collectAsState()
     LaunchedEffect(account) { Server.readPlaylists() }
+    val gridded by ListsGrid.on.collectAsState()
+    if (gridded) return ListsTiles(open)
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
+        item { ListsView() }
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
         // what's on the computer to play with no signal (your server's, YouTube's)
         if (keptIds.isNotEmpty()) item { ListRow(Server.Playlist(KEPT, "kept on this computer", keptIds.size, true)) { open(Page.List(KEPT, "kept on this computer")) } }
@@ -252,6 +259,84 @@ fun ListsPage(open: (Page) -> Unit) {
                     BasicText(t.title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+        }
+    }
+}
+
+/** Lists as a list or a grid: two words, the one chosen lit. */
+@Composable
+private fun ListsView() {
+    val grid by ListsGrid.on.collectAsState()
+    Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+        Word("list", pixel(14.sp, if (!grid) Ink.ink else Ink.dim), touch = 8.dp) { ListsGrid.set(false) }
+        Word("grid", pixel(14.sp, if (grid) Ink.ink else Ink.dim), touch = 8.dp) { ListsGrid.set(true) }
+    }
+}
+
+/** A list as a tile: its art square, its name and what it holds under it. */
+@Composable
+private fun ListTile(name: String, said: String, onClick: () -> Unit, art: @Composable () -> Unit) {
+    Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) { art() }
+        Spacer(Modifier.height(8.dp))
+        UnderCover(name, said)
+    }
+}
+
+/** A list's art from its songs: four of its records' covers, two by two; fewer records, the first; none, its name. */
+@Composable
+private fun Mosaic(songs: List<Song>, name: String) {
+    val four = remember(songs) { songs.distinctBy { it.albumId }.take(4) }
+    when {
+        four.size == 4 -> Column(Modifier.fillMaxSize()) {
+            four.chunked(2).forEach { row -> Row(Modifier.weight(1f)) { row.forEach { s -> CoverOf(s, s.album, Modifier.weight(1f).aspectRatio(1f), px = 320) } } }
+        }
+        four.isNotEmpty() -> CoverOf(four[0], four[0].album, Modifier.fillMaxSize(), px = 480)
+        else -> Lettered(name)
+    }
+}
+
+/**
+ * Lists as a grid (the phone's, Bronson 2026-10-30): loved and kept as mosaics of their records; your server's playlists
+ * their own art (Navidrome's mosaic); YouTube's lists theirs (YouTube's own made ink's, dithered).
+ */
+@Composable
+private fun ListsTiles(open: (Page) -> Unit) {
+    val lists by Server.playlists.collectAsState()
+    val loved = lovedSongs()
+    val keptIds by Offline.kept.collectAsState()
+    val kept by produceState(emptyList<Song>(), keptIds) { value = Offline.songs() }
+    val tubeLists by TubeAccount.playlists.collectAsState()
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+        androidx.compose.foundation.lazy.grid.GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
+        contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "view") { ListsView() }
+        if (loved.isNotEmpty()) item(key = "loved") {
+            ListTile("loved", "${loved.size} ${if (loved.size == 1) "song" else "songs"}", { open(Page.List(LOVED, "loved")) }) { Mosaic(loved, "loved") }
+        }
+        item(key = "year") {
+            val minutes by produceState(0L) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Year.of(History.read()).minutes.toLong() } }
+            ListTile("your year", if (minutes > 0) "%,d minutes so far".format(minutes) else "starts now", { open(Page.Year) }) { YearArt(minutes) }
+        }
+        if (keptIds.isNotEmpty()) item(key = "kept") {
+            ListTile("kept on this computer", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}", { open(Page.List(KEPT, "kept on this computer")) }) { Mosaic(kept, "kept") }
+        }
+        gridItems(lists, key = { it.id }) { p ->
+            ListTile(p.name, "${p.count} ${if (p.count == 1) "song" else "songs"}", { open(Page.List(p.id, p.name)) }) {
+                // the server's own art for it (Navidrome's mosaic of its songs), by a song-shaped stand-in
+                val face = remember(p.id, p.art) { p.art?.let { Song("npl" + p.id, "", p.name, "", p.name, "npl" + p.id, "", 0, 1, 0, 0, art = it) } }
+                if (face != null) CoverOf(face, p.name, Modifier.fillMaxSize(), px = 480) else Lettered(p.name)
+            }
+        }
+        gridItems(tubeLists, key = { it.url }) { t ->
+            ListTile(t.title, listOf("youtube music", t.artist.lowercase()).filter { it.isNotEmpty() }.joinToString("  ·  "), { open(Page.Tube(t)) }) {
+                if (t.art == null) Lettered(t.title)
+                else if (t.branded) Dithered(face(t), Modifier.fillMaxSize(), px = 400)
+                else CoverOf(face(t), t.title, Modifier.fillMaxSize(), px = 480)
             }
         }
     }
@@ -392,5 +477,35 @@ fun KeepOffline(songs: List<Song>) {
             if (!sure) sure = true else { sure = false; Offline.remove(keepable.map { it.id }) }
         }
         else -> Word("keep offline", pixel(14.sp, Ink.mid), touch = 8.dp) { Offline.keep(keepable) }
+    }
+}
+
+/**
+ * A list with no picture of its own: its name set big in ink's headline on black, from the foot up, a hairline round
+ * it (the grey name cover read as a missing picture).
+ */
+@Composable
+private fun Lettered(name: String) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
+        val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * .15f).toSp() }
+        BasicText(name.uppercase(), style = headline(size).copy(lineHeight = size * 1.02f), maxLines = 4, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+    }
+}
+
+/**
+ * Your year as a tile: the year big (the minutes under the tile), and along the top edge the line of how far the year
+ * has gone, filling as the progress line does.
+ */
+@Composable
+private fun YearArt(minutes: Long) {
+    val now = remember { java.time.LocalDate.now() }
+    val gone = (now.dayOfYear - 1f) / now.lengthOfYear()
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
+        Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line)) { Box(Modifier.fillMaxWidth(gone).fillMaxSize().background(Ink.ink)) }
+        val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * .3f).toSp() }
+        Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
+            BasicText("${now.year}", style = headline(size).copy(lineHeight = size), maxLines = 1)
+        }
     }
 }
