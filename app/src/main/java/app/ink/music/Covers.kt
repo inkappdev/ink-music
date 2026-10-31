@@ -38,13 +38,13 @@ object Covers {
         if (song.albumId in none) return null
         return withContext(Dispatchers.IO) {
             // one from the network (YouTube's, the server's, a station's) is kept on the phone too: the next start has it at once
-            val remote = (song.server || song.tube || song.station) && song.art != null
+            val remote = (song.server || song.tube || song.station || song.episode) && song.art != null
             val t0 = System.currentTimeMillis()
             val bmp = try {
                 (if (remote) fromDisk(ctx, song, px)?.also { android.util.Log.d("ink-covers", "${song.title}: disk ${System.currentTimeMillis() - t0} ms") } else null) ?: (
                     if (song.station) song.art?.let { fetch(it, px) }   // the cover it gave for its song, else its sleeve
                     else if (song.server) song.art?.let { Server.cover(it, px) }
-                    else if (song.tube) song.art?.let { fetch(it, px) }
+                    else if (song.tube || song.episode) song.art?.let { fetch(it, px) }
                     // a file with no picture of its own: the record's from the catalogs (FoundCovers)
                     else runCatching { ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null) }.getOrNull() ?: found(ctx, song, px)
                     )?.also { if (remote) { android.util.Log.d("ink-covers", "${song.title}: fetched ${System.currentTimeMillis() - t0} ms"); toDisk(ctx, song, px, it) } }

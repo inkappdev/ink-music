@@ -50,6 +50,8 @@ data class Song(
     val tube get() = id.startsWith("y")
     /** A radio station ([Stations]): live, no end, no record. */
     val station get() = id.startsWith("s")
+    /** A podcast's episode ([Pods]): its show the record. */
+    val episode get() = id.startsWith("e")
     /** Past CD: more than 16 bits, or more than 48 kHz. */
     val hiRes get() = bits > 16 || rate > 48_000
     /** As said: "flac 24/96", "flac 16/44.1", "mp3". */
@@ -114,6 +116,7 @@ object Library {
     fun song(id: String): Song? = byId[id] ?: when {
         id.startsWith("y") -> YouTubeMusic.known(id)
         id.startsWith("s") -> Stations.known(id)
+        id.startsWith("e") -> Pods.song(id)
         else -> null
     }
 

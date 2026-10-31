@@ -42,7 +42,7 @@ object Serve {
     }
 
     /** Where a speaker fetches `s`: the server's stream, or the phone's file from here. */
-    fun url(s: Song, lossless: Boolean, plain: Boolean = false): String? = if (s.station) s.uri.toString() else if (s.tube) {
+    fun url(s: Song, lossless: Boolean, plain: Boolean = false): String? = if (s.station || s.episode) s.uri.toString() else if (s.tube) {
         // from here: its stream found only when the speaker asks for it (finding a hundred first took over a minute);
         // `plain` (a DLNA receiver), the song as a plain file the phone made of it ([Plain])
         base?.let { "$it/${if (plain) "p" else "y"}/${s.id.removePrefix("y")}" }
@@ -55,12 +55,13 @@ object Serve {
     } else base?.let { "$it/f/${s.id.removePrefix("l")}" }
 
     /** Its cover, for the speaker's screen: the server's, or the phone's from here. */
-    fun art(s: Song): String? = if (s.station) null else if (s.tube) s.art else if (s.server) {
+    fun art(s: Song): String? = if (s.station) null else if (s.tube || s.episode) s.art else if (s.server) {
         s.art?.let { art -> Server.account.value?.let { Server.url(it, "getCoverArt", "id" to art, "size" to 600) } }
     } else base?.let { "$it/a/${s.id.removePrefix("l")}" }
 
     fun type(s: Song, lossless: Boolean): String = when {
         s.station -> s.mime
+        s.episode -> s.mime.ifEmpty { "audio/mpeg" }
         s.tube -> "audio/mp4"   // a speaker's is always the m4a (YouTubeMusic.stream)
         s.server && lossless -> s.mime.ifEmpty { "audio/flac" }
         s.server -> "audio/mpeg"
@@ -70,6 +71,7 @@ object Serve {
     /** What reaches the speaker, as said: "flac 24/96", or "mp3 320" when it's the server's mp3. */
     fun quality(s: Song, lossless: Boolean): String = when {
         s.station -> "radio"
+        s.episode -> "podcast"
         s.tube -> "aac"
         s.server && !lossless -> "mp3 320"
         s.quality.isNotEmpty() -> s.quality

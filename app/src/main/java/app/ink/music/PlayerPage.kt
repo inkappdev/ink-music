@@ -217,15 +217,19 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
             }
-            val words = lyric != null
+            // an episode's notes where a song's lyrics go, shown by the same word
+            val episode = n.song?.episode == true
+            val notes = if (episode && sing) remember(n.song?.id) { Pods.notes(n.song!!.id) }.takeIf { it.isNotBlank() } else null
+            val words = lyric != null || notes != null
             AnimatedContent(
                 targetState = words, modifier = Modifier.weight(1f),
                 transitionSpec = { fadeIn(tween(Motion.ENTER, easing = Motion.expo)) togetherWith fadeOut(tween(Motion.EXIT, easing = Motion.expo)) },
                 label = "lyrics",
             ) { withLyrics ->
                 Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-                    if (withLyrics && lyric != null) {
-                        LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
+                    if (withLyrics && (lyric != null || notes != null)) {
+                        if (notes != null) NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
+                        else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
                         // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
                         Scrubber(n, accent, scrub, line = 2.dp) { HeardWord(n, typing) { heardUp = true } }
                         Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true })
@@ -268,6 +272,11 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (episode) {
+                    // an episode: its speed at the left, back 15 s and on 30 s either side of play, its notes at the right
+                    EpisodeControls(n, notesOn = sing && notes != null)
+                    return@Row
+                }
                 Pixel(SHUFFLE, if (n.shuffle) "shuffle, on" else "shuffle, off", if (n.shuffle) Ink.ink else OFF) { Playback.shuffle() }
                 Pixel(BACK, "back", Ink.ink, cell = 3.dp) { dir = -1; Playback.previous() }
                 Pixel(if (n.playing) PAUSE else PLAY, if (n.playing) "pause" else "play", Ink.ink, cell = 3.dp) { Playback.toggle() }
@@ -283,12 +292,13 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
             // (lit with the cover still there read as broken to a tester)
             val none = sing && lines?.isEmpty() == true
-            Modes(n, if (none) "no lyrics" else "lyrics", sing && !none, onQueue = { queueUp = true }, onStop = onStop,
+            Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
+                if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
                 added = added, onAdd = if (canAddToList(n.song)) ({ addUp = true }) else null)
             Spacer(Modifier.height(12.dp))
             // the artist's name, big, a way to their page too
             Marquee(n.artist, n.moving && Marquees.on.collectAsState().value, Modifier.fillMaxWidth().bleedPastCutout().clickable(remember { MutableInteractionSource() }, indication = null,
-                onClick = felt { artistOf(n)?.let { onOpen(Page.Artist(it)) } }), size = 120.sp)
+                onClick = felt { if (n.song?.episode == true) showOf(n.song)?.let(onOpen) else artistOf(n)?.let { onOpen(Page.Artist(it)) } }), size = 120.sp)
             }
         }
         androidx.compose.animation.AnimatedVisibility(
@@ -395,8 +405,8 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 val song = t.song
                 FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
-                        onClick = felt { artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
-                if (t.album.isNotBlank()) {
+                        onClick = felt { if (song?.episode == true) showOf(song)?.let(onOpen) else artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
+                if (t.album.isNotBlank() && song?.episode != true) {
                     Spacer(Modifier.width(14.dp))
                     FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
@@ -430,7 +440,7 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
         else if (t.song?.station == true) StationCover(t.song, Modifier.fillMaxSize(), moving = t.moving)
         else if (late || t.song == null) NameCover(t.album.ifEmpty { t.title }, side)
         // the record's own moving sleeve over it, where it has one (settings: moving covers)
-        if (t.song?.station != true) MovingCover(t.artist, t.album, t.title, c?.accent ?: Ink.ink, t.moving, Modifier.fillMaxSize())
+        if (t.song?.station != true && t.song?.episode != true) MovingCover(t.artist, t.album, t.title, c?.accent ?: Ink.ink, t.moving, Modifier.fillMaxSize())
     }
 }
 
@@ -466,7 +476,7 @@ private fun Backdrop(cover: Cover?, n: Now) {
             )
         }
         // the song's spotify canvas in its place, moving, in the same look (signed in to spotify: settings, the look)
-        if (n.song?.station != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
+        if (n.song?.station != true && n.song?.episode != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
         // the grain over the look (not dither's, nor as it is)
         if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN) Grain()
     }
@@ -648,8 +658,45 @@ private val REPEAT_ONE = listOf("..#........", ".##########", "#.#.......#", "#.
 /** close: the player goes down, as it's pulled. */
 private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
 
+/** An episode's show, as a page to open. */
+private fun showOf(s: Song): Page? = Pods.showOf(s)?.let { Page.Show(it.feed, it) }
+
+/**
+ * An episode's controls: its speed (a tap the next: 1, 1.2, 1.5, 1.8, 2, then .8), back 15 s, play, on 30 s, and the
+ * time left. Words where they read plainer than a drawing (a speed, a number of seconds).
+ */
+@Composable
+private fun EpisodeControls(n: Now, notesOn: Boolean) {
+    val ctx = LocalContext.current
+    var speed by remember { mutableStateOf(run { Pods.start(ctx); Podcasts.speed }) }
+    val speeds = listOf(1f, 1.2f, 1.5f, 1.8f, 2f, .8f)
+    Word(speedSaid(speed), headline(20.sp, if (speed != 1f) Ink.ink else OFF), touch = 10.dp) {
+        speed = speeds[(speeds.indexOfFirst { kotlin.math.abs(it - speed) < .01f } + 1) % speeds.size]
+        Podcasts.speed = speed
+        Playback.speed(speed)
+    }
+    Word("-15", headline(22.sp), touch = 10.dp) { Playback.seek((n.positionNow() - 15_000).coerceAtLeast(0)) }
+    Pixel(if (n.playing) PAUSE else PLAY, if (n.playing) "pause" else "play", Ink.ink, cell = 3.dp) { Playback.toggle() }
+    Word("+30", headline(22.sp), touch = 10.dp) {
+        Playback.seek((n.positionNow() + 30_000).let { if (n.duration > 0) it.coerceAtMost(n.duration - 1_000) else it })
+    }
+    val left = if (n.duration > 0) (n.duration - n.positionNow()).coerceAtLeast(0) / 60_000 else -1
+    BasicText(if (left >= 0) "${left}m" else "", style = headline(20.sp, if (notesOn) Ink.ink else OFF))
+}
+
+private fun speedSaid(v: Float) = (if (v % 1f == 0f) v.toInt().toString() else "%.1f".format(java.util.Locale.US, v)) + "×"
+
+/** An episode's notes, in the lyrics' place: plain text, scrolled by the finger, feathered at the foot. */
+@Composable
+private fun NotesBlock(text: String, modifier: Modifier) {
+    androidx.compose.foundation.layout.Box(modifier.clipToBounds().feather({ 0f }, { 1f })) {
+        BasicText(text.lowercase(), style = pixel(13.sp, Ink.ink).copy(lineHeight = 21.sp),
+            modifier = Modifier.fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(bottom = 60.dp))
+    }
+}
+
 /** Whose page the song's artist opens: the record's artist, else the song's (none for a station). */
-private fun artistOf(n: Now): String? = n.song?.takeUnless { it.station }?.let { it.albumArtist.ifBlank { it.artist } }?.takeIf { it.isNotBlank() }
+private fun artistOf(n: Now): String? = n.song?.takeUnless { it.station || it.episode }?.let { it.albumArtist.ifBlank { it.artist } }?.takeIf { it.isNotBlank() }
 
 /** Close, wherever there's one: the down chevron (the player's; a word there before). */
 @Composable
@@ -689,7 +736,8 @@ fun rememberLines(n: Now?, on: Boolean): List<Line>? {
     val lines by produceState<List<Line>?>(null, n?.artist, n?.title, on) {
         value = null
         // a station's song: live, its place unknown, so no lines to follow
-        if (n == null || !on || n.song?.station == true) return@produceState
+        // nor a podcast's episode (its notes are where its lyrics would be)
+        if (n == null || !on || n.song?.station == true || n.song?.episode == true) return@produceState
         while (true) {
             value = try { Lyrics.of(n) } catch (e: java.io.IOException) { null }
             if (value != null) break

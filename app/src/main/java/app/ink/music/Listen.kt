@@ -173,6 +173,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val kept by Offline.kept.collectAsState()
     val keptRecords = remember(kept, albums) { albums.filter { a -> a.songs.any { it.id in kept } } }
     val online = remember(kept) { Quality.online(ctx) }
+    val episodes by Pods.fresh.collectAsState()
+    LaunchedEffect(Unit) { Pods.refresh(ctx) }
     val heard by androidx.compose.runtime.produceState<List<History.Heard>>(emptyList()) {
         value = withContext(Dispatchers.IO) { History.read(ctx) }
     }
@@ -267,6 +269,14 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             Spacer(Modifier.height(10.dp))
         }}
         if (online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(4)) { KeptShelf(keptRecords, "kept on this phone", pages) }}
+        // the shows you follow, their newest episodes not yet heard through: a tap plays from where you stopped
+        if (episodes.isNotEmpty()) item { Column(Modifier.cascade(4)) {
+            Label("new episodes")
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                items(episodes.take(10), key = { it.id }) { e -> Tile(e, e.title, e.album) { Playback.play(listOf(e), 0) } }
+            }
+            Spacer(Modifier.height(10.dp))
+        }}
         // youtube music's own mixes for you (signed in): supermix, discover, new release, replay
         if (tubeMixes.isNotEmpty()) item { Column(Modifier.cascade(5)) {
             Label("your mixes on youtube music")

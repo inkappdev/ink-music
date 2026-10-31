@@ -293,6 +293,8 @@ object Playback {
         return Triple(songs, songs.indexOf(current).coerceAtLeast(0), c.currentPosition)
     }
     fun shuffle() { controller?.run { shuffleModeEnabled = !shuffleModeEnabled } }
+    /** How fast it plays (a podcast's episode: [Podcasts.speed]); a speaker plays at its own. */
+    fun speed(v: Float) { if (!casting) controller?.setPlaybackSpeed(v) }
     /** Off, then the whole queue again, then this song again. */
     fun repeat() {
         controller?.run {
@@ -415,7 +417,7 @@ object Playback {
             MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
                 .setAlbumArtist(s.albumArtist).setTrackNumber(s.track).setIsPlayable(true).setExtras(Levelling.extras(s))
                 // a cover for the notification, the lock screen and the car: YouTube's link, else ink music's own
-                .setArtworkUri(if (s.tube) s.art?.let(android.net.Uri::parse) else CoverProvider.of(s.id)).build(),
+                .setArtworkUri(if (s.tube || s.episode) s.art?.let(android.net.Uri::parse) else CoverProvider.of(s.id)).build(),
         )
         .build()
 }

@@ -61,7 +61,8 @@ object History {
         /** A new song (or none): the last one written down if it was heard. */
         fun song(next: androidx.media3.common.MediaItem?, moving: Boolean) {
             playing(false)
-            item?.let { i ->
+            // a podcast's episode isn't music you heard: not in your year, your orders or what's made for you
+            item?.takeUnless { it.mediaId.startsWith("e") }?.let { i ->
                 val md = i.mediaMetadata
                 add(c, Heard(started, i.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(),
                     md.albumTitle?.toString().orEmpty(), md.extras?.getString(Levelling.RECORD).orEmpty(), played))

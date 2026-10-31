@@ -68,7 +68,7 @@ class PlayerService : MediaLibraryService() {
     // while it plays, where it is is kept every 15 s (and on every pause and stop)
     private val keepPlace = object : Runnable {
         override fun run() {
-            session?.player?.let { if (it.isPlaying) { place(it); heard(it) } }
+            session?.player?.let { if (it.isPlaying) { place(it); heard(it); episodePlace(it) } }
             main.postDelayed(this, 15_000)
         }
     }
@@ -91,7 +91,8 @@ class PlayerService : MediaLibraryService() {
             tubeTold = id
             net.execute { YouTubeAccount.played(this, id) }
         }
-        if (told == id || id.startsWith("s")) return
+        // a station's song, a podcast's episode: not a listen
+        if (told == id || id.startsWith("s") || id.startsWith("e")) return
         val length = p.duration.takeIf { it > 0 } ?: return
         if (p.currentPosition >= minOf(length / 2, 240_000L)) {
             told = id
@@ -101,6 +102,29 @@ class PlayerService : MediaLibraryService() {
             val at = startedAt.takeIf { it > 0 } ?: (System.currentTimeMillis() - p.currentPosition)   // a queue put back: no start seen
             net.execute { ListenBrainz.listened(this, said, at); LastFm.listened(this, said, at) }
         }
+    }
+
+    /** A podcast's episode playing: where it is, kept (every 15 s, at a pause), so it starts there next time. */
+    private fun episodePlace(p: Player) {
+        val id = p.currentMediaItem?.mediaId?.takeIf { it.startsWith("e") } ?: return
+        val at = p.currentPosition
+        net.execute { keepPlace(id, at) }
+    }
+
+    /** Where an episode was left; the last 20 s reached, heard through. */
+    private fun keepPlace(id: String, at: Long) {
+        val length = Podcasts.episode(id)?.second?.length ?: 0L
+        if (length > 0 && at >= length - 20_000) Podcasts.setPlace(id, -1)
+        else if (at > 5_000) Podcasts.setPlace(id, at)
+    }
+
+    /** An episode begun: on from where you left it, at your speed; anything else at the speed it was made. */
+    private fun episodeBegins(p: Player) {
+        val item = p.currentMediaItem
+        val episode = item?.mediaId?.startsWith("e") == true
+        val speed = if (episode) Podcasts.speed else 1f
+        if (p.playbackParameters.speed != speed) p.setPlaybackSpeed(speed)
+        if (episode && p.currentPosition < 3_000) Podcasts.place(item!!.mediaId).takeIf { it > 5_000 }?.let { p.seekTo(it) }
     }
 
     /** When the song playing began (wall clock), for its listen. */
@@ -265,7 +289,8 @@ class PlayerService : MediaLibraryService() {
         if (after != C.INDEX_UNSET) return
         val last = p.getMediaItemAt(if (next != C.INDEX_UNSET) next else p.currentMediaItemIndex)
         // a station plays on forever: nothing to follow it
-        if (radioFrom == last.mediaId || last.mediaId.startsWith("s")) return
+        // nor a podcast's episode: no songs like it to bring
+        if (radioFrom == last.mediaId || last.mediaId.startsWith("s") || last.mediaId.startsWith("e")) return
         radioFrom = last.mediaId
         fun seed(i: androidx.media3.common.MediaItem) =
             Radio.Seed(i.mediaId, i.mediaMetadata.title?.toString().orEmpty(), i.mediaMetadata.artist?.toString().orEmpty())
@@ -393,6 +418,7 @@ class PlayerService : MediaLibraryService() {
         // screens' process may run another: two processes sharing one data folder crash)
         runCatching { android.webkit.WebView.setDataDirectorySuffix("player") }
         YouTubeMusic.attach(this)
+        Pods.start(this)
         // stopped (the player's "stop"), the notification goes; Media3 kept it after a stop by default
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
         Stations.curated(this)   // ink radio's stations, known by id (the car, the queue kept)
@@ -515,12 +541,13 @@ class PlayerService : MediaLibraryService() {
                     p.currentMediaItem?.mediaId?.takeIf { it.startsWith("n") && !Private.on(this@PlayerService) }?.let { id -> net.execute { Server.scrobble(this@PlayerService, id, done = false) } }
                 }
                 // playing now, on ListenBrainz: once a song is actually playing (its length known by then)
-                if (p.isPlaying && !Private.on(this@PlayerService)) p.currentMediaItem?.takeIf { !it.mediaId.startsWith("s") && it.mediaId != nowSaid }?.let { item ->
+                if (p.isPlaying && !Private.on(this@PlayerService)) p.currentMediaItem?.takeIf { !it.mediaId.startsWith("s") && !it.mediaId.startsWith("e") && it.mediaId != nowSaid }?.let { item ->
                     nowSaid = item.mediaId
                     val said = said(item, p.duration.coerceAtLeast(0))
                     net.execute { ListenBrainz.playingNow(this@PlayerService, said); LastFm.playingNow(this@PlayerService, said) }
                 }
-                if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) { place(p); clock?.playing(p.isPlaying) }
+                if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) { place(p); clock?.playing(p.isPlaying); episodePlace(p) }
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) episodeBegins(p)
                 // the widget: what plays, and whether
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
                     val md = p.mediaMetadata
@@ -537,6 +564,19 @@ class PlayerService : MediaLibraryService() {
                         Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)) topUp(p)
                 if (events.containsAny(Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED))
                     prefs.edit().putBoolean("shuffle", p.shuffleModeEnabled).putInt("repeat", p.repeatMode).apply()
+            }
+
+            // leaving an episode: where it was left kept, or heard through when it played to its end
+            override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
+                val id = old.mediaItem?.mediaId?.takeIf { it.startsWith("e") } ?: return
+                if (old.mediaItem?.mediaId == new.mediaItem?.mediaId) return
+                val through = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION
+                net.execute { if (through) Podcasts.setPlace(id, -1) else keepPlace(id, old.positionMs) }
+            }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state != Player.STATE_ENDED) return
+                player.currentMediaItem?.mediaId?.takeIf { it.startsWith("e") }?.let { id -> net.execute { Podcasts.setPlace(id, -1) } }
             }
 
             // sleeping at the song's end: it paused there, so the timer's done

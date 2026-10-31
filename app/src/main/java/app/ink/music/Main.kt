@@ -249,6 +249,11 @@ sealed interface Page {
     data class Mood(val mood: TubeMood) : Page
     data class Festival(val name: String) : Page
     data class SettingsPart(val part: String) : Page
+    /** A podcast ([ShowPage]); `first`, the show as it was found, shown while its feed is read. */
+    data class Show(val feed: String, val first: Podcasts.Show? = null) : Page {
+        override fun equals(other: Any?) = other is Show && other.feed == feed
+        override fun hashCode() = feed.hashCode()
+    }
 }
 
 /** Where the library's pages go: pushed in from the right, back out to the right (the iPod's). */
@@ -369,6 +374,7 @@ private fun App() {
                         Page.HandOver -> HandOverPage(pages)
                         is Page.Mood -> MoodPage(p.mood, pages)
                         is Page.Festival -> FestivalPage(p.name, pages)
+                        is Page.Show -> ShowPage(p.feed, p.first, pages)
                         is Page.SettingsPart -> if (p.part == "look") LookPage(pages) else SettingsPage(pages, p.part)
                     }
                     }
@@ -410,7 +416,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     var tab by rememberSaveable { mutableStateOf("listen") }
     // nothing on the phone or a server: no records, artists or songs to show
     // INK: ink weekly, ink radio and everything people picked, one place (explore till 2026-10-29: Bronson)
-    val tabs = if (songs.isEmpty()) listOf("listen", "ink", "radio", "lists") else listOf("listen", "ink", "albums", "artists", "songs", "radio", "lists")
+    val tabs = if (songs.isEmpty()) listOf("listen", "ink", "radio", "podcasts", "lists") else listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
     val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
     // the places' menu, dropped down from the place's word
     var menu by remember { mutableStateOf(false) }
@@ -425,6 +431,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     val listenList = rememberLazyListState()
     val exploreList = rememberLazyListState()
     val radioGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val podcastGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val grid = rememberLazyGridState()
     val artistList = rememberLazyListState()
     val listsList = rememberLazyListState()
@@ -500,6 +507,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
             "ink" -> ExplorePage(pages, pad, exploreList)
             // radio, a place of its own: the tower, what's on, every station
             "radio" -> RadioPlace(pages, pad, radioGrid)
+            // podcasts, beside radio: find a show, the new episodes of yours, your shows
+            "podcasts" -> PodcastsPlace(pages, pad, podcastGrid)
             "albums" -> LazyVerticalGrid(
                 GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
@@ -842,7 +851,7 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
             Word(if (s.id in lovedIds) "unlove" else "love", pixel(13.sp), touch = 8.dp) { open = false; Loved.toggle(s) }
             val account by Server.account.collectAsState()
             val tubeWho by YouTubeAccount.who.collectAsState()
-            if (pages != null && ((account != null && Server.idOf(s) != null) || (tubeWho != null && !s.station)))
+            if (pages != null && ((account != null && Server.idOf(s) != null) || (tubeWho != null && !s.station && !s.episode)))
                 Word("add to playlist", pixel(13.sp), touch = 8.dp) { open = false; pages.open(Page.AddTo(s)) }
             val sonic by Server.sonic.collectAsState()
             if (pages != null && sonic && account != null && Server.idOf(s) != null)
@@ -1888,7 +1897,7 @@ private fun AddToPage(s: Song, pages: Pages) = AddToList(s, onDone = { pages.bac
 fun canAddToList(s: Song?): Boolean {
     val account by Server.account.collectAsState()
     val who by YouTubeAccount.who.collectAsState()
-    return s != null && ((account != null && Server.idOf(s) != null) || (who != null && !s.station))
+    return s != null && ((account != null && Server.idOf(s) != null) || (who != null && !s.station && !s.episode))
 }
 
 /**
