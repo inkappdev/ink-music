@@ -42,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** The places, as the rail says them (the phone's tabs, with explore). */
-val PLACES = listOf("listen", "ink", "albums", "artists", "songs", "radio", "lists")
+val PLACES = listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
 
 /** How the window's laid out by its width: a rail, the page and the now column; a rail and the page; the phone's. */
 enum class Frame { WIDE, MIDDLE, NARROW }
@@ -146,7 +146,10 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
                     Heart(n.song, 2.dp, Modifier.offset(x = 8.dp, y = (-6).dp))
                 }
                 Spacer(Modifier.height(4.dp))
-                Word(artist.lowercase(), pixel(13.sp)) { if (!n.song.station) open(Page.Artist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") })) }
+                Word(artist.lowercase(), pixel(13.sp)) {
+                    if (n.song.episode) Pods.page(n.song)?.let(open)
+                    else if (!n.song.station) open(Page.Artist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }))
+                }
                 if (n.song.album.isNotEmpty()) Word(n.song.album.lowercase(), pixel(12.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }
                 on?.let { BasicText("on ${it.name.lowercase()}", style = pixel(12.sp, Ink.mid)) }
             }

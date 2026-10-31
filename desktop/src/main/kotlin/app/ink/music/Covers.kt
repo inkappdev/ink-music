@@ -58,7 +58,7 @@ object Covers {
         return withContext(Dispatchers.IO) {
             val bytes = try { remote(song, px) } catch (e: Server.Busy) {
                 missed[song.albumId] = System.currentTimeMillis(); return@withContext kept.get(song.albumId)
-            } ?: if (song.server || song.tube) null else picture(File(song.path)) ?: found(song, px)
+            } ?: if (song.server || song.tube || song.episode) null else picture(File(song.path)) ?: found(song, px)
             missed -= song.albumId
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
             if (img == null) {
@@ -113,7 +113,7 @@ object Covers {
     /** A server's or YouTube's cover, from the computer if it's been fetched before. */
     private fun remote(song: Song, px: Int): ByteArray? {
         val art = song.art ?: return null
-        if (!song.server && !song.tube) return null
+        if (!song.server && !song.tube && !song.episode) return null
         return fromDisk(art, px) ?: (if (song.server) Server.cover(art, px) else fetch(art, px))?.also { toDisk(art, px, it) }
     }
 
@@ -165,7 +165,7 @@ object Covers {
     /** A record's colour from a small copy of its cover (the color order; blocking); null with no cover. */
     fun accentOf(song: Song): Color? {
         kept.get(song.albumId)?.let { return it.accent }
-        val bytes = runCatching { remote(song, 64) }.getOrNull() ?: if (song.server || song.tube) null else picture(File(song.path))
+        val bytes = runCatching { remote(song, 64) }.getOrNull() ?: if (song.server || song.tube || song.episode) null else picture(File(song.path))
         val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() } ?: return null
         return accentOf(square(img, 64))
     }

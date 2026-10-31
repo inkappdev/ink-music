@@ -269,6 +269,7 @@ object SyncHub {
         }
 
         override fun heardChanged() { Listened.read() }
+        override fun podcastsChanged() { scope.launch { Pods.load() } }
 
         override fun theirs(peer: Sync.Peer, now: JSONObject?) {
             theirs.value = now?.let { Continue.offer(peer.name, it, ::resolve, peer.id) }

@@ -77,7 +77,7 @@ object Loved {
     @Synchronized private fun publish() { _ids.value = local + server + _tube.value.map { it.id } + liked.map { it.id } }
 
     fun toggle(s: Song) {
-        if (s.station) return
+        if (s.station || s.episode) return
         val on = s.id !in _ids.value
         dates = if (on) dates + (s.id to System.currentTimeMillis()) else dates - s.id
         when {
@@ -116,7 +116,7 @@ private val RED = Color(0xFFE8302A)
  */
 @Composable
 fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
-    if (song?.station == true) return
+    if (song?.station == true || song?.episode == true) return
     val loved by Loved.ids.collectAsState()
     val on = song != null && song.id in loved
     var lovedAt by remember { mutableLongStateOf(0L) }

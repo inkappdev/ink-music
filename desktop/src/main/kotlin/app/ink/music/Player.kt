@@ -157,6 +157,14 @@ object Player {
     }
 
     private fun restore() {
+        try { restoring() } finally { restored = true }
+    }
+
+    // nothing written till the kept queue's been read: mpv's idle clock at start wrote an empty queue over it, and with
+    // no songs on the computer (YouTube's and podcasts only) the read, 10 s on, found nothing (2026-10-31)
+    @Volatile private var restored = false
+
+    private fun restoring() {
         val o = runCatching { JSONObject(kept.readText()) }.getOrNull() ?: return
         val ids = o.optJSONArray("ids") ?: return
         val whole = o.optJSONArray("songs")
@@ -171,22 +179,29 @@ object Player {
 
     /** The queue, its song and where in it, written down (on a change, and every ten seconds playing). */
     private fun keep() {
+        if (!restored) return
         val q = _queue.value
         val s = q.getOrNull(index)
         val text = written(q, s)
         scope.launch { runCatching { Home.write(kept, text) } }
     }
     private var keptAt = 0L
+    private var placeAt = 0L
 
     /** The queue as kept: its ids, each song whole (YouTube's aren't in the library), the one playing and where. */
     private fun written(q: List<Song>, s: Song?) = JSONObject().put("ids", JSONArray(q.map { it.id }))
-        .put("songs", JSONArray(q.map { if (it.tube || it.station || Library.song(it.id) == null) it.json() else JSONObject() })).put("id", s?.id ?: "").put("position", position.value).toString()
+        .put("songs", JSONArray(q.map { if (it.tube || it.station || it.episode || Library.song(it.id) == null) it.json() else JSONObject() })).put("id", s?.id ?: "").put("position", position.value).toString()
 
     private fun listen(m: Mpv) {
         while (true) {
             when (val e = m.next()) {
                 is Mpv.Changed -> when (e.name) {
-                    "pause" -> { paused = e.value as? Boolean ?: true; tell() }
+                    "pause" -> {
+                        paused = e.value as? Boolean ?: true
+                        // an episode paused: where it was, kept
+                        if (paused) _queue.value.getOrNull(index)?.let { Pods.keep(it, position.value, duration) }
+                        tell()
+                    }
                     "media-title" -> {
                         val s = _queue.value.getOrNull(index)
                         onAir.value = if (s?.station == true) (e.value as? String)?.takeIf { it != s.title && "://" !in it && !STREAM_FILE.containsMatchIn(it) }?.let { OnAir.parse(it, s.title) } else null
@@ -203,6 +218,11 @@ object Player {
                         if (!paused && step in 1..2_000) playedMs += step
                         lastMs = ms
                         if (!paused && System.currentTimeMillis() - keptAt > 10_000) { keptAt = System.currentTimeMillis(); keep() }
+                        // an episode's place, every 15 s it plays
+                        if (!paused && System.currentTimeMillis() - placeAt > 15_000) {
+                            placeAt = System.currentTimeMillis()
+                            _queue.value.getOrNull(index)?.takeIf { it.episode }?.let { Pods.keep(it, ms, duration) }
+                        }
                     }
                 }
                 is Mpv.Hook -> {
@@ -215,6 +235,10 @@ object Player {
                     }.start()
                 }
                 is Mpv.Loaded -> {
+                    val s = _queue.value.getOrNull(index)
+                    // an episode at its own speed (a song always at 1), from where you stopped in it
+                    m.set("speed", if (s?.episode == true) "%.2f".format(java.util.Locale.ROOT, Podcasts.speed) else "1")
+                    if (pendingSeek == 0L && s?.episode == true) Podcasts.place(s.id).takeIf { it > 5_000 }?.let { pendingSeek = it }
                     if (pendingSeek > 0) { val ms = pendingSeek; pendingSeek = 0; seek(ms) }
                     hear(m)
                 }
@@ -344,7 +368,7 @@ object Player {
         val s = n.song
         // a YouTube song 30 s in: told to your history there, signed in (as its own app does)
         if (s.tube && ms >= 30_000 && toldTube != s.id) { toldTube = s.id; TubeAccount.played(s) }
-        if (counted == s.id || n.duration <= 0 || s.station) return
+        if (counted == s.id || n.duration <= 0 || s.station || s.episode) return
         if (ms >= n.duration / 2 || ms >= 240_000) {
             counted = s.id
             if (s.server) Server.scrobble(s.id, true)
@@ -362,12 +386,15 @@ object Player {
     private var timingAt = 0L
     @Volatile private var playedMs = 0L
     @Volatile private var lastMs = 0L
+    @Volatile private var timingLength = 0L
 
     /** The song before written down as heard (30 s or more), and the clock started for this one. */
     private fun timeSong(s: Song?) {
         if (s?.id == timing?.id) return
-        timing?.takeIf { !it.station && !Private.on.value }?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
-        timing = s; timingAt = System.currentTimeMillis(); playedMs = 0; lastMs = 0
+        // an episode left (on to the next, or played out): where it got to kept
+        timing?.takeIf { it.episode }?.let { Pods.keep(it, lastMs, timingLength) }
+        timing?.takeIf { !it.station && !it.episode && !Private.on.value }?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
+        timing = s; timingAt = System.currentTimeMillis(); playedMs = 0; lastMs = 0; timingLength = s?.duration ?: 0
     }
 
     /** Radio: when the queue's down to its last song, more like it at its end (a setting, on at first). */
@@ -391,6 +418,8 @@ object Player {
         val last = q.last()
         // a station plays on forever: nothing to follow it
         if (last.station) return
+        // nor after an episode: radio's songs aren't what follows a podcast
+        if (last.episode) return
         if (radioFrom == last.id) return
         radioFrom = last.id
         fun seed(s: Song) = Radio.Seed(s.id, s.title, s.artist)
@@ -418,7 +447,8 @@ object Player {
         timeSong(s)
         topUp()
         _now.value = s?.let { Now(it, index, !paused, duration.takeIf { d -> d > 0 } ?: it.duration) }
-        if (s != null && !s.station && toldNow != "${s.id}/$index" && !paused && !Private.on.value) {
+        if (s != null && s.id == timing?.id && duration > 0) timingLength = duration
+        if (s != null && !s.station && !s.episode && toldNow != "${s.id}/$index" && !paused && !Private.on.value) {
             toldNow = "${s.id}/$index"; counted = null
             if (s.server) Server.scrobble(s.id, false)
             val said = said(s, duration.takeIf { it > 0 } ?: s.duration)
@@ -568,6 +598,7 @@ object Player {
         s.server -> Server.stream(s).orEmpty()
         s.tube -> "ytm://" + s.id.removePrefix("y")
         s.station -> s.path
+        // an episode: its link (mpv reads it as it plays, and seeks in it)
         else -> s.path
     }
 
@@ -587,6 +618,12 @@ object Player {
         if (casting) { castPos = ms; castAt = SystemClock.elapsedRealtime(); return Casting.seek(ms) }
         mpv?.command("seek", "%.3f".format(java.util.Locale.ROOT, ms / 1000.0), "absolute")
         NowPlaying.moved()
+    }
+
+    /** An episode's speed (1 to 2, or .8), kept for every episode after. */
+    fun speed(v: Float) {
+        Podcasts.speed = v
+        if (_queue.value.getOrNull(index)?.episode == true) mpv?.set("speed", "%.2f".format(java.util.Locale.ROOT, v))
     }
 
     fun stop() {

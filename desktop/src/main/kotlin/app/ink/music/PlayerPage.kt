@@ -102,7 +102,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
     // a lossless song's moment across the cover, while it types (the word between the times waits for it)
     var typing by remember { mutableStateOf(false) }
     var heardUp by remember { mutableStateOf(false) }
-    val artist = n.song.takeUnless { it.station }?.let { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
+    val artist = n.song.takeUnless { it.station || it.episode }?.let { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
+    // an episode's words open its show, where a song's open its artist and record
+    val show = remember(n.song.id) { if (n.song.episode) Pods.page(n.song) else null }
     val behind by Looks.on.collectAsState()
     val coverLook by Moving.cover.collectAsState()
     val names by Marquees.on.collectAsState()
@@ -111,7 +113,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
         if (!n.song.station && behind != Look.PLAIN) Backdrop(cover, behind, n.song, n.playing)
         // the artist's name, big, along the foot: a way to their page too
         Marquee(said(n).second, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth()
-            .clickable(remember { MutableInteractionSource() }, indication = null) { artist?.let { open(Page.Artist(it)) } }, size = 150.sp)
+            .clickable(remember { MutableInteractionSource() }, indication = null) { show?.let(open) ?: artist?.let { open(Page.Artist(it)) } }, size = 150.sp)
         Column(Modifier.fillMaxSize()) {
             // close; where in the queue, where it plays (the pixel speaker, lit on one), the whole screen
             Row(Modifier.fillMaxWidth().padding(start = SIDE - 8.dp, end = SIDE - 8.dp, top = TOP), verticalAlignment = Alignment.CenterVertically) {
@@ -142,7 +144,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     renderEffect = coverLook?.takeIf { !n.song.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
                                 }, px = 1200, moving = n.playing)
                                 // the record's moving cover over it, where it has one (settings, the look)
-                                if (!n.song.station) MovingCover(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }, n.song.album, n.song.title,
+                                if (!n.song.station && !n.song.episode) MovingCover(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }, n.song.album, n.song.title,
                                     accent, n.playing, Modifier.fillMaxSize())
                                 Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
                             }
@@ -165,10 +167,13 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     Heart(n.song, 3.dp, Modifier.padding(start = 8.dp))
                                 }
                                 Spacer(Modifier.height(12.dp))
-                                if (!n.song.station) Word(by.lowercase(), pixel(14.sp)) { artist?.let { open(Page.Artist(it)) } }
-                                if (n.song.album.isNotEmpty()) Word(n.song.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }
+                                if (n.song.episode) Word(by.lowercase(), pixel(14.sp)) { show?.let(open) }
+                                else if (!n.song.station) Word(by.lowercase(), pixel(14.sp)) { artist?.let { open(Page.Artist(it)) } }
+                                if (n.song.album.isNotEmpty() && !n.song.episode) Word(n.song.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }
                                 Spacer(Modifier.height(4.dp))
-                                BasicText(listOfNotNull(n.song.year.takeIf { it > 0 }?.toString(), on?.let { "on ${it.name.lowercase()}" }).joinToString("  ·  "),
+                                // an episode's day out ("oct 31"), a song's year
+                                val day = if (n.song.episode && n.song.modified > 0) java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(n.song.modified)).lowercase() else null
+                                BasicText(listOfNotNull(day ?: n.song.year.takeIf { it > 0 }?.toString(), on?.let { "on ${it.name.lowercase()}" }).joinToString("  ·  "),
                                     style = pixel(12.sp, Ink.mid))
                                 // an easter egg's word, when one's due (on repeat, a 100th time, a promise kept)
                                 EggsNow.line(n.song)?.let { BasicText(it, style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 6.dp)) }
@@ -177,7 +182,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         Spacer(Modifier.height(22.dp))
                         // the controls, the volume beside them
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Controls(n, Modifier.width(320.dp))
+                            if (n.song.episode) EpisodeControls(n, Modifier.width(320.dp)) else Controls(n, Modifier.width(320.dp))
                             Spacer(Modifier.width(32.dp))
                             Volume(line = 140.dp)
                         }
@@ -188,9 +193,12 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         // the record, its lyrics, up next, its notes, chosen by a word; stop at the row's end
                         val lines = rememberLyrics(n.song)
                         var shows by remember(n.song.albumId) { mutableStateOf<String?>(null) }
-                        val panel = shows ?: if (!lines.isNullOrEmpty()) "lyrics" else if (n.song.station) "up next" else "record"
+                        val panel = shows ?: if (n.song.episode) "episode" else if (!lines.isNullOrEmpty()) "lyrics" else if (n.song.station) "up next" else "record"
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            for (w in listOfNotNull("record".takeUnless { n.song.station }, "lyrics", "up next", "notes"))
+                            // an episode: its own notes where a song's record and lyrics are
+                            val words = if (n.song.episode) listOf("episode", "up next", "notes")
+                                else listOfNotNull("record".takeUnless { n.song.station }, "lyrics", "up next", "notes")
+                            for (w in words)
                                 Word(w, pixel(14.sp, if (w == panel) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 10.dp) { shows = w }
                             Spacer(Modifier.weight(1f))
                             Word("stop", pixel(14.sp, if (n.playing) Ink.mid else Ink.dim), touch = 10.dp) { Player.stop(); onClose() }
@@ -199,6 +207,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         Box(Modifier.weight(1f).fillMaxWidth()) {
                             when (panel) {
                                 "record" -> RecordSide(n, open)
+                                "episode" -> EpisodeNotes(n.song.id, Modifier.fillMaxSize())
                                 "lyrics" -> {
                                     val pos by Player.position.collectAsState()
                                     val all = lines
@@ -241,7 +250,7 @@ fun Backdrop(cover: Cover?, look: Look, song: Song? = null, playing: Boolean = f
         }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
     }
     // the song's spotify canvas in its place, moving, in the same look
-    if (song != null && !song.station) CanvasBehind(song.title, song.artist.substringBefore(", "), c?.accent ?: Ink.ink, playing, Modifier.fillMaxSize()) { canvasUp = true }
+    if (song != null && !song.station && !song.episode) CanvasBehind(song.title, song.artist.substringBefore(", "), c?.accent ?: Ink.ink, playing, Modifier.fillMaxSize()) { canvasUp = true }
 }
 
 /**

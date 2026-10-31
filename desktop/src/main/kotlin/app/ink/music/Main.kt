@@ -101,8 +101,7 @@ fun main() {
     Loved.start()
     TubeAccount.start()
     // a paired phone kept in step, over the wifi (Sync)
-    // the phone's podcasts kept here as sync brings them (the shows followed, where each episode was left), for when
-    // the computer has podcasts of its own
+    // podcasts (Pods): the shows followed and where each episode was left, kept here and carried by sync with the phone
     Podcasts.dir = java.io.File(Home.dir, "podcasts")
     SyncHub.start()
     Follows.start()
@@ -189,6 +188,11 @@ sealed interface Page {
     data object PlayOn : Page
     data class Tube(val album: TubeAlbum) : Page
     data class List(val id: String, val name: String) : Page
+    /** A podcast: by its feed (the show as found, shown at once till its feed's read). One page a feed. */
+    class Show(val feed: String, val first: Podcasts.Show? = null) : Page {
+        override fun equals(other: Any?) = other is Show && other.feed == feed
+        override fun hashCode() = feed.hashCode()
+    }
 }
 
 /** Where you are: the place on the rail, and the pages over it (the menus and keys move them too). */
@@ -223,7 +227,7 @@ object Nav {
 }
 
 /**
- * The Mac's menu bar: play (the song's controls, volume, lyrics, up next, play on), go (the places, ⌘1 to ⌘7, find,
+ * The Mac's menu bar: play (the song's controls, volume, lyrics, up next, play on), go (the places, ⌘1 to ⌘8, find,
  * settings, back) and view (the player, the whole screen, the now column tucked). The space bar stays the window's
  * own (a menu's would take it from find's typing).
  */
@@ -368,6 +372,7 @@ private fun App() {
                         Page.PlayOn -> PlayOnPage { Nav.close() }
                         is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { Nav.close() }
                         is Page.List -> ListPage(page.id, page.name, { pages += it }) { Nav.close() }
+                        is Page.Show -> ShowPage(page.feed, page.first, { pages += it }) { Nav.close() }
                     }
                 }
             }
@@ -475,6 +480,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
                 key(ac, seed) { Artists(artists, open) }
             }
             "radio" -> RadioTab()
+            "podcasts" -> PodcastsTab(open)
             "listen" -> ListenPage(open)
             // ink weekly, ink radio and everything people picked: one place (explore was its own till 2026-10-29)
             "ink", "explore" -> ExplorePage(open)
@@ -619,11 +625,13 @@ fun SongRow(
             Word("play next", o, touch = 6.dp) { options = false; Player.playNext(s) }
             Word("add to queue", o, touch = 6.dp) { options = false; Player.add(s) }
             // radio: this song, then more like it as the queue runs out
-            if (!s.station) Word("radio", o, touch = 6.dp) { options = false; Player.startRadio(s) }
+            if (!s.station && !s.episode) Word("radio", o, touch = 6.dp) { options = false; Player.startRadio(s) }
             val loved by Loved.ids.collectAsState()
-            if (!s.station) Word(if (s.id in loved) "unlove" else "love", o, touch = 6.dp) { options = false; Loved.toggle(s) }
-            if (open != null && s.album.isNotEmpty()) Word("record", o, touch = 6.dp) { options = false; open(Page.Record(s.albumId)) }
-            if (open != null) Word("artist", o, touch = 6.dp) { options = false; open(Page.Artist(s.albumArtist)) }
+            if (!s.station && !s.episode) Word(if (s.id in loved) "unlove" else "love", o, touch = 6.dp) { options = false; Loved.toggle(s) }
+            // an episode's show where a song's record and artist are
+            if (open != null && s.episode) Pods.page(s)?.let { p -> Word("show", o, touch = 6.dp) { options = false; open(p) } }
+            if (open != null && s.album.isNotEmpty() && !s.episode) Word("record", o, touch = 6.dp) { options = false; open(Page.Record(s.albumId)) }
+            if (open != null && !s.episode) Word("artist", o, touch = 6.dp) { options = false; open(Page.Artist(s.albumArtist)) }
             // kept on the computer, to play with no signal (your server's, YouTube's)
             if (Offline.keepable(s)) {
                 val kept by Offline.kept.collectAsState()
@@ -787,7 +795,11 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                     Spacer(Modifier.height(4.dp))
                     val on by Casting.on.collectAsState()
                     Row {
-                        Word(artist.lowercase(), pixel(12.sp, Ink.mid)) { if (!n.song.station) onArtist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }) }
+                        Word(artist.lowercase(), pixel(12.sp, Ink.mid)) {
+                            // an episode's show; a song's artist
+                            if (n.song.episode) Pods.page(n.song)?.let { Nav.open(it) }
+                            else if (!n.song.station) onArtist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") })
+                        }
                         on?.let { BasicText("  on ${it.name.lowercase()}", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
                 }
@@ -889,7 +901,7 @@ fun rememberLyrics(song: Song): List<Line>? {
     val on by Lyrics.on.collectAsState()
     val lines by androidx.compose.runtime.produceState<List<Line>?>(null, song.id, on) {
         value = null
-        if (on && song.station) { value = emptyList(); return@produceState }
+        if (on && (song.station || song.episode)) { value = emptyList(); return@produceState }
         while (on) { Lyrics.of(song)?.let { value = it; return@produceState }; kotlinx.coroutines.delay(61_000) }
     }
     return lines?.takeIf { on }

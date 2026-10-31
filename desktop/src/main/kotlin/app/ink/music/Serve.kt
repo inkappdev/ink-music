@@ -38,7 +38,7 @@ object Serve {
      * Where a speaker fetches `s`: the server's stream, a station's, or this computer's file from here. A YouTube song
      * `plain` (for a DLNA receiver) is made a plain file here and served from here ([Plain]).
      */
-    fun url(s: Song, lossless: Boolean, plain: Boolean = false): String? = if (s.station) s.path else if (s.tube) {
+    fun url(s: Song, lossless: Boolean, plain: Boolean = false): String? = if (s.station || s.episode) s.path else if (s.tube) {
         // from here: its stream found only when the speaker asks for it
         base?.let { "$it/${if (plain) "p" else "y"}/${s.id.removePrefix("y")}" }
     } else if (s.server) {
@@ -50,12 +50,14 @@ object Serve {
     } else base?.let { "$it/f/${s.id.removePrefix("l")}" }
 
     /** Its cover, for the speaker's screen: the server's, YouTube's, or this computer's from here. */
-    fun art(s: Song): String? = if (s.station) null else if (s.tube) s.art else if (s.server) {
+    fun art(s: Song): String? = if (s.station) null else if (s.tube || s.episode) s.art else if (s.server) {
         s.art?.let { art -> Server.account.value?.let { Server.url(it, "getCoverArt", "id" to art, "size" to 600) } }
     } else base?.let { "$it/a/${s.id.removePrefix("l")}" }
 
     fun type(s: Song, lossless: Boolean): String = when {
         s.station -> if (s.path.lowercase().let { "aac" in it || ".m4a" in it }) "audio/aac" else "audio/mpeg"
+        // an episode by its link's ending (most are mp3)
+        s.episode -> if (s.path.substringBefore('?').lowercase().let { it.endsWith(".m4a") || it.endsWith(".mp4") || it.endsWith(".aac") }) "audio/mp4" else "audio/mpeg"
         s.tube -> "audio/mp4"   // a speaker's is always the m4a (YouTube.stream)
         s.server && !lossless -> "audio/mpeg"
         else -> mime(s.format)
@@ -70,6 +72,7 @@ object Serve {
     /** What reaches the speaker, as said: "flac 24/96", or "mp3 320" when it's the server's mp3. */
     fun quality(s: Song, lossless: Boolean): String = when {
         s.station -> "radio"
+        s.episode -> "podcast"
         s.tube -> "aac"
         s.server && !lossless -> "mp3 320"
         else -> s.quality

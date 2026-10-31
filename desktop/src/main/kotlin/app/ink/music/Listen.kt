@@ -96,6 +96,9 @@ fun ListenPage(open: (Page) -> Unit) {
     val made by Discover.mixes.collectAsState()
     val because by Discover.because.collectAsState()
     val newTo by Discover.newToYou.collectAsState()
+    // the shows you follow: their newest episodes not yet heard (read again from their feeds each hour)
+    val episodes by Pods.fresh.collectAsState()
+    LaunchedEffect(Unit) { Pods.refresh() }
     // one rhythm down the page: the same room between every shelf, each with a head of its own (Bronson, 2026-10-29)
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(GAP)) {
@@ -138,6 +141,20 @@ fun ListenPage(open: (Page) -> Unit) {
             Section("YOUR MIXES", "youtube music's, made for you")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 items(tubeMixes, key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp)) { open(Page.Tube(a)) } }
+            }
+            }
+        }
+        if (episodes.isNotEmpty()) item {
+            Column {
+            Section("NEW EPISODES", "from the shows you follow") { Word("podcasts", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("podcasts") } }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                items(episodes.take(16), key = { it.id }) { e ->
+                    Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(listOf(e)) })) {
+                        CoverOf(e, e.album, Modifier.fillMaxWidth().aspectRatio(1f), px = 340)
+                        Spacer(Modifier.height(8.dp))
+                        UnderCover(e.title, e.album)
+                    }
+                }
             }
             }
         }
