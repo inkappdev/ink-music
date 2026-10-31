@@ -261,7 +261,7 @@ object Playback {
         if (songs.isNotEmpty() && songs.any { it.id !in ids }) c.setMediaItems(songs.map(::item), 0, 0)
     }
     /** The speaker's song, as it says it. */
-    fun showCast(n: Now) { casting = true; _now.value = n; tellPlayer() }
+    fun showCast(n: Now) { casting = true; _now.value = n.copy(shuffle = Casting.shuffled); tellPlayer() }
     /** Casting over: the phone's own player shows again. */
     fun castEnded() {
         casting = false; tellPlayer(); _now.value = null; readQueue(); update()
@@ -292,7 +292,11 @@ object Playback {
         val current = songOf(c.currentMediaItem ?: return null)
         return Triple(songs, songs.indexOf(current).coerceAtLeast(0), c.currentPosition)
     }
-    fun shuffle() { controller?.run { shuffleModeEnabled = !shuffleModeEnabled } }
+    fun shuffle() {
+        // on a speaker: its queue shuffled there (Casting.shuffle), lit at once
+        if (casting) { app?.let { Casting.shuffle(it) }; _now.value = _now.value?.copy(shuffle = Casting.shuffled); return }
+        controller?.run { shuffleModeEnabled = !shuffleModeEnabled }
+    }
     /** How fast it plays (a podcast's episode: [Podcasts.speed]); a speaker plays at its own. */
     fun speed(v: Float) { if (!casting) controller?.setPlaybackSpeed(v) }
     /** Off, then the whole queue again, then this song again. */

@@ -232,10 +232,12 @@ object Casting {
 
     /**
      * Plays `queue` on `to` from `index` at `at` ms: the phone pauses, the speaker takes the rest of
-     * the queue (a hundred songs at most). Main thread.
+     * the queue (a hundred songs at most). Main thread. [again]: the speaker's own queue again (a jump, another
+     * speaker, shuffled), so shuffle stays as it was; else a new queue, in its own order.
      */
-    fun play(ctx: Context, to: Speaker, queue: List<Song>, index: Int, at: Long) {
+    fun play(ctx: Context, to: Speaker, queue: List<Song>, index: Int, at: Long, again: Boolean = false) {
         if (queue.isEmpty()) return
+        if (!again) shuffled = false
         link?.close()
         handed = queue.drop(index.coerceIn(queue.indices)).take(100)
         Playback.showCastQueue(handed)
@@ -261,7 +263,7 @@ object Casting {
         val at = now?.positionNow() ?: 0L
         val queue = handed
         l.stopThere()
-        play(ctx, to, queue, index, at)
+        play(ctx, to, queue, index, at, again = true)
     }
 
     /**
@@ -290,6 +292,7 @@ object Casting {
         volume.value = null
         _on.value = null
         connecting.value = false
+        shuffled = false
         Playback.castEnded()
     }
 
@@ -332,7 +335,33 @@ object Casting {
     fun jump(ctx: Context, index: Int) {
         val to = _on.value ?: return
         val queue = handed
-        if (index in queue.indices) play(ctx, to, queue, index, 0L)
+        if (index in queue.indices) play(ctx, to, queue, index, 0L, again = true)
+    }
+
+    /** Shuffle while casting: on (the speaker plays its list in order, shuffle was the phone's own, paused player's). */
+    var shuffled = false
+        private set
+    /** The speaker's queue in its own order, from before it was shuffled. */
+    private var ordered: List<Song> = emptyList()
+
+    /**
+     * Shuffle pressed while casting: what the speaker has still to play put in a new order (or back in its own),
+     * handed over again from where the song playing is. The tap did nothing before: shuffle went to the phone's
+     * paused player, which the speaker never follows (2026-10-31). Main thread.
+     */
+    fun shuffle(ctx: Context) {
+        val to = _on.value ?: return
+        val now = Playback.now.value ?: return
+        val at = now.song?.let { s -> handed.indexOfFirst { it.id == s.id } }?.takeIf { it >= 0 } ?: return
+        val left = handed.drop(at + 1)
+        val rest = if (!shuffled) { ordered = handed; left.shuffled() } else {
+            // its own order again, with what radio added since at the end
+            val ids = left.map { it.id }.toHashSet()
+            val known = ordered.map { it.id }.toHashSet()
+            ordered.filter { it.id in ids } + left.filter { it.id !in known }
+        }
+        shuffled = !shuffled
+        play(ctx, to, listOf(handed[at]) + rest, 0, now.positionNow(), again = true)
     }
     /** The speaker's queue from the song with this id (asked from the notification, the car). Main thread. */
     fun jumpTo(ctx: Context, id: String) { val i = handed.indexOfFirst { it.id == id }; if (i >= 0) jump(ctx, i) }
