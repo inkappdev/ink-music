@@ -51,7 +51,7 @@ data class Heard(
         .apply { gain?.let { put("gain", it.toDouble()) } }.toString()
 
     companion object {
-        private val LOSSLESS = setOf("flac", "alac", "wav")
+        val LOSSLESS = setOf("flac", "alac", "wav")
 
         fun of(json: String?): Heard? = json?.takeIf { it.isNotEmpty() }?.let { s ->
             runCatching {
