@@ -157,6 +157,7 @@ class Main : ComponentActivity() {
         ListenBrainz.start(this)
         LastFm.start(this)
         Offline.start(this)
+        Pods.start(this)
         Order.start(this)
         Seeds.start(this)
         Stations.curated(this)

@@ -116,10 +116,11 @@ object Podcasts {
 
     private val cache = HashMap<String, Pair<Show, List<Episode>>>()
     private val episodes = HashMap<String, Pair<Show, Episode>>()
+    private val byUrl = HashMap<String, String>()
 
     private fun keep(show: Show, list: List<Episode>) = synchronized(this) {
         cache[show.feed] = show to list
-        list.forEach { episodes[it.id] = show to it }
+        list.forEach { episodes[it.id] = show to it; byUrl[it.url] = it.id }
         val d = dir ?: return
         // the newest 300 kept (a show twenty years on has thousands: Rogan's 2,773)
         val o = JSONObject().put("show", showJson(show)).put("episodes", JSONArray(list.take(300).map(::episodeJson)))
@@ -137,12 +138,15 @@ object Podcasts {
                     val a = o.getJSONArray("episodes")
                     val list = (0 until a.length()).map { episodeOf(a.getJSONObject(it), show.feed) }
                     cache[show.feed] = show to list
-                    list.forEach { e -> episodes[e.id] = show to e }
+                    list.forEach { e -> episodes[e.id] = show to e; byUrl[e.url] = e.id }
                 }
             }
         }
         episodes[id]
     }
+
+    /** The episode at a link (the player knows only the link: its kept file is found by the id). */
+    fun idOf(url: String): String? = synchronized(this) { byUrl[url] ?: run { episode(""); byUrl[url] } }
 
     // ---- following ----
 
@@ -198,6 +202,38 @@ object Podcasts {
         if (o.length() > 1000) o.keys().asSequence().toList()
             .sortedBy { o.getJSONArray(it).optLong(1) }.take(o.length() - 1000).forEach { o.remove(it) }
         write(File(d, "places.json"), o.toString())
+    }
+
+    // ---- carried between the phone and the computer (Sync) ----
+
+    /** What this side says of its podcasts: the shows followed (and when that last changed), where each episode was left. */
+    fun syncPart(): JSONObject? {
+        val d = dir ?: return null
+        val f = File(d, "following.json")
+        val places = runCatching { JSONObject(File(d, "places.json").readText()) }.getOrDefault(JSONObject())
+        return JSONObject().put("following", if (f.isFile) JSONArray(f.readText()) else JSONArray())
+            .put("followingAt", if (f.isFile) f.lastModified() else 0L).put("places", places)
+    }
+
+    /** The other side's taken in: its shows if it changed them later, each episode's place where it was left later. */
+    fun takeSync(o: JSONObject): Boolean = synchronized(this) {
+        val d = dir ?: return false
+        var changed = false
+        val f = File(d, "following.json")
+        val at = o.optLong("followingAt")
+        val theirs = o.optJSONArray("following")
+        if (theirs != null && at > (if (f.isFile) f.lastModified() else 0L) && (!f.isFile || f.readText() != theirs.toString())) {
+            write(f, theirs.toString()); f.setLastModified(at); changed = true
+        }
+        val mine = runCatching { JSONObject(File(d, "places.json").readText()) }.getOrDefault(JSONObject())
+        o.optJSONObject("places")?.let { p ->
+            p.keys().forEach { k ->
+                val t = p.optJSONArray(k) ?: return@forEach
+                if (t.optLong(1) > (mine.optJSONArray(k)?.optLong(1) ?: 0L)) { mine.put(k, t); changed = true }
+            }
+        }
+        if (changed) write(File(d, "places.json"), mine.toString())
+        changed
     }
 
     /** How fast episodes play (1 the way it was made). */

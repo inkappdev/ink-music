@@ -446,6 +446,10 @@ class PlayerService : MediaLibraryService() {
                     spec.uri.path?.endsWith("/rest/stream") == true -> spec.uri.getQueryParameter("id")?.let { Offline.file(this, "n$it") }
                         ?.let { android.util.Log.d("ink-offline", "kept: ${it.name}"); spec.withUri(Uri.fromFile(it)) }
                         ?: spec.withUri(Quality.server(spec.uri, quality()))
+                    // a podcast's episode kept on the phone plays from there (Offline: kept by its id, known by its link)
+                    spec.uri.scheme?.startsWith("http") == true && Podcasts.idOf(spec.uri.toString())?.let { Offline.file(this, it) } != null ->
+                        Podcasts.idOf(spec.uri.toString())?.let { Offline.file(this, it) }
+                            ?.let { android.util.Log.d("ink-offline", "kept: ${it.name}"); spec.withUri(Uri.fromFile(it)) } ?: spec
                     else -> spec
                 }
             },

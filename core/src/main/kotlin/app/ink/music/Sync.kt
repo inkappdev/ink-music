@@ -174,6 +174,8 @@ object Sync {
         fun signedIn(what: String)
         /** heard.jsonl has the other's listens in it now. */
         fun heardChanged()
+        /** The shows followed or an episode's place taken from the other: shown again. */
+        fun podcastsChanged() {}
         /** What the other was playing, as it last said. */
         fun theirs(peer: Peer, now: JSONObject?)
         /** When play was last pressed here (a queue begun, or carried on), so a stop asked for before it is passed over. */
@@ -199,6 +201,7 @@ object Sync {
             .put("heard", JSONObject().put("lines", lines).put("upto", upto).put("want", want))
             .put("loves", kept.loves()).put("signed", signed).put("youtube", side.youtube() ?: "")
             .put("spotify", side.spotify() ?: "")
+            .put("podcasts", Podcasts.syncPart() ?: JSONObject.NULL)
             .put("now", side.now() ?: JSONObject.NULL).put("handed", kept.handedAt(peer.id))
     }
 
@@ -229,6 +232,8 @@ object Sync {
                 }
             }
         }
+        // podcasts: the shows followed and each episode's place, the latest change wins
+        m.optJSONObject("podcasts")?.let { if (runCatching { Podcasts.takeSync(it) }.getOrDefault(false)) runCatching { side.podcastsChanged() } }
         m.optString("youtube").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeYoutube(it) } }
         m.optString("spotify").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeSpotify(it) } }
         side.theirs(peer, m.optJSONObject("now"))

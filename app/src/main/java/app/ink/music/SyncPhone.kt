@@ -229,6 +229,8 @@ object SyncPhone {
 
         override fun heardChanged() { Listened.read(c) }
 
+        override fun podcastsChanged() { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { Pods.load(c) } }
+
         override fun theirs(peer: Sync.Peer, now: JSONObject?) {
             theirs.value = now?.let { offer(peer.name, it, peer.id) }
         }

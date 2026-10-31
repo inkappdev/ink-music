@@ -52,11 +52,26 @@ object Pods {
         fresh.value = Podcasts.fresh().map { (s, e) -> song(s, e) }
     }
 
-    /** The shows you follow read again from their feeds (those not read in the last hour), then the flows. */
+    /**
+     * The shows you follow read again from their feeds (those not read in the last hour), then the flows. On wifi, each
+     * show's newest episode of the week not yet heard is kept on the phone (Offline: the morning's commute with no
+     * signal); an episode kept and heard through is let go.
+     */
     suspend fun refresh(c: Context) {
         load(c)
         withContext(Dispatchers.IO) { runCatching { Podcasts.refresh() } }
         load(c)
+        withContext(Dispatchers.IO) {
+            Offline.refresh(c)
+            val places = places.value
+            Offline.kept.value.filter { it.startsWith("e") && (places[it] ?: 0L) < 0 }.takeIf { it.isNotEmpty() }?.let { Offline.remove(c, it) }
+            if (Quality.metered(c)) return@withContext
+            val week = System.currentTimeMillis() - 7 * 86_400_000L
+            val newest = Podcasts.following().mapNotNull { s ->
+                Podcasts.kept(s.feed)?.let { (show, list) -> list.firstOrNull()?.takeIf { it.published > week && (places[it.id] ?: 0L) >= 0 }?.let { song(show, it) } }
+            }
+            if (newest.isNotEmpty()) Offline.keep(c, newest)
+        }
     }
 
     suspend fun follow(c: Context, show: Podcasts.Show, on: Boolean) = withContext(Dispatchers.IO) {

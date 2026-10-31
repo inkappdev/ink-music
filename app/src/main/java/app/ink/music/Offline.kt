@@ -35,7 +35,7 @@ object Offline {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     /** Whether a song can be kept: your server's, or YouTube Music's (the full build). */
-    fun keepable(s: Song) = s.server || (s.tube && YouTubeMusic.available)
+    fun keepable(s: Song) = s.server || (s.tube && YouTubeMusic.available) || s.episode
 
     /** A song's kept file, if it's whole (the player asks this as each server song starts: quick, no listing). */
     fun file(c: Context, id: String): File? = File(dir(c), id).takeIf { it.isFile && it.length() > 0 }
@@ -55,8 +55,9 @@ object Offline {
         val now = _keeping.value.toMutableMap()
         dir(c).mkdirs()
         for (s in songs) {
-            if (!s.server || s.id in _kept.value || s.id in now) continue
-            val url = Quality.server(s.uri, if (mp3(c)) Quality.HIGH else Quality.ORIGINAL)
+            if (!(s.server || s.episode) || s.id in _kept.value || s.id in now) continue
+            // a podcast's episode: its file as the show gives it
+            val url = if (s.episode) s.uri else Quality.server(s.uri, if (mp3(c)) Quality.HIGH else Quality.ORIGINAL)
             val r = DownloadManager.Request(url)
                 .setTitle(s.title).setDescription("ink music · keeping it on the phone")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)

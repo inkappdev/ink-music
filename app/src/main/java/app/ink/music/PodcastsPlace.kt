@@ -165,6 +165,18 @@ fun EpisodeRow(e: Song, place: Long, withShow: Boolean, on: Boolean) {
             BasicText(said, style = pixel(12.sp, if (on) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp))
         }
+        // kept on the phone for no signal: "keep", then how far it's come, then "kept" (lit; a tap lets it go)
+        val ctx = LocalContext.current
+        val kept by Offline.kept.collectAsState()
+        val keeping by Offline.keeping.collectAsState()
+        val coming = e.id in keeping
+        val progress by produceState(0f, coming) {
+            while (coming) { value = withContext(Dispatchers.IO) { Offline.progress(ctx, listOf(e.id)) }; delay(1_000); Offline.refresh(ctx) }
+        }
+        Word(
+            when { e.id in kept -> "kept"; coming -> "${(progress * 100).toInt()}%"; else -> "keep" },
+            pixel(12.sp, if (e.id in kept) Ink.ink else Ink.dim), Modifier.padding(start = 12.dp), touch = 10.dp,
+        ) { if (e.id in kept || coming) Offline.remove(ctx, listOf(e.id)) else Offline.keep(ctx, listOf(e)) }
     }
 }
 

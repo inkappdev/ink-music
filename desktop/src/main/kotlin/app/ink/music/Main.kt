@@ -101,6 +101,9 @@ fun main() {
     Loved.start()
     TubeAccount.start()
     // a paired phone kept in step, over the wifi (Sync)
+    // the phone's podcasts kept here as sync brings them (the shows followed, where each episode was left), for when
+    // the computer has podcasts of its own
+    Podcasts.dir = java.io.File(Home.dir, "podcasts")
     SyncHub.start()
     Follows.start()
     Colours.start()
