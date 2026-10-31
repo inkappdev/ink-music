@@ -27,6 +27,8 @@ object Serve {
     private val token = ByteArray(12).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
     private val pool = Executors.newCachedThreadPool()
 
+    fun appContext(): Context? = app
+
     @Synchronized
     fun start(c: Context) {
         app = c.applicationContext
@@ -40,9 +42,10 @@ object Serve {
     }
 
     /** Where a speaker fetches `s`: the server's stream, or the phone's file from here. */
-    fun url(s: Song, lossless: Boolean): String? = if (s.station) s.uri.toString() else if (s.tube) {
-        // from here: its stream found only when the speaker asks for it (finding a hundred first took over a minute)
-        base?.let { "$it/y/${s.id.removePrefix("y")}" }
+    fun url(s: Song, lossless: Boolean, plain: Boolean = false): String? = if (s.station) s.uri.toString() else if (s.tube) {
+        // from here: its stream found only when the speaker asks for it (finding a hundred first took over a minute);
+        // `plain` (a DLNA receiver), the song as a plain file the phone made of it ([Plain])
+        base?.let { "$it/${if (plain) "p" else "y"}/${s.id.removePrefix("y")}" }
     } else if (s.server) {
         // the original where the speaker can take it; else mp3 at 320, which every speaker plays
         Server.account.value?.let { a ->
@@ -98,6 +101,7 @@ object Serve {
             if (path.size != 3 || path[0] != token) return@use status(out, 404)
             // a YouTube song: its stream found now, and the speaker sent there
             if (path[1] == "y") return@use tube(out, path[2])
+            if (path[1] == "p") return@use plain(out, path[2], range, head)
             val id = path[2].toLongOrNull() ?: return@use status(out, 404)
             when (path[1]) {
                 "f" -> file(out, id, range, head)
@@ -113,6 +117,43 @@ object Serve {
         val link = YouTubeMusic.stream("y$video", true)?.first ?: return status(out, 404)
         android.util.Log.d("ink-cast", "serve: $video sent on")
         out.write("HTTP/1.1 302 Found\r\nLocation: $link\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+        out.flush()
+    }
+
+    /** A YouTube song as a plain file made here ([Plain]): ranges answered, so the receiver knows its length and seeks. */
+    private fun plain(out: OutputStream, video: String, range: String?, head: Boolean) {
+        if (!video.all { it.isLetterOrDigit() || it == '-' || it == '_' }) return status(out, 404)
+        val c = app ?: return status(out, 404)
+        val f = Plain.of(c, video) ?: return status(out, 404)
+        android.util.Log.d("ink-cast", "serve: $video plain, ${f.length() / 1024} kB, ${range ?: "whole"}")
+        var from = 0L
+        var to = f.length() - 1
+        val partial = range?.startsWith("bytes=") == true
+        if (partial) {
+            val (a, b) = range!!.removePrefix("bytes=").substringBefore(',').split('-').let { p -> p.getOrNull(0).orEmpty() to p.getOrNull(1).orEmpty() }
+            if (a.isEmpty()) { from = (f.length() - (b.toLongOrNull() ?: 0)).coerceAtLeast(0) }
+            else { from = a.toLongOrNull() ?: 0; to = b.toLongOrNull()?.coerceAtMost(f.length() - 1) ?: (f.length() - 1) }
+            if (from > to || from >= f.length()) return status(out, 416)
+        }
+        val length = to - from + 1
+        val h = StringBuilder()
+            .append(if (partial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n")
+            .append("Content-Type: audio/mp4\r\nAccept-Ranges: bytes\r\nContent-Length: $length\r\n")
+            .append("Access-Control-Allow-Origin: *\r\nConnection: close\r\n")
+        if (partial) h.append("Content-Range: bytes $from-$to/${f.length()}\r\n")
+        out.write(h.append("\r\n").toString().toByteArray())
+        if (head) return out.flush()
+        FileInputStream(f).use { i ->
+            i.channel.position(from)
+            val buf = ByteArray(64 * 1024)
+            var left = length
+            while (left > 0) {
+                val n = i.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                if (n <= 0) break
+                out.write(buf, 0, n)
+                left -= n
+            }
+        }
         out.flush()
     }
 

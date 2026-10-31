@@ -96,7 +96,7 @@ object Dlna {
         private val lossless = Casting.hiRes(to) == true
         // the queue and its links, longer when radio adds to its end ([extend])
         @Volatile private var queue: List<Song> = first
-        @Volatile private var urls = first.map { Serve.url(it, lossless).orEmpty() }
+        @Volatile private var urls = first.map { Serve.url(it, lossless, plain = true).orEmpty() }
         @Volatile private var index = 0
         @Volatile private var nextSet = -1
         @Volatile private var lastState = ""
@@ -146,15 +146,8 @@ object Dlna {
             val n = index + 1
             if (n !in queue.indices || nextSet == n) return
             nextSet = n
-            // a YouTube song isn't handed over ahead: a Denon opens the next song's stream the moment it's told, and by
-            // the time it got there, minutes on, YouTube had let that go; it skipped the song, or raced through its
-            // start (Bronson, 2026-10-30). Its stream found now instead, and the song started fresh as this one ends
-            // (poll: stopped at a song's end, the next played): a second's gap, not a skip
-            if (queue[n].tube) {
-                val s = queue[n]
-                Thread({ runCatching { YouTubeMusic.stream(s.id, true) } }, "speaker ahead").apply { isDaemon = true }.start()
-                return
-            }
+            // a YouTube song's plain file made now, while this one plays (the receiver may ask for it at once: [Plain])
+            Serve.appContext()?.let { Plain.prepare(it, queue[n]) }
             runCatching { soap("SetNextAVTransportURI", "<NextURI>${esc(urls[n])}</NextURI><NextURIMetaData>${esc(didl(queue[n], urls[n]))}</NextURIMetaData>") }
         }
 
@@ -170,7 +163,8 @@ object Dlna {
             // it moved on to the queued song by itself: queue the one after that
             urls.indexOfFirst { it.isNotEmpty() && it == track }.takeIf { it >= 0 && it != index }?.let { index = it; timeFrom(0); queueNext() }
             // it stopped at a song's end without taking the next: hand it over
-            if (st == "STOPPED" && lastState == "PLAYING" && index + 1 in queue.indices) { lastState = st; start(index + 1, 0); return }
+            // (from "transitioning" too: a Denon said so all through a YouTube stream, and stopped at its end unseen)
+            if (st == "STOPPED" && (lastState == "PLAYING" || lastState == "TRANSITIONING") && index + 1 in queue.indices) { lastState = st; start(index + 1, 0); return }
             // something else is playing there now (another app took it): done
             if (track.isNotEmpty() && urls.none { it == track } && st == "PLAYING") { open = false; Casting.lost(this); return }
             lastState = st
@@ -204,14 +198,14 @@ object Dlna {
         /** Radio's songs after the rest: the next one handed over, or, stopped at the end, played. */
         override fun extend(songs: List<Song>) = io.execute {
             val wasLast = index == queue.size - 1
-            urls = urls + songs.map { Serve.url(it, lossless).orEmpty() }
+            urls = urls + songs.map { Serve.url(it, lossless, plain = true).orEmpty() }
             queue = queue + songs
             if (wasLast && lastState == "STOPPED") start(index + 1, 0) else queueNext()
         }.let { }
         /** Right after the song playing, handed over as its next (or, stopped at the end, played). */
         override fun playNext(s: Song) = io.execute {
             val wasLast = index == queue.size - 1
-            urls = urls.take(index + 1) + Serve.url(s, lossless).orEmpty() + urls.drop(index + 1)
+            urls = urls.take(index + 1) + Serve.url(s, lossless, plain = true).orEmpty() + urls.drop(index + 1)
             queue = queue.take(index + 1) + s + queue.drop(index + 1)
             nextSet = -1
             if (wasLast && lastState == "STOPPED") start(index + 1, 0) else queueNext()
