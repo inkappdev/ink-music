@@ -184,3 +184,15 @@ object Marquees {
     fun set(c: Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("marquee", on).apply() }
 }
 
+/**
+ * Covers beside a list's songs (playlists, loved, kept, YouTube's lists): a word on each list's page, one choice for
+ * them all (a Reddit tester's ask, 2026-10-30). Off at first: a list is words.
+ */
+object ListCovers {
+    private val _on = MutableStateFlow(false)
+    val on: StateFlow<Boolean> = _on
+    private fun prefs(c: Context) = c.getSharedPreferences("look", Context.MODE_PRIVATE)
+    fun start(c: Context) { _on.value = prefs(c).getBoolean("list-covers", false) }
+    fun set(c: Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("list-covers", on).apply() }
+}
+

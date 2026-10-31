@@ -572,7 +572,7 @@ private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
 @Composable
 fun SongRow(
     s: Song, number: String? = null, said: String? = null, open: ((Page) -> Unit)? = null,
-    lit: Boolean? = null, dim: Boolean = false, onRemove: (() -> Unit)? = null, onClick: () -> Unit,
+    lit: Boolean? = null, dim: Boolean = false, onRemove: (() -> Unit)? = null, cover: Boolean = false, onClick: () -> Unit,
 ) {
     val now by Player.now.collectAsState()
     val on = lit ?: (now?.song?.id == s.id)
@@ -597,6 +597,8 @@ fun SongRow(
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // its record's cover beside it, small and square (a list's covers word)
+            if (cover) { CoverOf(s, s.album.ifEmpty { s.title }, Modifier.size(44.dp), px = 160); Spacer(Modifier.width(14.dp)) }
             if (number != null) BasicText(number, style = pixel(12.sp, color), modifier = Modifier.width(36.dp))
             Column(Modifier.weight(1f)) {
                 BasicText(s.title.uppercase(), style = headline(17.sp, color), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -607,7 +609,7 @@ fun SongRow(
         }
         // its options, wrapping onto a second line where there's no room (the now column's up next)
         if (options) androidx.compose.foundation.layout.FlowRow(
-            Modifier.padding(start = if (number != null) 36.dp else 0.dp, bottom = 10.dp).fadeUp(),
+            Modifier.padding(start = (if (cover) 58.dp else 0.dp) + (if (number != null) 36.dp else 0.dp), bottom = 10.dp).fadeUp(),
             horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             val o = pixel(13.sp)
@@ -978,4 +980,11 @@ private fun Around(a: Album, albums: List<Album>, open: (Page) -> Unit) {
             }
         }
     }
+}
+
+/** A list's word for covers beside its songs, lit when on (one choice for every list: [ListCovers]). */
+@Composable
+fun CoversWord(modifier: Modifier = Modifier) {
+    val on by ListCovers.on.collectAsState()
+    Word("covers", pixel(14.sp, if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { ListCovers.set(!on) }
 }
