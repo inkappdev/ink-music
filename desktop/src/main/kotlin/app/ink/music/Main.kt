@@ -452,6 +452,8 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
                         when (rc.sort) {
                             // a timeline: the oldest first
                             Sort.YEAR -> a.year.takeIf { it > 0 }?.let { -it.toDouble() }
+                            // newest in first: a file's own date, a server song's when the server took it in
+                            Sort.ADDED -> a.songs.maxOf { it.modified }.takeIf { it > 0 }?.toDouble()
                             Sort.LATELY -> heard.lately("r:" + a.id)
                             Sort.COLOUR -> Colours.place(colours[a.id])
                             else -> null

@@ -80,7 +80,8 @@ object Placed {
             }
             WindowPosition(x.dp, y.dp)
         } ?: WindowPosition(Alignment.Center)
-        val zoomed = o?.optBoolean("zoomed") == true
+        // the first time as big as the screen lets it (a tester's ask, 2026-10-30), then as it was left
+        val zoomed = o?.optBoolean("zoomed") ?: true
         return rememberWindowState(placement = if (zoomed) WindowPlacement.Maximized else WindowPlacement.Floating, size = size, position = at)
     }
 
