@@ -34,10 +34,13 @@ object Serve {
         base = "http://$ip:${s.localPort}/$token"
     }
 
-    /** Where a speaker fetches `s`: the server's stream, a station's, or this computer's file from here. */
-    fun url(s: Song, lossless: Boolean): String? = if (s.station) s.path else if (s.tube) {
+    /**
+     * Where a speaker fetches `s`: the server's stream, a station's, or this computer's file from here. A YouTube song
+     * `plain` (for a DLNA receiver) is made a plain file here and served from here ([Plain]).
+     */
+    fun url(s: Song, lossless: Boolean, plain: Boolean = false): String? = if (s.station) s.path else if (s.tube) {
         // from here: its stream found only when the speaker asks for it
-        base?.let { "$it/y/${s.id.removePrefix("y")}" }
+        base?.let { "$it/${if (plain) "p" else "y"}/${s.id.removePrefix("y")}" }
     } else if (s.server) {
         // the original where the speaker can take it; else mp3 at 320, which every speaker plays
         Server.account.value?.let { a ->
@@ -108,6 +111,12 @@ object Serve {
             if (path.size != 3 || path[0] != token) return@use status(out, 404)
             // a YouTube song: its stream found now, and the speaker sent there
             if (path[1] == "y") return@use tube(out, path[2])
+            // a YouTube song as a plain file, made now if it isn't yet
+            if (path[1] == "p") {
+                if (!path[2].all { it.isLetterOrDigit() || it == '-' || it == '_' }) return@use status(out, 404)
+                Log.d("serve: ${path[2]} plain${if (range != null) " $range" else ""}")
+                return@use send(out, Plain.of(path[2]) ?: return@use status(out, 404), "audio/mp4", range, head)
+            }
             val song = Library.song("l" + path[2])?.takeIf { !it.server && !it.tube && !it.station } ?: return@use status(out, 404)
             when (path[1]) {
                 "f" -> file(out, song, range, head)
@@ -127,7 +136,10 @@ object Serve {
     }
 
     private fun file(out: OutputStream, song: Song, range: String?, head: Boolean) {
-        val f = File(song.path).takeIf { it.isFile } ?: return status(out, 404)
+        send(out, File(song.path).takeIf { it.isFile } ?: return status(out, 404), mime(song.format), range, head)
+    }
+
+    private fun send(out: OutputStream, f: File, type: String, range: String?, head: Boolean) {
         RandomAccessFile(f, "r").use { raf ->
             val size = raf.length()
             // "bytes=start-end" (end or start may be missing)
@@ -143,7 +155,7 @@ object Serve {
             val length = to - from + 1
             val h = StringBuilder()
                 .append(if (partial) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n")
-                .append("Content-Type: ${mime(song.format)}\r\nAccept-Ranges: bytes\r\nContent-Length: $length\r\n")
+                .append("Content-Type: $type\r\nAccept-Ranges: bytes\r\nContent-Length: $length\r\n")
                 .append("Access-Control-Allow-Origin: *\r\nConnection: close\r\n")
             if (partial) h.append("Content-Range: bytes $from-$to/$size\r\n")
             out.write(h.append("\r\n").toString().toByteArray())
