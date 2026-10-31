@@ -66,7 +66,9 @@ fun ListenPage(open: (Page) -> Unit) {
     }
     val hourRecords = remember(hourSongs, byId) { hourSongs.mapNotNull { byId[it.albumId] }.distinctBy { it.id }.take(7) }
     val shelf = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(7) }
-    val first = hourRecords.ifEmpty { shelf }
+    // what you play at this hour, topped up from your shelves to seven (one record played at this hour once showed
+    // a shelf of one, Bronson, 2026-10-30)
+    val first = remember(hourRecords, shelf) { (hourRecords + shelf).distinctBy { it.id }.take(7) }
     val lately = remember(albums, heard) { albums.mapNotNull { a -> heard.lately("r:" + a.id)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
     val forgotten = remember(albums, heard) { albums.mapNotNull { a -> heard.forgotten("r:" + a.id, now)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
     val newest by produceState(emptyList<Album>(), account, albums) { value = Server.newest(16).mapNotNull { byId[it] } }
