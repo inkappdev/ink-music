@@ -46,6 +46,22 @@ object Server {
     val sonic = MutableStateFlow(false)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** The server's libraries (Navidrome's music folders), id to name: a choice only when there's more than one. */
+    val folders = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    /** The one library read (as the computer, 2026-10-30), or null: all of them. Kept in files/server-library.json. */
+    val folder = MutableStateFlow<String?>(null)
+    private fun folderFile(c: Context) = File(c.filesDir, "server-library.json")
+
+    /** Only `id`'s songs (null: every library), read again. */
+    fun choose(c: Context, id: String?) {
+        folder.value = id
+        runCatching { if (id == null) folderFile(c).delete() else folderFile(c).writeText(id) }
+        sync()
+    }
+
+    // the chosen library, said to every ask that takes it
+    private fun inFolder(): Array<Pair<String, Any>> = folder.value?.let { arrayOf<Pair<String, Any>>("musicFolderId" to it) } ?: emptyArray()
     private var app: Context? = null
 
     // kept as a file, not prefs: the player's process reads it too (scrobbles), and prefs each
@@ -132,11 +148,18 @@ object Server {
                     val ext = call(a, "getOpenSubsonicExtensions")?.optJSONArray("openSubsonicExtensions")
                     ext != null && (0 until ext.length()).any { ext.optJSONObject(it)?.optString("name") == "sonicSimilarity" }
                 }.getOrDefault(sonic.value)
-                // whose each record is (a song says only who sings it)
+                // its libraries, for the choice of one (one gone from it: all again)
+                if (folder.value == null) folder.value = runCatching { folderFile(c).readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+                runCatching {
+                    val f = call(a, "getMusicFolders")?.optJSONObject("musicFolders")?.optJSONArray("musicFolder")
+                    folders.value = f?.let { l -> (0 until l.length()).mapNotNull { l.optJSONObject(it) }.map { it.optString("id") to it.optString("name") } }.orEmpty()
+                    if (folder.value != null && folders.value.none { it.first == folder.value }) { folder.value = null; folderFile(c).delete() }
+                }
+                                // whose each record is (a song says only who sings it)
                 val recordArtist = HashMap<String, String>()
                 var offset = 0
                 while (true) {
-                    val list = call(a, "getAlbumList2", "type" to "alphabeticalByName", "size" to 500, "offset" to offset)
+                    val list = call(a, "getAlbumList2", "type" to "alphabeticalByName", "size" to 500, "offset" to offset, *inFolder())
                         ?.optJSONObject("albumList2")?.optJSONArray("album") ?: break
                     for (i in 0 until list.length()) list.optJSONObject(i)?.let { recordArtist[it.optString("id")] = it.optString("artist") }
                     if (list.length() < 500) break
@@ -147,7 +170,7 @@ object Server {
                 val starredAt = HashMap<String, Long>()
                 offset = 0
                 while (true) {
-                    val list = call(a, "search3", "query" to "", "songCount" to 500, "songOffset" to offset, "artistCount" to 0, "albumCount" to 0)
+                    val list = call(a, "search3", "query" to "", "songCount" to 500, "songOffset" to offset, "artistCount" to 0, "albumCount" to 0, *inFolder())
                         ?.optJSONObject("searchResult3")?.optJSONArray("song") ?: break
                     for (i in 0 until list.length()) list.optJSONObject(i)?.let {
                         songs += song(a, it, recordArtist)
@@ -200,6 +223,7 @@ object Server {
             mime = o.optString("contentType"),
             gain = gainOf(o, "trackGain", "trackPeak"),
             albumGain = gainOf(o, "albumGain", "albumPeak"),
+            added = runCatching { java.time.Instant.parse(o.optString("created")).toEpochMilli() }.getOrDefault(0L),
         )
     }
 
@@ -293,7 +317,7 @@ object Server {
     /** The records added to the server last (the library's own, by its record ids). */
     suspend fun newest(n: Int): List<String> = withContext(Dispatchers.IO) {
         val a = _account.value ?: return@withContext emptyList()
-        val list = runCatching { call(a, "getAlbumList2", "type" to "newest", "size" to n)?.optJSONObject("albumList2")?.optJSONArray("album") }
+        val list = runCatching { call(a, "getAlbumList2", "type" to "newest", "size" to n, *inFolder())?.optJSONObject("albumList2")?.optJSONArray("album") }
             .getOrNull() ?: return@withContext emptyList()
         (0 until list.length()).mapNotNull { list.optJSONObject(it)?.optString("id") }.map { "na$it" }
     }
@@ -304,7 +328,7 @@ object Server {
     /** The records played most on the server, all time (Navidrome counts every app's plays). */
     suspend fun mostPlayed(n: Int): List<Played> = withContext(Dispatchers.IO) {
         val a = _account.value ?: return@withContext emptyList()
-        val list = runCatching { call(a, "getAlbumList2", "type" to "frequent", "size" to n)?.optJSONObject("albumList2")?.optJSONArray("album") }
+        val list = runCatching { call(a, "getAlbumList2", "type" to "frequent", "size" to n, *inFolder())?.optJSONObject("albumList2")?.optJSONArray("album") }
             .getOrNull() ?: return@withContext emptyList()
         (0 until list.length()).mapNotNull { list.optJSONObject(it) }.filter { it.optInt("playCount") > 0 }.map { o ->
             // a record's face: enough of a song to show its cover and its name

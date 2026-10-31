@@ -43,6 +43,7 @@ data class Song(
     val mime: String = "",
     val gain: Float? = null,   // ReplayGain (dB), as the server read it from the file's tags
     val albumGain: Float? = null,
+    val added: Long = 0,       // when it came in (ms): the phone's index's date added, the server's "created"; 0 not known
 ) {
     val server get() = id.startsWith("n")
     /** From YouTube Music (the full build only). */
@@ -62,11 +63,12 @@ fun Song.json(): JSONObject = JSONObject().put("id", id).put("uri", uri.toString
     .put("disc", disc).put("track", track).put("year", year).put("art", art ?: "")
     .put("bits", bits).put("rate", rate).put("format", format).put("mime", mime)
     .apply { gain?.let { put("gain", it.toDouble()) }; albumGain?.let { put("albumGain", it.toDouble()) } }
+    .put("added", added)
 
 fun songOf(o: JSONObject) = Song(o.getString("id"), Uri.parse(o.getString("uri")), o.getString("title"), o.getString("artist"),
     o.getString("album"), o.getString("albumId"), o.getString("albumArtist"), o.getLong("duration"), o.getInt("disc"), o.getInt("track"),
     o.getInt("year"), o.optString("art").ifEmpty { null }, o.optInt("bits"), o.optInt("rate"), o.optString("format"), o.optString("mime"),
-    o.optDouble("gain").takeIf { !it.isNaN() }?.toFloat(), o.optDouble("albumGain").takeIf { !it.isNaN() }?.toFloat())
+    o.optDouble("gain").takeIf { !it.isNaN() }?.toFloat(), o.optDouble("albumGain").takeIf { !it.isNaN() }?.toFloat(), o.optLong("added"))
 
 /** A record: its songs in disc and track order. */
 data class Album(val id: String, val title: String, val artist: String, val year: Int, val songs: List<Song>) {
@@ -179,7 +181,7 @@ object Library {
             MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.ALBUM_ARTIST,
             MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.TRACK, MediaStore.Audio.Media.YEAR,
-            MediaStore.Audio.Media.DISC_NUMBER, MediaStore.Audio.Media.RELATIVE_PATH,
+            MediaStore.Audio.Media.DISC_NUMBER, MediaStore.Audio.Media.RELATIVE_PATH, MediaStore.Audio.Media.DATE_ADDED,
         )
         val out = ArrayList<Song>()
         try {
@@ -209,6 +211,7 @@ object Library {
                         disc = disc.coerceAtLeast(1),
                         track = packed % 1000,
                         year = c.getInt(8),
+                        added = c.getLong(11) * 1000,
                     )
                 }
             }

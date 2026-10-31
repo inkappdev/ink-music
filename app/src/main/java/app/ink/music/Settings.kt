@@ -148,6 +148,20 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                             Spacer(Modifier.height(4.dp))
                             BasicText("tap reads it again   hold signs out", style = pixel(12.sp, Ink.mid))
                         }
+                        // its libraries, one or all (Navidrome's; shown only when it has more than one)
+                        val folders by Server.folders.collectAsState()
+                        val folder by Server.folder.collectAsState()
+                        if (folders.size > 1) {
+                            Spacer(Modifier.height(14.dp))
+                            BasicText("library", style = pixel(12.sp, Ink.mid))
+                            Spacer(Modifier.height(4.dp))
+                            androidx.compose.foundation.layout.FlowRow(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                Word("all", pixel(14.sp, if (folder == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Server.choose(ctx, null) }
+                                folders.forEach { (id, name) ->
+                                    Word(name.lowercase(), pixel(14.sp, if (folder == id) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Server.choose(ctx, id) }
+                                }
+                            }
+                        }
                     }
                     Spacer(Modifier.height(40.dp))
                 }

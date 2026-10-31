@@ -457,6 +457,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
             when (rc.sort) {
                 // a timeline: the oldest first
                 Sort.YEAR -> a.year.takeIf { it > 0 }?.let { -it.toDouble() }
+                // newest in first: the phone's index's date added, a server song's when the server took it in
+                Sort.ADDED -> a.songs.maxOf { it.added }.takeIf { it > 0 }?.toDouble()
                 Sort.LATELY -> heard.lately("r:" + a.id)
                 Sort.COLOUR -> Colours.place(colours[a.id])
                 else -> null
@@ -545,6 +547,16 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
                 LazyColumn(state = listsList, contentPadding = pad) {
                     item {
                         if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}") { pages.open(Page.Loved) }
+                        // youtube music's liked songs by their own name: they're among the loved (no list of their own), and
+                        // someone looking for "liked music" found nothing called that (a Reddit tester, 2026-10-30)
+                        val tubeWho by YouTubeAccount.who.collectAsState()
+                        val liked by YouTubeAccount.liked.collectAsState()
+                        val readingTube by YouTubeAccount.reading.collectAsState()
+                        if (tubeWho != null) ListRow("liked on youtube music", when {
+                            liked.isNotEmpty() -> "${liked.size} ${if (liked.size == 1) "song" else "songs"}, with your loved"
+                            readingTube -> "reading them"
+                            else -> "none read yet: tap to read them again"
+                        }) { if (liked.isEmpty() && !readingTube) YouTubeAccount.sync() else pages.open(Page.Loved) }
                         ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
                         // what's on the phone to play with no signal (your server's, YouTube's)
                         val keptIds by Offline.kept.collectAsState()
