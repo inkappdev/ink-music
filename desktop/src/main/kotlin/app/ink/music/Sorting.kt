@@ -29,12 +29,12 @@ import java.util.Calendar
  * anyone. (2026-10-28, in place of settings' a to z or shuffled.)
  */
 enum class Sort(val word: String, val turns: Boolean = true) {
-    AZ("a-z"), ARTIST("artist"), YEAR("year"), HOUR("this hour"), LATELY("lately"), MOST("most"),
+    AZ("a-z"), ARTIST("artist"), YEAR("year"), ADDED("added"), HOUR("this hour"), LATELY("lately"), MOST("most"),
     FORGOTTEN("forgotten"), COLOUR("color"), SHUFFLE("shuffle", turns = false),
 }
 
 object Sorts {
-    val RECORDS = listOf(Sort.AZ, Sort.ARTIST, Sort.YEAR, Sort.LATELY, Sort.COLOUR, Sort.SHUFFLE)
+    val RECORDS = listOf(Sort.AZ, Sort.ARTIST, Sort.YEAR, Sort.ADDED, Sort.LATELY, Sort.COLOUR, Sort.SHUFFLE)
     val ARTISTS = listOf(Sort.AZ, Sort.MOST, Sort.LATELY, Sort.FORGOTTEN, Sort.SHUFFLE)
     val SONGS = listOf(Sort.AZ, Sort.HOUR, Sort.LATELY, Sort.MOST, Sort.FORGOTTEN, Sort.SHUFFLE)
 

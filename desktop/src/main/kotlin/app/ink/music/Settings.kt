@@ -140,6 +140,7 @@ object Settings {
 }
 
 /** Your server: signed in, its name, where, how many songs, read again or sign out; else signing in. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ServerSetting() {
     val account by Server.account.collectAsState()
@@ -158,6 +159,20 @@ private fun ServerSetting() {
                 if (syncing) "reading" else "$count songs").joinToString(" · "),
             style = pixel(12.sp, Ink.mid),
         )
+        // its libraries, one or all (Navidrome's; shown only when it has more than one)
+        val folders by Server.folders.collectAsState()
+        val folder by Server.folder.collectAsState()
+        if (folders.size > 1) {
+            Spacer(Modifier.height(16.dp))
+            BasicText("library", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(6.dp))
+            FlowRow(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Word("all", pixel(14.sp, if (folder == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Server.choose(null) }
+                folders.forEach { (id, name) ->
+                    Word(name.lowercase(), pixel(14.sp, if (folder == id) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Server.choose(id) }
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
         Word("read again", pixel(14.sp), touch = 8.dp) { Server.sync() }
         Word("sign out", pixel(14.sp, Ink.mid), touch = 8.dp) { Server.signOut() }
