@@ -64,7 +64,9 @@ Tap the format over any cover and ink music shows the sound's whole way to your 
 the file, which decoder, even volume and the equalizer (turn them off right there and watch it change),
 what Android does to it, and where it plays. Casting to a receiver, it asks the receiver itself: a Denon
 in Direct says so, and the page says **exact: yes**. Covers move where a record has a moving one,
-a song's Spotify Canvas plays behind, and each takes its own effect in settings, *the look*.
+a song's Spotify Canvas plays behind, and each takes its own effect in settings, *the look*. Your
+computer does all of it too: the whole path as mpv plays it (Core Audio, WASAPI, PipeWire, and whether
+it has the output alone), moving covers, the effects, and the Canvas, signed in on your phone.
 
 ---
 
@@ -114,6 +116,9 @@ The same ink music, made for a big screen and a keyboard:
 - **Your year** a keystroke away (⌘Y on a Mac, Ctrl+Y elsewhere).
 - **YouTube Music signed in from your phone**: the computer has no browser to sign in with, so the
   phone hands its sign-in over, sealed, when you pair.
+- **The look**: moving covers, a background behind the player, blur, fluted glass, pixels or dither,
+  and a song's Spotify Canvas (signed in on your phone, handed over as YouTube's is).
+- **What you hear**: click the format over the cover for the sound's whole path, step by step.
 
 ## Your music, from wherever it lives
 
@@ -192,7 +197,9 @@ ask for:
 | [AutoEq](https://github.com/jaakkopasanen/AutoEq) on GitHub | Nothing personal, when you look up your headphones | Their tuning |
 | [radio-browser.info](https://www.radio-browser.info) | Nothing personal | The station list |
 | The stations' own playlists | Nothing personal | The indie chart, what's on air |
-| Your paired phone or computer, on your wifi | What you've heard, loves, sign-ins, what's playing, sealed with a key only the two of them have | Keeping them in step |
+| Your paired phone or computer, on your wifi | What you've heard, loves, sign-ins (Spotify's an hour's pass), what's playing, sealed with a key only the two of them have | Keeping them in step |
+| Apple Music's catalog | A record's artist and title | Moving covers |
+| Spotify, if you sign in (`full` build) | Your sign-in, a song's artist and title; your playlists when you import one | The Canvas behind a song, importing playlists |
 | Publications' and stations' own feeds (Pitchfork, Bandcamp Daily, NPR and others) | Nothing personal | INK's picks |
 | iTunes, Deezer and YouTube Music | A record's artist and title | Covers where your files have none |
 | [Last.fm](https://www.last.fm)'s tags | Nothing personal | INK's moods |
