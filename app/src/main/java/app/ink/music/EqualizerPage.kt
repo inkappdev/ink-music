@@ -81,23 +81,30 @@ fun EqualizerPage(pages: Pages) {
                 Spacer(Modifier.height(24.dp))
                 BasicText("for your headphones", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(6.dp))
-                val phones = state.phones.takeIf { it.isNotEmpty() && (state.preset == "phones" || it.endsWith("adjusted")) }
+                val n = b.hz.size
+                // the layers put together and applied: the correction (if on) under the shape
+                fun put(corrected: Boolean = state.corrected, preset: String = state.preset, shape: List<Int> = state.shape,
+                        correction: List<Int> = state.correction, phones: String = state.phones) =
+                    set(Eq.State(true, preset, Eq.combined(correction, corrected, shape, n, b), phones, correction, corrected, shape))
                 Row {
-                    if (phones != null) BasicText(phones.substringBefore(" · ").lowercase(), style = pixel(14.sp, if (state.on && state.preset == "phones") Ink.ink else Ink.mid),
-                        modifier = Modifier.padding(end = 22.dp))
-                    Word(if (phones != null) "change" else "find yours", pixel(14.sp, Ink.mid), touch = 8.dp) { looking = !looking }
+                    if (state.phones.isNotEmpty() && state.correction.isNotEmpty()) {
+                        // its name, lit while it's on; a tap turns it on or off (it's kept either way)
+                        Word(state.phones.substringBefore(" · ").lowercase(), pixel(14.sp, if (state.on && state.corrected) Ink.ink else Ink.dim),
+                            Modifier.padding(end = 22.dp), touch = 8.dp) { put(corrected = !(state.on && state.corrected)) }
+                        Word("change", pixel(14.sp, Ink.mid), touch = 8.dp) { looking = !looking }
+                    } else Word("choose your model", pixel(14.sp, Ink.mid), touch = 8.dp) { looking = !looking }
                 }
                 BasicText("a correction measured for your model, so it sounds as it should (autoeq)", style = pixel(12.sp, Ink.dim),
                     modifier = Modifier.padding(top = 4.dp))
-                if (looking) Headphones { name, levels -> looking = false; set(Eq.State(true, "phones", levels, name)) }
-                // or a shape: the one chosen lit (and "yours", once a band's been moved by hand)
+                if (looking) Headphones { name, levels -> looking = false; put(corrected = true, correction = levels, phones = name) }
+                // and a shape on top: the one chosen lit (and "yours", once a band's been moved by hand)
                 Spacer(Modifier.height(22.dp))
-                BasicText("or a shape", style = pixel(12.sp, Ink.mid))
+                BasicText("and a shape", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     (Eq.presets.keys + if (state.preset == "yours") listOf("yours") else emptyList()).forEach { p ->
                         Word(p, pixel(14.sp, if (state.on && state.preset == p) Ink.ink else Ink.dim), touch = 8.dp) {
-                            if (p != "yours") set(Eq.State(true, p, Eq.levels(p, b.hz.size, b)))
+                            if (p != "yours") put(preset = p, shape = Eq.levels(p, n, b))
                         }
                     }
                 }
@@ -112,7 +119,10 @@ fun EqualizerPage(pages: Pages) {
                             Band(levels.getOrElse(i) { 0 }, b, state.on, Modifier.fillMaxWidth().height(300.dp), order = i) { mb ->
                                 if (mb != levels.getOrElse(i) { 0 }) {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    set(Eq.State(true, "yours", levels.toMutableList().also { it[i] = mb }, state.phones.takeIf { state.preset == "phones" }?.let { "$it, adjusted" }.orEmpty()))
+                                    // a band dragged: the shape on top is yours, the correction under it kept as it is
+                                    val under = if (state.corrected) state.correction.getOrElse(i) { 0 } else 0
+                                    val shape = List(b.hz.size) { j -> if (j == i) mb - under else (levels.getOrElse(j) { 0 } - if (state.corrected) state.correction.getOrElse(j) { 0 } else 0) }
+                                    set(Eq.State(true, "yours", levels.toMutableList().also { it[i] = mb }, state.phones, state.correction, state.corrected, shape))
                                 }
                             }
                             Spacer(Modifier.height(8.dp))

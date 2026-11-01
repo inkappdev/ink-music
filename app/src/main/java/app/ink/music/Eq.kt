@@ -16,8 +16,24 @@ object Eq {
     val TEN = listOf(31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
     const val RANGE = 1200
 
-    /** On or not, the preset chosen ("yours" once a band's been moved; a headphone's name for its correction), each band's level (mB). */
-    data class State(val on: Boolean, val preset: String, val levels: List<Int>, val phones: String = "")
+    /**
+     * On or not; two layers (Bronson, 2026-11-01: a shape chosen lost the headphones' correction, found again only by
+     * searching): your headphones' correction (AutoEq's, for the model named in [phones]; kept, on or off), and a
+     * shape on top ([preset]: flat, bass..., or "yours" once a band's been moved, [shape] its levels); [levels] the two
+     * together, as the player applies them (mB a band).
+     */
+    data class State(
+        val on: Boolean, val preset: String, val levels: List<Int>, val phones: String = "",
+        val correction: List<Int> = emptyList(), val corrected: Boolean = false, val shape: List<Int> = emptyList(),
+    ) {
+        /** What it's called where it's said (the signal path): "nothing ear (1) + bass", or the one. */
+        val label get() = listOfNotNull(phones.substringBefore(" · ").takeIf { corrected && it.isNotEmpty() }, preset.takeIf { it != "flat" })
+            .joinToString(" + ").ifEmpty { "flat" }
+    }
+
+    /** The layers put together: the correction (if on) and the shape, a band at a time, inside the bands' range. */
+    fun combined(correction: List<Int>, corrected: Boolean, shape: List<Int>, n: Int, b: Bands): List<Int> =
+        List(n) { i -> ((if (corrected) correction.getOrElse(i) { 0 } else 0) + shape.getOrElse(i) { 0 }).coerceIn(b.min, b.max) }
 
     /** The phone's bands: each one's centre (Hz), and how far a band goes (mB) either way. */
     data class Bands(val hz: List<Int>, val min: Int, val max: Int)
@@ -37,11 +53,17 @@ object Eq {
     fun read(c: Context): State = runCatching {
         val o = JSONObject(file(c).readText())
         val a = o.getJSONArray("levels")
-        State(o.optBoolean("on"), o.optString("preset", "flat"), (0 until a.length()).map { a.getInt(it) }, o.optString("phones"))
+        fun ints(k: String) = o.optJSONArray(k)?.let { x -> (0 until x.length()).map { x.getInt(it) } }.orEmpty()
+        val levels = (0 until a.length()).map { a.getInt(it) }
+        val preset = o.optString("preset", "flat")
+        // kept before the layers: a headphones' correction was the whole of it
+        if (preset == "phones" && !o.has("correction")) State(o.optBoolean("on"), "flat", levels, o.optString("phones"), levels, true, emptyList())
+        else State(o.optBoolean("on"), preset, levels, o.optString("phones"), ints("correction"), o.optBoolean("corrected"), ints("shape"))
     }.getOrDefault(State(false, "flat", emptyList()))
 
     fun write(c: Context, s: State) {
-        runCatching { file(c).writeText(JSONObject().put("on", s.on).put("preset", s.preset).put("levels", JSONArray(s.levels)).put("phones", s.phones).toString()) }
+        runCatching { file(c).writeText(JSONObject().put("on", s.on).put("preset", s.preset).put("levels", JSONArray(s.levels)).put("phones", s.phones)
+            .put("correction", JSONArray(s.correction)).put("corrected", s.corrected).put("shape", JSONArray(s.shape)).toString()) }
     }
 
     /** A preset's levels on [n] bands, kept inside [b]'s range. */

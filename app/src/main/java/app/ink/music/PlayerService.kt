@@ -277,7 +277,7 @@ class PlayerService : MediaLibraryService() {
             gain = levelling?.takeIf { it.on }?.db,
             decoder = decoder, outBits = dac?.second?.alt?.bits ?: outBits, outRate = dac?.second?.rate ?: outRate,
             device = dac?.first?.name?.lowercase() ?: out.first, kind = if (dac != null) "usb" else out.second, mixer = Exact.mixer(this),
-            eq = Eq.read(this).takeIf { it.on && (!Exact.on(this) || (dac != null && UsbDac.eq != null)) }?.let { it.phones.ifEmpty { it.preset } }.orEmpty(),
+            eq = Eq.read(this).takeIf { it.on && (!Exact.on(this) || (dac != null && UsbDac.eq != null)) }?.label.orEmpty(),
             exact = exactSaid,
             slot = dac?.second?.alt?.bits ?: 0, clock = dac?.second?.clock() ?: 0.0,
             dropouts = dac?.second?.underruns() ?: Exclusive.underrunsNow.takeIf { Exclusive.rate > 0 } ?: 0, exclusive = Exclusive.rate,
