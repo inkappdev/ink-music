@@ -35,168 +35,58 @@
 
 ---
 
-## What you hear
-
-Tap the format over any cover and ink music shows the sound's whole way to your ears: where it came from,
-the file, which decoder, even volume and the equalizer (turn them off right there and watch it change),
-what Android does to it, and where it plays. Casting to a receiver, it asks the receiver itself: a Denon
-in Direct says so, and the page says **exact: yes**. Plug in a USB DAC and ink music drives it itself, on
-any phone: every sample as it is in the file, at its own rate, the DAC's own clock read back to you. Covers move where a record has a moving one,
-a song's Spotify Canvas plays behind, and each takes its own effect in settings, *the look*. Your
-computer does all of it too: the whole path as mpv plays it (Core Audio, WASAPI, PipeWire, and whether
-it has the output alone), moving covers, the effects, and the Canvas, signed in on your phone.
-
----
-
 ## New in 2.1
 
-- **Automix** (on your phone). Songs run into each other, measured from each one: a fading outro hands over as it
-  fades. Where both beats are clear, the old song's end is matched to the new one's tempo and beat,
-  and the bass is handed across halfway. The progress line turns into a crossfader while it happens.
-- **Bit-perfect to your USB DAC, on any phone.** ink music drives the DAC itself, past Android's
-  mixer: every sample as in the file, at its own rate, the DAC's own volume. Your headphones' EQ can
-  come along if you like, and the signal path says plainly which it is.
-- **24 bit kept 24 bit**, all the way to Android or your DAC.
-- **Podcasts**, on your phone and your computer: follow shows, any speed, and pick up where you left
-  off on either; on the phone, keep episodes offline and skip the silences.
-- **Lyrics word by word**, on both, each word lit as it's sung; drag to read them all, tap a line to play from
-  there. Lyrics without times show too.
-- **The right YouTube version**: if a song plays the live take or the music video, paste the right
-  one's link and it's kept.
-- **An equalizer in two layers**: your headphones' correction, and a shape on top.
+<p align="center">
+  <img src=".github/shots/automix.jpg" width="32%" alt="Automix: the progress line a crossfader, the two songs' beats ticking on it" />
+  <img src=".github/shots/signal.jpg" width="32%" alt="The signal path: bit-perfect to a USB DAC, the DAC's own clock read back" />
+  <img src=".github/shots/lyrics.gif" width="32%" alt="Lyrics word by word, each word lit as it's sung" />
+</p>
 
-## New in 2.0
-
-- **ink music on your computer.** Mac, Windows and Linux, in the same look: a rail of words down the
-  side, the page, and what's playing beside it. Your music folder, your server, YouTube Music and the
-  radio, all there.
-- **Your phone and your computer in step.** Pair them once with a code, and they keep each other
-  current over your wifi: what you've heard, what you love, your sign-ins, what you were playing.
-  Nothing goes through anyone else's server.
-- **Continue here.** Start a record on your phone, pick it up on your computer where you left off (or
-  the other way round), and steer the phone's music from the computer's bottom bar.
-- **INK**, a place of its own: ink weekly as its cover, the record of the day, what critics and DJs are
-  picking (Pitchfork, Bandcamp Daily, NPR, the Quietus and more), what's out this Friday, festivals
-  coming up, and moods made by ink.
-- **Made for you**, from your listening and nothing else: fresh finds, deep cuts, loved long ago, a
-  year ago today, new to you.
-- **New from your artists** at the top of listen.
-- **YouTube Music kept offline**: a song, a record or a whole playlist.
-- **Private listening**: while it's on, nothing you play is kept or sent.
-- **ink music keeps itself up to date**: a new version shows on listen, with what's new in it.
-- Easter eggs. We said we wouldn't tell.
+- **Automix.** Songs run into each other, measured from each one. Where both beats are clear, the tempos and
+  beats are matched and the bass handed across halfway; the progress line turns into a crossfader.
+- **Bit-perfect to your USB DAC, on any phone.** ink music drives the DAC itself, past Android's mixer: every
+  sample as in the file, at its own rate, the DAC's own volume. 24 bit kept 24 bit.
+- **Podcasts** on phone and computer, your place kept on both; offline and skip silence on the phone.
+- **Lyrics word by word**: drag to read them all, tap a line to play from there.
+- **The right YouTube version** of a song, and **an equalizer in two layers**: your headphones, a shape on top.
 
 Every version's changes are in [the releases](https://github.com/inkappdev/ink-music/releases).
-Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues): what goes in says who asked. Or come say hi at [r/inkmusic](https://www.reddit.com/r/inkmusic/): what you're playing, questions, ideas.
+Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues), or come say hi at
+[r/inkmusic](https://www.reddit.com/r/inkmusic/).
 
-## On your computer
+## What you hear
 
-The same ink music, made for a big screen and a keyboard:
-
-- **The player full screen** as a record's inner sleeve: the cover, the lyrics big, up next, the notes.
-- **A mini player**, a small strip that stays over your other windows.
-- **On a Mac, the media keys** and Now Playing in Control Center and on the lock screen.
-- **Exact sound**: pick the output, take it over alone (exclusive), and play files as recorded, at
-  their own rate and depth. Sound by [mpv](https://mpv.io): FLAC, ALAC, AAC, Opus, gapless.
-- **Play on** your speakers from the computer too: Chromecast, Google Nest and DLNA.
-- **Your year** a keystroke away (⌘Y on a Mac, Ctrl+Y elsewhere).
-- **YouTube Music signed in from your phone**: the computer has no browser to sign in with, so the
-  phone hands its sign-in over, sealed, when you pair.
-- **The look**: moving covers, a background behind the player, blur, fluted glass, pixels or dither,
-  and a song's Spotify Canvas (signed in on your phone, handed over as YouTube's is).
-- **What you hear**: click the format over the cover for the sound's whole path, step by step.
+Tap the format over any cover and ink music shows the sound's whole way to your ears: the file, the decoder,
+even volume and the equalizer, what Android does to it, and where it plays. Casting, it asks the receiver itself:
+a Denon in Direct says so, and the page says **exact: yes**. On the computer, the same path as mpv plays it
+(Core Audio, WASAPI, PipeWire), exclusive if you like.
 
 ## Your music, from wherever it lives
 
 | | |
 |---|---|
-| **The phone's files** | Everything in its music folder, filed by record and artist, with the covers your files carry. |
-| **Your own server** | Navidrome or any Subsonic server: your whole library streamed from home, or **kept on the phone** to play with no signal. Loves are the server's stars and playlists are its playlists, so every app you use agrees. |
-| **YouTube Music** | Search and play without an account, through [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor). Signed in: your playlists, likes, mixes and artists, saved and followed both ways, your uploads, and **Premium's 256 kbps** if you have it. `full` build only. |
-| **Spotify playlists** | Brought in from a file ([Exportify](https://exportify.app) or Spotify's own data download), each song found in your music or on YouTube Music, then kept as a playlist. |
-| **ink radio** | Independent, listener-powered stations chosen by hand, each saying what it's playing ([below](#ink-radio)). |
+| **The phone's files** | Or your computer's music folder, filed by record and artist. |
+| **Your own server** | Navidrome or any Subsonic server, streamed or **kept on the phone**. Loves are its stars, playlists its playlists. |
+| **YouTube Music** | Search and play without an account, through [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor). Signed in: your library both ways, uploads, and **Premium's 256 kbps**. `full` build only. |
+| **Spotify playlists** | Brought in from a file ([Exportify](https://exportify.app)), each song found in your music or on YouTube Music. |
+| **ink radio** | Sixty-two independent, listener-powered stations chosen by hand (KEXP, NTS, dublab, WFMU, Radio alHara...), each saying what it's playing. Thousands more from [radio-browser.info](https://www.radio-browser.info). |
 | **Podcasts** | Any show from Apple's podcast directory, or any feed you paste. |
 
-## ink radio
-
-Sixty-two independent, listener-powered and community stations, chosen by hand: KEXP in
-Seattle, NTS in London, dublab in Los Angeles, WFMU in Jersey City, Radio alHara in Bethlehem,
-and on round the world.
-
-Each says what it's playing, from its stream or its own playlist, on the player, the lock screen,
-the widget and the car, its name sending out rings in 1-bit dither all the while.
-
-Thousands more by genre from [radio-browser.info](https://www.radio-browser.info).
-
-<br clear="right" />
-
-## Something to play the moment it opens
-
-Pick a few artists you love and the **listen** page fills with their mixes and records, the songs
-indie radio played most this week (KEXP, KCRW and WXPN, counted), ink radio, and what you played
-lately. Even with nothing on the phone. And every Friday night, **ink weekly**: what we're
-listening to at ink, picked by real people.
+Pick a few artists you love and **listen** fills with their mixes and records, what indie radio played most this
+week, and every Friday **ink weekly**, picked by real people. **INK** gathers what critics and DJs are picking.
 
 ## Features
 
-**The player**
-- Whole-screen over the cover, in five looks: blur, fluted glass, pixels, dither, plain.
-- Circle a thumb round the cover to scrub, as on an iPod; flick it sideways for the next song.
-- Synced lyrics from [lrclib](https://lrclib.net), word by word where [Better Lyrics](https://betterlyrics.org) has them, or YouTube Music's. Tap a line to play from there.
-- **An equalizer** of its own, ten bands: a correction for your **headphones** (thousands, from [AutoEq](https://github.com/jaakkopasanen/AutoEq)) with a shape on top.
-- **Exact to a USB DAC**: ink music drives the DAC itself, bit-perfect on any phone.
-- **Even volume** (ReplayGain) from the files' own tags or the server's. A record played through keeps its own quiet and loud.
-- **Soft pause**: the music eases out and back in. And it says exactly what reaches your ears: codec, bit depth, rate.
-- Small words step up a brightness in **sunlight**, read by the light sensor, so it reads outdoors.
-- **Motion** to suit the phone: full, or less on a slower one (no cascades or softening), as Android says by default.
-
-**Listening**
-- **Automix**: songs run into each other, beats matched where they can be, or a plain crossfade. Never inside a record played in order.
-- **Podcasts**: follow, keep offline, any speed, skip silence, your place kept on phone and computer.
-- **Radio**: when the queue runs out, more like it. Your server's similar songs first, then YouTube Music's mix.
-- **A path** from one song to another, a step at a time by how they sound, on Navidrome with [AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI). Keep it as a playlist.
-- **Playlists** made and changed here, kept on your server.
-- A sleep timer that eases the music out, shuffle and repeat, and an up next you can reorder.
-- The library shuffled anew each time you open it, if you like.
-- **Artist pages**: their photo in dither, top songs, records, the story, who fans also like.
-- **Scrobbling** to [ListenBrainz](https://listenbrainz.org) and Last.fm.
-
-**Everywhere else**
-- **Play on** Chromecast and Google Nest speakers, TVs, speaker groups and DLNA receivers (Denon HEOS and others), sending the original hi-res file where the speaker can take it. No Google Play services needed.
-- **Android Auto**: records, artists, lists, search, and "play … on ink music".
-- A **home-screen widget**, the mini player in ink's look.
-
-**Yours**
-- **Your year**, any day of it: the minutes, and the songs, artists and records you played most.
-- **Share** a song or your year as a poster sized for a story.
-
-## Privacy
-
-No ads, no accounts, no analytics, no tracking. Nothing of yours leaves your phone or computer except
-to your own server, to your other devices on your own wifi, and to the services that answer what you
-ask for:
-
-| Service | What it receives | Why |
-|---|---|---|
-| Your Navidrome / Subsonic server | Sign-in (a salted token, never the password), plays, stars | Your library |
-| [lrclib.net](https://lrclib.net) | A song's artist and title | Lyrics |
-| [Better Lyrics](https://betterlyrics.org)' server | A song's artist, title and length | Lyrics timed word by word |
-| Apple's podcast directory | What you search for | Finding shows, the most listened to |
-| The shows' own feeds and hosts | Nothing personal | Podcasts' episodes |
-| YouTube Music (`full` build) | Your searches, the artists you pick; signed in, your sign-in and the songs you play (your history there, off in settings) | Search, mixes, radio, your library |
-| [ListenBrainz](https://listenbrainz.org) / Last.fm, if you connect them | What you play | Scrobbling |
-| [AutoEq](https://github.com/jaakkopasanen/AutoEq) on GitHub | Nothing personal, when you look up your headphones | Their tuning |
-| [radio-browser.info](https://www.radio-browser.info) | Nothing personal | The station list |
-| The stations' own playlists | Nothing personal | The indie chart, what's on air |
-| Your paired phone or computer, on your wifi | What you've heard, loves, sign-ins (Spotify's an hour's pass), what's playing, sealed with a key only the two of them have | Keeping them in step |
-| Apple Music's catalog | A record's artist and title | Moving covers |
-| Spotify, if you sign in (`full` build) | Your sign-in, a song's artist and title; your playlists when you import one | The Canvas behind a song, importing playlists |
-| Publications' and stations' own feeds (Pitchfork, Bandcamp Daily, NPR and others) | Nothing personal | INK's picks |
-| iTunes, Deezer and YouTube Music | A record's artist and title | Covers where your files have none |
-| [Last.fm](https://www.last.fm)'s tags | Nothing personal | INK's moods |
-| GitHub | Nothing personal, every six hours (`full` build and computers) | Whether there's a new version |
-
-What you've played is kept on your own devices only.
+- **The player** whole-screen over the cover, in five looks; moving covers and a song's Spotify Canvas behind.
+- **Circle a thumb round the cover** to scrub, as on an iPod; flick it for the next song.
+- **An equalizer** with corrections for thousands of **headphones** ([AutoEq](https://github.com/jaakkopasanen/AutoEq)), **even volume** (ReplayGain), **soft pause**.
+- **Play on** Chromecast, Google Nest and DLNA (Denon HEOS and others), the original hi-res file where the speaker takes it. No Google Play services needed.
+- **Your phone and computer in step** over your wifi: what you've heard, loves, sign-ins, and **continue here**.
+- **Radio** when the queue runs out; **a path** from one song to another with [AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI).
+- **Made for you**, from your listening only; **your year**, any day of it, shared as a poster.
+- **Android Auto**, a **widget**, a **mini player** on the computer, Now Playing and media keys on a Mac.
+- **Scrobbling** to [ListenBrainz](https://listenbrainz.org) and Last.fm; **private listening** when you'd rather not.
 
 ## Download
 
@@ -226,35 +116,56 @@ it in: ink music asks, in settings under your phone.
 **Linux**: the `.deb` (Debian, Ubuntu) or `.rpm` (Fedora). It plays through your system's libmpv
 (`libmpv2` on Debian and Ubuntu, `mpv-libs` on Fedora).
 
+## Privacy
+
+No ads, no accounts, no analytics, no tracking. What you've played stays on your own devices. Nothing leaves
+them except to your own server, your other devices on your own wifi, and the services that answer what you ask for.
+
+<details>
+<summary>Every service, what it receives, and why</summary>
+
+| Service | What it receives | Why |
+|---|---|---|
+| Your Navidrome / Subsonic server | Sign-in (a salted token, never the password), plays, stars | Your library |
+| [lrclib.net](https://lrclib.net) | A song's artist and title | Lyrics |
+| [Better Lyrics](https://betterlyrics.org)' server | A song's artist, title and length | Lyrics timed word by word |
+| Apple's podcast directory | What you search for | Finding shows, the most listened to |
+| The shows' own feeds and hosts | Nothing personal | Podcasts' episodes |
+| YouTube Music (`full` build) | Your searches, the artists you pick; signed in, your sign-in and the songs you play (your history there, off in settings) | Search, mixes, radio, your library |
+| [ListenBrainz](https://listenbrainz.org) / Last.fm, if you connect them | What you play | Scrobbling |
+| [AutoEq](https://github.com/jaakkopasanen/AutoEq) on GitHub | Nothing personal, when you look up your headphones | Their tuning |
+| [radio-browser.info](https://www.radio-browser.info) | Nothing personal | The station list |
+| The stations' own playlists | Nothing personal | The indie chart, what's on air |
+| Your paired phone or computer, on your wifi | What you've heard, loves, sign-ins (Spotify's an hour's pass), what's playing, sealed with a key only the two of them have | Keeping them in step |
+| Apple Music's catalog | A record's artist and title | Moving covers |
+| Spotify, if you sign in (`full` build) | Your sign-in, a song's artist and title; your playlists when you import one | The Canvas behind a song, importing playlists |
+| Publications' and stations' own feeds (Pitchfork, Bandcamp Daily, NPR and others) | Nothing personal | INK's picks |
+| iTunes, Deezer and YouTube Music | A record's artist and title | Covers where your files have none |
+| [Last.fm](https://www.last.fm)'s tags | Nothing personal | INK's moods |
+| GitHub | Nothing personal, every six hours (`full` build and computers) | Whether there's a new version |
+
+</details>
+
 ## From the makers of ink
 
 <p align="center">
-  <img src=".github/ink/endless.png" width="24%" alt="ink's home screen: the time, your apps as words, and Deep Cuts playing" />
-  <img src=".github/ink/house-on.png" width="24%" alt="ink's house: every light a little pixel lamp, glowing when it's on" />
-  <img src=".github/ink/games-chrono.png" width="24%" alt="ink's games: Chrono Trigger on the SNES shelf, its cartridge sliding out" />
-  <img src=".github/ink/given-12m.png" width="24%" alt="+12m: the time ink gave back from instagram" />
-</p>
-<p align="center">
-  <img src=".github/ink/tv-twin-peaks.png" width="97%" alt="ink tv: your apps as big words, and Twin Peaks waiting where you left it" />
+  <img src=".github/ink/endless.png" width="32%" alt="ink's home screen: the time, your apps as words, and Deep Cuts playing" />
 </p>
 
-ink music is the music player from **[ink](https://inkhome.app)**, a typographic home screen for
-Android phones and TVs, in the same look. Your apps as big words, the song playing along the
-bottom from any player, and your time back from the feed:
+ink music comes from **[ink](https://inkhome.app)**, a typographic home screen for Android phones and TVs in the
+same look: your apps as big words, five seconds before instagram opens, your games as a console, your house as
+words. In a free test on Google Play now: **[join the test](https://inkhome.app/test/)**.
 
-- **Five seconds first.** Open instagram and ink waits: its name, how many times today, a line
-  filling slowly. Then open it, or not now. Daily limits and focus when you want them.
-- **Your phone as a console.** Point it at your games folder: box art, shelves, time played, each
-  system opened in its emulator.
-- **Your house as words.** With Home Assistant, every light a little pixel lamp; your scenes,
-  cameras and doorbell.
-- **ink tv.** The same ink on your TV, and from your phone it turns off the TV's ads and tracking
-  over your wifi. "Put it back" undoes exactly what changed.
+## How it's made
 
-No accounts, no ads, no analytics. ink is in a free test on Google Play now, everything open:
-**[join the test](https://inkhome.app/test/)** · [inkhome.app](https://inkhome.app)
+Built by Bronson with Claude (Anthropic's AI) as a coding partner: the design, the decisions and the testing are
+mine. Every feature is tried on a real phone and computer before it ships, and ink weekly is picked by hand.
 
-## Building
+Issues and pull requests are welcome. For anything visible, open an issue first: ink music has a strong look
+(black, two typefaces, no icons where a word works), and we'll talk it through.
+
+<details>
+<summary>Building</summary>
 
 JDK 21. The phone also needs the Android SDK (API 37); the computer's app needs a libmpv to play.
 
@@ -283,20 +194,10 @@ MediaLibrarySession in its own process) and [Haze](https://github.com/chrisbanes
 [Compose Multiplatform](https://www.jetbrains.com/compose-multiplatform/) and [mpv](https://mpv.io) on
 the computer, with what the two share in `core/`.
 
-## How it's made
+</details>
 
-Built by Bronson with Claude (Anthropic's AI) as a coding partner: the design, the decisions and the
-testing are mine. Every feature is tried on a real phone and computer before it ships, testers' notes come back as
-fixes within days, and ink weekly is picked by hand. It's all here to read, under the GPL, and every
-piece of someone else's work it stands on is named below, with its license.
-
-## Contributing
-
-Issues and pull requests are welcome. ink music has a strong look (black, two typefaces, no icons
-where a word works, no rounded corners), so for anything visible, open an issue first and we'll
-talk it through.
-
-## Thanks
+<details>
+<summary>Thanks</summary>
 
 - [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0), and the poToken
   provider from [NewPipe](https://github.com/TeamNewPipe/NewPipe) (GPL-3.0), ported.
@@ -319,6 +220,8 @@ talk it through.
 - Lyrics from [lrclib.net](https://lrclib.net), [Better Lyrics](https://betterlyrics.org) and YouTube Music; stations from
   [radio-browser.info](https://www.radio-browser.info) and the stations themselves; scrobbling to
   [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm).
+
+</details>
 
 ## Not affiliated
 
