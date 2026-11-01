@@ -638,7 +638,7 @@ class PlayerService : MediaLibraryService() {
             val s = session ?: return@OnSpeaker
             val c = caster ?: return@OnSpeaker
             s.sendCustomCommand(c, SessionCommand(CAST_ASK, Bundle.EMPTY), b)
-        }.also { onSpeaker = it }
+        }.also { onSpeaker = it; val o = it; UsbDac.onChange = { o.dacChanged() } }
         session = MediaLibrarySession.Builder(this, onSpeaker, object : MediaLibrarySession.Callback {
                 // Android Auto's library: records, artists, lists ([Auto])
                 override fun onGetLibraryRoot(

@@ -6,3 +6,4 @@ keystore.properties
 .idea/
 .kotlin/
 CLAUDE.md
+app/.cxx/

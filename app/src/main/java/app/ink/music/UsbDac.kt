@@ -268,6 +268,15 @@ object UsbDac {
     @Volatile var held: Held? = null
         private set
 
+    /** How loud the DAC is, 0 to 1 (its own volume): the volume buttons' while it's held. */
+    @Volatile var level = .3f
+        private set
+    /** Told when a DAC is held or let go (the buttons become its, or Android's again). */
+    @Volatile var onChange: (() -> Unit)? = null
+
+    /** The volume buttons' turn: the DAC's own volume, the samples untouched. */
+    fun turn(v: Float) { level = v.coerceIn(0f, 1f); held?.level(level) }
+
     /** The DAC claimed from Android, if there is one and ink music may (Android's permission asked for on the screens). */
     @Synchronized
     fun hold(c: Context): Held? {
@@ -288,13 +297,16 @@ object UsbDac {
         android.util.Log.i("ink-usb", "${h.name}: uac${if (shape.uac2) 2 else 1}, rates ${h.rates}, settings " +
             shape.alts.joinToString { "${it.iface}/${it.alt} ${it.channels}ch ${it.bits}/${it.sub * 8} ep ${"%02x".format(it.ep)} ${it.maxPacket} fb ${"%02x".format(it.fbEp)}" } +
             ", volume ${h.volumeRange ?: "none"}")
-        h.level(was)
+        // the buttons' steps (20): the level Android had, on a step
+        level = Math.round(was * PlayerService.STEPS) / PlayerService.STEPS.toFloat()
+        h.level(level)
         held = h
+        onChange?.invoke()
         return h
     }
 
     @Synchronized
-    fun release() { held?.release(); held = null }
+    fun release() { val was = held ?: return; was.release(); held = null; onChange?.invoke() }
 
     /** Android's word on ink music using the DAC (broadcast to the player, which looks again). */
     const val ALLOWED = "app.ink.music.USB_ALLOWED"

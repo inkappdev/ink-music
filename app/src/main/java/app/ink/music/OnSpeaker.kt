@@ -151,8 +151,14 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
     override fun getContentDuration() = said?.duration?.takeIf { it > 0 } ?: super.getContentDuration()
 
     // ---- the speaker's volume: Android's buttons and slider, in 20 steps ----
+    // (and a USB DAC ink music holds: Android's own volume no longer reaches it, so its buttons are the DAC's, its own
+    // volume; Bronson, 2026-11-01: "volume rocker not doing anything")
 
-    private val level get() = said?.volume
+    private val usb get() = said == null && UsbDac.held != null
+    private val level get() = said?.volume ?: if (usb) UsbDac.level else null
+
+    /** A DAC held or let go (any thread): Android told the buttons are, or aren't, the DAC's. */
+    fun dacChanged() { main.post { tell(true) } }
     override fun getDeviceInfo(): DeviceInfo = if (level == null) super.getDeviceInfo()
         else DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMinVolume(0).setMaxVolume(PlayerService.STEPS).build()
     override fun getDeviceVolume() = level?.let { Math.round(it * PlayerService.STEPS) } ?: super.getDeviceVolume()
@@ -166,11 +172,16 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
 
     private fun turn(to: Int) {
         val v = to.coerceIn(0, PlayerService.STEPS) / PlayerService.STEPS.toFloat()
+        if (said == null) { UsbDac.turn(v); tell(false); return }
         said = said?.copy(volume = v)
         asked("volume") { putFloat("level", v) }; tell(false)
     }
 
     override fun getAvailableCommands(): Player.Commands {
+        if (said == null && usb) return super.getAvailableCommands().buildUpon().addAll(
+            Player.COMMAND_GET_DEVICE_VOLUME, Player.COMMAND_SET_DEVICE_VOLUME, Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS,
+            Player.COMMAND_ADJUST_DEVICE_VOLUME, Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS,
+        ).build()
         if (said == null) return super.getAvailableCommands()
         val b = super.getAvailableCommands().buildUpon().addAll(
             Player.COMMAND_PLAY_PAUSE, Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_PREVIOUS,
