@@ -35,6 +35,7 @@ data class Now(
     val radio: Boolean = true, // the queue's end brings more like it
     val stopped: Boolean = false, // stop pressed: the queue kept, nothing at the foot till it plays again
     val heard: Heard? = null,     // what reaches your ears, as the player read it (null: not yet, or on a speaker)
+    val mix: Mix? = null,         // its transition: its mix point, the blend in hand (Crossfade)
 ) {
     fun positionNow(): Long =
         if (!moving) position else (position + SystemClock.elapsedRealtime() - at).coerceAtMost(if (duration > 0) duration else Long.MAX_VALUE)
@@ -105,6 +106,7 @@ object Playback {
                 override fun onExtrasChanged(controller: MediaController, extras: android.os.Bundle) {
                     sleepAt = extras.getLong(PlayerService.SLEEP_AT); radio = extras.getBoolean(PlayerService.RADIO, true)
                     heard = Heard.of(extras.getString(PlayerService.HEARD)); audioSession = extras.getInt(PlayerService.AUDIO)
+                    mix(Mix.of(extras.getString(PlayerService.MIX)))
                 Eq.bandsOf(extras.getString(PlayerService.EQ))?.let { bands.value = it }; update()
                 }
 
@@ -138,6 +140,7 @@ object Playback {
                 sleepAt = it.sessionExtras.getLong(PlayerService.SLEEP_AT)
                 radio = it.sessionExtras.getBoolean(PlayerService.RADIO, true)
                 heard = Heard.of(it.sessionExtras.getString(PlayerService.HEARD))
+                mix(Mix.of(it.sessionExtras.getString(PlayerService.MIX)))
                 audioSession = it.sessionExtras.getInt(PlayerService.AUDIO)
                 Playback.token = it.sessionExtras.parcelable(PlayerService.TOKEN)
                 Eq.bandsOf(it.sessionExtras.getString(PlayerService.EQ))?.let { b -> bands.value = b }
@@ -161,6 +164,17 @@ object Playback {
         controller = null
     }
     private var lingering = false
+
+    private var mixSaid: Mix? = null
+    // the songs as they last were, by id: the one a blend leaves is shown on till its middle (MixLine)
+    private val lastOf = LinkedHashMap<String, Now>()
+    /** The song a blend is leaving, as it was (the player page shows it till the blend's middle), or null. */
+    val mixFrom = kotlinx.coroutines.flow.MutableStateFlow<Now?>(null)
+
+    private fun mix(m: Mix?) {
+        mixSaid = m
+        mixFrom.value = m?.from?.takeIf { it.isNotEmpty() }?.let { lastOf[it] }
+    }
 
     private var sleepAt = 0L
     private var radio = true
@@ -198,7 +212,9 @@ object Playback {
             // idle without an error is a stop (an error leaves it idle too, and says so in the player)
             stopped = c.playbackState == Player.STATE_IDLE && c.playerError == null,
             heard = heard?.takeIf { it.id == item.mediaId },   // never the song before's, told late
+            mix = mixSaid,
         )
+        _now.value?.song?.id?.let { id -> lastOf.remove(id); lastOf[id] = _now.value!!; while (lastOf.size > 3) lastOf.remove(lastOf.keys.first()) }
         // a paired computer told what plays here, and when it changed (Sync)
         SyncPhone.heard(_now.value)
     }

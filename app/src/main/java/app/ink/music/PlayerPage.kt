@@ -134,7 +134,13 @@ private class Scrub { var at by mutableStateOf<Long?>(null) }
 fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> Unit = onClose) {
     val ctx = LocalContext.current
     val now by Playback.now.collectAsState()
-    val n = now
+    // a blend (TRANSITIONS): in its first half the song leaving is still what's shown, its cover, its words; at the
+    // middle, as the bass goes across, the new one pushes in (the screen changes as the music does; Bronson,
+    // 2026-11-01: the times jumped as the songs changed)
+    val real = now
+    val mixFrom by Playback.mixFrom.collectAsState()
+    val mixK = rememberMixing(real?.mix)
+    val n = if (mixK != null && mixK < .5f && mixFrom != null) mixFrom else real
     // the songs either side read ahead, their covers at the sleeve's size, so a push lands on a cover, not a wait
     LaunchedEffect(n?.song?.id, n?.index) {
         val at = n?.index ?: return@LaunchedEffect
@@ -195,6 +201,10 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         val wide = LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440)
         val cover = rememberCover(n.song, wide)
         val accent by animateColorAsState(cover?.accent ?: Ink.ink, tween(Motion.ENTER), label = "accent")
+        // the line's own song (the one really playing) and, in a blend, the two songs' accents for the crossfader
+        val line = real ?: n
+        val newAccent = rememberCover(line.song, wide)?.accent ?: Ink.ink
+        val oldAccent = rememberCover(mixFrom?.song, wide)?.accent ?: Ink.mid
         // the cover in its look behind it all; what nears the controls' black bar softens (ink's bars)
         val frost = dev.chrisbanes.haze.rememberHazeState()
         // black inside the source: the look and its grain are drawn over black there as on the screen (over
@@ -238,7 +248,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                         if (notes != null) NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
                         else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
                         // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
-                        Scrubber(n, accent, scrub, line = 2.dp) { HeardWord(n, typing) { heardUp = true } }
+                        Scrubber(line, accent, scrub, line = 2.dp, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
                         Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true })
                     } else {
                         // the cover as big as the width allows, unless the song's words under it would then run
@@ -247,7 +257,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                         val body = @Composable { room: androidx.compose.ui.unit.Dp ->
                             androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
                                 Column {
-                                    Scrubber(n, accent, scrub) { HeardWord(n, typing) { heardUp = true } }
+                                    Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
                                     Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }) { t -> Moment(t) { typing = it } }
                                 }
                             }
@@ -514,7 +524,13 @@ private fun Grain() {
  * down, the song jumps there on letting go.
  */
 @Composable
-private fun Scrubber(n: Now, accent: Color, scrub: Scrub, line: androidx.compose.ui.unit.Dp = 1.dp, middle: @Composable () -> Unit = {}) {
+private fun Scrubber(
+    n: Now, accent: Color, scrub: Scrub, line: androidx.compose.ui.unit.Dp = 1.dp,
+    k: Float? = null, old: Color = accent, new: Color = accent, middle: @Composable () -> Unit = {},
+) {
+    val mix = n.mix
+    // this song's mix point: the line its whole length, the mix point marked, past it dotted (heard under the next)
+    val point = mix?.takeIf { k == null && it.cutId == n.song?.id && it.cutAt > 0 && it.full > it.cutAt }
     // where the middle word sits: a tap there is the word's, not a seek
     var hole by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val margin = with(androidx.compose.ui.platform.LocalDensity.current) { 12.dp.toPx() }
@@ -523,10 +539,12 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub, line: androidx.compose
         while (true) { pos = n.positionNow(); if (!n.moving) break; delay(250) }
     }
     val shown = scrub.at ?: pos
-    val frac = if (n.duration > 0) (shown.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
+    val span = point?.full ?: n.duration
+    val frac = if (span > 0) (shown.toFloat() / span).coerceIn(0f, 1f) else 0f
     val times by animateColorAsState(if (scrub.at != null) Ink.ink else SAID, tween(Motion.FADE), label = "times")
     val duration by rememberUpdatedState(n.duration)
-    fun where(x: Float, width: Int) = ((x / width).coerceIn(0f, 1f) * duration).toLong()
+    val spanNow by rememberUpdatedState(span)
+    fun where(x: Float, width: Int) = ((x / width).coerceIn(0f, 1f) * spanNow).toLong().coerceAtMost((duration - 500).coerceAtLeast(0))
     Column(
         Modifier
             .pointerInput(Unit) {
@@ -545,16 +563,25 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub, line: androidx.compose
                 ) { c, _ -> c.consume(); if (duration > 0) scrub.at = where(c.position.x, size.width) }
             },
     ) {
-        // the times at the ends, and dead centre between them what's heard
-        Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-            BasicText(clock(shown), style = pixel(SMALL, times), modifier = Modifier.align(androidx.compose.ui.Alignment.CenterStart))
-            Box(Modifier.align(androidx.compose.ui.Alignment.Center)
-                .onGloballyPositioned { hole = it.boundsInParent().inflate(margin) }) { middle() }
-            BasicText(if (n.duration > 0) "-" + clock(n.duration - shown) else "", style = pixel(SMALL, times),
-                modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
+        // the times at the ends, and dead centre between them what's heard; in a blend, the tempos and MIXING
+        Box(Modifier.fillMaxWidth().padding(bottom = if (mix != null && (k != null || point != null)) 0.dp else 8.dp)) {
+            if (k != null && mix != null) {
+                if (mix.bpmTo > 0) BasicText("${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM", style = pixel(SMALL, Ink.ink),
+                    modifier = Modifier.align(androidx.compose.ui.Alignment.CenterStart))
+                BasicText("MIXING", style = pixel(SMALL, Ink.ink), modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
+            } else {
+                BasicText(clock(shown), style = pixel(SMALL, times), modifier = Modifier.align(androidx.compose.ui.Alignment.CenterStart))
+                Box(Modifier.align(androidx.compose.ui.Alignment.Center)
+                    .onGloballyPositioned { hole = it.boundsInParent().inflate(margin) }) { middle() }
+                // to the mix point where there is one (the next song comes in there)
+                BasicText(if (n.duration > 0) "-" + clock(n.duration - shown) else "", style = pixel(SMALL, times),
+                    modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
+            }
         }
         // the line sits on the cover's top edge: nothing between them
-        Box(Modifier.fillMaxWidth().height(line).background(Ink.line)) {
+        if (k != null && mix != null) MixBar(mix, k, old, new, line)
+        else if (point != null) MixPointBar(frac, point.cutAt.toFloat() / point.full, accent, line)
+        else Box(Modifier.fillMaxWidth().height(line).background(Ink.line)) {
             Box(Modifier.fillMaxWidth(frac).height(line).background(accent))
         }
     }

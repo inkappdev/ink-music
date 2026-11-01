@@ -71,16 +71,49 @@ class Crossfade(
     private var fading = false
     private var ours = false   // the song change in hand is the crossfade's own
 
+    // ---- what's said to the screens (Mix): this song's mix point, the blend in hand ----
+    /** Told when what's said changes (a blend begins or ends, a song's cut). */
+    var onChange: () -> Unit = {}
+    private var lastId: String? = null
+    private var mixing: app.ink.music.Mix? = null
+
+    /** This song's mix point and the blend in hand, for the player page. */
+    fun said(): app.ink.music.Mix? {
+        val id = exo.currentMediaItem?.mediaId
+        val t = id?.let { blend?.tails?.get(it) }
+        val m = mixing?.takeIf { SystemClock.elapsedRealtime() < it.start + it.length }
+        if (t == null && m == null) return null
+        return (m ?: app.ink.music.Mix()).copy(cutId = if (t != null) id!! else "", cutAt = t?.cutMs ?: 0, full = id?.let { ends[it]?.duration } ?: 0,
+            auto = t?.stretched != null)
+    }
+
+    /** A song come in by a blend (the one before it cut for it): the blend said, and cleared once it's over. */
+    private fun blended(from: String, into: String) {
+        val t = blend?.tails?.get(from) ?: return
+        val st = t.stretched?.takeIf { it.into == into }
+        val head = ends[into]?.head
+        mixing = app.ink.music.Mix(from = from, start = SystemClock.elapsedRealtime(), length = t.fadeMs,
+            bpmFrom = if (st != null) ends[from]?.tail?.bpm ?: 0.0 else 0.0, bpmTo = if (st != null) head?.bpm ?: 0.0 else 0.0,
+            beatFirst = if (st != null) head?.first ?: 0.0 else 0.0, beatPeriod = if (st != null) head?.period ?: 0.0 else 0.0)
+        onChange()
+        main.postDelayed({ mixing = null; onChange() }, t.fadeMs + 100)
+    }
+
     companion object {
         const val FADE = 6_000L
         /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
         const val LEAD = 120L
         /** Beats matched: off till the mix is made in the player's own sound (sample by sample). */
         const val MATCH = true
+        const val OFF = "off"; const val CROSSFADE = "crossfade"; const val AUTOMIX = "automix"
+        /** Off, the crossfade, or automix (the crossfade with beats matched and the bass handed across). */
+        fun mode(c: Context): String = runCatching { File(c.filesDir, "crossfade").readText().trim() }.getOrNull()
+            ?.let { if (it == AUTOMIX) AUTOMIX else CROSSFADE } ?: OFF
+        fun set(c: Context, mode: String) { runCatching { File(c.filesDir, "crossfade").let { if (mode == OFF) it.delete() else it.writeText(mode) } } }
         /** How sure a beat must be (its period's peak over the mean) to be matched. */
         const val SURE = 1.6
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
-        fun set(c: Context, on: Boolean) { runCatching { File(c.filesDir, "crossfade").let { if (on) it.writeText("on") else it.delete() } } }
+
     }
 
     private val tick = object : Runnable {
@@ -93,6 +126,11 @@ class Crossfade(
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (!ours && fading) end()   // a skip of yours, mid-fade: the old one goes at once
                 ours = false
+                // come in by a blend: the old song had been cut for it, and it ended there on its own
+                val was = lastId; lastId = mediaItem?.mediaId
+                mixing = null
+                if (was != null && mediaItem != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && was in cutSongs) blended(was, mediaItem.mediaId)
+                else onChange()
                 measure()
                 // songs cut short and played (or passed): whole again, so going back plays them as they are
                 val now = exo.currentMediaItem?.mediaId
@@ -373,7 +411,7 @@ class Crossfade(
      * more than 8% apart (double and half counting): none, the plain blend.
      */
     private fun matched(e: Ends, next: Ends?, pcm: Pcm, all: FloatArray, pcmEnd: Long): Matched? {
-        if (!MATCH) return null
+        if (!MATCH || mode(c) != AUTOMIX) return null
         val a = e.tail ?: return null
         val b = next?.head ?: return null
         if (a.sure < SURE || b.sure < SURE) return null

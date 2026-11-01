@@ -342,21 +342,22 @@ fun SettingsPage(pages: Pages, part: String? = null) {
 
                 // a song going into the next (Crossfade; automix's first half)
                 Column(Modifier.cascade(5)) {
-                    BasicText("CROSSFADE", style = headline(24.sp))
+                    BasicText("TRANSITIONS", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
                     BasicText("a song ending goes into the next, measured from each one: a fading outro hands over as it fades, a silent end " +
-                        "before its silence; where both beats are clear, matched: the next one on the beat, at this one's tempo, the bass handed across. " +
-                        "never inside a record played in order, an episode or a station; it rests while exact is on", style = pixel(12.sp, Ink.mid))
+                        "before its silence. automix too: where both beats are clear, the old one's end matched to the new one's tempo and beat, " +
+                        "the bass handed across. never inside a record played in order, an episode or a station; it rests while exact is on", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
-                    var cross by remember { mutableStateOf(Crossfade.on(ctx)) }
+                    var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
+                    val cross = mode != Crossfade.OFF
                     // said plainly when it's on but resting (Bronson couldn't tell it wasn't crossfading: exact was on)
                     if (cross && Exact.on(ctx)) {
                         BasicText("resting now: exact to a usb dac is on (below)", style = pixel(12.sp, Ink.ink))
                         Spacer(Modifier.height(8.dp))
                     }
                     Row {
-                        Word("on", pixel(14.sp, if (cross) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { cross = true; Crossfade.set(ctx, true) }
-                        Word("off", pixel(14.sp, if (!cross) Ink.ink else Ink.dim), touch = 8.dp) { cross = false; Crossfade.set(ctx, false) }
+                        for (m in listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX))
+                            Word(m, pixel(14.sp, if (mode == m) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { mode = m; Crossfade.set(ctx, m) }
                     }
                     Spacer(Modifier.height(40.dp))
                 }

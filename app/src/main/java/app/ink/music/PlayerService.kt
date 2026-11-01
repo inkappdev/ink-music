@@ -237,6 +237,7 @@ class PlayerService : MediaLibraryService() {
         session?.setSessionExtras(Bundle().apply {
             putLong(SLEEP_AT, sleepAt); putBoolean(RADIO, radio); putString(HEARD, heard); putInt(AUDIO, audio)
             putString(EQ, Eq.bandsJson(bands))
+            putString(MIX, crossfade?.said()?.json().orEmpty())
             // for the screens to hand Android: their volume buttons to this session (a speaker's, while casting)
             session?.platformToken?.let { putParcelable(TOKEN, it) }
         })
@@ -567,7 +568,7 @@ class PlayerService : MediaLibraryService() {
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
         levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true) && !Exact.on(this); it.onApply = { tell() } }
         // a song ending goes into the next (settings, sound: crossfade)
-        crossfade = Crossfade(this, player, sources, { levelling }, { onSpeaker?.casting == true }, blend, { playNext = true }).also { it.start() }
+        crossfade = Crossfade(this, player, sources, { levelling }, { onSpeaker?.casting == true }, blend, { playNext = true }).also { it.onChange = { main.post { tell() } }; it.start() }
         // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
             override fun onAudioInputFormatChanged(
@@ -845,6 +846,8 @@ class PlayerService : MediaLibraryService() {
         const val RADIO = "app.ink.music.RADIO"
         const val WARM = "app.ink.music.WARM"
         const val HEARD = "heard"
+        /** The transitions, said for the player page (Mix: this song's mix point, the blend in hand). */
+        const val MIX = "mix"
         const val AUDIO = "audioSession"
         const val EQ = "app.ink.music.EQ"
         /** The screens to the player: what a speaker does ("on", "playing", "moving", "position", "duration", "id", "volume"). */
