@@ -105,6 +105,8 @@ class Crossfade(
         const val LEAD = 120L
         /** Beats matched: off till the mix is made in the player's own sound (sample by sample). */
         const val MATCH = true
+        /** The old two-player crossfade, for a song the blend couldn't be made for: off (a skip's sound, a hitch). */
+        const val TWO_PLAYER = false
         const val OFF = "off"; const val CROSSFADE = "crossfade"; const val AUTOMIX = "automix"
         /** Off, the crossfade, or automix (the crossfade with beats matched and the bass handed across). */
         fun mode(c: Context): String = runCatching { File(c.filesDir, "crossfade").readText().trim() }.getOrNull()
@@ -167,6 +169,9 @@ class Crossfade(
         // a song cut short for the blend: its end is mixed in the player's own sound (Blend), not the two-player way
         if (exo.currentMediaItem?.mediaId?.let { it in cutSongs } == true) return
         if (on(c) && exo.currentMediaItem?.mediaId?.let { it !in asked } == true) measure()   // switched on mid-song, or the first
+        // the two-player way no more (it sounded like a skip; Bronson, 2026-11-01): a song not cut for a blend ends as it
+        // would; only the blend in the player's own sound (Blend)
+        if (!TWO_PLAYER) return
         if (fading || !exo.isPlaying || !allowed()) { if (!fading) dropTail(); return }
         val item = exo.currentMediaItem ?: return
         val dur = exo.duration

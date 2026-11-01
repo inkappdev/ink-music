@@ -71,6 +71,13 @@ class Blend : BaseAudioProcessor() {
     // a mix made ready at the song change (the old song's last samples matched then, while they're here), begun at
     // the new song's flush at its start: Media3 flushes it first where the old one was, then at its start (2026-11-01)
     private class Pending(val into: String, val tail: Tail, val at: Double)
+
+    // the join made early (2026-11-01: a hitch where the old song's own stream gave way to its decode, the two not quite
+    // alike for a lossy song): a quarter second before its cut, its decode lined up and faded in over its own samples in
+    // 30 ms, so by the time its stream stops the decode is what's heard, and it simply goes on
+    private var early: Tail? = null
+    private var earlyAt = 0.0          // where in the decode, this frame
+    private var earlyFrames = 0L       // how far into the fade from its own samples to its decode
     private var pending: Pending? = null
 
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
@@ -87,7 +94,8 @@ class Blend : BaseAudioProcessor() {
             val endedMs = was?.let { reached[it] } ?: -1L
             if (t != null && id != null && kotlin.math.abs(endedMs - t.cutMs) < 150 && t.channels == format.channelCount) {
                 val expected = (endedMs - t.startMs) * t.rate / 1000.0
-                val found = align(t, expected)
+                // the decode already playing in place of the old song's own samples: on from just where it is
+                val found = if (early === t) earlyAt else align(t, expected)
                 pending = Pending(id, t, found)
                 android.util.Log.d("ink-crossfade", "blend: $was ended at ${endedMs / 1000.0}s, its end from frame ${found.toLong()} (expected ${expected.toLong()}, match ${"%.2f".format(matched)})")
             } else if (t != null) {
@@ -96,6 +104,7 @@ class Blend : BaseAudioProcessor() {
             if (id != null) { reached.keys.retainAll(setOf(id, was)); reached[id] = streamMetadata.positionOffsetUs / 1000 }
         }
         tail = null
+        early = null
         // the new song at its start: the mix begun
         pending?.takeIf { it.into == id && streamMetadata.positionOffsetUs < 2_000_000 }?.let { p ->
             tail = p.tail
@@ -132,8 +141,31 @@ class Blend : BaseAudioProcessor() {
         // the samples last played are this song's: begun afresh only when a new song's samples come (a flush of the
         // old one at nothing, as the next comes, had emptied them before they were matched: 2026-11-01)
         if (recentSong != song) { recentSong = song; recentFrames = 0 }
+        // a quarter second before this song's cut: its decode lined up with what's been played, to take over from it
+        val mine = song?.let { tails[it] }
+        if (t == null && early == null && mine != null && mine.rate == rate && mine.channels == ch) {
+            val cutFrame = mine.cutMs * rate / 1000
+            if (frame >= cutFrame - rate / 4 && frame < cutFrame) {
+                earlyAt = align(mine, (frame * 1000.0 / rate - mine.startMs) * mine.rate / 1000)
+                earlyFrames = 0
+                early = mine
+            }
+        }
+        val e = early
         for (f in 0 until frames) {
-            if (t == null) {
+            if (t == null && e != null) {
+                // its own samples giving way to its decode over 30 ms, then the decode alone
+                val r = (earlyFrames.toDouble() / joinFrames).coerceAtMost(1.0)
+                for (c in 0 until ch) {
+                    val s = inp.short / 32768.0
+                    val v = s * (1 - r) + sample(e.pcm, e.channels, earlyAt, c) * r
+                    out.putShort((v * 32768).toInt().coerceIn(-32768, 32767).toShort())
+                    if (c < 2) recent[(recentFrames % 2048) * 2 + c] = s.toFloat()
+                }
+                recentFrames++
+                earlyAt += 1.0
+                earlyFrames++
+            } else if (t == null) {
                 for (c in 0 until ch) {
                     val s = inp.short
                     out.putShort(s)

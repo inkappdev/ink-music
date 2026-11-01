@@ -526,7 +526,8 @@ class PlayerService : MediaLibraryService() {
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
                     .setAudioOutputProvider(usb)
-                    .setAudioProcessors(arrayOf(blend))
+                    // every song at 48 kHz while transitions are on (exact off): a change of rate stopped the sound a moment
+                    .setAudioProcessors(arrayOf(blend, Resample { Crossfade.on(this@PlayerService) && !Exact.on(this@PlayerService) }))
                     .build()
             // the decoder asked for float only for a file deeper than 16 bit: a 16 bit or lossy one stays 16 bit (as
             // exact: the same numbers), and goes Media3's 16 bit way, where its processors are (an episode's silence
