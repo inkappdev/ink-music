@@ -1010,7 +1010,10 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         } else if (h.outRate > 0) steps += "to android" to "${if (h.outBits == 32) "32 bit float" else "${h.outBits} bit"} · ${k(h.outRate)}"
         // exact's word with a usb dac in (or exact on, to turn it off): without one it would only rest the rest
         if (h.slot == 0 && (h.kind == "usb" || exactOn)) acts["android"] = (if (exactOn) "exact: off" else "exact to a dac") to { exactOn = !exactOn; Playback.exact(ctx, exactOn) }
-        if (h.slot == 0) steps += "android" to when {
+        if (h.slot == 0 && h.exclusive > 0) {
+            steps += "android" to "opened your player's own output for ink music alone, at ${k(h.exclusive)}: no mixer, no resampling"
+            steps += "gaps" to if (h.dropouts == 0) "none" else "${h.dropouts}: the phone fell behind"
+        } else if (h.slot == 0) steps += "android" to when {
             h.exact.startsWith("yes") -> "steps aside: bit-perfect to the dac"
             h.mixer > 0 && h.outRate > 0 && h.mixer != h.outRate -> "mixes at ${k(h.mixer)}: ${k(h.outRate)} resampled"
             h.mixer > 0 -> "mixes at ${k(h.mixer)}, with its volume"
@@ -1050,6 +1053,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         }
         n.device.isNotEmpty() -> "the phone hands it on; what happens next is the speaker's"
         h == null -> ""
+        h.exclusive > 0 && h.exclusive == h.rate -> "yes: at its own rate, the output ink music's alone; android's mixer kept out (what the dac's own chip does, its maker knows)"
         h.slot > 0 && h.eq.isNotEmpty() -> "close: your equalizer shapes it, in 64 bit; nothing else touches it. no mixer, no resampling, at its own rate straight to your dac"
         h.slot > 0 && h.dropouts > 0 -> "yes, but ${h.dropouts} ${if (h.dropouts == 1) "gap" else "gaps"}: every sample as in the file, at its own rate, by ink music's own driver; the phone fell behind ${if (h.dropouts == 1) "once" else "${h.dropouts} times"}"
         h.slot > 0 -> "yes: every sample as in the file, at its own rate, straight to your dac. android never touched it"

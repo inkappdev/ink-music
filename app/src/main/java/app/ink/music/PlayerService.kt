@@ -75,7 +75,7 @@ class PlayerService : MediaLibraryService() {
     // ink music's own way to a DAC: what the DAC says (its clock, any gap) told to the signal path every few seconds
     private val dacSays = object : Runnable {
         override fun run() {
-            if (UsbDac.held?.now != null && session?.player?.isPlaying == true) tell()
+            if ((UsbDac.held?.now != null || Exclusive.rate > 0) && session?.player?.isPlaying == true) tell()
             main.postDelayed(this, 3_000)
         }
     }
@@ -269,7 +269,8 @@ class PlayerService : MediaLibraryService() {
             device = dac?.first?.name?.lowercase() ?: out.first, kind = if (dac != null) "usb" else out.second, mixer = Exact.mixer(this),
             eq = Eq.read(this).takeIf { it.on && (!Exact.on(this) || (dac != null && UsbDac.eq != null)) }?.let { it.phones.ifEmpty { it.preset } }.orEmpty(),
             exact = exactSaid,
-            slot = dac?.second?.alt?.bits ?: 0, clock = dac?.second?.clock() ?: 0.0, dropouts = dac?.second?.underruns() ?: 0,
+            slot = dac?.second?.alt?.bits ?: 0, clock = dac?.second?.clock() ?: 0.0,
+            dropouts = dac?.second?.underruns() ?: Exclusive.underrunsNow.takeIf { Exclusive.rate > 0 } ?: 0, exclusive = Exclusive.rate,
         )
     }
 

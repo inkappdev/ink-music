@@ -89,7 +89,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
     FrostedPage { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = 40.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 40.dp),
     ) {
         item {
             Row(Modifier.fillMaxWidth()) {

@@ -55,10 +55,23 @@ class UsbOutputProvider(private val c: Context, private val fallback: AudioOutpu
 
     override fun getAudioOutput(config: AudioOutputProvider.OutputConfig): AudioOutput {
         val channels = Integer.bitCount(config.channelMask)
-        val h = dac(config.sampleRate, channels, config.encoding) ?: return fallback.getAudioOutput(config)
+        val h = dac(config.sampleRate, channels, config.encoding) ?: return exclusive(config, channels) ?: fallback.getAudioOutput(config)
         val stream = h.begin(config.sampleRate, channels, config.encoding == C.ENCODING_PCM_FLOAT)
             ?: throw AudioOutputProvider.InitializationException()
         return UsbAudioOutput(h, stream, config)
+    }
+
+    /**
+     * No USB DAC: a player's own headphone or line output asked for exclusively at the song's rate (Exclusive), where
+     * exact's on; Android saying no, null (the shared way). The config is Android's own (an AudioTrack's), so either fits.
+     */
+    private fun exclusive(config: AudioOutputProvider.OutputConfig, channels: Int): AudioOutput? {
+        if (!Exact.on(c) || UsbDac.held != null || config.isOffload) return null
+        if (config.encoding != C.ENCODING_PCM_FLOAT && config.encoding != C.ENCODING_PCM_16BIT) return null
+        val out = Exclusive.output(c) ?: return null
+        val h = Exclusive.open(config.sampleRate, channels, config.encoding == C.ENCODING_PCM_FLOAT, out.id)
+        if (h == 0L) return null
+        return ExclusiveOutput(h, config)
     }
 
     override fun addListener(listener: AudioOutputProvider.Listener) { listeners += listener; fallback.addListener(listener) }
