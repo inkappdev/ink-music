@@ -70,6 +70,8 @@ class Crossfade(
         const val FADE = 6_000L
         /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
         const val LEAD = 120L
+        /** Beats matched: off till the mix is made in the player's own sound (sample by sample). */
+        const val MATCH = false
         /** How sure a beat must be (its period's peak over the mean) to be matched. */
         const val SURE = 1.6
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
@@ -123,10 +125,10 @@ class Crossfade(
         val ready = tail?.playbackState == Player.STATE_READY
         // started at the handover itself, to the millisecond, from where it waits: never moved at the last moment (a
         // YouTube song moved then went to the network again, and the next song came in over nothing: a gap, 2026-11-01)
-        if (ready && pos >= at - 150 - LEAD) {
+        if (ready && pos >= at - 150) {
             scheduled = true
             // started a little ahead: a player just started is heard a moment after it says it's playing
-            main.postDelayed({ scheduled = false; if (!fading && exo.currentMediaItem?.mediaId == item.mediaId) go(e, at) }, (at - LEAD - pos).coerceAtLeast(0))
+            main.postDelayed({ scheduled = false; if (!fading && exo.currentMediaItem?.mediaId == item.mediaId) go(e, at) }, (at - pos).coerceAtLeast(0))
         } else if (!ready && pos > at + 1_500) {
             // not ready in time: no crossfade this once, the song ends as it would
             android.util.Log.d("ink-crossfade", "${item.mediaId}: its tail not ready in time, ends as it would")
@@ -162,7 +164,9 @@ class Crossfade(
                 if (!fading || tail !== t) return
                 // heard, not just started: its place moving on past where it began (else the next song came in over
                 // a moment of nothing, 2026-11-01)
-                if (!t.isPlaying || t.currentPosition < at + 10) {
+                // as the first version (Bronson: smoother): over as soon as it plays; waiting till it was heard played
+                // the old song twice for a moment (a flam, a bump), and two players can't be lined up closer than that
+                if (!t.isPlaying) {
                     if (SystemClock.uptimeMillis() - asked < 600) { main.postDelayed(this, 5); return }
                     android.util.Log.d("ink-crossfade", "its tail didn't sound: the song ends as it would")
                     fading = false; dropTail(); tailFor = exo.currentMediaItem?.mediaId
@@ -241,6 +245,8 @@ class Crossfade(
 
     /** Two songs' beats, matchable? The old one's beat nearest its handover, the new one's first beat, the speed between. */
     private fun mix(e: Ends?, next: Ends? = nextEnds()): Mix? {
+        // paused (2026-11-01): two players can't hold beats together; back once the mix is made in the player's own sound
+        if (!MATCH) return null
         val a = e?.tail ?: return null
         val b = next?.head ?: return null
         if (a.sure < SURE || b.sure < SURE) return null
