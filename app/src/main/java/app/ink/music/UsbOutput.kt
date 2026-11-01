@@ -95,6 +95,22 @@ class UsbAudioOutput(private val h: UsbDac.Held, private val stream: UsbDac.Held
     private var underruns = 0
     private var volume = 1f
 
+    // an episode's speed (Media3 hands it here: it can't on float itself): its samples through Media3's own Sonic
+    // first; at 1x, music, Sonic's left out and the samples go as they are. The position is the song's time:
+    // what's played since the speed was set, at that speed, after where it was then.
+    private var speed = 1f
+    private var sonic: androidx.media3.common.audio.SonicAudioProcessor? = null
+    private var pending: ByteBuffer? = null
+    private var baseUs = 0L
+    private var playedAtBase = 0L
+
+    private fun put(b: ByteBuffer): Int = if (b.isDirect) stream.write(b, b.position(), b.remaining()) else {
+        // a heap buffer: through a direct one, as much as fits
+        val s = scratch?.takeIf { it.capacity() >= b.remaining() } ?: ByteBuffer.allocateDirect(b.remaining().coerceAtLeast(65536)).also { scratch = it }
+        s.clear(); s.put(b.duplicate()); s.flip()
+        stream.write(s, 0, s.remaining())
+    }
+
     override fun play() {
         stream.play(true)
         if (!started) { started = true; val now = System.currentTimeMillis(); listeners.forEach { it.onPositionAdvancing(now) } }
@@ -103,19 +119,30 @@ class UsbAudioOutput(private val h: UsbDac.Held, private val stream: UsbDac.Held
 
     override fun write(buffer: ByteBuffer, encodedAccessUnitCount: Int, presentationTimeUs: Long): Boolean {
         if (released) return false
-        val n = if (buffer.isDirect) stream.write(buffer, buffer.position(), buffer.remaining()) else {
-            // a heap buffer: through a direct one, as much as fits
-            val s = scratch?.takeIf { it.capacity() >= buffer.remaining() } ?: ByteBuffer.allocateDirect(buffer.remaining().coerceAtLeast(65536)).also { scratch = it }
-            s.clear(); val dup = buffer.duplicate(); s.put(dup); s.flip()
-            stream.write(s, 0, s.remaining())
+        val so = sonic
+        if (so != null) {
+            // Sonic's output still waiting for room first; then this buffer through it
+            pending?.let { p -> val n = put(p); if (n < 0) throw AudioOutput.WriteException(n, true); p.position(p.position() + n); if (p.hasRemaining()) return false }
+            so.queueInput(buffer)
+            val out = so.output
+            val n = put(out)
+            if (n < 0) throw AudioOutput.WriteException(n, true)
+            out.position(out.position() + n)
+            pending = out.takeIf { it.hasRemaining() }
+            return !buffer.hasRemaining()
         }
+        val n = put(buffer)
         if (n < 0) throw AudioOutput.WriteException(n, true)
         buffer.position(buffer.position() + n)
         stream.underruns().let { u -> if (u > underruns && started) { underruns = u; listeners.forEach { it.onUnderrun() } } }
         return !buffer.hasRemaining()
     }
 
-    override fun flush() { stream.flush(); started = false }
+    override fun flush() {
+        stream.flush(); started = false
+        pending = null; baseUs = 0; playedAtBase = 0
+        sonic?.flush(androidx.media3.common.audio.AudioProcessor.StreamMetadata.DEFAULT)
+    }
     override fun stop() {}   // what's written plays out by itself
     override fun release() {
         if (released) return
@@ -131,12 +158,23 @@ class UsbAudioOutput(private val h: UsbDac.Held, private val stream: UsbDac.Held
     override fun getAudioSessionId() = config.audioSessionId
     override fun getSampleRate() = config.sampleRate
     override fun getBufferSizeInFrames() = (config.sampleRate / 4).toLong()
-    override fun getPositionUs() = stream.played() * 1_000_000L / config.sampleRate
-    override fun getPlaybackParameters(): PlaybackParameters = PlaybackParameters.DEFAULT
+    override fun getPositionUs() = baseUs + ((stream.played() - playedAtBase) * 1_000_000L / config.sampleRate * speed).toLong()
+    override fun getPlaybackParameters(): PlaybackParameters = PlaybackParameters(speed)
     override fun isStalled() = false
     override fun addListener(listener: AudioOutput.Listener) { listeners += listener }
     override fun removeListener(listener: AudioOutput.Listener) { listeners -= listener }
-    override fun setPlaybackParameters(playbackParams: PlaybackParameters) {}   // a speaker's speed: none (an episode plays at 1x on the DAC)
+    override fun setPlaybackParameters(playbackParams: PlaybackParameters) {
+        val want = playbackParams.speed.coerceIn(.5f, 3f)
+        if (want == speed) return
+        baseUs = getPositionUs(); playedAtBase = stream.played()
+        speed = want
+        pending = null
+        sonic = if (want == 1f) null else androidx.media3.common.audio.SonicAudioProcessor().apply {
+            setSpeed(want)
+            configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(config.sampleRate, Integer.bitCount(config.channelMask), config.encoding))
+            flush(androidx.media3.common.audio.AudioProcessor.StreamMetadata.DEFAULT)
+        }
+    }
     override fun setOffloadDelayPadding(delayInFrames: Int, paddingInFrames: Int) {}
     override fun setOffloadEndOfStream() {}
     override fun attachAuxEffect(effectId: Int) {}
