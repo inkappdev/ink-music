@@ -454,7 +454,13 @@ class PlayerService : MediaLibraryService() {
                 }
             },
         )
-        val player = ExoPlayer.Builder(this)
+        // 24 bit kept 24 bit (Bronson, 2026-11-01: "i want audiophiles to genuinely be impressed"): the decoders give
+        // float, the song's whole depth, and float goes to Android (Media3's default made every song 16 bit). Media3
+        // can't change speed on float itself, so an episode's speed is Android's audio track's (1x for music: untouched)
+        val renderers = androidx.media3.exoplayer.DefaultRenderersFactory(this)
+            .setEnableAudioFloatOutput(true)
+            .setEnableAudioOutputPlaybackParameters(true)
+        val player = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(sources)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)   // headphones out: pause

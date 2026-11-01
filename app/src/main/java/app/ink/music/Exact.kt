@@ -12,8 +12,8 @@ import java.io.File
  * Exact to a USB DAC (settings, sound; Android 14 and up; Bronson, 2026-10-30): the song's own bits at its own rate,
  * past Android's mixer (which takes everything to 48 kHz and works the volume in), by Android's bit-perfect path
  * (AudioManager.setPreferredMixerAttributes, MIXER_BEHAVIOR_BIT_PERFECT). Asked, in the player's process, for the very
- * format the player sends (16 bit at the song's rate), each time a song's format is read; only where the DAC says it
- * takes that format so. The equalizer and even volume rest while it's on (both change the bits). Whether the phone
+ * format the player sends (float, the song's whole depth, at its rate; 16 bit for a plain 16 bit wav), each time a
+ * song's format is read; only where the DAC says it takes that format so. The equalizer and even volume rest while it's on (both change the bits). Whether the phone
  * honours it is the maker's: what Android granted is read back and said on the signal path, never assumed.
  * The switch is a file the screens write (each process reads it fresh), the player nudged with the equalizer's command.
  */
@@ -40,16 +40,20 @@ object Exact {
         val am = c.getSystemService(AudioManager::class.java) ?: return ""
         val dac = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.type in USB }
         if (!on(c) || dac == null) { release(am); return "" }
-        // what the player sends: its decoders give 16 bit (a 24 bit file, made 16: said on the path)
+        // what the player sends: float from its decoders (the song's whole depth: a 24 bit file stays 24 bit), and a raw
+        // 16 bit wav as it is (PlayerService: float output)
         val rate = format.sampleRate
         val channels = format.channelCount.takeIf { it > 0 } ?: 2
-        val word = "16/${Heard.khz(rate)}"
-        val pick = runCatching {
-            am.getSupportedMixerAttributes(dac).firstOrNull { m ->
-                m.mixerBehavior == android.media.AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT &&
-                    m.format.encoding == AudioFormat.ENCODING_PCM_16BIT && m.format.sampleRate == rate && m.format.channelCount == channels
-            }
-        }.getOrNull()
+        val sixteen = format.sampleMimeType == androidx.media3.common.MimeTypes.AUDIO_RAW && format.pcmEncoding == androidx.media3.common.C.ENCODING_PCM_16BIT
+        val encoding = if (sixteen) AudioFormat.ENCODING_PCM_16BIT else AudioFormat.ENCODING_PCM_FLOAT
+        val word = "${Heard.bitsOf(format).takeIf { it > 0 } ?: 16}/${Heard.khz(rate)}"
+        val offered = runCatching { am.getSupportedMixerAttributes(dac) }.getOrDefault(emptyList())
+        android.util.Log.i("ink-exact", "${dac.productName} offers: " + offered.filter { it.mixerBehavior == android.media.AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT }
+            .joinToString { "${it.format.encoding}/${it.format.sampleRate}" })
+        val pick = offered.firstOrNull { m ->
+            m.mixerBehavior == android.media.AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT &&
+                m.format.encoding == encoding && m.format.sampleRate == rate && m.format.channelCount == channels
+        }
         if (pick == null) { release(am); android.util.Log.i("ink-exact", "no bit-perfect $word on ${dac.productName}"); return "the dac won't take $word exactly" }
         val ok = runCatching { am.setPreferredMixerAttributes(media, dac, pick) }.getOrDefault(false)
         asked = dac

@@ -1041,7 +1041,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         }
         n.device.isNotEmpty() -> "the phone hands it on; what happens next is the speaker's"
         h == null -> ""
-        h.exact.startsWith("yes") && h.bits > 16 -> "close: bit-perfect to your dac, but ${h.bits} bit made 16 on the way"
+        h.exact.startsWith("yes") && h.bits > 16 && h.outBits in 1..16 -> "close: bit-perfect to your dac, but ${h.bits} bit made 16 on the way"
         h.exact.startsWith("yes") -> "yes: ${h.exact.removePrefix("yes ")} to your dac, untouched"
         else -> {
             // everything that touched it, in the order it did
