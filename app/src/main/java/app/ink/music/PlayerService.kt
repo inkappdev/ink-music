@@ -510,6 +510,8 @@ class PlayerService : MediaLibraryService() {
         // 24 bit kept 24 bit (Bronson, 2026-11-01: "i want audiophiles to genuinely be impressed"): the decoders give
         // float, the song's whole depth, and float goes to Android (Media3's default made every song 16 bit). Media3
         // can't change speed on float itself, so an episode's speed is Android's audio track's (1x for music: untouched)
+        // the crossfade made in the player's own sound (Blend; Crossfade cuts the songs and hands it their ends)
+        val blend = Blend()
         // and where the samples go: a USB DAC ink music holds itself (exact on: UsbDac), else Android's audio
         val usb = UsbOutputProvider(this, androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider.Builder(this).build()).also { usbOutput = it }
         // a DAC plugged in, out, or allowed: Media3 asks again where each format goes (one gone, let go of first)
@@ -523,6 +525,7 @@ class PlayerService : MediaLibraryService() {
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
                     .setAudioOutputProvider(usb)
+                    .setAudioProcessors(arrayOf(blend))
                     .build()
             // the decoder asked for float only for a file deeper than 16 bit: a 16 bit or lossy one stays 16 bit (as
             // exact: the same numbers), and goes Media3's 16 bit way, where its processors are (an episode's silence
@@ -564,7 +567,7 @@ class PlayerService : MediaLibraryService() {
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
         levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true) && !Exact.on(this); it.onApply = { tell() } }
         // a song ending goes into the next (settings, sound: crossfade)
-        crossfade = Crossfade(this, player, sources, { levelling }, { onSpeaker?.casting == true }).also { it.start() }
+        crossfade = Crossfade(this, player, sources, { levelling }, { onSpeaker?.casting == true }, blend, { playNext = true }).also { it.start() }
         // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
             override fun onAudioInputFormatChanged(
