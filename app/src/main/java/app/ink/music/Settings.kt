@@ -249,7 +249,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     // how good a stream is: on wifi, and on mobile data (Quality)
                     BasicText("QUALITY", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText("songs from your server and youtube music. original is the file as it is; high, mp3 at 320; data saver, the smallest. the phone's own files always play as they are", style = pixel(12.sp, Ink.mid))
+                    BasicText("songs from your server and youtube. original, the file as it is; high, mp3 320; data saver, the smallest", style = pixel(12.sp, Ink.mid))
                     var quality by remember { mutableStateOf(Quality.read(ctx)) }
                     for ((where, onData) in listOf("on wifi" to false, "on mobile data" to true)) {
                         Spacer(Modifier.height(12.dp))
@@ -344,9 +344,8 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 Column(Modifier.cascade(5)) {
                     BasicText("TRANSITIONS", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText("a song ending goes into the next, measured from each one: a fading outro hands over as it fades, a silent end " +
-                        "before its silence. automix too: where both beats are clear, the old one's end matched to the new one's tempo and beat, " +
-                        "the bass handed across. never inside a record played in order, an episode or a station; it rests while exact is on", style = pixel(12.sp, Ink.mid))
+                    // one line (Bronson: the page had too much to read); the rest shows on the player as it happens
+                    BasicText("each song runs into the next where it fades. automix matches their beats too", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
                     val cross = mode != Crossfade.OFF
@@ -366,9 +365,9 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 Column(Modifier.cascade(6)) {
                     BasicText("EXACT TO A USB DAC", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText("with a usb dac plugged in, ink music plays to it itself, on any phone: every sample as it is in the file, at " +
-                        "its own rate, android's mixer never touching it, the volume the dac's own. even volume rests; your equalizer comes along " +
-                        "if it's on (then it's not every sample as it was, and it says so). tap the format over the cover to see the whole way", style = pixel(12.sp, Ink.mid))
+                    // one line; what touches the sound is said on the signal path
+                    BasicText("ink music plays to your dac itself: every sample as in the file, at its own rate. tap the format over the cover to see the way",
+                        style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     var exact by remember { mutableStateOf(Exact.on(ctx)) }
                     Row {
