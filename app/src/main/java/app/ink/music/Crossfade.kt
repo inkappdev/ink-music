@@ -76,7 +76,7 @@ class Crossfade(
         /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
         const val LEAD = 120L
         /** Beats matched: off till the mix is made in the player's own sound (sample by sample). */
-        const val MATCH = false
+        const val MATCH = true
         /** How sure a beat must be (its period's peak over the mean) to be matched. */
         const val SURE = 1.6
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
@@ -98,6 +98,12 @@ class Crossfade(
                 val now = exo.currentMediaItem?.mediaId
                 val next = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId }
                 cutSongs.keys.filter { it != now && it != next }.forEach(::uncut)
+                // a song's end decoded is ~10 MB: kept only for this song, the next and the one after (measured again if
+                // they come round again)
+                val keep = setOfNotNull(now, next, exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+                    ?.let { exo.currentTimeline.getNextWindowIndex(it, exo.repeatMode, exo.shuffleModeEnabled) }?.takeIf { it != C.INDEX_UNSET }
+                    ?.let { exo.getMediaItemAt(it).mediaId })
+                ends.keys.filter { it !in keep }.forEach { ends.remove(it); asked.remove(it) }
                 cut()
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { if (!playWhenReady) end() }
@@ -257,8 +263,8 @@ class Crossfade(
 
     /** Two songs' beats, matchable? The old one's beat nearest its handover, the new one's first beat, the speed between. */
     private fun mix(e: Ends?, next: Ends? = nextEnds()): Mix? {
-        // paused (2026-11-01): two players can't hold beats together; back once the mix is made in the player's own sound
-        if (!MATCH) return null
+        // never the two-player way: two players can't hold beats together (2026-11-01); beats are matched in Blend
+        if (!MATCH || true) return null
         val a = e?.tail ?: return null
         val b = next?.head ?: return null
         if (a.sure < SURE || b.sure < SURE) return null
@@ -330,13 +336,86 @@ class Crossfade(
         if (following.mediaId.startsWith("e") || following.mediaId.startsWith("s")) return
         val record = item.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
         if (record.isNotEmpty() && record == following.mediaMetadata.extras?.getString(Levelling.RECORD) && f == n + 1) return
-        val at = e.handover
-        val fade = (e.lastSound - at).coerceIn(2_000, 12_000)
-        if (pcm.start > at || pcm.start + all.size / pcm.channels * 1000L / pcm.rate < at + fade) return
-        b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, at, fade)
-        cutSongs[id] = item
-        swap(n, item.buildUpon().setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(at).build()).build())
-        android.util.Log.d("ink-crossfade", "$id cut at ${at / 1000.0}s of ${e.duration / 1000.0}s, its end to be mixed in over ${fade / 1000.0}s")
+        // the beats matched, where both are sure and their tempos near: worked out (and the end stretched) apart
+        val pcmEnd = pcm.start + all.size / pcm.channels * 1000L / pcm.rate
+        if (id in planning) return
+        // the one after it not measured yet (asked, on its way): planned once it is (each measuring asks again)
+        if (!ends.containsKey(following.mediaId) && following.mediaId in asked) return
+        planning += id
+        work.execute {
+            // the one after it as measured by now (measured on this same thread, so done if it was asked first)
+            val m = runCatching { matched(e, ends[following.mediaId], pcm, all, pcmEnd) }.onFailure { android.util.Log.d("ink-crossfade", "$id: beats: $it") }.getOrNull()
+            main.post {
+                planning -= id
+                if (exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId } != id || id in cutSongs) return@post
+                val at = m?.cut ?: e.handover
+                val fade = m?.fade ?: (e.lastSound - at).coerceIn(2_000, 12_000)
+                if (pcm.start > at || pcmEnd < at + fade) return@post
+                b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, at, fade,
+                    m?.let { Blend.Stretched(following.mediaId, it.stretched, it.from, it.speed, it.period) })
+                cutSongs[id] = item
+                swap(n, item.buildUpon().setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(at).build()).build())
+                android.util.Log.d("ink-crossfade", "$id cut at ${at / 1000.0}s of ${e.duration / 1000.0}s, its end to be mixed in over ${fade / 1000.0}s" +
+                    (m?.let { ", beats matched into ${following.mediaId}: its end at ${"%.3f".format(it.speed)}x (${"%.1f".format(60_000 / it.period)} bpm), the bass handed across" } ?: ""))
+            }
+        }
+    }
+    private val planning = HashSet<String>()
+
+    /** A beat-matched blend's plan: where to cut, over how long, the old song's end stretched to the new one's tempo. */
+    private class Matched(val cut: Long, val fade: Long, val stretched: FloatArray, val from: Double, val speed: Double, val period: Double)
+
+    /**
+     * The old song's end conformed to the new one, which comes in untouched: its end stretched (Media3's Sonic, its
+     * pitch kept) to the new one's tempo, and cut where, so stretched, its beats fall on the new one's from its start
+     * (the new one's first beat after its start, the old one's a beat on from 16 of the new one's before its sound ends).
+     * Over up to 16 of the new one's beats, as long as the old one's sound lasts. Not sure of either beat, or tempos
+     * more than 8% apart (double and half counting): none, the plain blend.
+     */
+    private fun matched(e: Ends, next: Ends?, pcm: Pcm, all: FloatArray, pcmEnd: Long): Matched? {
+        if (!MATCH) return null
+        val a = e.tail ?: return null
+        val b = next?.head ?: return null
+        if (a.sure < SURE || b.sure < SURE) return null
+        // the old one's beat in the new one's terms (its double or half if that's nearer)
+        val pa = listOf(1.0, 2.0, .5).map { a.period * it }.minByOrNull { kotlin.math.abs(it / b.period - 1) }!!
+        val speed = pa / b.period   // the old one's end played this much faster (or slower) to keep the new one's tempo
+        if (kotlin.math.abs(speed - 1) > .08) return null
+        val b0 = b.after(0.0)                                        // the new one's first beat, from its start
+        val a0 = a.after(e.lastSound - 16 * pa)                      // a beat of the old one's, 16 before its sound ends
+        val cut = (a0 - speed * b0).toLong()                         // so that a0 sounds as b0 does
+        val fade = kotlin.math.min(16 * b.period, (e.lastSound - cut) / speed).toLong().coerceIn(4_000, 14_000)
+        if (cut < pcm.start + 500 || cut < a.first) return null
+        // its end stretched, from a little before the cut to past the fade's end
+        val from = (cut - 300).coerceAtLeast(pcm.start).toDouble()
+        val to = kotlin.math.min(pcmEnd.toDouble(), cut + fade * speed + 1_000)
+        val i0 = ((from - pcm.start) * pcm.rate / 1000).toInt() * pcm.channels
+        val i1 = ((to - pcm.start) * pcm.rate / 1000).toInt().coerceAtMost(all.size / pcm.channels) * pcm.channels
+        val stretched = stretch(all.copyOfRange(i0, i1), pcm.channels, pcm.rate, speed) ?: return null
+        return Matched(cut, fade, stretched, from, speed, b.period)
+    }
+
+    /** Samples played `speed` times as fast, their pitch kept (Media3's Sonic, offline). */
+    private fun stretch(pcm: FloatArray, channels: Int, rate: Int, speed: Double): FloatArray? {
+        val s = androidx.media3.common.audio.SonicAudioProcessor()
+        s.setSpeed(speed.toFloat()); s.setPitch(1f)
+        s.configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(rate, channels, C.ENCODING_PCM_FLOAT))
+        s.flush(androidx.media3.common.audio.AudioProcessor.StreamMetadata.DEFAULT)
+        val out = java.io.ByteArrayOutputStream()
+        fun drain() { val o = s.output; val b = ByteArray(o.remaining()); o.get(b); out.write(b) }
+        val chunk = 4096 * channels
+        var i = 0
+        while (i < pcm.size) {
+            val n = kotlin.math.min(chunk, pcm.size - i)
+            val buf = ByteBuffer.allocateDirect(n * 4).order(ByteOrder.nativeOrder())
+            buf.asFloatBuffer().put(pcm, i, n)
+            s.queueInput(buf)
+            drain()
+            i += n
+        }
+        s.queueEndOfStream(); drain()
+        val bytes = ByteBuffer.wrap(out.toByteArray()).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        return FloatArray(bytes.remaining()).also { bytes.get(it) }
     }
 
     /** A song cut short whole again (not the one playing: that one can't be changed), its end let go. */
@@ -363,7 +442,10 @@ class Crossfade(
     /** This song's end and the next one's start measured, if they aren't yet. */
     private fun measure() {
         if (!on(c)) return
-        val items = listOfNotNull(exo.currentMediaItem, exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it) })
+        // this one, the next, and the one after (the next one's cut is matched to the one after it)
+        val n = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+        val after = n?.let { exo.currentTimeline.getNextWindowIndex(it, exo.repeatMode, exo.shuffleModeEnabled) }?.takeIf { it != C.INDEX_UNSET }
+        val items = listOfNotNull(exo.currentMediaItem, n?.let { exo.getMediaItemAt(it) }, after?.let { exo.getMediaItemAt(it) })
         for (item in items) {
             val id = item.mediaId
             if (id.startsWith("e") || id.startsWith("s") || !asked.add(id)) continue
