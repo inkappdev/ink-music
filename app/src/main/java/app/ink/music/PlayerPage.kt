@@ -44,6 +44,7 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -745,7 +746,7 @@ private fun PlayOnSpeaker(casting: Boolean, modifier: Modifier, onClick: () -> U
 }
 
 /** A song's synced lines and where it is in them (-1 before the first; a blank one is a gap). */
-data class Lyric(val lines: List<Line>, val index: Int)
+data class Lyric(val lines: List<Line>, val index: Int, val position: Long = 0L)
 
 /** The song's synced lines while lyrics are on: empty for a song lrclib has none for; null while looking, or off. */
 @Composable
@@ -777,7 +778,7 @@ fun rememberLyric(n: Now?, lines: List<Line>?): Lyric? {
     }
     val all = lines
     if (all.isNullOrEmpty() || n == null) return null
-    return Lyric(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD })
+    return Lyric(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, pos)
 }
 
 /**
@@ -855,7 +856,16 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
                     sung?.let {
                         // a long line a size smaller, so it's all there
                         val size = when { it.words.length > 90 -> 28.sp; it.words.length > 48 -> 34.sp; else -> 44.sp }
-                        FadeText(it.words.uppercase(), headline(size * k), from = Ink.dim)
+                        // timed word by word (Better Lyrics): each word lit as it's sung; else lit in turn, by a guess
+                        if (it.parts.isNotEmpty()) BasicText(
+                            androidx.compose.ui.text.buildAnnotatedString {
+                                it.parts.forEach { (at, w) ->
+                                    withStyle(androidx.compose.ui.text.SpanStyle(color = if (at <= l.position + Lyrics.LEAD) Ink.ink else Ink.dim)) { append(w.uppercase()) }
+                                }
+                            },
+                            style = headline(size * k),
+                        )
+                        else FadeText(it.words.uppercase(), headline(size * k), from = Ink.dim)
                         Spacer(Modifier.height(18.dp * k))
                     }
                     after.forEach {

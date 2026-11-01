@@ -927,7 +927,7 @@ fun lyricsSaid(lines: List<Line>?): String = when {
  * long song's words, 2026-11-01). Words with no times: all of them, scrolled.
  */
 @Composable
-fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolean = false, big: Boolean = false, onSeek: ((Long) -> Unit)? = null) {
+fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolean = false, big: Boolean = false, onSeek: ((Long) -> Unit)? = null, position: Long = -1L) {
     // big: the full-screen player's inner sleeve, the words the room's whole height
     val k = if (small) .78f else if (big) 1.35f else 1f
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -1005,7 +1005,16 @@ fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolea
                     sung?.let {
                         // a long line a size smaller, so it's all there
                         val size = when { it.words.length > 90 -> 26.sp; it.words.length > 48 -> 32.sp; else -> 40.sp }
-                        FadeText(it.words.uppercase(), headline(size * k), from = Ink.dim)
+                        // timed word by word (Better Lyrics): each word lit as it's sung; else lit in turn, by a guess
+                        if (it.parts.isNotEmpty() && position >= 0) BasicText(
+                            androidx.compose.ui.text.buildAnnotatedString {
+                                it.parts.forEach { (at, w) ->
+                                    pushStyle(androidx.compose.ui.text.SpanStyle(color = if (at <= position + Lyrics.LEAD) Ink.ink else Ink.dim)); append(w.uppercase()); pop()
+                                }
+                            },
+                            style = headline(size * k),
+                        )
+                        else FadeText(it.words.uppercase(), headline(size * k), from = Ink.dim)
                         Spacer(Modifier.height(18.dp * k))
                     }
                     after.forEach {

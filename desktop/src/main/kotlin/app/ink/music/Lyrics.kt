@@ -14,7 +14,7 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 
 /** One sung line: when it starts (ms into the song; -1 for words with no times) and its words. */
-data class Line(val at: Long, val words: String)
+data class Line(val at: Long, val words: String, val parts: List<Pair<Long, String>> = emptyList())
 
 /**
  * Synced lyrics from lrclib, as ink has them (the phone's Lyrics.kt, its Android parts the desktop's way); a song
@@ -46,6 +46,17 @@ object Lyrics {
         val base = File(dir, sha1(key))
         val lrc = File("${base.path}.lrc")
         val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
+        val better = File("${base.path}.bl")  // Better Lyrics asked (word by word, when it has them)
+        // word by word first, where Better Lyrics has the song (asked once a song, words kept before it too)
+        if (!better.exists()) {
+            val timed = BetterLyrics.of(t.title, artist, t.duration / 1000, AGENT)
+            if (timed != null) runCatching { dir.mkdirs(); better.writeText("") }
+            if (!timed.isNullOrEmpty()) {
+                val lines = timed.map { Line(it.at, it.words, it.parts) }
+                runCatching { lrc.writeText(lrcOf(lines)) }
+                return@withContext lines
+            }
+        }
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
             if (text.isBlank() && !asked.exists()) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
@@ -143,12 +154,27 @@ object Lyrics {
 
     private val stamp = Regex("""\[(\d+):(\d+(?:\.\d+)?)]""")
 
+    // a word's own time in a line (enhanced lrc: <mm:ss.xx>word)
+    private val wordStamp = Regex("""<(\d+):(\d+(?:\.\d+)?)>([^<]*)""")
+
+    private fun clock(ms: Long) = "%02d:%05.2f".format(java.util.Locale.US, ms / 60_000, (ms % 60_000) / 1000.0)
+
+    /** Lines kept as lrc, a line timed word by word as enhanced lrc. */
+    private fun lrcOf(lines: List<Line>) = lines.joinToString("\n") { l ->
+        "[${clock(l.at)}]" + if (l.parts.isEmpty()) l.words else l.parts.joinToString("") { (at, w) -> "<${clock(at)}>$w" }
+    }
+
     private fun parse(text: String): List<Line> = text.lineSequence().flatMap { raw ->
-        val words = stamp.replace(raw, "").trim()
+        val rest = stamp.replace(raw, "")
+        val parts = wordStamp.findAll(rest).mapNotNull { m ->
+            val at = ((m.groupValues[1].toLongOrNull() ?: return@mapNotNull null) * 60_000 + (m.groupValues[2].toDoubleOrNull() ?: return@mapNotNull null) * 1000).toLong()
+            at to m.groupValues[3]
+        }.toList()
+        val words = if (parts.isEmpty()) rest.trim() else parts.joinToString("") { it.second }.trim()
         stamp.findAll(raw).mapNotNull { m ->
             val min = m.groupValues[1].toLongOrNull() ?: return@mapNotNull null
             val sec = m.groupValues[2].toDoubleOrNull() ?: return@mapNotNull null
-            Line((min * 60_000 + sec * 1000).toLong(), words)
+            Line((min * 60_000 + sec * 1000).toLong(), words, parts)
         }
     }.sortedBy { it.at }.toList()
 
