@@ -40,12 +40,30 @@
 Tap the format over any cover and ink music shows the sound's whole way to your ears: where it came from,
 the file, which decoder, even volume and the equalizer (turn them off right there and watch it change),
 what Android does to it, and where it plays. Casting to a receiver, it asks the receiver itself: a Denon
-in Direct says so, and the page says **exact: yes**. Covers move where a record has a moving one,
+in Direct says so, and the page says **exact: yes**. Plug in a USB DAC and ink music drives it itself, on
+any phone: every sample as it is in the file, at its own rate, the DAC's own clock read back to you. Covers move where a record has a moving one,
 a song's Spotify Canvas plays behind, and each takes its own effect in settings, *the look*. Your
 computer does all of it too: the whole path as mpv plays it (Core Audio, WASAPI, PipeWire, and whether
 it has the output alone), moving covers, the effects, and the Canvas, signed in on your phone.
 
 ---
+
+## New in 2.1
+
+- **Automix** (on your phone). Songs run into each other, measured from each one: a fading outro hands over as it
+  fades. Where both beats are clear, the old song's end is matched to the new one's tempo and beat,
+  and the bass is handed across halfway. The progress line turns into a crossfader while it happens.
+- **Bit-perfect to your USB DAC, on any phone.** ink music drives the DAC itself, past Android's
+  mixer: every sample as in the file, at its own rate, the DAC's own volume. Your headphones' EQ can
+  come along if you like, and the signal path says plainly which it is.
+- **24 bit kept 24 bit**, all the way to Android or your DAC.
+- **Podcasts**, on your phone and your computer: follow shows, any speed, and pick up where you left
+  off on either; on the phone, keep episodes offline and skip the silences.
+- **Lyrics word by word**, on both, each word lit as it's sung; drag to read them all, tap a line to play from
+  there. Lyrics without times show too.
+- **The right YouTube version**: if a song plays the live take or the music video, paste the right
+  one's link and it's kept.
+- **An equalizer in two layers**: your headphones' correction, and a shape on top.
 
 ## New in 2.0
 
@@ -97,6 +115,7 @@ The same ink music, made for a big screen and a keyboard:
 | **YouTube Music** | Search and play without an account, through [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor). Signed in: your playlists, likes, mixes and artists, saved and followed both ways, your uploads, and **Premium's 256 kbps** if you have it. `full` build only. |
 | **Spotify playlists** | Brought in from a file ([Exportify](https://exportify.app) or Spotify's own data download), each song found in your music or on YouTube Music, then kept as a playlist. |
 | **ink radio** | Independent, listener-powered stations chosen by hand, each saying what it's playing ([below](#ink-radio)). |
+| **Podcasts** | Any show from Apple's podcast directory, or any feed you paste. |
 
 ## ink radio
 
@@ -123,14 +142,17 @@ listening to at ink, picked by real people.
 **The player**
 - Whole-screen over the cover, in five looks: blur, fluted glass, pixels, dither, plain.
 - Circle a thumb round the cover to scrub, as on an iPod; flick it sideways for the next song.
-- Synced lyrics from [lrclib](https://lrclib.net), or YouTube Music's where lrclib has none.
-- **An equalizer** of its own, ten bands, with corrections for thousands of **headphones** from [AutoEq](https://github.com/jaakkopasanen/AutoEq).
+- Synced lyrics from [lrclib](https://lrclib.net), word by word where [Better Lyrics](https://betterlyrics.org) has them, or YouTube Music's. Tap a line to play from there.
+- **An equalizer** of its own, ten bands: a correction for your **headphones** (thousands, from [AutoEq](https://github.com/jaakkopasanen/AutoEq)) with a shape on top.
+- **Exact to a USB DAC**: ink music drives the DAC itself, bit-perfect on any phone.
 - **Even volume** (ReplayGain) from the files' own tags or the server's. A record played through keeps its own quiet and loud.
 - **Soft pause**: the music eases out and back in. And it says exactly what reaches your ears: codec, bit depth, rate.
 - Small words step up a brightness in **sunlight**, read by the light sensor, so it reads outdoors.
 - **Motion** to suit the phone: full, or less on a slower one (no cascades or softening), as Android says by default.
 
 **Listening**
+- **Automix**: songs run into each other, beats matched where they can be, or a plain crossfade. Never inside a record played in order.
+- **Podcasts**: follow, keep offline, any speed, skip silence, your place kept on phone and computer.
 - **Radio**: when the queue runs out, more like it. Your server's similar songs first, then YouTube Music's mix.
 - **A path** from one song to another, a step at a time by how they sound, on Navidrome with [AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI). Keep it as a playlist.
 - **Playlists** made and changed here, kept on your server.
@@ -158,6 +180,9 @@ ask for:
 |---|---|---|
 | Your Navidrome / Subsonic server | Sign-in (a salted token, never the password), plays, stars | Your library |
 | [lrclib.net](https://lrclib.net) | A song's artist and title | Lyrics |
+| [Better Lyrics](https://betterlyrics.org)' server | A song's artist, title and length | Lyrics timed word by word |
+| Apple's podcast directory | What you search for | Finding shows, the most listened to |
+| The shows' own feeds and hosts | Nothing personal | Podcasts' episodes |
 | YouTube Music (`full` build) | Your searches, the artists you pick; signed in, your sign-in and the songs you play (your history there, off in settings) | Search, mixes, radio, your library |
 | [ListenBrainz](https://listenbrainz.org) / Last.fm, if you connect them | What you play | Scrobbling |
 | [AutoEq](https://github.com/jaakkopasanen/AutoEq) on GitHub | Nothing personal, when you look up your headphones | Their tuning |
@@ -289,7 +314,9 @@ talk it through.
 - Archivo Black and Silkscreen, both under the SIL Open Font License.
 - INK's picks from the publications and DJs who make them: Pitchfork, Stereogum, Bandcamp Daily, NPR,
   NME, the Quietus, Aquarium Drunkard, Gorilla vs. Bear, Dusted, Stereofox, The FADER and more. Go read them.
-- Lyrics from [lrclib.net](https://lrclib.net) and YouTube Music; stations from
+- [Meld](https://github.com/FrancescoGrazioso/Meld) (GPL-3.0), for the ideas of choosing a song's YouTube version and
+  skipping a podcast's silence.
+- Lyrics from [lrclib.net](https://lrclib.net), [Better Lyrics](https://betterlyrics.org) and YouTube Music; stations from
   [radio-browser.info](https://www.radio-browser.info) and the stations themselves; scrobbling to
   [ListenBrainz](https://listenbrainz.org) and [Last.fm](https://www.last.fm).
 
