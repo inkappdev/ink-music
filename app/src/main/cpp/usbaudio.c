@@ -54,6 +54,7 @@ typedef struct {
     atomic_uint gen;                // a flush's count: transfers filled before it don't count
     atomic_int underruns;
     int starved;                    // the ring ran dry (the stream's thread only)
+    int primed;                     // the song's first samples have gone (before them, no gap counts)
     atomic_uint fb;                 // samples a packet, 16.16 (0: none yet)
     atomic_int gain_bits;           // float gain as bits (1.0: untouched)
     atomic_int stage, reaps;        // where the stream's thread is, and how many have come back (for the log)
@@ -115,8 +116,10 @@ static int fill(dac_t *d, unsigned char *out, int n) {
         }
         d->used -= (size_t) got * d->in_frame;
         pthread_mutex_unlock(&d->lock);
-        // a gap: the ring ran dry, then the song went on (its end, with nothing after, isn't one)
-        if (got < n) d->starved = 1;
+        // a gap: the ring ran dry mid-song, then the song went on (its end, with nothing after, isn't one; nor its
+        // start, played before the first of it had come: a song a moment late isn't a gap, 2026-11-01)
+        if (got > 0) d->primed = 1;
+        if (got < n) { if (d->primed) d->starved = 1; }
         else if (d->starved) { d->starved = 0; atomic_fetch_add(&d->underruns, 1); }
     }
     memset(out + (size_t) got * d->out_frame, 0, (size_t) (n - got) * d->out_frame);
@@ -300,6 +303,7 @@ JNIEXPORT void JNICALL Java_app_ink_music_UsbStream_flush(JNIEnv *e, jclass c, j
     atomic_fetch_add(&d->gen, 1);
     atomic_store(&d->played, 0);
     d->starved = 0;
+    d->primed = 0;
     pthread_mutex_unlock(&d->lock);
 }
 
