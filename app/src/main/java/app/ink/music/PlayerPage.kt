@@ -779,9 +779,9 @@ fun rememberLyric(n: Now?, lines: List<Line>?): Lyric? {
  * The lines, as on ink's home: the one being sung big, its words lighting dim to ink one after
  * another; the one before small and dim above, the next ones dim below. A new line lifts the
  * block a drift and fades it in (never sideways). A line is never cut short: a long one is set a
- * size smaller instead. A finger on them shows them all, scrolled by it, the sung one lit; let go a
- * few seconds and they follow the song again (a listener couldn't read the rest of a long song's
- * words, 2026-11-01).
+ * size smaller instead. A finger on them shows them all, scrolled by it, the sung one lit, a tap on
+ * one plays from there; let go a few seconds and they follow the song again (a listener couldn't
+ * read the rest of a long song's words, 2026-11-01). Words with no times: all of them, scrolled.
  */
 @Composable
 private fun LyricsBlock(l: Lyric, modifier: Modifier) {
@@ -790,6 +790,7 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
     val scope = rememberCoroutineScope()
     // when a finger last moved them (0: following the song)
     var touched by remember { mutableLongStateOf(0L) }
+    val untimed = l.lines.firstOrNull()?.let { it.at < 0 } == true
     LaunchedEffect(touched) {
         if (touched == 0L) return@LaunchedEffect
         delay(4_000)
@@ -800,7 +801,7 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
     }
     // the lines to come run out of room at the foot: feathered, never cut
     BoxWithConstraints(
-        modifier.clipToBounds().feather({ if (touched != 0L) 1f else 0f }, { 1f })
+        modifier.clipToBounds().feather({ if (touched != 0L || (untimed && scroll.value > 0)) 1f else 0f }, { 1f })
             .draggable(drag, androidx.compose.foundation.gestures.Orientation.Vertical, onDragStopped = { v ->
                 touched = android.os.SystemClock.elapsedRealtime()
                 scope.launch { scroll.animateScrollBy(-v * .25f, tween(Motion.ENTER * 3, easing = Motion.expo)) }
@@ -809,21 +810,25 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
         // by the room both ways: tall alone grew the sung line past the width (cut off mid-word)
         val k = minOf(maxHeight / 330.dp, maxWidth / 380.dp).coerceIn(.6f, 1.15f)
         val lines = l.lines
-        androidx.compose.animation.Crossfade(touched != 0L, animationSpec = tween(Motion.ENTER, easing = Motion.expo), label = "all") { all ->
+        androidx.compose.animation.Crossfade(untimed || touched != 0L, animationSpec = tween(Motion.ENTER, easing = Motion.expo), label = "all") { all ->
             if (all) {
                 // every line, the sung one lit, first shown with it near the top
                 val tops = remember { HashMap<Int, Int>() }
                 val above = with(LocalDensity.current) { 120.dp.roundToPx() }
                 LaunchedEffect(Unit) {
+                    if (untimed) return@LaunchedEffect
                     androidx.compose.runtime.withFrameNanos { }   // laid out first
                     tops[l.index]?.let { scroll.scrollTo((it - above).coerceAtLeast(0)) }
                 }
                 Column(Modifier.fillMaxWidth().verticalScroll(scroll, enabled = false).padding(bottom = 80.dp)) {
                     lines.forEachIndexed { i, line ->
-                        if (line.words.isBlank()) return@forEachIndexed
-                        BasicText(line.words.uppercase(), style = headline(24.sp * k, if (i == l.index) Ink.ink else Ink.dim),
-                            modifier = Modifier.onPlaced { tops[i] = it.positionInParent().y.toInt() })
-                        Spacer(Modifier.height(12.dp * k))
+                        // untimed: a verse's gap kept
+                        if (line.words.isBlank()) { if (untimed) Spacer(Modifier.height(12.dp * k)); return@forEachIndexed }
+                        // the whole row and the gap under it a tap's, not just the words
+                        BasicText(line.words.uppercase(), style = headline((if (untimed) 20.sp else 24.sp) * k, if (untimed || i == l.index) Ink.ink else Ink.dim),
+                            modifier = Modifier.fillMaxWidth().onPlaced { tops[i] = it.positionInParent().y.toInt() }.then(
+                                if (untimed) Modifier else Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                    onClick = felt { Playback.seek(line.at); touched = 0L })).padding(bottom = 12.dp * k))
                     }
                 }
             } else AnimatedContent(
@@ -839,7 +844,7 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
                 val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(3).toList()
                 Column(Modifier.fillMaxWidth()) {
                     before?.let {
-                        BasicText(it.words.uppercase(), style = headline(20.sp * k, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        BasicText(it.words.uppercase(), style = headline(20.sp * k, Ink.dim))
                         Spacer(Modifier.height(16.dp * k))
                     }
                     sung?.let {

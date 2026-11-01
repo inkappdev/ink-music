@@ -163,12 +163,13 @@ object Podcasts {
         write(File(d, "following.json"), JSONArray(now.map(::showJson)).toString())
     }
 
-    /** The newest episodes of the shows you follow (the last `days`), not yet heard through, newest first. */
+    /** The newest episodes of the shows you follow (the last `days`, two a show), not yet heard through, newest first. */
     fun fresh(days: Int = 14, n: Int = 20): List<Pair<Show, Episode>> {
         val since = System.currentTimeMillis() - days * 86_400_000L
         val places = places()
-        return following().flatMap { s -> kept(s.feed)?.let { (show, list) -> list.filter { it.published > since }.map { show to it } }.orEmpty() }
-            .filter { (places[it.second.id]?.first ?: 0L) >= 0L }
+        // two a show at most: a daily one (The Daily) filled the whole shelf (Bronson, 2026-11-01)
+        return following().flatMap { s -> kept(s.feed)?.let { (show, list) -> list.filter { it.published > since }.map { show to it } }.orEmpty()
+            .filter { (places[it.second.id]?.first ?: 0L) >= 0L }.sortedByDescending { it.second.published }.take(2) }
             .sortedByDescending { it.second.published }.take(n)
     }
 

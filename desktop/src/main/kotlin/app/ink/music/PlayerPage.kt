@@ -212,7 +212,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     val pos by Player.position.collectAsState()
                                     val all = lines
                                     if (all.isNullOrEmpty()) BasicText(lyricsSaid(all), style = pixel(13.sp, Ink.mid))
-                                    else LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.fillMaxSize(), big = true)
+                                    else LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.fillMaxSize(), big = true, onSeek = Player::seek)
                                 }
                                 "up next" -> Column {
                                     RadioWord()

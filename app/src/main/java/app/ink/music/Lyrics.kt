@@ -15,12 +15,12 @@ import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
 
-/** One sung line: when it starts (ms into the song) and its words. */
+/** One sung line: when it starts (ms into the song; -1 for words with no times) and its words. */
 data class Line(val at: Long, val words: String)
 
 /**
- * Synced lyrics from lrclib, as ink has them (copied from ink's Lyrics.kt): synced lines only, a song lrclib has
- * only plain (untimed) words for shows none. Where lrclib has none, YouTube Music's (the full build, ink music's
+ * Synced lyrics from lrclib, as ink has them (copied from ink's Lyrics.kt); a song lrclib has only plain (untimed)
+ * words for, those, read as they are (none shown till 2026-11-01: the words were there). Where lrclib has none, YouTube Music's (the full build, ink music's
  * own: timed by Musixmatch for song uploads). Answers are cached on disk; lrclib being unreachable
  * is not an answer, so that song is asked again after a minute.
  */
@@ -47,7 +47,7 @@ object Lyrics {
         prefs().edit().putBoolean("on", _on.value).apply()
     }
 
-    /** The song's synced lines; empty when there are none; null when lrclib couldn't be reached. */
+    /** The song's lines (synced, or else untimed: at -1); empty when there are none; null when lrclib couldn't be reached. */
     suspend fun of(t: Now): List<Line>? = withContext(Dispatchers.IO) {
         val artist = t.artist.split(',').first().trim()
         val key = "$artist|${t.title}"
@@ -56,13 +56,15 @@ object Lyrics {
         val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
-            if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.let { return@withContext it }
-            return@withContext parse(text)
+            if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
+            return@withContext parse(text).ifEmpty { plain(File("${base.path}.txt")) }
         }
         if ((retry[key] ?: 0L) > SystemClock.elapsedRealtime()) return@withContext null
         val got = ask(artist, t.title, t.album, t.duration / 1000)
         if (got == null) {
             retry[key] = SystemClock.elapsedRealtime() + 60_000
+            // lrclib down (503s, 2026-11-01): YouTube Music's meanwhile, kept if it has some; else lrclib again in a minute
+            if (YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
             return@withContext null
         }
         // kept, so lrclib isn't asked again (a full disk only means asking again)
@@ -72,9 +74,14 @@ object Lyrics {
             File("${base.path}.txt").writeText(got.second)
         }
         // none synced on lrclib: YouTube Music's (the full build), timed by Musixmatch
-        if (got.first.isBlank() && YouTubeMusic.available) tube(t, lrc, asked)?.let { return@withContext it }
-        parse(got.first)
+        if (got.first.isBlank() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
+        parse(got.first).ifEmpty { plain(got.second) }
     }
+
+    /** Untimed words as lines (at -1), a verse's gap kept as a blank one. */
+    private fun plain(text: String): List<Line> =
+        text.lines().map { Line(-1, it.trim()) }.dropWhile { it.words.isEmpty() }.dropLastWhile { it.words.isEmpty() }
+    private fun plain(f: File): List<Line> = runCatching { plain(f.readText()) }.getOrDefault(emptyList())
 
     /** YouTube Music's timed lines for the song, kept as lrclib's are (null: YouTube couldn't be asked, so again next time). */
     private fun tube(t: Now, lrc: File, asked: File): List<Line>? {

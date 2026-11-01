@@ -71,6 +71,12 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -914,37 +920,98 @@ fun lyricsSaid(lines: List<Line>?): String = when {
     else -> "no words found for this one"
 }
 
-/** The words: the line before dim, the sung one big (lit word by word), the next three dim; a new line rises in. */
+/**
+ * The words: the line before dim, the sung one big (lit word by word), the next three dim; a new line rises in. A line
+ * is never cut short (a long one a size smaller). The wheel or a drag shows them all, the sung one lit, a click on one
+ * plays from there ([onSeek]); left a few seconds, they follow the song again (a listener couldn't read the rest of a
+ * long song's words, 2026-11-01). Words with no times: all of them, scrolled.
+ */
 @Composable
-fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolean = false, big: Boolean = false) {
+fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolean = false, big: Boolean = false, onSeek: ((Long) -> Unit)? = null) {
     // big: the full-screen player's inner sleeve, the words the room's whole height
     val k = if (small) .78f else if (big) 1.35f else 1f
-    val drift = with(androidx.compose.ui.platform.LocalDensity.current) { Motion.drift.roundToPx() }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val drift = with(density) { Motion.drift.roundToPx() }
+    val notch = with(density) { 64.dp.toPx() }
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // when the wheel or a drag last moved them (0: following the song)
+    var touched by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val untimed = lines.firstOrNull()?.let { it.at < 0 } == true
+    LaunchedEffect(touched) {
+        if (touched == 0L) return@LaunchedEffect
+        kotlinx.coroutines.delay(4_000)
+        touched = 0L
+    }
+    val drag = androidx.compose.foundation.gestures.rememberDraggableState { d -> touched = System.currentTimeMillis(); scroll.dispatchRawDelta(-d) }
     // the lines to come run out of room at the foot: feathered, never cut
-    Box(modifier.clipToBounds().feather({ 0f }, { 1f })) {
-        AnimatedContent(
-            targetState = index,
-            transitionSpec = {
-                (slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { drift } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
-                    (slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { -drift } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)))
-            },
-            label = "line",
-        ) { i ->
-            val sung = lines.getOrNull(i)?.takeIf { it.words.isNotBlank() }
-            val before = (i - 1 downTo 0).asSequence().map { lines[it] }.firstOrNull { it.words.isNotBlank() }?.takeIf { sung != null }
-            val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(if (big) 6 else 3).toList()
-            Column(Modifier.fillMaxWidth()) {
-                before?.let {
-                    BasicText(it.words.uppercase(), style = headline(20.sp * k, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(16.dp * k))
+    Box(
+        modifier.clipToBounds().feather({ if (touched != 0L || (untimed && scroll.value > 0)) 1f else 0f }, { 1f })
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        if (e.type != androidx.compose.ui.input.pointer.PointerEventType.Scroll) continue
+                        val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                        if (dy == 0f) continue
+                        touched = System.currentTimeMillis()
+                        scroll.dispatchRawDelta(dy * notch)
+                        e.changes.forEach { it.consume() }
+                    }
                 }
-                sung?.let {
-                    FadeText(it.words.uppercase(), headline(40.sp * k), maxLines = 4, overflow = TextOverflow.Ellipsis, from = Ink.dim)
-                    Spacer(Modifier.height(18.dp * k))
+            }
+            .draggable(drag, androidx.compose.foundation.gestures.Orientation.Vertical, onDragStopped = { v ->
+                touched = System.currentTimeMillis()
+                scope.launch { scroll.animateScrollBy(-v * .25f, tween(Motion.ENTER * 3, easing = Motion.expo)) }
+            }),
+    ) {
+        androidx.compose.animation.Crossfade(untimed || touched != 0L, animationSpec = tween(Motion.ENTER, easing = Motion.expo), label = "all") { all ->
+            if (all) {
+                // every line, the sung one lit, first shown with it near the top
+                val tops = remember { HashMap<Int, Int>() }
+                val above = with(density) { 120.dp.roundToPx() }
+                LaunchedEffect(Unit) {
+                    if (untimed) return@LaunchedEffect
+                    androidx.compose.runtime.withFrameNanos { }   // laid out first
+                    tops[index]?.let { scroll.scrollTo((it - above).coerceAtLeast(0)) }
                 }
-                after.forEach {
-                    BasicText(it.words.uppercase(), style = headline(22.sp * k, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(12.dp * k))
+                Column(Modifier.fillMaxWidth().verticalScroll(scroll, enabled = false).padding(bottom = 80.dp)) {
+                    lines.forEachIndexed { i, line ->
+                        // untimed: a verse's gap kept
+                        if (line.words.isBlank()) { if (untimed) Spacer(Modifier.height(12.dp * k)); return@forEachIndexed }
+                        // the whole row and the gap under it a click's, not just the words
+                        BasicText(line.words.uppercase(), style = headline((if (untimed) 18.sp else 22.sp) * k, if (untimed || i == index) Ink.ink else Ink.dim),
+                            modifier = Modifier.fillMaxWidth().onPlaced { tops[i] = it.positionInParent().y.toInt() }.then(
+                                if (untimed || onSeek == null) Modifier else Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                    onClick = felt { onSeek(line.at); touched = 0L })).padding(bottom = 12.dp * k))
+                    }
+                }
+            } else AnimatedContent(
+                targetState = index,
+                transitionSpec = {
+                    (slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { drift } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
+                        (slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { -drift } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)))
+                },
+                label = "line",
+            ) { i ->
+                val sung = lines.getOrNull(i)?.takeIf { it.words.isNotBlank() }
+                val before = (i - 1 downTo 0).asSequence().map { lines[it] }.firstOrNull { it.words.isNotBlank() }?.takeIf { sung != null }
+                val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(if (big) 6 else 3).toList()
+                Column(Modifier.fillMaxWidth()) {
+                    before?.let {
+                        BasicText(it.words.uppercase(), style = headline(20.sp * k, Ink.dim))
+                        Spacer(Modifier.height(16.dp * k))
+                    }
+                    sung?.let {
+                        // a long line a size smaller, so it's all there
+                        val size = when { it.words.length > 90 -> 26.sp; it.words.length > 48 -> 32.sp; else -> 40.sp }
+                        FadeText(it.words.uppercase(), headline(size * k), from = Ink.dim)
+                        Spacer(Modifier.height(18.dp * k))
+                    }
+                    after.forEach {
+                        BasicText(it.words.uppercase(), style = headline(22.sp * k, Ink.dim))
+                        Spacer(Modifier.height(12.dp * k))
+                    }
                 }
             }
         }
