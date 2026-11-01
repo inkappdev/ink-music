@@ -33,6 +33,10 @@ data class Heard(
     val mixer: Int = 0,       // the rate Android's mixer runs at
     val eq: String = "",      // the equalizer: "" off, else its preset or headphone
     val exact: String = "",   // exact to a usb dac: "" off, "yes 16/44.1", or why not
+    // ink music's own way to the DAC (UsbDac), what it reads back from the DAC itself while it plays
+    val slot: Int = 0,        // the DAC's setting: bits a sample (0: not ink music's own way)
+    val clock: Double = 0.0,  // the DAC's own clock, from its feedback (Hz; 0: not said)
+    val dropouts: Int = 0,    // gaps the DAC had (the ring ran dry, then played on)
 ) {
     val lossless get() = codec in LOSSLESS
     val hires get() = lossless && (bits > 16 || rate > 48_000)
@@ -47,7 +51,7 @@ data class Heard(
     fun json(): String = JSONObject().put("id", id).put("codec", codec).put("bits", bits).put("rate", rate).put("channels", channels)
         .put("kbps", kbps).put("from", from).put("made", made).put("quality", quality).put("metered", metered)
         .put("decoder", decoder).put("outBits", outBits).put("outRate", outRate).put("device", device).put("kind", kind)
-        .put("mixer", mixer).put("eq", eq).put("exact", exact)
+        .put("mixer", mixer).put("eq", eq).put("exact", exact).put("slot", slot).put("clock", clock).put("dropouts", dropouts)
         .apply { gain?.let { put("gain", it.toDouble()) } }.toString()
 
     companion object {
@@ -60,7 +64,7 @@ data class Heard(
                     o.optString("from"), o.optString("made"), o.optInt("quality", -1), o.optBoolean("metered"),
                     if (o.has("gain")) o.getDouble("gain").toFloat() else null,
                     o.optString("decoder"), o.optInt("outBits"), o.optInt("outRate"), o.optString("device"), o.optString("kind"),
-                    o.optInt("mixer"), o.optString("eq"), o.optString("exact"))
+                    o.optInt("mixer"), o.optString("eq"), o.optString("exact"), o.optInt("slot"), o.optDouble("clock", 0.0), o.optInt("dropouts"))
             }.getOrNull()
         }
 

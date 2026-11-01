@@ -56,9 +56,9 @@ class UsbOutputProvider(private val c: Context, private val fallback: AudioOutpu
     override fun getAudioOutput(config: AudioOutputProvider.OutputConfig): AudioOutput {
         val channels = Integer.bitCount(config.channelMask)
         val h = dac(config.sampleRate, channels, config.encoding) ?: return fallback.getAudioOutput(config)
-        h.begin(config.sampleRate, channels, config.encoding == C.ENCODING_PCM_FLOAT)
+        val stream = h.begin(config.sampleRate, channels, config.encoding == C.ENCODING_PCM_FLOAT)
             ?: throw AudioOutputProvider.InitializationException()
-        return UsbAudioOutput(h, config)
+        return UsbAudioOutput(h, stream, config)
     }
 
     override fun addListener(listener: AudioOutputProvider.Listener) { listeners += listener; fallback.addListener(listener) }
@@ -69,55 +69,56 @@ class UsbOutputProvider(private val c: Context, private val fallback: AudioOutpu
     fun changed() { listeners.forEach { it.onFormatSupportChanged() } }
 }
 
-/** The player's samples to the DAC: written into usbaudio.c's ring, its position the frames the DAC has had. */
+/**
+ * The player's samples to the DAC: written into usbaudio.c's ring, its position the frames the DAC has had. Its
+ * stream gone (the DAC unplugged, exact off), a write fails as recoverable, and Media3 asks again where to play.
+ */
 @androidx.annotation.OptIn(UnstableApi::class)
-class UsbAudioOutput(private val h: UsbDac.Held, private val config: AudioOutputProvider.OutputConfig) : AudioOutput {
-    private val stream = h.handle
+class UsbAudioOutput(private val h: UsbDac.Held, private val stream: UsbDac.Held.Stream, private val config: AudioOutputProvider.OutputConfig) : AudioOutput {
     private val listeners = CopyOnWriteArraySet<AudioOutput.Listener>()
     private var scratch: ByteBuffer? = null
     private var started = false
     private var released = false
     private var underruns = 0
+    private var volume = 1f
 
     override fun play() {
-        android.util.Log.i("ink-usb", "play")
-        UsbStream.play(stream, true)
+        stream.play(true)
         if (!started) { started = true; val now = System.currentTimeMillis(); listeners.forEach { it.onPositionAdvancing(now) } }
     }
-    override fun pause() { android.util.Log.i("ink-usb", "pause"); UsbStream.play(stream, false) }
+    override fun pause() { stream.play(false) }
 
     override fun write(buffer: ByteBuffer, encodedAccessUnitCount: Int, presentationTimeUs: Long): Boolean {
         if (released) return false
-        val n = if (buffer.isDirect) UsbStream.write(stream, buffer, buffer.position(), buffer.remaining()) else {
+        val n = if (buffer.isDirect) stream.write(buffer, buffer.position(), buffer.remaining()) else {
             // a heap buffer: through a direct one, as much as fits
             val s = scratch?.takeIf { it.capacity() >= buffer.remaining() } ?: ByteBuffer.allocateDirect(buffer.remaining().coerceAtLeast(65536)).also { scratch = it }
             s.clear(); val dup = buffer.duplicate(); s.put(dup); s.flip()
-            UsbStream.write(stream, s, 0, s.remaining())
+            stream.write(s, 0, s.remaining())
         }
-        if (n < 0) throw AudioOutput.WriteException(n, false)
+        if (n < 0) throw AudioOutput.WriteException(n, true)
         buffer.position(buffer.position() + n)
-        UsbStream.underruns(stream).let { u -> if (u > underruns && started) { underruns = u; listeners.forEach { it.onUnderrun() } } }
+        stream.underruns().let { u -> if (u > underruns && started) { underruns = u; listeners.forEach { it.onUnderrun() } } }
         return !buffer.hasRemaining()
     }
 
-    override fun flush() { android.util.Log.i("ink-usb", "flush"); UsbStream.flush(stream); started = false }
+    override fun flush() { stream.flush(); started = false }
     override fun stop() {}   // what's written plays out by itself
     override fun release() {
         if (released) return
-        android.util.Log.i("ink-usb", "release")
         released = true
-        h.end()
+        stream.end()
         listeners.forEach { it.onReleased() }
     }
 
     // the player's own volume (a soft pause's fade), times the DAC's level where it has no volume of its own
-    override fun setVolume(volume: Float) { UsbStream.gain(stream, volume * h.digital) }
-    init { UsbStream.gain(stream, h.digital) }
+    override fun setVolume(volume: Float) { this.volume = volume; stream.gain(volume * h.digital) }
+    init { stream.gain(h.digital) }
     override fun isOffloadedPlayback() = false
     override fun getAudioSessionId() = config.audioSessionId
     override fun getSampleRate() = config.sampleRate
     override fun getBufferSizeInFrames() = (config.sampleRate / 4).toLong()
-    override fun getPositionUs() = UsbStream.played(stream) * 1_000_000L / config.sampleRate
+    override fun getPositionUs() = stream.played() * 1_000_000L / config.sampleRate
     override fun getPlaybackParameters(): PlaybackParameters = PlaybackParameters.DEFAULT
     override fun isStalled() = false
     override fun addListener(listener: AudioOutput.Listener) { listeners += listener }

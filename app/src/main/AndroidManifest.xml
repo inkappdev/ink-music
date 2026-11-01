@@ -36,6 +36,19 @@
 
         <!-- the player in its own process: the screens can be rebuilt (or crash) without a
              skip in the music -->
+        <!-- a USB DAC plugged in: Android remembers ink music may use it (UsbAttach shows nothing) -->
+        <activity
+            android:name=".UsbAttach"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" android:resource="@xml/usb_audio" />
+        </activity>
+
         <service
             android:name=".PlayerService"
             android:process=":player"

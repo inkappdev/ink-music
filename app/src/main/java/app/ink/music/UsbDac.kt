@@ -133,9 +133,34 @@ object UsbDac {
     // ---- the DAC held ----
 
     class Held(val device: UsbDevice, val connection: UsbDeviceConnection, val shape: Shape, private val claimed: List<UsbInterface>) {
-        private var stream = 0L
+        private var current: Stream? = null
         private var streamAlt: Alt? = null
         private var rate = 0
+        /** The DAC as kept between plug-ins: vendor and product. */
+        val key get() = "%04x:%04x".format(device.vendorId, device.productId)
+
+        /**
+         * One stream to the DAC (a song's rate and setting). Ended when the next begins, the DAC goes or exact's turned
+         * off; after that nothing reaches the native side (its memory's gone), and a write says so (the player then
+         * asks again where the song goes).
+         */
+        inner class Stream(private var h: Long, val rate: Int, val alt: Alt) {
+            private var lastPlayed = 0L
+            val live get() = synchronized(this@Held) { h != 0L }
+            fun write(buf: java.nio.ByteBuffer, off: Int, len: Int): Int = synchronized(this@Held) { if (h == 0L) -1 else UsbStream.write(h, buf, off, len) }
+            fun play(on: Boolean) = synchronized(this@Held) { if (h != 0L) UsbStream.play(h, on) }
+            fun flush() = synchronized(this@Held) { if (h != 0L) { UsbStream.flush(h); lastPlayed = 0 } }
+            fun played(): Long = synchronized(this@Held) { if (h != 0L) UsbStream.played(h).also { lastPlayed = it } else lastPlayed }
+            fun gain(g: Float) = synchronized(this@Held) { if (h != 0L) UsbStream.gain(h, g) }
+            fun underruns(): Int = synchronized(this@Held) { if (h != 0L) UsbStream.underruns(h) else 0 }
+            fun clock(): Double = synchronized(this@Held) { if (h != 0L) UsbStream.clock(h) else 0.0 }
+            /** This stream over (only if it's still the DAC's: the next song's may have begun already). */
+            fun end() = synchronized(this@Held) { if (current === this) this@Held.end() }
+            internal fun close() { if (h != 0L) { UsbStream.close(h); h = 0 } }
+        }
+
+        /** What's streaming now, for the signal path. */
+        val now: Stream? get() = synchronized(this) { current }
         val name: String get() = device.productName?.trim().orEmpty().ifEmpty { "usb dac" }
 
         /** The rates the DAC's clock takes (UAC2: asked; UAC1: from the descriptors). */
@@ -176,7 +201,8 @@ object UsbDac {
         }
 
         /** A stream at `rate` started: the clock set, the setting chosen, the native stream running (paused). */
-        fun begin(rate: Int, channels: Int, inFloat: Boolean): Alt? {
+        @Synchronized
+        fun begin(rate: Int, channels: Int, inFloat: Boolean): Stream? {
             val a = altFor(rate, channels) ?: return null
             end()
             val intf = (0 until device.interfaceCount).map { device.getInterface(it) }.firstOrNull { it.id == a.iface && it.alternateSetting == a.alt } ?: return null
@@ -185,14 +211,12 @@ object UsbDac {
             if (this.rate != rate || !shape.uac2) setRate(a, rate)
             if (!connection.setInterface(intf)) { android.util.Log.i("ink-usb", "setting ${a.iface}/${a.alt} refused"); return null }
             if (!shape.uac2) setRate(a, rate)
-            stream = UsbStream.open(connection.fileDescriptor, a.ep, a.maxPacket, a.interval, a.fbEp, a.fbMax)
-            if (!UsbStream.start(stream, rate, channels, inFloat, a.sub, a.bits, 250)) { UsbStream.close(stream); stream = 0; return null }
+            val h = UsbStream.open(connection.fileDescriptor, a.ep, a.maxPacket, a.interval, a.fbEp, a.fbMax)
+            if (!UsbStream.start(h, rate, channels, inFloat, a.sub, a.bits, 250)) { UsbStream.close(h); return null }
             streamAlt = a
             this.rate = rate
-            return a
+            return Stream(h, rate, a).also { current = it }
         }
-
-        val handle get() = stream
 
         private fun setRate(a: Alt, rate: Int) {
             val ok = if (shape.uac2) {
@@ -249,13 +273,15 @@ object UsbDac {
         }
 
         /** The stream stopped (the DAC still held). */
+        @Synchronized
         fun end() {
-            if (stream != 0L) { UsbStream.close(stream); stream = 0 }
+            current?.close(); current = null
             streamAlt?.let { a -> (0 until device.interfaceCount).map { device.getInterface(it) }.firstOrNull { it.id == a.iface && it.alternateSetting == 0 }?.let { connection.setInterface(it) } }
             streamAlt = null
         }
 
         /** Let go: Android's driver given the DAC back. */
+        @Synchronized
         fun release() {
             end()
             val fd = connection.fileDescriptor
@@ -274,8 +300,15 @@ object UsbDac {
     /** Told when a DAC is held or let go (the buttons become its, or Android's again). */
     @Volatile var onChange: (() -> Unit)? = null
 
-    /** The volume buttons' turn: the DAC's own volume, the samples untouched. */
-    fun turn(v: Float) { level = v.coerceIn(0f, 1f); held?.level(level) }
+    /** The volume buttons' turn: the DAC's own volume, the samples untouched; kept for this DAC. */
+    fun turn(v: Float) {
+        level = v.coerceIn(0f, 1f)
+        val h = held ?: return
+        h.level(level)
+        levels?.let { f -> runCatching { val o = runCatching { org.json.JSONObject(f.readText()) }.getOrDefault(org.json.JSONObject()); f.writeText(o.put(h.key, level.toDouble()).toString()) } }
+    }
+    // each DAC's own level, kept (the player's files)
+    private var levels: java.io.File? = null
 
     /** The DAC claimed from Android, if there is one and ink music may (Android's permission asked for on the screens). */
     @Synchronized
@@ -297,8 +330,10 @@ object UsbDac {
         android.util.Log.i("ink-usb", "${h.name}: uac${if (shape.uac2) 2 else 1}, rates ${h.rates}, settings " +
             shape.alts.joinToString { "${it.iface}/${it.alt} ${it.channels}ch ${it.bits}/${it.sub * 8} ep ${"%02x".format(it.ep)} ${it.maxPacket} fb ${"%02x".format(it.fbEp)}" } +
             ", volume ${h.volumeRange ?: "none"}")
-        // the buttons' steps (20): the level Android had, on a step
-        level = Math.round(was * PlayerService.STEPS) / PlayerService.STEPS.toFloat()
+        // the buttons' steps (20): this DAC's own level as it was left, else the level Android had, on a step
+        levels = java.io.File(c.filesDir, "usb-levels.json")
+        val kept = runCatching { org.json.JSONObject(levels!!.readText()).optDouble(h.key, Double.NaN) }.getOrDefault(Double.NaN)
+        level = if (!kept.isNaN()) kept.toFloat() else Math.round(was * PlayerService.STEPS) / PlayerService.STEPS.toFloat()
         h.level(level)
         held = h
         onChange?.invoke()

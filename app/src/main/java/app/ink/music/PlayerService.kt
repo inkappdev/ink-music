@@ -72,6 +72,13 @@ class PlayerService : MediaLibraryService() {
             main.postDelayed(this, 15_000)
         }
     }
+    // ink music's own way to a DAC: what the DAC says (its clock, any gap) told to the signal path every few seconds
+    private val dacSays = object : Runnable {
+        override fun run() {
+            if (UsbDac.held?.now != null && session?.player?.isPlaying == true) tell()
+            main.postDelayed(this, 3_000)
+        }
+    }
     // a server song heard far enough (half of it, or four minutes, as Last.fm counts) is told to
     // the server once; "playing now" as it starts
     private val net = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -233,6 +240,7 @@ class PlayerService : MediaLibraryService() {
         val c = chosen[uri]
         val id = item.mediaId
         val out = Exact.output(this)
+        val dac = UsbDac.held?.let { h -> h.now?.let { h to it } }
         val from = when {
             id.startsWith("s") -> "station"
             id.startsWith("y") -> "youtube"
@@ -255,10 +263,11 @@ class PlayerService : MediaLibraryService() {
             channels = f.channelCount.coerceAtLeast(0), kbps = kbps, from = from, made = made,
             quality = if (from == "server" || from == "youtube") c?.quality ?: -1 else -1, metered = c?.metered == true,
             gain = levelling?.takeIf { it.on }?.db,
-            decoder = decoder, outBits = outBits, outRate = outRate,
-            device = out.first, kind = out.second, mixer = Exact.mixer(this),
+            decoder = decoder, outBits = dac?.second?.alt?.bits ?: outBits, outRate = dac?.second?.rate ?: outRate,
+            device = dac?.first?.name?.lowercase() ?: out.first, kind = if (dac != null) "usb" else out.second, mixer = Exact.mixer(this),
             eq = Eq.read(this).takeIf { it.on && !Exact.on(this) }?.let { it.phones.ifEmpty { it.preset } }.orEmpty(),
             exact = exactSaid,
+            slot = dac?.second?.alt?.bits ?: 0, clock = dac?.second?.clock() ?: 0.0, dropouts = dac?.second?.underruns() ?: 0,
         )
     }
 
@@ -267,11 +276,28 @@ class PlayerService : MediaLibraryService() {
     private var outBits = 0
     private var outRate = 0
     private var usbOutput: UsbOutputProvider? = null
+    private var routedToDac: Boolean? = null
+
+    /**
+     * Where the samples go changed (exact switched, a DAC allowed or plugged in): the song taken up again where it is,
+     * so Media3 opens its output anew. It kept the one it had, Android's, while the DAC was taken from Android: the
+     * song went on out of the phone's speaker (2026-11-01). A moment's gap, only when the way changes.
+     */
+    private fun reroute() {
+        val p = exo ?: return
+        val now = Exact.on(this) && UsbDac.hold(this) != null
+        if (routedToDac == now) return
+        routedToDac = now
+        if (p.playbackState == Player.STATE_IDLE || p.currentMediaItem == null) return
+        val at = p.currentPosition; val index = p.currentMediaItemIndex; val go = p.playWhenReady
+        p.stop(); p.prepare(); p.seekTo(index, at); p.playWhenReady = go
+    }
     private val usbSeen = object : android.content.BroadcastReceiver() {
         override fun onReceive(c: android.content.Context, i: Intent) {
             if (i.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED) UsbDac.release()
             android.util.Log.i("ink-usb", "seen: ${i.action}")
             usbOutput?.changed()
+            reroute()
         }
     }
     /** Exact's word for a format: ink music's own way to the DAC where it holds one, else Android's bit-perfect path asked. */
@@ -628,6 +654,7 @@ class PlayerService : MediaLibraryService() {
             }
         })
         main.post(keepPlace)
+        main.post(dacSays)
         main.post { effects(true); equalize(); tell() }   // the session's there once onCreate is done
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, Main::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -726,6 +753,7 @@ class PlayerService : MediaLibraryService() {
                         levelling?.on = prefs.getBoolean("levelling", true) && !Exact.on(this@PlayerService)
                         if (!Exact.on(this@PlayerService)) UsbDac.release()
                         usbOutput?.changed()
+                        reroute()
                         session.player.currentMediaItem?.mediaId?.let { formats[it] }?.let { exactSaid = exactFor(it) }
                         tell()
                     }
