@@ -253,12 +253,20 @@ class InnerTube(
         return post("player", body)
     }
 
-    /** A record's page ("MPREb_..."), one read: its own playlist's id ("OLAK5uy_...") and its songs, in order. */
+    /**
+     * A record's page ("MPREb_..."), one read: its own playlist's id ("OLAK5uy_...") and its songs, in order. A song
+     * with a music video is listed as the video (its silent intro, its edit: a listener heard Deftones' "my mind is a
+     * mountain" start 5 s late, 2026-11-01); its menu's song credits ("MPTC" and an id) name the record's own audio,
+     * which YouTube Music itself plays there, so that's the song's.
+     */
     fun album(browseId: String): Pair<String?, List<Track>> {
         val page = post("browse", JSONObject().put("browseId", browseId))
         return Regex("OLAK5uy_[A-Za-z0-9_-]+").find(page.toString())?.value to
-            all(page, "musicResponsiveListItemRenderer").mapNotNull(::track).distinctBy { it.videoId }
+            all(page, "musicResponsiveListItemRenderer").mapNotNull { r ->
+                track(r)?.let { t -> AUDIO.find(r.optJSONObject("menu")?.toString().orEmpty())?.groupValues?.get(1)?.let { t.copy(videoId = it) } ?: t }
+            }.distinctBy { it.videoId }
     }
+    private val AUDIO = Regex("\"MPTC([A-Za-z0-9_-]{11})\"")
 
     // your library, written (signed in): each a yes if YouTube took it
 
