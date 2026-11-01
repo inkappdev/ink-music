@@ -68,6 +68,8 @@ class Crossfade(
 
     companion object {
         const val FADE = 6_000L
+        /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
+        const val LEAD = 120L
         /** How sure a beat must be (its period's peak over the mean) to be matched. */
         const val SURE = 1.6
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
@@ -121,9 +123,10 @@ class Crossfade(
         val ready = tail?.playbackState == Player.STATE_READY
         // started at the handover itself, to the millisecond, from where it waits: never moved at the last moment (a
         // YouTube song moved then went to the network again, and the next song came in over nothing: a gap, 2026-11-01)
-        if (ready && pos >= at - 150) {
+        if (ready && pos >= at - 150 - LEAD) {
             scheduled = true
-            main.postDelayed({ scheduled = false; if (!fading && exo.currentMediaItem?.mediaId == item.mediaId) go(e) }, (at - pos).coerceAtLeast(0))
+            // started a little ahead: a player just started is heard a moment after it says it's playing
+            main.postDelayed({ scheduled = false; if (!fading && exo.currentMediaItem?.mediaId == item.mediaId) go(e, at) }, (at - LEAD - pos).coerceAtLeast(0))
         } else if (!ready && pos > at + 1_500) {
             // not ready in time: no crossfade this once, the song ends as it would
             android.util.Log.d("ink-crossfade", "${item.mediaId}: its tail not ready in time, ends as it would")
@@ -147,7 +150,7 @@ class Crossfade(
     private fun dropTail() { tail?.release(); tail = null; tailFor = null; scheduled = false }
 
     /** The handover: the old song's tail sounding, the player on into the next song from its first sound, faded across. */
-    private fun go(e: Ends?) {
+    private fun go(e: Ends?, at: Long) {
         val t = tail?.takeIf { it.playbackState == Player.STATE_READY } ?: return
         fading = true
         t.play()
@@ -157,8 +160,10 @@ class Crossfade(
         main.post(object : Runnable {
             override fun run() {
                 if (!fading || tail !== t) return
-                if (!t.isPlaying) {
-                    if (SystemClock.uptimeMillis() - asked < 300) { main.postDelayed(this, 5); return }
+                // heard, not just started: its place moving on past where it began (else the next song came in over
+                // a moment of nothing, 2026-11-01)
+                if (!t.isPlaying || t.currentPosition < at + 10) {
+                    if (SystemClock.uptimeMillis() - asked < 600) { main.postDelayed(this, 5); return }
                     android.util.Log.d("ink-crossfade", "its tail didn't sound: the song ends as it would")
                     fading = false; dropTail(); tailFor = exo.currentMediaItem?.mediaId
                     return
@@ -184,7 +189,9 @@ class Crossfade(
         val tailLevel = t.volume
         val length = if (m != null) (m.outPeriod * 16).toLong().coerceAtMost((e?.lastSound ?: Long.MAX_VALUE) - from).coerceIn(m.outPeriod.toLong() * 8, 14_000)
             else (e?.let { (it.lastSound - from).coerceIn(2_000, FADE * 2) } ?: FADE)
-        val bass = if (m != null) Bass(t.audioSessionId, exo.audioSessionId) else null
+        // the bass handed across: not by Android's equalizer (on Samsung, switched on, it moved the level, and again
+        // when let go; 2026-11-01): to come, in ink music's own path
+        val bass: Bass? = null
         android.util.Log.d("ink-crossfade", "into $nextId at ${from / 1000.0}s over ${length / 1000.0}s, its start ${skip}ms in" +
             (m?.let { ", beats matched: ${"%.1f".format(60_000 / it.outPeriod)} bpm, the new one at ${"%.3f".format(it.speed)}x" } ?: ", not beat-matched"))
         val began = SystemClock.uptimeMillis()
@@ -241,7 +248,9 @@ class Crossfade(
         var inPeriod = b.period
         val speed = listOf(1.0, 2.0, .5).map { k -> k to (b.period * k) / a.period }.firstOrNull { kotlin.math.abs(it.second - 1) <= .08 } ?: return null
         inPeriod = b.period * speed.first
-        val outBeat = a.nearest(e.handover.toDouble())
+        // a DJ's blend: 16 beats before the old one's sound ends (or where its outro falls away, if sooner), on its beat,
+        // within the stretch its beat was read from
+        val outBeat = a.nearest(kotlin.math.min(e.handover.toDouble(), e.lastSound - 16 * a.period)).coerceAtLeast(a.first)
         val inBeat = b.after(next.firstSound.toDouble())
         return Mix(outBeat, inBeat, speed.second.toFloat(), inPeriod, a.period)
     }
