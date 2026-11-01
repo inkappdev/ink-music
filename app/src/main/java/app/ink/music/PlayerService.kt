@@ -286,6 +286,7 @@ class PlayerService : MediaLibraryService() {
     private var decoder = ""
     private var outBits = 0
     private var outRate = 0
+    private var crossfade: Crossfade? = null
     private var usbOutput: UsbOutputProvider? = null
     private var routedToDac: Boolean? = null
 
@@ -561,6 +562,8 @@ class PlayerService : MediaLibraryService() {
         player.shuffleModeEnabled = prefs.getBoolean("shuffle", false)
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
         levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true) && !Exact.on(this); it.onApply = { tell() } }
+        // a song ending goes into the next (settings, sound: crossfade)
+        crossfade = Crossfade(this, player, sources, { levelling }, { onSpeaker?.casting == true }).also { it.start() }
         // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
             override fun onAudioInputFormatChanged(
@@ -901,6 +904,7 @@ class PlayerService : MediaLibraryService() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(usbSeen) }
+        crossfade?.release()
         UsbDac.release()
         effects(false)
         runCatching { eq?.release() }

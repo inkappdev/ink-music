@@ -340,6 +340,21 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     Spacer(Modifier.height(40.dp))
                 }
 
+                // a song going into the next (Crossfade; automix's first half)
+                Column(Modifier.cascade(5)) {
+                    BasicText("CROSSFADE", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("a song ending goes into the next, measured from each one: a fading outro hands over as it fades, a silent end " +
+                        "before its silence. never inside a record played in order, an episode or a station; it rests while exact is on", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    var cross by remember { mutableStateOf(Crossfade.on(ctx)) }
+                    Row {
+                        Word("on", pixel(14.sp, if (cross) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { cross = true; Crossfade.set(ctx, true) }
+                        Word("off", pixel(14.sp, if (!cross) Ink.ink else Ink.dim), touch = 8.dp) { cross = false; Crossfade.set(ctx, false) }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
                 // exact to a usb dac: android 14's bit-perfect path (Exact), the equalizer and even volume resting
                 Column(Modifier.cascade(6)) {
                     BasicText("EXACT TO A USB DAC", style = headline(24.sp))

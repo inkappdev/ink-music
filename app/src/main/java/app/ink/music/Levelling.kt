@@ -30,6 +30,9 @@ class Levelling(private val player: Player, private val context: android.content
     var db = 0f
         private set
     var onApply: (() -> Unit)? = null
+    /** A crossfade's share of the volume (Crossfade: 0 to 1 as the next song comes in), on top of the song's level. */
+    var fade = 1f
+        set(v) { field = v; player.volume = level * v }
     private var boost: LoudnessEnhancer? = null
     private var session = C.AUDIO_SESSION_ID_UNSET
 
@@ -38,7 +41,7 @@ class Levelling(private val player: Player, private val context: android.content
         val db = if (on) gain() else 0f
         this.db = db
         level = 10f.pow(db.coerceAtMost(0f) / 20f)
-        player.volume = level
+        player.volume = level * fade
         val up = (db.coerceAtLeast(0f) * 100).toInt()   // millibels
         val e = enhancer()?.runCatching { setTargetGain(up); enabled = up > 0 }
         android.util.Log.d("ink-level", "${player.currentMediaItem?.mediaId} ${"%.1f".format(db)} dB  volume $level  boost $up mB ${if (e?.isSuccess == true) "" else "(no enhancer)"}")
