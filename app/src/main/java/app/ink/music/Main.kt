@@ -419,7 +419,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     val read by Library.read.collectAsState()
     var tab by rememberSaveable { mutableStateOf("listen") }
     // nothing on the phone or a server: no records, artists or songs to show
-    // INK: ink weekly, ink radio and everything people picked, one place (explore till 2026-10-29: Bronson)
+    // INK: ink weekly, ink radio and everything people picked, one place (explore till 2026-10-29)
     val tabs = if (songs.isEmpty()) listOf("listen", "ink", "radio", "podcasts", "lists") else listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
     val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
     // the places' menu, dropped down from the place's word
@@ -617,7 +617,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     // the tab row on black; what scrolls up toward it softens just under it
     Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
       Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(bars)) {
-        // the place you're on, one big word (Bronson, 2026-10-28: the row of words got crowded at six); a tap drops
+        // the place you're on, one big word (2026-10-28: the row of words got crowded at six); a tap drops
         // every place down as big words, ink's menu (no hamburger: a word where an icon would go). Find stays put.
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu }),
@@ -1641,7 +1641,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     val hiddenLists by HiddenLists.ids.collectAsState()
     val foundTubeLists = remember(q, tubeLists, hiddenLists) { if (q.isEmpty()) emptyList() else tubeLists.filter { it.id !in hiddenLists }.mapNotNull { l -> Search.rank(l.name, q)?.let { it to l } }.sortedBy { it.first }.map { it.second }.take(8) }
     // YouTube Music's artists, their faces (any you have already shown as yours); else whose its songs and records are
-    // (Bronson, 2026-10-29: Mac DeMarco found, no page of his to open)
+    // (2026-10-29: Mac DeMarco found, no page of his to open)
     val tubeArtists = remember(q, tube, foundArtists) {
         if (q.isEmpty()) emptyList()
         else tube.artists.ifEmpty { (tube.songs.flatMap { it.artist.split(", ") } + tube.albums.map { it.artist }).map { TubeArtist(it.trim(), null) } }
@@ -2099,7 +2099,7 @@ fun Label(text: String) {
 }
 
 /**
- * A section's head on INK (Bronson, 2026-10-29: the small labels were hard to read): its name in Archivo Black, a short
+ * A section's head on INK (2026-10-29: the small labels were hard to read): its name in Archivo Black, a short
  * line under it, a word at its right (play all); the Mac's [Section], phone-sized.
  */
 @Composable

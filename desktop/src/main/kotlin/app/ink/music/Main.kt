@@ -114,7 +114,7 @@ fun main() {
     Colours.start()
     Player.start()
     // ink's icon on every window Java makes, not Java's own (Duke): Windows' restart screen showed Duke beside ink music
-    // (Bronson's PC, 2026-10-29); Swing's hidden owner of a window with none (the folder chooser's) and any other
+    // (a PC, 2026-10-29); Swing's hidden owner of a window with none (the folder chooser's) and any other
     runCatching {
         val icon = javax.imageio.ImageIO.read(Ink::class.java.getResource("/ink-music.png"))
         javax.swing.JOptionPane.getRootFrame().iconImage = icon
@@ -156,7 +156,7 @@ fun main() {
         }
         MiniWindow()
     }
-    // the window's closed: gone, wholly (Bronson, 2026-10-29: after quitting, the Dock still had it "running in the
+    // the window's closed: gone, wholly (2026-10-29: after quitting, the Dock still had it "running in the
     // background": a thread the Mac's media buttons had started kept the Java process alive)
     quit()
 }
@@ -426,7 +426,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             Word("your year", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Year) }
             Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Settings) }
         }
-        // beside the rail no name over the page: the rail's lit word says where you are (Bronson, 2026-10-29)
+        // beside the rail no name over the page: the rail's lit word says where you are (2026-10-29)
         if (words) Spacer(Modifier.height(14.dp))
         if (tab in setOf("albums", "artists", "songs")) NetworkShut(Modifier.padding(horizontal = SIDE).padding(bottom = 18.dp))
         if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS },
@@ -530,7 +530,7 @@ fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry> {
 
 @Composable
 private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
-    // a grid of faces, as the records are (Bronson, 2026-10-29: one thin list down a wide page)
+    // a grid of faces, as the records are (2026-10-29: one thin list down a wide page)
     val albums by Library.albums.collectAsState()
     val covers = remember(albums) { albums.groupBy { it.artist }.mapValues { it.value.first().songs.first() } }
     val grid = rememberLazyGridState()
@@ -900,7 +900,7 @@ fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyL
 /**
  * A song's lines, read as it plays: null while they're being found (lrclib busy is asked again each minute) or lyrics
  * are off, empty when there are none (a station too). "None" and "still finding" were one null, so a song without
- * words said "finding the words" for ever (Bronson's Mac, 2026-10-29).
+ * words said "finding the words" for ever (a Mac, 2026-10-29).
  */
 @Composable
 fun rememberLyrics(song: Song): List<Line>? {

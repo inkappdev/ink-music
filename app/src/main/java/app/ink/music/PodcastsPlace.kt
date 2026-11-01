@@ -53,7 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Podcasts, a place of its own beside radio (Bronson, 2026-10-31): find a show (Apple's directory, or its feed's link
+ * Podcasts, a place of its own beside radio (2026-10-31): find a show (Apple's directory, or its feed's link
  * pasted), the newest episodes of the shows you follow, your shows, and what's listened to most now. A show's page is
  * [ShowPage].
  */

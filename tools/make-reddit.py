@@ -79,7 +79,7 @@ def banner(w, h, names, size):
 
 os.makedirs(OUT, exist_ok=True)
 icon().save(os.path.join(OUT, "icon.png"), optimize=True)
-names = ["INK MUSIC"]   # the name, over and over, as the marquee runs an artist's (Bronson, 2026-10-29)
+names = ["INK MUSIC"]   # the name, over and over, as the marquee runs an artist's (2026-10-29)
 banner(1920, 384, names, 150).save(os.path.join(OUT, "banner-desktop.png"), optimize=True)
 banner(1600, 480, names, 170).save(os.path.join(OUT, "banner-mobile.png"), optimize=True)
 for f in sorted(os.listdir(OUT)):

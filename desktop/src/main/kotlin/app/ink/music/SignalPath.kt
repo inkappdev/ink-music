@@ -67,7 +67,7 @@ private fun system(ao: String): String = when {
 }
 
 /**
- * The signal path (the phone's, 2026-10-30; on the computer since, Bronson): what reaches your ears, step by step, from
+ * The signal path (the phone's, 2026-10-30; on the computer since): what reaches your ears, step by step, from
  * where the song came to where it plays, each as mpv read it, a hairline between, the signal travelling down it as it
  * opens; what's yours to change a word on its step (even volume, the volume, alone or shared), the path and "exact?"
  * following at once. On a speaker, the path ends there, the receiver saying what it does where it says.

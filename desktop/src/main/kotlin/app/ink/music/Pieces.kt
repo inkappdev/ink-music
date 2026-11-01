@@ -217,7 +217,7 @@ fun NameCover(name: String, side: Dp, modifier: Modifier = Modifier) {
  */
 fun Modifier.feather(
     top: () -> Float, bottom: () -> Float,
-    // a short fade (Bronson, 2026-10-25: subtler than ink tv's): it softens the edge, not a band
+    // a short fade (2026-10-25: subtler than ink tv's): it softens the edge, not a band
     topSize: Dp = 20.dp, bottomSize: Dp = 32.dp,
 ): Modifier = this
     .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }

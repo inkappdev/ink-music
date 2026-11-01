@@ -9,7 +9,7 @@ import java.net.Socket
 import java.net.URL
 
 /**
- * What a receiver says of itself, for the signal path while casting (Bronson, 2026-10-30): any DLNA renderer the
+ * What a receiver says of itself, for the signal path while casting (2026-10-30): any DLNA renderer the
  * formats it takes (its ConnectionManager's GetProtocolInfo); some, live, what they're doing to the sound, each in
  * its maker's own language, only asked, never set:
  * - Denon, Marantz: the control port (23; MS? sound mode, PSMULTEQ/PSDYNEQ Audyssey, PSDYNVOL, SSINFAISFSV the rate

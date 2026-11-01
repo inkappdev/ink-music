@@ -7,7 +7,7 @@ import java.nio.ByteBuffer
  * A fragmented MP4 (YouTube's audio: an empty sample table, then a fragment every couple of seconds, each saying its
  * own samples) put back as a plain one: one sample table for the whole song and its audio in one piece after it, as a
  * file off a record shop's site is. A Denon given YouTube's as it comes couldn't seek in it, and said "transitioning"
- * all through it (Bronson, 2026-10-30/31). The samples are copied as they are: nothing re-encoded. The phone has
+ * all through it (2026-10-30/31). The samples are copied as they are: nothing re-encoded. The phone has
  * Android's muxer for this; the computer hasn't, so it's done here by hand (ISO/IEC 14496-12: moof, traf, tfhd, trun).
  */
 object Unfragment {

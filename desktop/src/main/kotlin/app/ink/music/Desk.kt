@@ -49,7 +49,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * The window's size and place, kept from one run to the next, and whether it was zoomed big (Bronson, 2026-10-29: it
+ * The window's size and place, kept from one run to the next, and whether it was zoomed big (2026-10-29: it
  * always opened tiny: a zoomed window kept nothing, so the size before came back). Never smaller than [LEAST], nor
  * bigger than the screen.
  */
@@ -101,7 +101,7 @@ object Placed {
 }
 
 /**
- * How big everything's drawn, over the desktop's own scale (Bronson, 2026-10-29, GNOME on a 4K at 125%: "far too
+ * How big everything's drawn, over the desktop's own scale (2026-10-29, GNOME on a 4K at 125%: "far too
  * small for the window"). The desktop's scale was right; its screen just held 3072 points across, and ink's pages are
  * made for a window of 1440 to 1920. "fit", the first choice: the screen made about 1920 across (a Mac's, under that,
  * is as it is); or a size chosen in settings, or by ⌘/Ctrl = and -. Kept in a file.

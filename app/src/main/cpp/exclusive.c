@@ -1,4 +1,4 @@
-// The other exact way (Bronson, 2026-11-01): a music player with its own DAC inside (FiiO's, HiBy's) has no USB DAC to
+// The other exact way (2026-11-01): a music player with its own DAC inside (FiiO's, HiBy's) has no USB DAC to
 // drive, so its headphone or line output is asked for exclusively by AAudio, at the song's own rate: no mixer
 // between, as BitChord's "built-in DAC" does. Android may say no, or give another rate: then it's closed and the
 // player goes Android's shared way, and the signal path says which it was.

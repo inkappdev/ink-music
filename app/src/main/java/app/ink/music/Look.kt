@@ -174,7 +174,7 @@ internal fun boxBlur(px: IntArray, n: Int, r: Int, rows: Boolean) {
 
 /**
  * The giant names running across (the player's artist at its foot, ink weekly's, a long name on an artist's page):
- * moving, or still where they are (settings, the look; Bronson, 2026-10-30). Kept beside the look's own choice.
+ * moving, or still where they are (settings, the look; 2026-10-30). Kept beside the look's own choice.
  */
 object Marquees {
     private val _on = MutableStateFlow(true)
@@ -188,7 +188,7 @@ object Marquees {
  * Covers beside a list's songs (playlists, loved, kept, YouTube's lists): a word on each list's page, one choice for
  * them all (a Reddit tester's ask, 2026-10-30). Off at first: a list is words.
  */
-/** The lists tab as words in a list, or as a grid of tiles with each list's art (Bronson, 2026-10-30). */
+/** The lists tab as words in a list, or as a grid of tiles with each list's art (2026-10-30). */
 object ListsGrid {
     private val _on = MutableStateFlow(false)
     val on: StateFlow<Boolean> = _on

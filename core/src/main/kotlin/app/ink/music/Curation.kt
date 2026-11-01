@@ -9,8 +9,8 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * What people pick, read from their own public feeds (Bronson, 2026-10-28: "as cool and curated as possible, even
- * signed out"): critics' records (Pitchfork's reviews, Stereogum's album of the week, Bandcamp Daily's album of the
+ * What people pick, read from their own public feeds (2026-10-28): critics' records (Pitchfork's reviews, Stereogum's
+ * album of the week, Bandcamp Daily's album of the
  * day, NME's and the Quietus's reviews, Aquarium Drunkard), songs (Pitchfork's track reviews, Gorilla vs. Bear), and
  * what DJs are playing this minute on the stations ink radio keeps. Each a name and who picked it, with the line they
  * said where there is one; the apps find it on YouTube Music to play and its cover on iTunes. Plain Java, shared.
@@ -119,7 +119,7 @@ object Curation {
     /**
      * NPR Music's New Music Friday: each week public radio's DJs (KCRW, Radio Milwaukee, KUTX...) and NPR's critics on
      * the week's best records, listed in the episode's notes: "Album No. 1 - Michael Kiwanuka, 'Fudge'", then the
-     * lightning round's "- Josh Johnson, 'Animative'". Added 2026-10-29 (Bronson: the picks were Pitchfork heavy).
+     * lightning round's "- Josh Johnson, 'Animative'". Added 2026-10-29 (the picks were Pitchfork heavy).
      */
     private fun npr() = items("https://feeds.npr.org/510019/podcast.xml").filter { it.title.startsWith("New Music Friday") }.take(4).flatMap { i ->
         val notes = plain(i.raw.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")).replace('\u00A0', ' ').replace(Regex("\\s+"), " ")
@@ -156,8 +156,8 @@ object Curation {
     // ---- electronic ----
 
     /**
-     * Electronic music, picked by its own writers (Bronson, 2026-10-29: "a good curation of electronic music like
-     * Resident Advisor", whose picks have no feed): Bandcamp Daily's monthly electronic and ambient columns, A Closer
+     * Electronic music, picked by its own writers (2026-10-29, whose picks have no feed): Bandcamp Daily's monthly
+     * electronic and ambient columns, A Closer
      * Listen, Igloo and Headphone Commute's reviews (records); Inverted Audio's and Headphone Commute's premieres
      * (club tracks). Apart from the critics' picks, so those aren't made all ambient. The newest first.
      */
@@ -225,7 +225,7 @@ object Curation {
     private fun bare(name: String) = name.lowercase().removePrefix("the ").filter { it.isLetterOrDigit() }
 
     /**
-     * New from your artists (Bronson, 2026-10-29, listen's top): the picks (out this Friday, the critics', electronic's)
+     * New from your artists (2026-10-29, listen's top): the picks (out this Friday, the critics', electronic's)
      * by an artist you've played or keep, the most played first. `known` is every artist of yours (lower case) and how
      * often you've played them; a pick's artists are split where several share it ("Axel Boman & Superpitcher") and
      * matched whole, so "Air" isn't "Air Supply". One a record.
@@ -249,7 +249,7 @@ object Curation {
     data class Week(val day: String, val thread: String, val releases: List<Release>)
 
     /**
-     * Every record out this week, from r/indieheads' New Music Friday thread (Bronson, 2026-10-29): its newest one,
+     * Every record out this week, from r/indieheads' New Music Friday thread (2026-10-29): its newest one,
      * read from Reddit's search feed (its JSON turns apps away), each record "<strong>Artist - <a>Title</a></strong>",
      * then "Label: ..." and "Genre: ...". One person types it by hand each Friday, so a record that strays from that
      * shape is passed over; Reddit may close the feed to apps, and then the shelf isn't shown.
@@ -337,7 +337,7 @@ object Curation {
 
     /**
      * The day's record and the ones to fall back on, in turn: a turn a day through the fortnight's most named (every one
-     * more than one critic named, and seven at the least: with one far ahead it stayed two weeks, Bronson 2026-10-30:
+     * more than one critic named, and seven at the least: with one far ahead it stayed two weeks, 2026-10-30:
      * "it feels stale"), then the rest by how many named them, the newest first. The apps show the first
      * that YouTube Music has (a record's often reviewed before it's on streaming, or sold only on Bandcamp: Josh
      * Johnson's Animative, 2026-10-29).
@@ -414,7 +414,7 @@ object Curation {
     // ---- covers ----
 
     /**
-     * A record's or song's cover, from the catalogs in turn: iTunes, then Deezer (Bronson, 2026-10-29: covers missing
+     * A record's or song's cover, from the catalogs in turn: iTunes, then Deezer (2026-10-29: covers missing
      * on the new shelves; iTunes knows little that's small or brand new, and turns a crowd of asks away).
      */
     fun cover(title: String, artist: String, record: Boolean): String? = itunes(title, artist, record) ?: deezer(title, artist, record)

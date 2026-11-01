@@ -71,7 +71,7 @@ fun ListenPage(open: (Page) -> Unit) {
     val hourRecords = remember(hourSongs, byId) { hourSongs.mapNotNull { byId[it.albumId] }.distinctBy { it.id }.take(7) }
     val shelf = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(7) }
     // what you play at this hour, topped up from your shelves to seven (one record played at this hour once showed
-    // a shelf of one, Bronson, 2026-10-30)
+    // a shelf of one, 2026-10-30)
     val first = remember(hourRecords, shelf) { (hourRecords + shelf).distinctBy { it.id }.take(7) }
     val lately = remember(albums, heard) { albums.mapNotNull { a -> heard.lately("r:" + a.id)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
     val forgotten = remember(albums, heard) { albums.mapNotNull { a -> heard.forgotten("r:" + a.id, now)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
@@ -99,7 +99,7 @@ fun ListenPage(open: (Page) -> Unit) {
     // the shows you follow: their newest episodes not yet heard (read again from their feeds each hour)
     val episodes by Pods.fresh.collectAsState()
     LaunchedEffect(Unit) { Pods.refresh() }
-    // one rhythm down the page: the same room between every shelf, each with a head of its own (Bronson, 2026-10-29)
+    // one rhythm down the page: the same room between every shelf, each with a head of its own (2026-10-29)
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(GAP)) {
         // macOS keeping it off the network: why nothing from the server shows
@@ -315,7 +315,7 @@ private fun Mosaic(songs: List<Song>, name: String) {
 }
 
 /**
- * Lists as a grid (the phone's, Bronson 2026-10-30): loved and kept as mosaics of their records; your server's playlists
+ * Lists as a grid (the phone's, 2026-10-30): loved and kept as mosaics of their records; your server's playlists
  * their own art (Navidrome's mosaic); YouTube's lists theirs (YouTube's own made ink's, dithered).
  */
 @Composable

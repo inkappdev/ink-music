@@ -47,7 +47,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
- * Radio, a place of its own (the Mac's, here; Bronson, 2026-10-29: "bring this to the app as well"): the tower sending
+ * Radio, a place of its own (the Mac's, here; 2026-10-29): the tower sending
  * across the top ([RadioTower], its rings in the colour of the station on), what's on and tune in anywhere; then ink
  * radio's stations, or a genre's, chosen in a row of words, each its sleeve in its own colour.
  */

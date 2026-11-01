@@ -5,7 +5,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * A cover for a record whose files have none (Bronson, 2026-10-29: "fill it in for them"), both apps: looked up by
+ * A cover for a record whose files have none (2026-10-29), both apps: looked up by
  * its name and whose it is in the catalogs ([Curation.cover]: iTunes, then Deezer), the link kept in `dir` so each
  * record is asked about once; one not found is asked again after a week. Two at a time: iTunes turns a crowd away.
  * A miss is kept only when iTunes could be reached, so a record looked at offline isn't written off.

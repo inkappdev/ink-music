@@ -5,7 +5,7 @@ package app.ink.music
  * idea of it, from what you have), else YouTube Music's (the radio it makes from a song, yours when signed
  * in; the full build only). Run in the player's process, so it goes on with the app closed.
  *
- * Seeded by more than the last song (Bronson, 2026-10-28: "very smart, keep the vibe going"): the last one,
+ * Seeded by more than the last song (2026-10-28): the last one,
  * and the last two you chose yourself, so a few rounds of radio don't wander off from where you were (each
  * round seeded only by radio's own last song drifted). A song near the top for more than one seed comes
  * first; one heard in the last few hours, or a sped-up, slowed, nightcore or karaoke version, doesn't come.

@@ -185,7 +185,7 @@ class UsbAudioOutput(private val c: Context, private val h: UsbDac.Held, private
 }
 
 /**
- * Silence to the phone's speaker while the DAC plays, so Android knows ink music is playing (Bronson, 2026-11-01:
+ * Silence to the phone's speaker while the DAC plays, so Android knows ink music is playing (2026-11-01:
  * "when using the phone the music goes in and out"). Samsung holds back every process it doesn't hear playing while
  * the phone animates (OLAF: unlocking, opening an app; up to a second), and the DAC's samples go past Android, so it
  * didn't hear ours: the stream's thread stood still, and the DAC with it. Zeros, so nothing's heard.

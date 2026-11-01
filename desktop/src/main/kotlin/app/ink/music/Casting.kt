@@ -134,7 +134,7 @@ object Casting {
                 })
             }
         }, "cast find").apply { isDaemon = true }.start()
-        // a Mac: its own mDNS asked too (JmDNS, beside macOS's mDNSResponder, found no Cast speaker on Bronson's Mac;
+        // a Mac: its own mDNS asked too (JmDNS, beside macOS's mDNSResponder, found no Cast speaker on a Mac;
         // the pairing's announcing had the same trouble), through dns-sd as Finder asks
         if (Home.mac && browsing == null) Thread({ runCatching { browse() }.onFailure { Log.d("dns-sd: $it") } }, "cast find mac").apply { isDaemon = true }.start()
         // and the receivers that speak DLNA instead (a Denon, a Samsung TV)
@@ -447,7 +447,7 @@ object Casting {
             pending = songs
             handedOver = queue.size - songs.size   // songs is the queue from some song on (all, or from one refused)
             // a station from now: it has no 78 s in to start at (KEXP to the bedroom speaker sat buffering, or the speaker
-            // closed; Bronson, 2026-10-29)
+            // closed; 2026-10-29)
             val live = songs.firstOrNull()?.station == true
             // a station alone first, the others added once it's going: the speaker sat 2 to 5 s over all of them
             // (57 stations, each with its picture) before it fetched a byte of the one asked for

@@ -94,7 +94,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         }
         item(key = "radio") { InkRadioShelf(pages) }
         item(key = "festivals") { FestivalsShelf(pages) }
-        // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: Bronson, 2026-10-28)
+        // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: 2026-10-28)
         item(key = "inkmoods") { InkMoodsShelf() }
         moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
         if (records.isNotEmpty()) item(key = "picked") {
@@ -218,7 +218,7 @@ internal fun PickTile(s: Picks.Shown, pages: Pages) {
     Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null) {
         // the play build has no YouTube Music: the review is all there is to open
         if (!YouTubeMusic.available) { if (s.pick.link.isNotBlank()) runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.pick.link))) } }
-        // never out to the review (Bronson, 2026-10-29: The War on Drugs' "Who's That", a song, said "not streaming
+        // never out to the review (2026-10-29: The War on Drugs' "Who's That", a song, said "not streaming
         // yet" and sent you to Pitchfork while YouTube Music had it): a song picked plays; a record opens, and one
         // not there yet plays its song of the same name (its single) where there is one
         else scope.launch {
@@ -241,7 +241,7 @@ internal fun PickTile(s: Picks.Shown, pages: Pages) {
 
 /** The artist of the week: from the indie chart's top fifteen, the very famous passed over; their photo dithered, a line, play. */
 /**
- * ink weekly as INK's cover (Bronson, 2026-10-29: "really make that top ink weekly design shine"): its four covers in
+ * ink weekly as INK's cover (2026-10-29): its four covers in
  * the dither across the page, its name on a black tab in their corner; the week's artists running across in the giant
  * marquee, as the player's do (still under less motion); its note, play the week; its songs as a numbered shelf. A tap
  * on the covers or the songs' count opens the week.
@@ -368,7 +368,7 @@ private fun Electronic(all: List<Curation.Pick>, pages: Pages) {
 @Composable
 private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, pages: Pages) {
     // the chart's artists and the critics' picks', the week's turn through them; someone with under a million and a half
-    // listeners a month (Bronson, 2026-10-28: "a bit more niche"), with a photo to show
+    // listeners a month (2026-10-28), with a photo to show
     val picked by Picks.records.collectAsState()
     val names = remember(chart, picked) {
         (chart.map { it.artist } + picked.map { it.pick.artist }).map { it.substringBefore(",").substringBefore(" & ").trim() }
@@ -420,7 +420,7 @@ private fun audience(said: String): Long {
  * the genres you open most come first; a region's flavors after the rest on a mood's page.
  */
 object Moods {
-    /** ink's own order for the genres (Bronson, 2026-10-28: alphabetical put the odd ones first): the ones you open most still lead. */
+    /** ink's own order for the genres (2026-10-28: alphabetical put the odd ones first): the ones you open most still lead. */
     val GENRES = listOf("Indie & alternative", "Dance & electronic", "Hip-hop", "R&B & soul", "Jazz", "Rock", "Folk & acoustic", "Pop",
         "Soundtracks & musicals", "Reggae & caribbean", "Blues", "Latin", "Brazilian", "African", "Classical", "Metal", "Country & Americana",
         "K-Pop", "J-Pop", "Decades", "Songwriters & producers")
@@ -486,7 +486,7 @@ private fun MoodsAndGenres(all: List<TubeMood>, pages: Pages) {
     val counts by Moods.counts.collectAsState()
     val scope = rememberCoroutineScope()
     // the genres as a row of tiles to slide through, the ones you open most first (as words they were a wall of
-    // text on a phone: Bronson, 2026-10-28)
+    // text on a phone: 2026-10-28)
     Heading("genres", "youtube music's editors' playlists, the ones you open most first")
     Shelf(all.filter { it.genre }.sortedWith(compareByDescending<TubeMood> { counts[it.title] ?: 0 }.thenBy { Moods.rank(it.title) })) { m ->
         GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(ctx, m); pages.open(Page.Mood(m)) }

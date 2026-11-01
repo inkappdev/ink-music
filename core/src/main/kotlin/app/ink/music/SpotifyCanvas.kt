@@ -8,7 +8,7 @@ import java.net.URL
 /**
  * A song's Spotify Canvas (the looping clip Spotify shows behind a song, an .mp4, tall), asked as the web player asks,
  * with its passes (the phone's sign-in takes them from its web player; the computer is handed them by the phone, in
- * sync: Bronson, 2026-10-30). The song found on Spotify by title and artist (the same artist), then its canvas. Kept,
+ * sync: 2026-10-30). The song found on Spotify by title and artist (the same artist), then its canvas. Kept,
  * a found one and a none (a week: one may come), so a song is asked about once.
  */
 object SpotifyCanvas {

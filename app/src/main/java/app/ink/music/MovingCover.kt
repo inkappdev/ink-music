@@ -40,7 +40,7 @@ import java.io.File
 import kotlin.math.roundToInt
 
 /**
- * Moving covers and canvases (settings, the look), and the effect each layer takes, each its own (Bronson, 2026-10-30:
+ * Moving covers and canvases (settings, the look), and the effect each layer takes, each its own (2026-10-30:
  * "nothing tied to each other"): the cover (as it is, dither, pixels, fluted glass: still or moving, Apple Music's
  * motion artwork, [MotionCover], where a record has one), and a song's Spotify canvas behind the player (off, as it is,
  * or blur, fluted glass, pixels, dither). The still background behind it is Looks' own. Moving (the full build's): on
@@ -125,7 +125,7 @@ fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean,
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
     val on by Moving.canvasOn.collectAsState()
-    // the background's own effect (one background: the canvas when a song has one, else the cover; Bronson)
+    // the background's own effect (one background: the canvas when a song has one, else the cover)
     val look by Looks.on.collectAsState()
     if (!on || look == Look.PLAIN) return
     val url by produceState<String?>(null, title, artist, whenOn) {

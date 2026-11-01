@@ -80,7 +80,7 @@ class OnAir(private val player: Player, private val main: Handler, private val n
         val own = plain.getOrPut(id) { item.mediaMetadata }
         val md = if (said == null) own else own.buildUpon()
             .setTitle(said.title).setArtist(said.artist ?: own.artist).setAlbumTitle(own.title)
-            // always the station's own sleeve, moving, never the cover it sends (Bronson, 2026-10-27: they looked
+            // always the station's own sleeve, moving, never the cover it sends (2026-10-27: they looked
             // bad, the sleeve is ink's): the song's words change, the picture stays the station's
             .setArtworkUri(own.artworkUri).build()
         if (md == item.mediaMetadata) return

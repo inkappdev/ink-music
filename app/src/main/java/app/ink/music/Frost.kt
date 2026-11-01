@@ -22,7 +22,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
 val LocalFoot = compositionLocalOf { 0.dp }
 
 /**
- * The soft edge (Bronson's call, 2026-10-25): the bars stay black; only what's about to go behind
+ * The soft edge (the call, 2026-10-25): the bars stay black; only what's about to go behind
  * one goes ever so slightly out of focus as it nears it, in a thin strip beside the bar, sharp at
  * the strip's far side, [EDGE] of blur where it meets the bar, feathered (2026-10-27: "barely notice it"):
  * it comes on along [FEATHER], hardly at all till the last of the strip. No tint, nothing painted: the
@@ -30,7 +30,7 @@ val LocalFoot = compositionLocalOf { 0.dp }
  * (the tab row, the status bar). Black under the strip: the softened copy is drawn over the content itself, and a
  * dim word (35%) showed through it twice, brighter, cut off sharp at the strip's edge (2026-10-29, up next).
  */
-/** The blur where content meets a bar (4 dp till 2026-10-27, when Bronson wanted to barely notice it). */
+/** The blur where content meets a bar (4 dp till 2026-10-27, when it was wanted barely noticed). */
 private val EDGE = 1.5.dp
 
 /** How the blur comes on across the strip: cubed, so it's nearly nothing till the bar. */

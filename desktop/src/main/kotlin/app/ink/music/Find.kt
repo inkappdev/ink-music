@@ -102,7 +102,7 @@ fun FindTab(open: (Page) -> Unit) {
     val tubeSongs = found.songs
     val tubeRecords = found.albums
     // its artists, their faces (any you have already shown as yours); else whose its songs and records are
-    // (Bronson, 2026-10-29: Mac DeMarco found, no page of his to open)
+    // (2026-10-29: Mac DeMarco found, no page of his to open)
     val tubeArtists = remember(q, found, foundArtists) {
         if (q.isEmpty()) emptyList()
         else (found.artists.ifEmpty { (found.songs.flatMap { it.artist.split(", ") } + found.albums.map { it.artist }).map { TubeArtist(it.trim(), null) } })

@@ -270,7 +270,7 @@ object Library {
 }
 
 /**
- * The phone's folders that hold your music, chosen in settings (Bronson, 2026-10-30, after #1): their paths as the
+ * The phone's folders that hold your music, chosen in settings (2026-10-30, after #1): their paths as the
  * index keeps them ("Music/Phone/"), in files/folders.json. None chosen: every folder (less what [Library] leaves out).
  */
 object Folders {

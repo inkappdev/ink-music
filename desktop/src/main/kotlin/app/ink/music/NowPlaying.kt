@@ -23,7 +23,7 @@ import java.util.concurrent.Executors
  * The Mac's Now Playing (the menu bar's and Control Center's card, the lock screen, the media keys): the song, its
  * artist, record and cover, where it is in it, and its buttons, through MediaPlayer's MPNowPlayingInfoCenter and
  * MPRemoteCommandCenter by the Objective-C runtime (JNA). mpv's own (`media-controls`) is fed only when mpv is its
- * own app: as a library it showed "ink music", a dash and no times (Bronson, 2026-10-29).
+ * own app: as a library it showed "ink music", a dash and no times (2026-10-29).
  */
 object NowPlaying {
     private interface ObjC : Library {

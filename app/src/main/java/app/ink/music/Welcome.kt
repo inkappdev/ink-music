@@ -126,7 +126,7 @@ private fun Hello(onNext: () -> Unit) {
     var revealed by remember { mutableStateOf(0) }   // how many were there when the field developed
     val wave = remember { Animatable(0f) }
     // the words (INK MUSIC, the line, BEGIN) held back till the covers are ready, then faded in just ahead of
-    // them, so the two come together (Bronson, 2026-10-26); with no covers coming, in after a short hold
+    // them, so the two come together (2026-10-26); with no covers coming, in after a short hold
     val words = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         val start = android.os.SystemClock.elapsedRealtime()

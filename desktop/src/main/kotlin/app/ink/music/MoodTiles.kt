@@ -115,7 +115,7 @@ fun InkMoodsShelf() {
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
     fun go(m: InkMoods.Mood) = scope.launch { said = "${m.name}: finding its songs"; said = if (Moodboard.play(m)) null else "${m.name}: couldn't find its songs" }
-    // one row of tiles (Bronson, 2026-10-29: the three as words and the rest as tiles didn't belong together): right
+    // one row of tiles (2026-10-29: the three as words and the rest as tiles didn't belong together): right
     // now's three bigger, then the rest
     Column {
         Section("RIGHT NOW", said ?: "moods for ${Moods.said()}, then the rest")
@@ -165,7 +165,7 @@ object Fests {
 
 /**
  * Festivals soon: one row of posters, each a festival on now or within two months, set as a festival's poster is (its
- * name, when and where, the lineup as type, the first names biggest); a click opens the festival (Bronson, 2026-10-28:
+ * name, when and where, the lineup as type, the first names biggest); a click opens the festival (2026-10-28:
  * a row of faces each took too much of the page).
  */
 @Composable

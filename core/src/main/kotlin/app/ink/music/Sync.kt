@@ -10,7 +10,7 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * The phone and the computer kept as one (Bronson, 2026-10-29: "make everything seamlessly sync"), over the home wifi,
+ * The phone and the computer kept as one (2026-10-29), over the home wifi,
  * no cloud: paired once by a six-digit code ([Handover]: the pair agree a key no one on the network can work out, and
  * keep it), then whenever the two are on the same wifi the phone calls the computer (`POST /sync`, `_inksync._tcp`)
  * and each hands the other what it hasn't got, sealed under that key (AES-GCM):

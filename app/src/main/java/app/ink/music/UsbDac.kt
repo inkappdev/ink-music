@@ -30,7 +30,7 @@ object UsbStream {
 }
 
 /**
- * ink music's own way to a USB DAC (settings, sound, exact to a usb dac; Bronson, 2026-11-01, "a killer feature"):
+ * ink music's own way to a USB DAC (settings, sound, exact to a usb dac; 2026-11-01):
  * the DAC claimed from Android and played to directly, the song's own samples at its own rate, on any phone. Android's
  * bit-perfect path is the maker's to offer (Samsung's S26 offers a FiiO KA11 none, and lists no 44.1 kHz for it), so
  * this is UAPP's way: the DAC's descriptors read here (USB Audio Class 1 and 2), its clock set to the song's rate,

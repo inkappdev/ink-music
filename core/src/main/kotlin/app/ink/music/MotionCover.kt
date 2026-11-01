@@ -11,7 +11,7 @@ import java.util.Base64
  * A record's moving cover: Apple Music's motion artwork (the looping sleeve its album pages show, `editorialVideo` in
  * its catalog), the square one, as an HLS link (after BitChord's AppleMusicCanvas, 2026-10-30). The catalog is asked
  * with the web player's own anonymous pass, the one music.apple.com gives every visitor, read out of its script as a
- * browser gets it and kept till it lapses (Bronson's call, 2026-10-30, over a developer key of our own; Apple may
+ * browser gets it and kept till it lapses (the call, 2026-10-30, over a developer key of our own; Apple may
  * change it, and the covers go still). Only where a label made one: most records have none, and the still cover
  * stays. Found and not-found both kept (`dir`; a week for a miss, one may come), so a record is asked about once.
  */

@@ -23,7 +23,7 @@ sealed interface Updating {
 }
 
 /**
- * ink music keeping itself up to date on the computer, as the phone's full build does (Bronson, 2026-10-29): GitHub's
+ * ink music keeping itself up to date on the computer, as the phone's full build does (2026-10-29): GitHub's
  * latest release looked at every six hours; one newer than this offered at the top of listen. Taken, this computer's
  * download comes down (the Mac's dmg, Windows' msi, Linux's deb or rpm, as this one was installed), is checked against
  * the release's SHA256SUMS, and goes in its own system's way, then ink music opens again:

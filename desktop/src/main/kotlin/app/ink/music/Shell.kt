@@ -132,7 +132,7 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
                 Word(h.word, pixel(12.sp, if (h.lossless) Ink.ink else Ink.mid)) { open(Page.Playing) }
             }
         }
-        // the song small, so up next and the lyrics have the column (Bronson, 2026-10-28: "far too small"): the cover
+        // the song small, so up next and the lyrics have the column (2026-10-28): the cover
         // under the line, its words beside it; the cover opens the player, the big one
         Row(verticalAlignment = Alignment.Top) {
             Opens(Modifier.size(112.dp), { open(Page.Playing) }) {
@@ -161,7 +161,7 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            // the lyrics are the player's (Bronson, 2026-10-28: "only lyrics when you go full screen")
+            // the lyrics are the player's (2026-10-28)
             for (w in listOf("up next", "play on")) Word(w, pixel(13.sp, if (w == shows) Ink.ink else Ink.dim), touch = 6.dp) { shows = w }
             Spacer(Modifier.weight(1f))
             // the player, the whole screen

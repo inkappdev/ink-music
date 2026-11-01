@@ -4,7 +4,7 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 /**
- * ink's festivals (Bronson, 2026-10-28): the ones worth hearing ahead of, their lineups as announced, kept by hand in
+ * ink's festivals (2026-10-28): the ones worth hearing ahead of, their lineups as announced, kept by hand in
  * ink-festivals.json as ink weekly is (no free feed of lineups exists). The ones on, or starting within two months,
  * become a section on explore: who's playing, and a station of them. Plain Java, shared.
  */

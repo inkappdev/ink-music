@@ -9,7 +9,7 @@ import androidx.media3.common.Format
 import java.io.File
 
 /**
- * Exact to a USB DAC (settings, sound; Android 14 and up; Bronson, 2026-10-30): the song's own bits at its own rate,
+ * Exact to a USB DAC (settings, sound; Android 14 and up; 2026-10-30): the song's own bits at its own rate,
  * past Android's mixer (which takes everything to 48 kHz and works the volume in), by Android's bit-perfect path
  * (AudioManager.setPreferredMixerAttributes, MIXER_BEHAVIOR_BIT_PERFECT). Asked, in the player's process, for the very
  * format the player sends (float, the song's whole depth, at its rate; 16 bit for a plain 16 bit wav), each time a

@@ -360,8 +360,8 @@ fun ContinueHere(o: Continue.Offer) {
 }
 
 /**
- * What a phone plays, to show in the bottom bar when nothing plays here (Bronson, 2026-10-29: "show up on the bottom
- * player in real time ... and takeover options"): playing there, or paused there since this computer last played.
+ * What a phone plays, to show in the bottom bar when nothing plays here (2026-10-29): playing there, or paused there
+ * since this computer last played.
  */
 @Composable
 fun remoteNow(): Continue.Offer? {

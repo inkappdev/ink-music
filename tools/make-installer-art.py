@@ -3,7 +3,7 @@ the welcome and finish pages' panel (WixUIDialogBmp) and the strip over the page
 (WixUIBannerBmp). Black all over: WiX writes its words over them from about 36% across the panel
 and from the strip's left, in ink's white (main.wxs's Ink_ styles give their colour; left to
 Windows they'd be black in light mode and white in dark, and white halves left them unreadable
-in dark, Bronson's PC, 2026-10-29); a 12% hairline where the panel meets the words. INK in Archivo Black, MUSIC in Silkscreen, as the icon; a
+in dark, a PC, 2026-10-29); a 12% hairline where the panel meets the words. INK in Archivo Black, MUSIC in Silkscreen, as the icon; a
 radio's waves dithered under them, as the stations' sleeves. Drawn at twice WiX's size (493 x 312,
 493 x 58): WiX stretches them to the dialog, so a 2x screen gets them sharp.
 Needs Pillow:

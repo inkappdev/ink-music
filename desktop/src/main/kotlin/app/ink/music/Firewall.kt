@@ -6,7 +6,7 @@ import kotlin.concurrent.thread
 
 /**
  * Windows' firewall and ink music (Windows only). A new app's ports stay shut until someone allows it, so the phone
- * finds the computer on the wifi and then can't get in (Bronson's PC, 2026-10-29: pairing timed out); a speaker
+ * finds the computer on the wifi and then can't get in (a PC, 2026-10-29: pairing timed out); a speaker
  * can't reach Serve either. Windows also starts every new network as public, where an allowed app stays shut. Looked
  * at without asking anything (PowerShell's firewall reading); LET IT IN then asks Windows once, as an administrator:
  * any block Windows put on ink music goes, it's let in on private networks, and this wifi is made private if it's

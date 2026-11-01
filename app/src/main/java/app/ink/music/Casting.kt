@@ -380,7 +380,7 @@ object Casting {
     /**
      * Songs radio found for the queue's end, added to the speaker's queue. Radio runs in the phone's player, which
      * follows the speaker paused: its songs went only there, the speaker played out its queue and stopped, and the
-     * phone's queue with radio's songs came back, played on the phone (Bronson, 2026-10-28). Main thread.
+     * phone's queue with radio's songs came back, played on the phone (2026-10-28). Main thread.
      */
     fun extend(ctx: Context, songs: List<Song>) {
         val l = link ?: return
@@ -549,7 +549,7 @@ object Casting {
             pending = songs
             handedOver = queue.size - songs.size   // songs is the queue from some song on (all, or from one refused)
             // a station from now: it has no 78 s in to start at (KEXP to the bedroom speaker sat buffering, or the speaker
-            // closed; Bronson, 2026-10-29)
+            // closed; 2026-10-29)
             val live = songs.firstOrNull()?.station == true
             // a station alone first, the others added once it's going: the speaker sat 2 to 5 s over all of them
             // (57 stations, each with its picture) before it fetched a byte of the one asked for

@@ -44,7 +44,7 @@ import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 
 /**
- * Lists made from your listening (after Cellar's, Bronson's pick, 2026-10-28), nothing signed in:
+ * Lists made from your listening (after Cellar's, the pick, 2026-10-28), nothing signed in:
  * - fresh finds: songs you've never played and don't have, from the radios of the songs you play most (each Monday);
  * - deep cuts: your most played artists' songs you've never played, yours first (each Monday);
  * - because you loved: a loved song's radio, only songs you've never played (a different love each day);

@@ -27,7 +27,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * A song's YouTube version, chosen by hand (after Meld's "change YouTube version"; Bronson, 2026-11-01): when the
+ * A song's YouTube version, chosen by hand (after Meld's "change YouTube version"; 2026-11-01): when the
  * YouTube song ink music plays is the wrong one (a live take, a cover, the music video), the right one's link pasted
  * in, and kept. The song stays the song (its loves, its place in lists, its words); only what's streamed for it is the
  * chosen one, and a song found by its words (a pick, an import, a mix) finds the chosen one too. Kept as a file both

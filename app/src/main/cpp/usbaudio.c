@@ -4,7 +4,7 @@
 // isochronous endpoint is fed through Linux's usbfs on the descriptor Android hands over: transfers kept in flight,
 // each filled from a ring the player writes into, sized by the DAC's own clock (its feedback endpoint) where it's
 // asynchronous. A sample reaches the DAC as the same number it was in the file: 16 bit and 24 bit samples, given as
-// float or 16 bit, are scaled back exactly into the DAC's slot (gain 1). Bronson, 2026-11-01: "a killer feature".
+// float or 16 bit, are scaled back exactly into the DAC's slot (gain 1).
 
 #include <jni.h>
 #include <linux/usbdevice_fs.h>
@@ -261,8 +261,8 @@ JNIEXPORT jlong JNICALL Java_app_ink_music_UsbStream_open(JNIEnv *e, jclass c, j
     d->period = d->high_speed ? 1 << (iv - 1) : 1;
     d->per_second = (d->high_speed ? 8000 : 1000) / d->period;
     // about 1 ms a transfer, 24 in flight: 24 ms between the ring and the DAC, the most this thread can be held up
-    // (the phone busy) before the DAC hears nothing; 16 wasn't enough (Bronson, 2026-11-01: "when using the phone
-    // the music goes in and out"). 192 packets in flight at most: the S26's controller stopped giving 16 of 16 back
+    // (the phone busy) before the DAC hears nothing; 16 wasn't enough (2026-11-01). 192 packets in flight at most: the
+    // S26's controller stopped giving 16 of 16 back
     // (256 in flight) after the 255th, for good (2026-11-01)
     d->packets = d->per_second / 1000; if (d->packets < 1) d->packets = 1; if (d->packets > MAX_PACKETS) d->packets = MAX_PACKETS;
     pthread_mutex_init(&d->lock, NULL);

@@ -74,7 +74,7 @@ fun pixel(size: TextUnit, color: Color = Ink.ink) = TextStyle(
 )
 
 /**
- * Silkscreen's pixels blur together below 12 sp (Bronson, 2026-10-25: the small words were hard to
+ * Silkscreen's pixels blur together below 12 sp (2026-10-25: the small words were hard to
  * read): 12 at the least, the sizes just over it a step up, 14 and above as asked.
  */
 private fun readable(size: TextUnit): TextUnit = when {

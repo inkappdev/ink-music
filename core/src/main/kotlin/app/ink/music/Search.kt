@@ -3,7 +3,7 @@ package app.ink.music
 import java.text.Normalizer
 
 /**
- * How find matches what's typed, both apps (Bronson, 2026-10-29: "very fully featured everywhere"): forgiving of
+ * How find matches what's typed, both apps (2026-10-29): forgiving of
  * case, accents (beyonce finds Beyoncé), "&" for "and", punctuation (acdc finds AC/DC's words, "its" finds It's),
  * and of words in any order or spread over a song's title, artist and record ("demarco salad" finds Salad Days).
  */

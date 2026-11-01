@@ -6,7 +6,7 @@ import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * A YouTube song as a plain MP4 file, for a DLNA receiver (the phone's Plain; Bronson, 2026-10-31, the Mac to the
+ * A YouTube song as a plain MP4 file, for a DLNA receiver (the phone's Plain; 2026-10-31, the Mac to the
  * Denon: songs skipping): YouTube's audio is fragmented MP4, and a Denon given it couldn't seek, said "transitioning"
  * all through it, and, given it as next, opened it minutes early and found it gone. Here: the whole stream fetched at
  * once, put back as a plain MP4 ([Unfragment]: nothing re-encoded), kept in the cache (the last dozen), served from

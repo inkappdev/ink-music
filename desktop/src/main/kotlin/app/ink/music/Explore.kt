@@ -51,9 +51,9 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 
 /**
- * INK (explore and ink's own place, one since 2026-10-29: Bronson), what isn't yours yet, picked by people: ink weekly
- * on top, ink radio after what's on the air; (Bronson, 2026-10-28: "as cool and curated as possible, even signed
- * out"): the record of the day; what DJs are playing this minute; right now's moods and every mood and genre;
+ * INK (explore and ink's own place, one since 2026-10-29), what isn't yours yet, picked by people: ink weekly
+ * on top, ink radio after what's on the air; (2026-10-28): the record of the day; what DJs are playing this minute;
+ * right now's moods and every mood and genre;
  * new records the critics picked; an artist of the week from the indie chart; the songs the critics picked beside the
  * chart, each song's move over the week; YouTube Music's own new records and shelves only as you, signed in (signed
  * out they're mostly made by AI).
@@ -90,7 +90,7 @@ fun ExplorePage(open: (Page) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val across = ((maxWidth - SIDE * 2) / 170.dp).toInt().coerceAtLeast(2)
         val wide = maxWidth >= 860.dp
-        // one rhythm down the page: the same room between every section (Bronson, 2026-10-29)
+        // one rhythm down the page: the same room between every section (2026-10-29)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(GAP)) {
             // ink weekly, the cover: ours, new each Friday
@@ -314,7 +314,7 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
 internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember(s) { mutableStateOf<String?>(null) }
-    // never out to the review (Bronson, 2026-10-29: The War on Drugs' "Who's That", a song, sent you to Pitchfork
+    // never out to the review (2026-10-29: The War on Drugs' "Who's That", a song, sent you to Pitchfork
     // while YouTube Music had it): a song picked plays; a record opens, and one not there yet plays its song of the
     // same name (its single) where there is one
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null) {
@@ -344,8 +344,8 @@ fun plain(title: String) = title.replace(Regex("""\s*[\[(](feat\.?|ft\.?|with|fr
 
 /**
  * A row of a list of songs picked by others (the chart, the critics'): a place or nothing, its cover, its name big,
- * who under it, and dim at its right who chose it; room above and below so a column of them reads (Bronson,
- * 2026-10-29: "cramped and hard to read").
+ * who under it, and dim at its right who chose it; room above and below so a column of them reads
+ * (2026-10-29).
  */
 @Composable
 private fun PickedRow(place: Int?, move: String, face: Song?, title: String, artist: String, by: String, onClick: () -> Unit) {
@@ -417,7 +417,7 @@ private fun Chart(chart: List<IndieChart.Entry>?, before: Map<String, Int?>?, op
 private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit) {
     // the week's turn through the chart's top fifteen, passing over the very famous (a discovery, not the Rolling Stones)
     // the chart's artists and the critics' picks', the week's turn through them; someone with under a million and a half
-    // listeners a month (Bronson, 2026-10-28: "a bit more niche"), with a photo to show
+    // listeners a month (2026-10-28), with a photo to show
     val picked by Picks.records.collectAsState()
     val names = remember(chart, picked) {
         (chart.map { it.artist } + picked.map { it.pick.artist }).map { it.substringBefore(",").substringBefore(" & ").trim() }
@@ -483,7 +483,7 @@ private fun who(subtitle: String) = subtitle.split(" • ").map { it.trim() }
  * A station from a mood: a playlist from each of its first flavors, mixed, radio after.
  */
 object Moods {
-    /** ink's own order for the genres (Bronson, 2026-10-28: alphabetical put the odd ones first): the ones you open most still lead. */
+    /** ink's own order for the genres (2026-10-28: alphabetical put the odd ones first): the ones you open most still lead. */
     val GENRES = listOf("Indie & alternative", "Dance & electronic", "Hip-hop", "R&B & soul", "Jazz", "Rock", "Folk & acoustic", "Pop",
         "Soundtracks & musicals", "Reggae & caribbean", "Blues", "Latin", "Brazilian", "African", "Classical", "Metal", "Country & Americana",
         "K-Pop", "J-Pop", "Decades", "Songwriters & producers")
@@ -554,7 +554,7 @@ object Moods {
 
 /**
  * The genres (YouTube Music's own, its editors' playlists), the ones you open most first: a heading of their own
- * and two rows of tiles to slide through (Bronson, 2026-10-29: as a wall of words under the moods they had none).
+ * and two rows of tiles to slide through (2026-10-29: as a wall of words under the moods they had none).
  */
 @Composable
 private fun Genres(all: List<InnerTube.Mood>, open: (Page) -> Unit) {
@@ -588,7 +588,7 @@ private fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
 @Composable
 fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
     val counts by Moods.counts.collectAsState()
-    // a region's or a language's flavors after the rest, unless it's a genre you open (Bronson, 2026-10-28: all of it picked-feeling)
+    // a region's or a language's flavors after the rest, unless it's a genre you open (2026-10-28: all of it picked-feeling)
     val shelves by produceState<List<InnerTube.Shelf>?>(null, m.params, counts) {
         val all = withContext(Dispatchers.IO) { InnerTube().mood(m.params) }
         val opened = counts.filterValues { it > 0 }.keys.joinToString(" ").lowercase()

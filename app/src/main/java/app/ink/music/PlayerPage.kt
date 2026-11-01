@@ -111,7 +111,7 @@ import kotlin.math.PI
 import kotlin.math.atan2
 
 /**
- * The player's small words, a size up from the library's and brighter (Bronson, 2026-10-26, after a
+ * The player's small words, a size up from the library's and brighter (2026-10-26, after a
  * tester couldn't read them): they're read over the cover's look, not black. Said things (the artist,
  * the times, the top row) at 75%, not 55%; what's off (shuffle, repeat, sleep, lyrics) at 32%, not 17%.
  */
@@ -135,7 +135,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     val ctx = LocalContext.current
     val now by Playback.now.collectAsState()
     // a blend (TRANSITIONS): in its first half the song leaving is still what's shown, its cover, its words; at the
-    // middle, as the bass goes across, the new one pushes in (the screen changes as the music does; Bronson,
+    // middle, as the bass goes across, the new one pushes in (the screen changes as the music does,
     // 2026-11-01: the times jumped as the songs changed)
     val real = now
     val mixFrom by Playback.mixFrom.collectAsState()
@@ -151,7 +151,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     }
     var dir by remember { mutableIntStateOf(1) }   // the push's way: next in from the right, back from the left
     var queueUp by remember { mutableStateOf(false) }
-    // into a playlist, from here (Bronson, 2026-10-29: "an easier way"): your lists over the player, and back
+    // into a playlist, from here (2026-10-29): your lists over the player, and back
     var addUp by remember { mutableStateOf(false) }
     var added by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(added) { if (added != null) { delay(3_000); added = null } }
@@ -226,7 +226,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 // where in the queue (a tap opens it); where it plays, a pixel speaker (as the heart is drawn) in the
                 // middle, lit while it's a speaker, dim on the phone, a tap opens every speaker (its name is under the
                 // title: "flac on bedroom speaker", a long one here pushed close off the row); close. The look is chosen
-                // in settings, the look, now (its three layers there, each its own: Bronson, 2026-10-30)
+                // in settings, the look, now (its three layers there, each its own: 2026-10-30)
                 Centred(
                     start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true } },
                     middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
@@ -342,7 +342,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
 }
 
 /**
- * The player's second row, smaller: up next, lyrics, into a playlist, stop (sleep gone: Bronson, 2026-10-29).
+ * The player's second row, smaller: up next, lyrics, into a playlist, stop (sleep gone: 2026-10-29).
  */
 @Composable
 private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null, episode: Boolean = false) {
@@ -459,7 +459,7 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
         val l = look
         value = if (c != null && l != null) withContext(Dispatchers.Default) { Looks.draw(c.image.asAndroidBitmap(), l, c.accent, px, density)?.asImageBitmap() } else null
     }
-    // a cover still on its way: black a moment, never the gray name cover flashing first (Bronson); that only for a
+    // a cover still on its way: black a moment, never the gray name cover flashing first; that only for a
     // record with none to be found
     val late by produceState(false, t.song?.albumId) { delay(1_500); value = true }
     Box(modifier.size(side)) {
@@ -566,7 +566,7 @@ private fun Scrubber(
         // the times at the ends, and dead centre between them what's heard; in a blend, the tempos and MIXING
         Box(Modifier.fillMaxWidth().padding(bottom = if (mix != null && (k != null || point != null)) 0.dp else 8.dp)) {
             if (k != null && mix != null) {
-                // beat-matched, the tempos; else said plainly it's the crossfade (Bronson: the tempos sometimes didn't show)
+                // beat-matched, the tempos; else said plainly it's the crossfade (the tempos sometimes didn't show)
                 BasicText(if (mix.bpmTo > 0) "${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM" else "CROSSFADE", style = pixel(SMALL, Ink.ink),
                     modifier = Modifier.align(androidx.compose.ui.Alignment.CenterStart))
                 BasicText("MIXING", style = pixel(SMALL, Ink.ink), modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
@@ -907,13 +907,13 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
 }
 
 /**
- * A lossless song's moment (Bronson's pick, 2026-10-26): as it starts, "HI-RES" or "LOSSLESS" types itself
+ * A lossless song's moment (the pick, 2026-10-26): as it starts, "HI-RES" or "LOSSLESS" types itself
  * across the cover, its depth and rate under it, holds a moment, and goes; the word at the player's top
  * says it after. Once a song, only at its start, never for lossy (the word alone says that).
  */
 @Composable
 private fun Moment(t: Now, onTyping: (Boolean) -> Unit) {
-    // on a speaker the phone isn't decoding: what's sent says it ("flac 24/96 on denon", Bronson's ask)
+    // on a speaker the phone isn't decoding: what's sent says it ("flac 24/96 on denon", asked)
     val h = if (t.device.isNotEmpty()) sent(t.quality, t.song?.id.orEmpty()) else t.heard
     val key = t.song?.id ?: (t.title + t.artist)
     var big by remember(key) { mutableStateOf("") }
@@ -961,7 +961,7 @@ private const val SETTLE = 1_400
 private val SETTLING = androidx.compose.animation.core.CubicBezierEasing(.45f, 0f, .2f, 1f)
 
 /**
- * The signal path (Bronson, 2026-10-30, "an audio pipeline of information as nice text"): what reaches your ears, step by
+ * The signal path (2026-10-30): what reaches your ears, step by
  * step, from where the song came to where it plays, each as the player read it, a hairline between; then plainly
  * whether it's exact, and if not what touched it. On a speaker, the path ends there: the speaker plays it itself.
  */
@@ -970,7 +970,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
     val h = n.heard
     val ctx = LocalContext.current
     val k = { hz: Int -> "${Heard.khz(hz)} khz" }
-    // what's yours to change sits on its step, a word to tap (Bronson's ask): the path and "exact?" follow at once
+    // what's yours to change sits on its step, a word to tap (asked): the path and "exact?" follow at once
     var levelOn by remember { mutableStateOf(Playback.levelling(ctx)) }
     var eqState by remember { mutableStateOf(Eq.read(ctx)) }
     var exactOn by remember { mutableStateOf(Exact.on(ctx)) }
@@ -1132,7 +1132,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         BasicText(h?.word ?: n.quality, style = pixel(16.sp, if (h?.lossless == true) Ink.ink else SAID))
         Spacer(Modifier.height(28.dp))
-        // the signal travelling down it, once as it opens (Bronson's ask): each step lit in turn from dim, the hairline
+        // the signal travelling down it, once as it opens (asked): each step lit in turn from dim, the hairline
         // to the next filling with ink as the progress line does; then "exact?". Moving less, all of it at once
         val less by Moves.less.collectAsState()
         val per = 160
@@ -1186,12 +1186,12 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
 
 /**
  * What's heard, between the song's times on the cover's top edge ("flac 24/96", lit when lossless; at 75%
- * when lossy); a tap tells all of it. After a lossless song's moment it fades in slowly (Bronson's ask,
+ * when lossy); a tap tells all of it. After a lossless song's moment it fades in slowly (asked,
  * 2026-10-26: once the moment has faded, as slowly). On a speaker, what's sent there.
  */
 @Composable
 private fun HeardWord(n: Now, typing: Boolean, onOpen: () -> Unit) {
-    // on a speaker, what's sent ("flac 24/96"): up here too, a tap to its path (Bronson: easier than the line under the title)
+    // on a speaker, what's sent ("flac 24/96"): up here too, a tap to its path (easier than the line under the title)
     val h = if (n.device.isNotEmpty()) sent(n.quality, n.song?.id.orEmpty()) else n.heard
     var last by remember { mutableStateOf(h) }
     if (h != null) last = h
@@ -1249,7 +1249,7 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
                         Spacer(Modifier.height(8.dp))
                         BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
                         // the giant name, under the title here (the player's controls between them left out), edge to edge,
-                        // moving or still as set (Bronson)
+                        // moving or still as set
                         Spacer(Modifier.height(28.dp))
                         Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.requiredWidth(full.first))
                     }
@@ -1260,7 +1260,7 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * The look's example song: Fontaines D.C.'s Starburster (Bronson's pick, 2026-10-30: Romance's moving heart, a canvas
+ * The look's example song: Fontaines D.C.'s Starburster (the pick, 2026-10-30: Romance's moving heart, a canvas
  * behind it, in the look as the still cover would be). The record named too: YouTube's search can find a song without it, and the moving cover is the record's.
  */
 object Showcase {

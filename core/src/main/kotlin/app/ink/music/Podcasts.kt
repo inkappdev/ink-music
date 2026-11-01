@@ -11,7 +11,7 @@ import java.security.MessageDigest
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
- * Podcasts (Bronson, 2026-10-31: "can we add podcasts?"): a show is its RSS feed, an episode a file in it. Found through
+ * Podcasts (2026-10-31): a show is its RSS feed, an episode a file in it. Found through
  * Apple's directory (its search and its chart: free, no key, the feed's link in each), or a feed's link pasted. The
  * shows you follow, each show's episodes as last read, and where you stopped in each episode are kept as files in
  * [dir] (the app's: both the screens and the player read them, so files, never prefs). Plain Kotlin: the computer's
@@ -167,7 +167,7 @@ object Podcasts {
     fun fresh(days: Int = 14, n: Int = 20): List<Pair<Show, Episode>> {
         val since = System.currentTimeMillis() - days * 86_400_000L
         val places = places()
-        // two a show at most: a daily one (The Daily) filled the whole shelf (Bronson, 2026-11-01)
+        // two a show at most: a daily one (The Daily) filled the whole shelf (2026-11-01)
         return following().flatMap { s -> kept(s.feed)?.let { (show, list) -> list.filter { it.published > since }.map { show to it } }.orEmpty()
             .filter { (places[it.second.id]?.first ?: 0L) >= 0L }.sortedByDescending { it.second.published }.take(2) }
             .sortedByDescending { it.second.published }.take(n)

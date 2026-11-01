@@ -58,7 +58,7 @@ object StationSleeve {
     const val FRAMES = 8
     private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
     /**
-     * A station's own colour (it has no cover; Bronson, 2026-10-29: "the page needs color"): one of a dozen vivid ones,
+     * A station's own colour (it has no cover; 2026-10-29): one of a dozen vivid ones,
      * the same for it always, its rings dithered in it on black.
      */
     private val COLORS = longArrayOf(0xFFE8502A, 0xFFF2A93B, 0xFFE9D65B, 0xFF7BC86C, 0xFF3FB8AF, 0xFF4AA3F0,
@@ -124,7 +124,7 @@ object StationSleeve {
 @Composable
 fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean = false) {
     // a white frame round it, the rings filling it all, the name big on a black tab at its lower left, over the rings
-    // where they begin (Bronson, 2026-10-28: "a white box around the radio dither", the name "spilling into" it)
+    // where they begin (2026-10-28, the name "spilling into" it)
     BoxWithConstraints(modifier.background(Ink.black).border(1.dp, Ink.ink)) {
         val side = maxWidth
         val density = LocalDensity.current.density

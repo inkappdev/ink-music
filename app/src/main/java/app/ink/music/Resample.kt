@@ -12,7 +12,7 @@ import kotlin.math.floor
 import kotlin.math.sin
 
 /**
- * Every song at 48 kHz while songs run into each other (Bronson, 2026-11-01: "you can hear the song stop"): YouTube's
+ * Every song at 48 kHz while songs run into each other (2026-11-01): YouTube's
  * songs come at 44.1 (AAC) or 48 kHz (Opus), and each change of rate had Android's track made anew, a moment of
  * nothing at the very handover. At one rate the track goes on through. Android's mixer runs at 48 kHz and made 44.1
  * into 48 anyway, so this only does it here instead, as well: a windowed sinc, 64 taps, 256 phases between which it

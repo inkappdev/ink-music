@@ -12,7 +12,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * A YouTube song as a plain MP4 file, for a DLNA receiver (Bronson, 2026-10-30): YouTube's audio is fragmented MP4, a
+ * A YouTube song as a plain MP4 file, for a DLNA receiver (2026-10-30): YouTube's audio is fragmented MP4, a
  * stream with no length or index at its head, and a Denon given it couldn't seek, never knew the song's length, said
  * "transitioning" all through it, raced through its start, and, given it as next, opened it minutes early and found it
  * gone when it got there. Here: the whole stream fetched at once, its audio put in a plain MP4 as it is (Android's own

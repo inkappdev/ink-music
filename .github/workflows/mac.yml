@@ -48,7 +48,7 @@ jobs:
       # signed as "ink music", one certificate of ink's own (made 2026-10-29, ~/.config/ink-music/ink-music-mac-sign.*,
       # the repository's MAC_SIGN_P12 and MAC_SIGN_PASS): not Apple's, so the first open is still Open Anyway, but
       # every build is the same app to macOS, which keeps what it was allowed (Local Network: an ad hoc build was a
-      # new app each time, and its server went dark till allowed again; Bronson's Mac, 2026-10-29). Each piece of
+      # new app each time, and its server went dark till allowed again; a Mac, 2026-10-29). Each piece of
       # code inside from the inside out (Java's runtime, libmpv's), then the app; the dmg opened writable to do it.
       - name: signed as ink music
         if: env.P12 != ''

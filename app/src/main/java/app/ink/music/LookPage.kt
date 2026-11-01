@@ -26,7 +26,7 @@ import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 
 /**
- * Settings, the look (Bronson, 2026-10-30: "an entire separate settings page ... with visual examples"): the player in
+ * Settings, the look (2026-10-30): the player in
  * small pinned at the top (always the same song, one with every moving thing), the choices scrolling under it, each
  * showing there at once. In the picture's order: the cover, what's behind it, and whether they move.
  */
@@ -49,8 +49,8 @@ fun LookPage(pages: Pages) {
             Spacer(Modifier.height(14.dp))
             // the player in small, pinned: what's chosen below shows here
             // two songs, swiped between: one with a canvas, one without (where the look behind it shows); a choice
-            // tapped below changes the song in sight, never the song (Bronson). Only the one in sight plays its clips
-            // one song with every moving thing; "behind it" chosen, its canvas steps aside a moment to show it (Bronson)
+            // tapped below changes the song in sight, never the song. Only the one in sight plays its clips
+            // one song with every moving thing; "behind it" chosen, its canvas steps aside a moment to show it
             val many = YouTubeMusic.available && Showcase.picks.size > 1
             val pager = androidx.compose.foundation.pager.rememberPagerState { if (many) Showcase.picks.size else 1 }
             val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -67,7 +67,7 @@ fun LookPage(pages: Pages) {
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 28.dp, bottom = LocalFoot.current + 40.dp)) {
-                // three layers, each its own effect, none following another (Bronson, 2026-10-30): the cover, the
+                // three layers, each its own effect, none following another (2026-10-30): the cover, the
                 // still background, spotify's canvas over it; each a row of words, the chosen one lit
                 @Composable
                 fun Choices(words: List<Pair<String, Boolean>>, pick: (Int) -> Unit) {

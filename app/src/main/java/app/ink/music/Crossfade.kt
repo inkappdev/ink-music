@@ -21,7 +21,7 @@ import kotlin.math.log10
 import kotlin.math.sqrt
 
 /**
- * Automix's first half, the smart crossfade (settings, sound; Bronson, 2026-11-01, after BitChord's Automix): a song
+ * Automix's first half, the smart crossfade (settings, sound; 2026-11-01, after BitChord's Automix): a song
  * ending goes into the next, the next coming in under it as it goes. Not at a fixed time: each song's end is
  * measured as it starts (its last 25 seconds decoded on their own), so a song fading out hands over as it fades,
  * and one ending in silence hands over before the silence; the next one's own silence at its start is skipped.
@@ -33,7 +33,7 @@ import kotlin.math.sqrt
  * Never within a record played in order (its songs run into each other as made), never an episode or a station,
  * never with exact on (it changes the sound) or on a speaker, never on repeat one, never a skip of yours.
  *
- * Automix's second half, the beats matched (Bronson: "start"): each song's beat found in the same decode (an onset
+ * Automix's second half, the beats matched: each song's beat found in the same decode (an onset
  * curve from its low end, the kick; its period by autocorrelation, 60 to 180 bpm; its grid laid on), and where both
  * are sure and their tempos within 8% (or double, or half), the handover lands on one of the old song's beats, the
  * new one comes in on its own beat at the old one's tempo (stretched, its pitch kept), held there by a loop that
@@ -169,7 +169,7 @@ class Crossfade(
         // a song cut short for the blend: its end is mixed in the player's own sound (Blend), not the two-player way
         if (exo.currentMediaItem?.mediaId?.let { it in cutSongs } == true) return
         if (on(c) && exo.currentMediaItem?.mediaId?.let { it !in asked } == true) measure()   // switched on mid-song, or the first
-        // the two-player way no more (it sounded like a skip; Bronson, 2026-11-01): a song not cut for a blend ends as it
+        // the two-player way no more (it sounded like a skip; 2026-11-01): a song not cut for a blend ends as it
         // would; only the blend in the player's own sound (Blend)
         if (!TWO_PLAYER) return
         if (fading || !exo.isPlaying || !allowed()) { if (!fading) dropTail(); return }
@@ -225,7 +225,7 @@ class Crossfade(
                 if (!fading || tail !== t) return
                 // heard, not just started: its place moving on past where it began (else the next song came in over
                 // a moment of nothing, 2026-11-01)
-                // as the first version (Bronson: smoother): over as soon as it plays; waiting till it was heard played
+                // as the first version (smoother): over as soon as it plays; waiting till it was heard played
                 // the old song twice for a moment (a flam, a bump), and two players can't be lined up closer than that
                 if (!t.isPlaying) {
                     if (SystemClock.uptimeMillis() - asked < 600) { main.postDelayed(this, 5); return }

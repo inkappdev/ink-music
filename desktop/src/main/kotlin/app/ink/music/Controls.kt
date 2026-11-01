@@ -53,7 +53,7 @@ val OPEN_UP = listOf("...#...", "..###..", ".##.##.", "##...##")
 
 /**
  * A cover that opens the player: under the mouse a pixel up arrow on a black tab at its foot, and the hand, so it's
- * plain a click makes it the whole window (Bronson, 2026-10-29).
+ * plain a click makes it the whole window (2026-10-29).
  */
 @Composable
 fun Opens(modifier: Modifier, onOpen: () -> Unit, content: @Composable () -> Unit) {
@@ -157,7 +157,7 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
                 Box(Modifier.fillMaxWidth(if (quiet) 0f else shown / 100f).height(1.dp).background(if (dragging != null) Ink.ink else Ink.mid))
             }
-            // the knob to take hold of (Bronson, 2026-10-29: "an easy thing to grab"), on Silkscreen's grid like the
+            // the knob to take hold of (2026-10-29), on Silkscreen's grid like the
             // controls: a pixel pill at the line's end, a step brighter under the mouse, ink while dragged
             val at = if (quiet) 0f else shown / 100f
             val knob = if (dragging != null) Ink.ink else if (over) brighter(Ink.mid) else Ink.mid

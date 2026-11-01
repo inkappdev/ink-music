@@ -344,12 +344,12 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 Column(Modifier.cascade(5)) {
                     BasicText("TRANSITIONS", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    // one line (Bronson: the page had too much to read); the rest shows on the player as it happens
+                    // one line (the page had too much to read); the rest shows on the player as it happens
                     BasicText("each song runs into the next where it fades. automix matches their beats too", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
                     val cross = mode != Crossfade.OFF
-                    // said plainly when it's on but resting (Bronson couldn't tell it wasn't crossfading: exact was on)
+                    // said plainly when it's on but resting (it couldn't be told it wasn't crossfading: exact was on)
                     if (cross && Exact.on(ctx)) {
                         BasicText("resting now: exact to a usb dac is on (below)", style = pixel(12.sp, Ink.ink))
                         Spacer(Modifier.height(8.dp))
@@ -693,7 +693,7 @@ internal fun Field(name: String, value: String, onValue: (String) -> Unit, hint:
 }
 
 /**
- * Your computer (Bronson, 2026-10-29: "make everything seamlessly sync"): the computers paired, each when it was last in
+ * Your computer (2026-10-29): the computers paired, each when it was last in
  * step, sync now, forget; pairing one from here (shown, unpaired, only while one on this wifi is waiting for it, so no
  * one sees it before there's a Mac app to pair).
  */

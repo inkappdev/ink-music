@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 /**
- * Settings, as the phone's are (Bronson, 2026-10-29: "reorganize the desktop settings nicer, like the app"): its
+ * Settings, as the phone's are (2026-10-29): its
  * parts down the left, each its name big and a line saying how it stands (your phone, your music, sound, listening,
  * about); the one chosen beside them.
  */
@@ -443,7 +443,7 @@ private fun YouTubeSetting() {
 }
 
 /**
- * Your phone (Bronson, 2026-10-29: "make everything seamlessly sync"): paired once by the code, then the two kept in
+ * Your phone (2026-10-29): paired once by the code, then the two kept in
  * step on the wifi ([SyncHub]): what you've heard, loves, sign-ins, what each was playing. Waiting, the code big;
  * paired, each phone and when it was last in step, forget it.
  */

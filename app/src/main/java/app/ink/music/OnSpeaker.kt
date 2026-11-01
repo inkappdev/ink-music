@@ -152,7 +152,7 @@ class OnSpeaker(p: Player, private val ask: (Bundle) -> Unit) : ForwardingPlayer
 
     // ---- the speaker's volume: Android's buttons and slider, in 20 steps ----
     // (and a USB DAC ink music holds: Android's own volume no longer reaches it, so its buttons are the DAC's, its own
-    // volume; Bronson, 2026-11-01: "volume rocker not doing anything")
+    // volume; 2026-11-01)
 
     private val usb get() = said == null && UsbDac.held != null
     private val level get() = said?.volume ?: if (usb) UsbDac.level else null

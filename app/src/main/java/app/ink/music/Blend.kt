@@ -13,7 +13,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * The crossfade made in the player's own sound, sample by sample (Bronson, 2026-11-01: two players couldn't be held
+ * The crossfade made in the player's own sound, sample by sample (2026-11-01: two players couldn't be held
  * together: gaps, a doubled moment, "like hitting next song"). A song is cut short where its handover is (Crossfade
  * sets that while it's still next), and the next one follows on at once, gapless; here, as the next one's samples
  * pass, the old one's last seconds are mixed back in from Crossfade's own decode of them, from the very sample its

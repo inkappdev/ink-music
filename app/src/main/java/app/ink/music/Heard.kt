@@ -6,7 +6,7 @@ import androidx.media3.common.MimeTypes
 import org.json.JSONObject
 
 /**
- * What reaches your ears, as the player reads it when a song starts (2026-10-26, Bronson's pick of three):
+ * What reaches your ears, as the player reads it when a song starts (2026-10-26, the pick of three):
  * the stream's own format, how it came (the file as it is, made smaller by the server, YouTube's best or
  * smallest), at which quality and on which network (Quality), and how even volume moved it. The player
  * tells the screens through the session's extras; the player page says it at its top and, for lossless,

@@ -64,7 +64,7 @@ fun EqualizerPage(pages: Pages) {
             BasicText("EQUALIZER", style = headline(44.sp))
             Spacer(Modifier.height(8.dp))
             val b = bands
-            // plainer words (Bronson, 2026-11-01: "a little confusing"): what it's for; then the headphones' correction
+            // plainer words (2026-11-01): what it's for; then the headphones' correction
             // apart from the shapes, each under its own word
             BasicText(if (b == null) "play something, then come back: the bands show once the music's going"
                 else "shape the sound: correct it for your headphones, or pick a shape, or drag the bars", style = pixel(12.sp, Ink.mid))

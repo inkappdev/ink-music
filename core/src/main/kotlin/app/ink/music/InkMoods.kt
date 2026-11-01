@@ -5,7 +5,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 /**
- * ink's own moods (Bronson, 2026-10-28: YouTube's signed-out moods "suck"; "just want them to be cooler"): each a few
+ * ink's own moods (2026-10-28: YouTube's signed-out moods "suck"; "just want them to be cooler"): each a few
  * of the tags listeners give songs on Last.fm, blended, a different page of each tag every week so a mood stays fresh,
  * two songs an artist at most, no sped-up or nightcore versions. Right now picks three for the hour and the day. The
  * apps find the songs on YouTube Music to play, and a mood's covers on iTunes for its tile. Plain Java, shared.

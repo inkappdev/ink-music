@@ -13,7 +13,7 @@ import java.net.URL
 import java.util.concurrent.Executors
 
 /**
- * Songs kept on the computer, to play with no signal (Bronson, 2026-10-29: "a lot of people ask", and the phone's
+ * Songs kept on the computer, to play with no signal (2026-10-29, and the phone's
  * too): your server's (the original file, lossless if it is) and YouTube Music's (its best stream), fetched one at a
  * time in the background in pieces, into ink music's own folder ("<id>", its words beside it as "<id>.json"; "<id>.dl"
  * while it comes). The player plays the kept file in the stream's place whenever there is one.

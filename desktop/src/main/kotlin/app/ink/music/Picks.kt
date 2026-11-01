@@ -38,7 +38,7 @@ object Picks {
 
     /**
      * Kept ones at once; read again when they're half a day old or yesterday's (the record of the day turns at midnight),
-     * on any visit, not only the first: an app left open for days kept its first (Bronson, 2026-10-30).
+     * on any visit, not only the first: an app left open for days kept its first (2026-10-30).
      */
     fun start() {
         if (readAt == 0L) {

@@ -11,7 +11,7 @@ ink weekly above it); the line is the standing one unless given.
 
 Each song keeps its title, artist, record, length, YouTube id and cover: the app plays the
 listener's own copy when they have it (files or server), YouTube Music's otherwise. --push commits
-weekly.json alone and pushes it (as Bronson <hello@inkhome.app>).
+weekly.json alone and pushes it (as ink <hello@inkhome.app>).
 """
 import datetime
 import json
@@ -134,7 +134,7 @@ def main():
     print(f"week {number}: {title}, {len(songs)} songs")
     for i, s in enumerate(songs, 1): print(f"  {i:2}. {s['artist']} - {s['title']}")
     if "--push" in sys.argv:
-        git = ["git", "-C", ROOT, "-c", "user.name=Bronson", "-c", "user.email=hello@inkhome.app"]
+        git = ["git", "-C", ROOT, "-c", "user.name=ink", "-c", "user.email=hello@inkhome.app"]
         subprocess.run(git + ["add", "weekly.json"], check=True)
         subprocess.run(git + ["commit", "-q", "-m", f"ink weekly {number}: {title}", "--", "weekly.json"], check=True)
         subprocess.run(["git", "-C", ROOT, "push", "-q", "origin", "main"], check=True)

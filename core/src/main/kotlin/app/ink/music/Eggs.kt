@@ -7,7 +7,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
- * ink music's easter eggs (Bronson, 2026-10-29: "I really love easter eggs in software, even when in plain sight"),
+ * ink music's easter eggs (2026-10-29),
  * the rules of them shared by the phone and the computer; each app draws its own: the heart after "made by ink" that
  * beats (and, clicked seven times, sends hearts up), the radio tower's lightning (three clicks: a station by chance),
  * 1-bit mode (the Konami code on the computer, the clickwheel three turns backwards on the phone), and these.

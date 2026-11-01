@@ -8,7 +8,7 @@ import kotlin.math.max
 import kotlin.math.pow
 
 /**
- * Radio's header (Bronson, 2026-10-29: "a big cool pixel radio antenna"): a lattice tower drawn dot by dot, ink on
+ * Radio's header (2026-10-29): a lattice tower drawn dot by dot, ink on
  * black, its signal going out from the tip as rings in the sleeves' dither (Bayer 4 x 4), in the colour of the station
  * playing (ink at 55% with none); the apps draw it 3 dp a dot, travelling outward a step at a time while a station
  * plays. Plain Kotlin, shared: the dots as ARGB, each app makes its own picture of them.

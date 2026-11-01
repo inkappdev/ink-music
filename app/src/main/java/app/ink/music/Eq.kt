@@ -17,7 +17,7 @@ object Eq {
     const val RANGE = 1200
 
     /**
-     * On or not; two layers (Bronson, 2026-11-01: a shape chosen lost the headphones' correction, found again only by
+     * On or not; two layers (2026-11-01: a shape chosen lost the headphones' correction, found again only by
      * searching): your headphones' correction (AutoEq's, for the model named in [phones]; kept, on or off), and a
      * shape on top ([preset]: flat, bass..., or "yours" once a band's been moved, [shape] its levels); [levels] the two
      * together, as the player applies them (mB a band).

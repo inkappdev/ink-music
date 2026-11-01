@@ -21,8 +21,8 @@ import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 /**
- * What the player says of its transitions, for the player page (Bronson, 2026-11-01: "lets plan a really cool way to
- * show it"): this song's mix point (where it's cut for the next to come in, its whole length, automix or crossfade),
+ * What the player says of its transitions, for the player page (2026-11-01): this song's mix point (where it's cut for
+ * the next to come in, its whole length, automix or crossfade),
  * and the blend in hand (when it began, elapsedRealtime; how long; the two tempos; the new song's beat).
  */
 data class Mix(

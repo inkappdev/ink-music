@@ -508,7 +508,7 @@ class PlayerService : MediaLibraryService() {
                 }
             },
         )
-        // 24 bit kept 24 bit (Bronson, 2026-11-01: "i want audiophiles to genuinely be impressed"): the decoders give
+        // 24 bit kept 24 bit (2026-11-01): the decoders give
         // float, the song's whole depth, and float goes to Android (Media3's default made every song 16 bit). Media3
         // can't change speed on float itself, so an episode's speed is Android's audio track's (1x for music: untouched)
         // the crossfade made in the player's own sound (Blend; Crossfade cuts the songs and hands it their ends)
@@ -548,7 +548,7 @@ class PlayerService : MediaLibraryService() {
             }
         }.setEnableAudioFloatOutput(true).setEnableAudioOutputPlaybackParameters(true)
             // Android's own decoders first: Samsung's flac decoder, asked for float, says float and gives 16 bit (read
-            // as float it was loud crackle, and Media3 counted half the time; Bronson's KA11, 2026-11-01)
+            // as float it was loud crackle, and Media3 counted half the time; a KA11, 2026-11-01)
             .setMediaCodecSelector { mime, secure, tunneling ->
                 androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(mime, secure, tunneling)
                     .sortedBy { if (mime.startsWith("audio/") && !it.name.startsWith("c2.android.")) 1 else 0 }

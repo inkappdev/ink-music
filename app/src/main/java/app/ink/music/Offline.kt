@@ -13,8 +13,8 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Your server's songs kept on the phone, and YouTube Music's (the full build: Bronson, 2026-10-29, "a lot of people
- * ask"; its stream found first, the plain one a speaker gets, its name and cover kept beside it as "<id>.json"), to
+ * Your server's songs kept on the phone, and YouTube Music's (the full build: 2026-10-29; its stream found first, the
+ * plain one a speaker gets, its name and cover kept beside it as "<id>.json"), to
  * play with no signal (a flight, the car, the country): fetched by
  * Android's own download manager (it carries on with the app closed and through a bad signal, and shows itself in
  * the notifications) into ink music's own folder, out of the library's sight (so they're not listed twice). The

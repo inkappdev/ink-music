@@ -42,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * ink weekly as INK's front cover (Bronson, 2026-10-29: "really make that top ink weekly design shine"): its four covers
+ * ink weekly as INK's front cover (2026-10-29): its four covers
  * in the dither, big; the week's name huge beside them, its note, play the week; the week's artists running across the
  * page in the giant marquee, as the player's do; its songs as a chart in columns; the volumes before, small, a click
  * putting one on the cover.

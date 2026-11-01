@@ -189,7 +189,7 @@ object Server {
     /** A record's cover from the server, at about `px` a side, as the server sends it (a JPEG, a PNG); null if there's none. */
     /**
      * A record's cover at about `px`. A few at a time: Navidrome turns away covers asked for all at once ("429 Too
-     * Many Requests"; Bronson's Mac, 2026-10-29, the albums page after a rescan changed every cover's link: 271 of
+     * Many Requests"; a Mac, 2026-10-29, the albums page after a rescan changed every cover's link: 271 of
      * 1,941 refused), so a turned-away one waits and asks again. Null for no picture; [Busy] when the server couldn't
      * say (away, slow, still busy), so it's asked again later rather than taken as none.
      */
@@ -361,7 +361,7 @@ object Server {
     }
 
     /**
-     * macOS keeping ink music off the home network (Bronson's Mac, 2026-10-29: every new build is a new app to it, and
+     * macOS keeping ink music off the home network (a Mac, 2026-10-29: every new build is a new app to it, and
      * till it's allowed again under Local Network every connection fails "No route to host", the covers blank and
      * nothing said). True while that's so; said on listen and the library, with where to allow it.
      */

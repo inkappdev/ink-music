@@ -158,8 +158,8 @@ words. In a free test on Google Play now: **[join the test](https://inkhome.app/
 
 ## How it's made
 
-Built by Bronson with Claude (Anthropic's AI) as a coding partner: the design, the decisions and the testing are
-mine. Every feature is tried on a real phone and computer before it ships, and ink weekly is picked by hand.
+Built with Claude (Anthropic's AI) as a coding partner: the design, the decisions and the testing are done by
+hand. Every feature is tried on a real phone and computer before it ships, and ink weekly is picked by hand.
 
 Issues and pull requests are welcome. For anything visible, open an issue first: ink music has a strong look
 (black, two typefaces, no icons where a word works), and we'll talk it through.

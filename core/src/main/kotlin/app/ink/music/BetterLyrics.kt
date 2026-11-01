@@ -6,8 +6,8 @@ import java.net.URL
 import java.net.URLEncoder
 
 /**
- * Lyrics timed word by word, from Better Lyrics' service (as Meld has them; Bronson, 2026-11-01: "lets do better
- * lyrics"): its TTML, each line and each word with when it's sung, so the sung line lights word by word as it's sung,
+ * Lyrics timed word by word, from Better Lyrics' service (as Meld has them; 2026-11-01): its TTML, each line and each
+ * word with when it's sung, so the sung line lights word by word as it's sung,
  * not by a guess. It answers without a key only for songs it already has (most anything played much); a miss, a key
  * asked for, or no answer is none. Not ours and not public: a quiet extra, kept on the disk once found (Lyrics).
  */

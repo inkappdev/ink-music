@@ -189,7 +189,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         Spacer(Modifier.height(18.dp))
                         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
                         Spacer(Modifier.height(14.dp))
-                        // the inner sleeve (Bronson, 2026-10-29: "a really killer design" for the room beside the cover):
+                        // the inner sleeve (2026-10-29: the room beside the cover):
                         // the record, its lyrics, up next, its notes, chosen by a word; stop at the row's end
                         val lines = rememberLyrics(n.song)
                         var shows by remember(n.song.albumId) { mutableStateOf<String?>(null) }
@@ -414,7 +414,7 @@ private fun Notes(n: Player.Now, heard: Heard?, speaker: String?) {
 }
 
 /**
- * The phone's playing, the whole window (Bronson, 2026-10-29): as this computer's own player looks (the cover over its
+ * The phone's playing, the whole window (2026-10-29): as this computer's own player looks (the cover over its
  * dither print, the line and the times, the artist as the giant marquee), where it plays said ("playing on <phone> ·
  * on <speaker>"); back, play, next steering it there; continue here, big, taking it over; its lyrics as it sings them
  * there, or its notes.
