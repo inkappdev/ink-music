@@ -373,3 +373,12 @@ JNIEXPORT void JNICALL Java_app_ink_music_UsbStream_reattach(JNIEnv *e, jclass c
     struct usbdevfs_ioctl cmd = { .ifno = iface, .ioctl_code = USBDEVFS_CONNECT, .data = NULL };
     if (ioctl(fd, USBDEVFS_IOCTL, &cmd) < 0) LOG("reattach %d: %s", iface, strerror(errno));
 }
+
+// the DAC reset on the bus, so it comes to the phone anew and Android's driver takes it from the start: the driver
+// given its interfaces back said "busy" and never took the DAC again, and Android had no DAC till it was replugged
+// (exact turned off, 2026-11-01)
+JNIEXPORT jboolean JNICALL Java_app_ink_music_UsbStream_reset(JNIEnv *e, jclass c, jint fd) {
+    if (ioctl(fd, USBDEVFS_RESET, NULL) < 0) { LOG("reset: %s", strerror(errno)); return JNI_FALSE; }
+    LOG("reset: the dac comes to android anew");
+    return JNI_TRUE;
+}

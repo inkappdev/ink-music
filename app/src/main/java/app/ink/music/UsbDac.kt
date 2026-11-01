@@ -26,6 +26,7 @@ object UsbStream {
     @JvmStatic external fun stop(h: Long)
     @JvmStatic external fun close(h: Long)
     @JvmStatic external fun reattach(fd: Int, iface: Int)
+    @JvmStatic external fun reset(fd: Int): Boolean
 }
 
 /**
@@ -285,11 +286,14 @@ object UsbDac {
 
         /** Let go: Android's driver given the DAC back. */
         @Synchronized
-        fun release() {
+        fun release(reset: Boolean) {
             end()
             val fd = connection.fileDescriptor
             claimed.forEach { connection.releaseInterface(it) }
             claimed.map { it.id }.distinct().forEach { UsbStream.reattach(fd, it) }
+            // and reset, so it comes to Android anew (given back alone, Android's driver never took it again); only
+            // when exact's turned off: else the DAC, come anew, would be taken again at once
+            if (reset) UsbStream.reset(fd)
             connection.close()
         }
     }
@@ -352,7 +356,7 @@ object UsbDac {
     }
 
     @Synchronized
-    fun release() { val was = held ?: return; was.release(); held = null; onChange?.invoke() }
+    fun release(reset: Boolean = false) { val was = held ?: return; was.release(reset); held = null; onChange?.invoke() }
 
     /** Android's word on ink music using the DAC (broadcast to the player, which looks again). */
     const val ALLOWED = "app.ink.music.USB_ALLOWED"

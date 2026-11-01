@@ -783,7 +783,7 @@ class PlayerService : MediaLibraryService() {
                         // exact switched: even volume rests or comes back (it stayed as it was till the player started
                         // again); the DAC held or let go, and Media3 asked again where each format goes
                         levelling?.on = prefs.getBoolean("levelling", true) && !Exact.on(this@PlayerService)
-                        if (!Exact.on(this@PlayerService)) UsbDac.release()
+                        if (!Exact.on(this@PlayerService)) UsbDac.release(reset = true)
                         usbOutput?.changed()
                         reroute()
                         session.player.currentMediaItem?.mediaId?.let { formats[it] }?.let { exactSaid = exactFor(it) }
