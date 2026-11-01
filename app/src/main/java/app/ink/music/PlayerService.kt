@@ -266,6 +266,20 @@ class PlayerService : MediaLibraryService() {
     private var decoder = ""
     private var outBits = 0
     private var outRate = 0
+    private var usbOutput: UsbOutputProvider? = null
+    private val usbSeen = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: android.content.Context, i: Intent) {
+            if (i.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED) UsbDac.release()
+            android.util.Log.i("ink-usb", "seen: ${i.action}")
+            usbOutput?.changed()
+        }
+    }
+    /** Exact's word for a format: ink music's own way to the DAC where it holds one, else Android's bit-perfect path asked. */
+    private fun exactFor(format: androidx.media3.common.Format): String {
+        if (Exact.on(this) && UsbDac.hold(this)?.altFor(format.sampleRate, format.channelCount.coerceAtLeast(1)) != null)
+            return "yes ${Heard.bitsOf(format).takeIf { it > 0 } ?: 16}/${Heard.khz(format.sampleRate)}"
+        return Exact.request(this, format)
+    }
     private var exactSaid = ""
 
     // radio: on, the queue's last songs bring more like them (Radio); asked once per seed
@@ -457,9 +471,27 @@ class PlayerService : MediaLibraryService() {
         // 24 bit kept 24 bit (Bronson, 2026-11-01: "i want audiophiles to genuinely be impressed"): the decoders give
         // float, the song's whole depth, and float goes to Android (Media3's default made every song 16 bit). Media3
         // can't change speed on float itself, so an episode's speed is Android's audio track's (1x for music: untouched)
-        val renderers = androidx.media3.exoplayer.DefaultRenderersFactory(this)
-            .setEnableAudioFloatOutput(true)
-            .setEnableAudioOutputPlaybackParameters(true)
+        // and where the samples go: a USB DAC ink music holds itself (exact on: UsbDac), else Android's audio
+        val usb = UsbOutputProvider(this, androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider.Builder(this).build()).also { usbOutput = it }
+        // a DAC plugged in, out, or allowed: Media3 asks again where each format goes (one gone, let go of first)
+        androidx.core.content.ContextCompat.registerReceiver(this, usbSeen, android.content.IntentFilter().apply {
+            addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED); addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED)
+            addAction(UsbDac.ALLOWED)
+        }, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean) =
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+                    .setAudioOutputProvider(usb)
+                    .build()
+        }.setEnableAudioFloatOutput(true).setEnableAudioOutputPlaybackParameters(true)
+            // Android's own decoders first: Samsung's flac decoder, asked for float, says float and gives 16 bit (read
+            // as float it was loud crackle, and Media3 counted half the time; Bronson's KA11, 2026-11-01)
+            .setMediaCodecSelector { mime, secure, tunneling ->
+                androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(mime, secure, tunneling)
+                    .sortedBy { if (mime.startsWith("audio/") && !it.name.startsWith("c2.android.")) 1 else 0 }
+            }
         val player = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(sources)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
@@ -487,7 +519,7 @@ class PlayerService : MediaLibraryService() {
                 if (formats.size > 50) formats.clear()
                 formats[id] = format
                 // exact to a usb dac: asked for this format before the player opens Android's track for it
-                exactSaid = Exact.request(this@PlayerService, format)
+                exactSaid = exactFor(format)
                 tell()
             }
 
@@ -689,8 +721,12 @@ class PlayerService : MediaLibraryService() {
                     // the equalizer changed on the screens: read again and applied
                     if (customCommand.customAction == EQ) {
                         equalize()
-                        // exact switched: asked (or let go) for this song's format; Android's track takes it from the next
-                        session.player.currentMediaItem?.mediaId?.let { formats[it] }?.let { exactSaid = Exact.request(this@PlayerService, it) }
+                        // exact switched: even volume rests or comes back (it stayed as it was till the player started
+                        // again); the DAC held or let go, and Media3 asked again where each format goes
+                        levelling?.on = prefs.getBoolean("levelling", true) && !Exact.on(this@PlayerService)
+                        if (!Exact.on(this@PlayerService)) UsbDac.release()
+                        usbOutput?.changed()
+                        session.player.currentMediaItem?.mediaId?.let { formats[it] }?.let { exactSaid = exactFor(it) }
                         tell()
                     }
                     // a YouTube song about to be played (its page is up): its stream found now, so play starts at once
@@ -807,6 +843,8 @@ class PlayerService : MediaLibraryService() {
     }.getOrNull()
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(usbSeen) }
+        UsbDac.release()
         effects(false)
         runCatching { eq?.release() }
         main.removeCallbacksAndMessages(null)

@@ -326,6 +326,8 @@ object Playback {
     /** Exact to a usb dac, set here (Exact's file): the player told, as for the equalizer (it reads both again). */
     fun exact(c: Context, on: Boolean) {
         Exact.set(c, on)
+        // ink music's own way to a USB DAC needs Android's leave to use it (asked once a DAC; remembered while it's plugged in)
+        if (on) UsbDac.ask(c)
         controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.EQ, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
     }
 

@@ -51,6 +51,11 @@ android {
     }
     buildFeatures { compose = true; buildConfig = true }
 
+    // ink music's own way to a USB DAC (app/src/main/cpp/usbaudio.c: plain C on Linux's usbfs)
+    ndkVersion = "29.0.14206865"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.31.6" } }
+    defaultConfig { ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") } }
+
     // full: every source, YouTube Music too (GitHub releases, IzzyOnDroid, Obtainium); play: no
     // YouTube, the only build that may ever go near the Play Console
     flavorDimensions += "sources"
