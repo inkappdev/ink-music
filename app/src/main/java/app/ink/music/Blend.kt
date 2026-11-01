@@ -37,6 +37,8 @@ class Blend : BaseAudioProcessor() {
     private var channels = 0
     private val recent = FloatArray(2048 * 2)
     private var recentFrames = 0
+    private var matched = 0.0
+    private var recentSong: String? = null
     private val reached = HashMap<String, Long>()   // each song's furthest point (ms), this stream and the last
 
     // the mix in hand
@@ -53,33 +55,50 @@ class Blend : BaseAudioProcessor() {
 
     override fun isActive() = true
 
+    // a mix made ready at the song change (the old song's last samples matched then, while they're here), begun at
+    // the new song's flush at its start: Media3 flushes it first where the old one was, then at its start (2026-11-01)
+    private class Pending(val into: String, val tail: Tail, val at: Double)
+    private var pending: Pending? = null
+
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
         val format = inputAudioFormat
         val id = idOf(streamMetadata)
+        val startFrame = streamMetadata.positionOffsetUs * format.sampleRate / 1_000_000
+        // the same song set up again where it is (its settings applied anew at a song change): not a seek, the mix goes on
+        if (id != null && id == song && format.sampleRate == rate && kotlin.math.abs(startFrame - frame) <= rate / 20) return
         val was = song
-        // the furthest it reached (a format change flushes the old song once more at nothing, before the next comes)
-        val endedMs = was?.let { reached[it] } ?: -1L
-        tail = null
-        // the next song come on at its start, the one before cut where its handover was: its end mixed back in
-        val t = was?.let { tails[it] }
-        if (t != null && id != null && id != was && streamMetadata.positionOffsetUs < 2_000_000 &&
-            kotlin.math.abs(endedMs - t.cutMs) < 150 && t.channels == format.channelCount) {
-            val expected = (endedMs - t.startMs) * t.rate / 1000.0
-            at = align(t, expected)
-            step = t.rate.toDouble() / format.sampleRate
-            mixed = 0
-            fadeFrames = (t.fadeMs * format.sampleRate / 1000).coerceAtLeast(1)
-            tail = t
-            android.util.Log.d("ink-crossfade", "blend: $was into $id at ${endedMs / 1000.0}s, its end from frame ${at.toLong()} (expected ${expected.toLong()}), over ${t.fadeMs / 1000.0}s")
-        } else if (t != null && id != was) {
-            android.util.Log.d("ink-crossfade", "blend: $was ended at ${endedMs / 1000.0}s, not where it was cut (${t.cutMs / 1000.0}s): not mixed")
+        if (id != was) {
+            pending = null
+            // the next song come, the one before cut where its handover was: its end made ready to mix back in
+            val t = was?.let { tails[it] }
+            val endedMs = was?.let { reached[it] } ?: -1L
+            if (t != null && id != null && kotlin.math.abs(endedMs - t.cutMs) < 150 && t.channels == format.channelCount) {
+                val expected = (endedMs - t.startMs) * t.rate / 1000.0
+                val found = align(t, expected)
+                pending = Pending(id, t, found)
+                android.util.Log.d("ink-crossfade", "blend: $was ended at ${endedMs / 1000.0}s, its end from frame ${found.toLong()} (expected ${expected.toLong()}, match ${"%.2f".format(matched)})")
+            } else if (t != null) {
+                android.util.Log.d("ink-crossfade", "blend: $was ended at ${endedMs / 1000.0}s, not where it was cut (${t.cutMs / 1000.0}s): not mixed")
+            }
+            if (id != null) { reached.keys.retainAll(setOf(id, was)); reached[id] = streamMetadata.positionOffsetUs / 1000 }
         }
-        if (id != null && id != was) { reached.keys.retainAll(setOf(id, was)); reached[id] = streamMetadata.positionOffsetUs / 1000 }
+        tail = null
+        // the new song at its start: the mix begun
+        pending?.takeIf { it.into == id && streamMetadata.positionOffsetUs < 2_000_000 }?.let { p ->
+            tail = p.tail
+            at = p.at
+            step = p.tail.rate.toDouble() / format.sampleRate
+            mixed = 0
+            fadeFrames = (p.tail.fadeMs * format.sampleRate / 1000).coerceAtLeast(1)
+            pending = null
+            val i0 = at.toInt() * p.tail.channels; val i1 = (i0 + (fadeFrames * step).toInt() * p.tail.channels).coerceAtMost(p.tail.pcm.size)
+            var e = 0.0; for (i in i0 until i1) e += p.tail.pcm[i] * p.tail.pcm[i]
+            android.util.Log.d("ink-crossfade", "blend: into $id over ${p.tail.fadeMs / 1000.0}s, the end mixed in at ${"%.1f".format(if (i1 > i0) 10 * Math.log10(e / (i1 - i0) + 1e-12) else -999.0)} dBFS")
+        }
         song = id
         rate = format.sampleRate
         channels = format.channelCount
-        frame = streamMetadata.positionOffsetUs * rate / 1_000_000
-        recentFrames = 0
+        frame = startFrame
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -89,6 +108,9 @@ class Blend : BaseAudioProcessor() {
         val out = replaceOutputBuffer(frames * ch * 2)
         val inp = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
         val t = tail
+        // the samples last played are this song's: begun afresh only when a new song's samples come (a flush of the
+        // old one at nothing, as the next comes, had emptied them before they were matched: 2026-11-01)
+        if (recentSong != song) { recentSong = song; recentFrames = 0 }
         for (f in 0 until frames) {
             if (t == null) {
                 for (c in 0 until ch) {
@@ -145,6 +167,9 @@ class Blend : BaseAudioProcessor() {
             if (score > bestScore) { bestScore = score; best = p }
             p++
         }
+        // how alike: 1 the same samples
+        var e2 = 0.0; for (v in last) e2 += v * v
+        matched = if (e2 > 0) bestScore / Math.sqrt(e2) else 0.0
         return best.toDouble()
     }
 
