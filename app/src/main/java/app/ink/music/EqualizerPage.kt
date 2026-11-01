@@ -64,12 +64,10 @@ fun EqualizerPage(pages: Pages) {
             BasicText("EQUALIZER", style = headline(44.sp))
             Spacer(Modifier.height(8.dp))
             val b = bands
-            BasicText(if (b == null) "the player hasn't said its bands yet: play something, then come back"
-                else "${b.hz.size} bands on ink music's sound, with the app closed too", style = pixel(12.sp, Ink.mid))
-            if (state.on && state.phones.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                BasicText("tuned for ${state.phones.lowercase()}", style = pixel(12.sp))
-            }
+            // plainer words (Bronson, 2026-11-01: "a little confusing"): what it's for; then the headphones' correction
+            // apart from the shapes, each under its own word
+            BasicText(if (b == null) "play something, then come back: the bands show once the music's going"
+                else "shape the sound: correct it for your headphones, or pick a shape, or drag the bars", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(16.dp))
             Row {
                 Word("on", pixel(14.sp, if (state.on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) {
@@ -79,17 +77,30 @@ fun EqualizerPage(pages: Pages) {
                 Word("off", pixel(14.sp, if (!state.on) Ink.ink else Ink.dim), touch = 8.dp) { set(state.copy(on = false)) }
             }
             if (b != null) {
-                Spacer(Modifier.height(18.dp))
-                // the shapes: the one chosen lit (and "yours", once a band's been moved by hand)
+                // your headphones: a correction measured for your model (AutoEq), the one chosen named
+                Spacer(Modifier.height(24.dp))
+                BasicText("for your headphones", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(6.dp))
+                val phones = state.phones.takeIf { it.isNotEmpty() && (state.preset == "phones" || it.endsWith("adjusted")) }
+                Row {
+                    if (phones != null) BasicText(phones.substringBefore(" · ").lowercase(), style = pixel(14.sp, if (state.on && state.preset == "phones") Ink.ink else Ink.mid),
+                        modifier = Modifier.padding(end = 22.dp))
+                    Word(if (phones != null) "change" else "find yours", pixel(14.sp, Ink.mid), touch = 8.dp) { looking = !looking }
+                }
+                BasicText("a correction measured for your model, so it sounds as it should (autoeq)", style = pixel(12.sp, Ink.dim),
+                    modifier = Modifier.padding(top = 4.dp))
+                if (looking) Headphones { name, levels -> looking = false; set(Eq.State(true, "phones", levels, name)) }
+                // or a shape: the one chosen lit (and "yours", once a band's been moved by hand)
+                Spacer(Modifier.height(22.dp))
+                BasicText("or a shape", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     (Eq.presets.keys + if (state.preset == "yours") listOf("yours") else emptyList()).forEach { p ->
                         Word(p, pixel(14.sp, if (state.on && state.preset == p) Ink.ink else Ink.dim), touch = 8.dp) {
                             if (p != "yours") set(Eq.State(true, p, Eq.levels(p, b.hz.size, b)))
                         }
                     }
-                    Word("your headphones", pixel(14.sp, if (state.on && state.preset == "phones") Ink.ink else Ink.mid), touch = 8.dp) { looking = !looking }
                 }
-                if (looking) Headphones { name, levels -> looking = false; set(Eq.State(true, "phones", levels, name)) }
                 Spacer(Modifier.height(26.dp))
                 val levels = state.levels.ifEmpty { List(b.hz.size) { 0 } }
                 Row(Modifier.fillMaxWidth()) {
@@ -112,7 +123,7 @@ fun EqualizerPage(pages: Pages) {
             }
             Spacer(Modifier.height(34.dp))
             var none by remember { mutableStateOf(false) }
-            Word(if (none) "this phone has no equalizer of its own" else "the phone's own equalizer", pixel(12.sp, Ink.mid), touch = 8.dp) {
+            Word(if (none) "this phone has no equalizer of its own" else "open the phone's own equalizer (outside ink music)", pixel(12.sp, Ink.mid), touch = 8.dp) {
                 none = !Playback.equalizer(ctx)
             }
         }
@@ -155,7 +166,7 @@ private fun Headphones(onPicked: (String, List<Int>) -> Unit) {
                     scope.launch {
                         val levels = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Eq.correction(p) }
                         // credited as it's shown: whose measurement, and autoeq's work from it
-                        if (levels != null) onPicked("${p.name} · ${p.by.substringBefore(" on ")}, autoeq", levels) else said = "autoeq has no ten-band tuning for that one"
+                        if (levels != null) onPicked("${p.name} · ${p.by.substringBefore(" on ")}, autoeq", levels) else said = "autoeq has no correction for that one we can use"
                     }
                 }
             }) {
