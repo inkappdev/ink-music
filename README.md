@@ -30,35 +30,12 @@
 </p>
 
 <p align="center">
-  <img src=".github/desktop/westside.png" width="100%" alt="ink music full screen on a Mac: Westside Cowboy's Kick Stones, the record's songs beside the cover, the name running across the foot" />
-</p>
-
-<p align="center">
-  <img src=".github/ink-music.gif" width="300" alt="ink music moving: listen's shelves, the places dropping down, INK's weekly cover in dither, then the player and a song pushed on to the next" />
-</p>
-
-<p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="18.5%" alt="The player: Ginger Root's Call It Home, HI-RES, 24 bit, 44.1 kHz across the cover, the dither look in its red" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="18.5%" alt="INK: ink weekly's cover, four records in dither, VOL 1, the week's artists in the giant marquee" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="18.5%" alt="Synced lyrics, big, over Action Bronson's cover in the blur look" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="18.5%" alt="The player: Pale Blue's Dive, its accent along the line" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="18.5%" alt="An artist: Swiss Portrait, their records and yours, play, shuffle, radio, follow" />
-</p>
-<p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="18.5%" alt="ink radio: KUTX 98.9 on its moving sleeve, saying the Rolling Stones' Moonlight Mile is on" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7.png" width="18.5%" alt="Lyrics in the dither: Steely Dan's Dirty Work, the cover small beside the song" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/8.png" width="18.5%" alt="The player in the dither's grid: Triathalon's Courtside, FLAC 16/44.1" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/9.png" width="18.5%" alt="Play on: this phone, the house's speakers and TV, a Denon receiver, everywhere at once" />&nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/10.png" width="18.5%" alt="The player in the dither: Reece Myers' Farm, its green all round" />
+  <img src=".github/hero.png" width="100%" alt="ink music on a computer and a phone: Deftones' My Mind Is a Mountain full screen, the lyrics big beside the snake cover; on the phone, Max Chapman's Lost in You mid-automix, 125 to 130 BPM, mixing" />
 </p>
 
 ---
 
 ## What you hear
-
-<p align="center">
-  <img src=".github/what-you-hear.gif" width="300" alt="ink music on a Denon receiver: a song changes, LOSSLESS types across its cover, then the signal path: from your server, the file, sent to the Denon, the receiver, Direct, Audyssey bypassed, and EXACT? yes: the file as it is" />
-</p>
 
 Tap the format over any cover and ink music shows the sound's whole way to your ears: where it came from,
 the file, which decoder, even volume and the equalizer (turn them off right there and watch it change),
@@ -96,15 +73,6 @@ Want something? [Ask for it](https://github.com/inkappdev/ink-music/issues): wha
 
 ## On your computer
 
-<p align="center">
-  <img src=".github/desktop/player.png" width="49%" alt="The player full screen on a computer: Turnstile's Holiday, the lyrics big, the artist's name running across the foot" />
-  <img src=".github/desktop/ink.png" width="49%" alt="INK on a computer: ink weekly's cover, its mosaic in dither, the artists in the giant marquee" />
-</p>
-<p align="center">
-  <img src=".github/desktop/radio.png" width="49%" alt="Radio on a computer: the rail of words, radio's tower over KEXP, ink radio's stations each on its own sleeve" />
-  <img src=".github/desktop/record.png" width="49%" alt="The player on a computer: Sneaker Pimps' 6 Underground, the cover marked lossless, 16 bit at 44.1 kHz, radio's songs up next" />
-</p>
-
 The same ink music, made for a big screen and a keyboard:
 
 - **The player full screen** as a record's inner sleeve: the cover, the lyrics big, up next, the notes.
@@ -131,8 +99,6 @@ The same ink music, made for a big screen and a keyboard:
 | **ink radio** | Independent, listener-powered stations chosen by hand, each saying what it's playing ([below](#ink-radio)). |
 
 ## ink radio
-
-<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6.png" width="240" align="right" alt="KUTX 98.9 playing on its own sleeve, its rings in its own color, saying the song on the air: Moonlight Mile" />
 
 Sixty-two independent, listener-powered and community stations, chosen by hand: KEXP in
 Seattle, NTS in London, dublab in Los Angeles, WFMU in Jersey City, Radio alHara in Bethlehem,
