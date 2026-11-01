@@ -115,10 +115,22 @@ class Crossfade(
         // beats matched: the handover on the old song's beat nearest it
         val at = mix(e)?.outBeat?.toLong()?.coerceIn(dur / 2, dur - 1_000) ?: plain
         val pos = exo.currentPosition
-        // the old song's last seconds made ready a little ahead, where they'll be needed
-        if (pos >= at - 3_000 && tailFor != item.mediaId) readyTail(item, at)
-        if (pos >= at && tailFor == item.mediaId && tail?.playbackState == Player.STATE_READY) go(e)
+        // the old song's last seconds made ready a little ahead, at the very place they'll be needed
+        if (pos >= at - 3_000 && pos < at && tailFor != item.mediaId) readyTail(item, at)
+        if (tailFor != item.mediaId || scheduled) return
+        val ready = tail?.playbackState == Player.STATE_READY
+        // started at the handover itself, to the millisecond, from where it waits: never moved at the last moment (a
+        // YouTube song moved then went to the network again, and the next song came in over nothing: a gap, 2026-11-01)
+        if (ready && pos >= at - 150) {
+            scheduled = true
+            main.postDelayed({ scheduled = false; if (!fading && exo.currentMediaItem?.mediaId == item.mediaId) go(e) }, (at - pos).coerceAtLeast(0))
+        } else if (!ready && pos > at + 1_500) {
+            // not ready in time: no crossfade this once, the song ends as it would
+            android.util.Log.d("ink-crossfade", "${item.mediaId}: its tail not ready in time, ends as it would")
+            dropTail(); tailFor = item.mediaId
+        }
     }
+    private var scheduled = false
 
     private fun readyTail(item: MediaItem, at: Long) {
         dropTail()
@@ -132,20 +144,26 @@ class Crossfade(
         tailFor = item.mediaId
     }
 
-    private fun dropTail() { tail?.release(); tail = null; tailFor = null }
+    private fun dropTail() { tail?.release(); tail = null; tailFor = null; scheduled = false }
 
     /** The handover: the old song's tail sounding, the player on into the next song from its first sound, faded across. */
     private fun go(e: Ends?) {
-        val t = tail ?: return
+        val t = tail?.takeIf { it.playbackState == Player.STATE_READY } ?: return
         fading = true
-        t.seekTo(exo.currentPosition + 120)   // where the player will be once the tail's sounding
         t.play()
-        // the player goes on into the next song only once the tail sounds (else a moment of nothing between)
+        // the player goes on into the next song only once the tail sounds (else a moment of nothing between); if it
+        // doesn't sound at once, no crossfade this time
         val asked = SystemClock.uptimeMillis()
         main.post(object : Runnable {
             override fun run() {
                 if (!fading || tail !== t) return
-                if (!t.isPlaying && SystemClock.uptimeMillis() - asked < 400) { main.postDelayed(this, 10); return }
+                if (!t.isPlaying) {
+                    if (SystemClock.uptimeMillis() - asked < 300) { main.postDelayed(this, 5); return }
+                    android.util.Log.d("ink-crossfade", "its tail didn't sound: the song ends as it would")
+                    fading = false; dropTail(); tailFor = exo.currentMediaItem?.mediaId
+                    return
+                }
+                android.util.Log.d("ink-crossfade", "tail sounding after ${SystemClock.uptimeMillis() - asked} ms")
                 handOver(t, e)
             }
         })
@@ -342,7 +360,8 @@ class Crossfade(
         for (k in 0 until n) { run += onset[k]; if (k >= 50) run -= onset[k - 50]; avg[k] = run / kotlin.math.min(k + 1, 50) }
         for (k in 0 until n) onset[k] = kotlin.math.max(0.0, onset[k] - avg[k])
         fun ac(lag: Int): Double { var s = 0.0; for (k in 0 until n - lag) s += onset[k] * onset[k + lag]; return s / (n - lag) }
-        val lags = (33..100)
+        // 80 to 160 bpm: below it a song's half-time won (most read 64 to 66; 2026-11-01), double or half is matched anyway
+        val lags = (37..75)
         val acs = lags.associateWith { ac(it) }
         fun score(l: Int) = acs.getValue(l) + .5 * (if (2 * l <= n / 2) ac(2 * l) else 0.0)
         val best = lags.maxByOrNull(::score) ?: return null
