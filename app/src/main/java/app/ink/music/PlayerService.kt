@@ -137,7 +137,8 @@ class PlayerService : MediaLibraryService() {
         val item = p.currentMediaItem
         val episode = item?.mediaId?.startsWith("e") == true
         val speed = if (episode) Podcasts.speed else 1f
-        if (p.playbackParameters.speed != speed) p.setPlaybackSpeed(speed)
+        // a beat-matched crossfade holds the new song at the old one's tempo for a while: left be
+        if (p.playbackParameters.speed != speed && crossfade?.owns != true) p.setPlaybackSpeed(speed)
         silence()
         if (episode && p.currentPosition < 3_000) Podcasts.place(item!!.mediaId).takeIf { it > 5_000 }?.let { p.seekTo(it) }
     }
