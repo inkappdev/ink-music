@@ -1,0 +1,4 @@
+- Your USB DAC no longer drops out while you use the phone. Samsung paused any app it didn't hear playing whenever the phone animated, and ink music plays past Android straight to your DAC, so it didn't hear us. Now it does
+- Steadier USB playback all round
+- Turns out the trick to being heard is to whisper nothing, constantly
+- Do something nice for someone today. Share your Halloween candy
