@@ -238,6 +238,11 @@ object Podcasts {
     }
 
     /** How fast episodes play (1 the way it was made). */
+    /** Pauses in an episode skipped (Media3's silence skipping; Meld's, 2026-11-01): one choice for every episode. */
+    var skipSilence: Boolean
+        get() = runCatching { File(dir!!, "skip-silence").exists() }.getOrDefault(false)
+        set(v) { dir?.let { val f = File(it, "skip-silence"); if (v) write(f, "on") else f.delete() } }
+
     var speed: Float
         get() = runCatching { File(dir!!, "speed").readText().trim().toFloat() }.getOrDefault(1f).coerceIn(.5f, 3f)
         set(v) { dir?.let { write(File(it, "speed"), v.toString()) } }

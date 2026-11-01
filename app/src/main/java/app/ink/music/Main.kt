@@ -235,6 +235,8 @@ sealed interface Page {
     data class Playlist(val id: String, val name: String) : Page
     data class Tube(val album: TubeAlbum) : Page
     data class AddTo(val song: Song) : Page
+    /** A YouTube song's version chosen by hand ([VersionPage]). */
+    data class Version(val song: Song) : Page
     data class Path(val song: Song) : Page
     data object Loved : Page
     data object Year : Page
@@ -361,6 +363,7 @@ private fun App() {
                         is Page.Playlist -> PlaylistPage(p.id, p.name, pages)
                         is Page.Tube -> TubeAlbumPage(p.album, pages)
                         is Page.AddTo -> AddToPage(p.song, pages)
+                        is Page.Version -> VersionPage(p.song, pages)
                         is Page.Path -> PathPage(p.song, pages)
                         Page.Loved -> LovedPage(pages)
                         Page.Year -> YearPage(pages)
@@ -864,6 +867,8 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
                 else Word("keep offline", pixel(13.sp), touch = 8.dp) { open = false; Offline.keep(ctx2, listOf(s)) }
             }
             onRemove?.let { Word("remove", pixel(13.sp), touch = 8.dp) { open = false; it() } }
+            // the wrong YouTube version playing (a live take, the video): the right one's link pasted in (Versions)
+            if (pages != null && s.tube && YouTubeMusic.available) Word("youtube version", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Version(s)) }
             if (pages != null && number == null && s.album.isNotEmpty() && !s.tube) Word("record", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Record(s.albumId)) }
             if (pages != null) Word("artist", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Artist(s.albumArtist)) }
         }

@@ -125,12 +125,20 @@ class PlayerService : MediaLibraryService() {
         else if (at > 5_000) Podcasts.setPlace(id, at)
     }
 
+    /** An episode's pauses skipped if that's chosen; never a song's (a song's quiet is its own). */
+    private fun silence() {
+        val p = exo ?: return
+        val on = p.currentMediaItem?.mediaId?.startsWith("e") == true && Podcasts.skipSilence
+        if (p.skipSilenceEnabled != on) p.skipSilenceEnabled = on
+    }
+
     /** An episode begun: on from where you left it, at your speed; anything else at the speed it was made. */
     private fun episodeBegins(p: Player) {
         val item = p.currentMediaItem
         val episode = item?.mediaId?.startsWith("e") == true
         val speed = if (episode) Podcasts.speed else 1f
         if (p.playbackParameters.speed != speed) p.setPlaybackSpeed(speed)
+        silence()
         if (episode && p.currentPosition < 3_000) Podcasts.place(item!!.mediaId).takeIf { it > 5_000 }?.let { p.seekTo(it) }
     }
 
@@ -514,6 +522,23 @@ class PlayerService : MediaLibraryService() {
                     .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
                     .setAudioOutputProvider(usb)
                     .build()
+            // the decoder asked for float only for a file deeper than 16 bit: a 16 bit or lossy one stays 16 bit (as
+            // exact: the same numbers), and goes Media3's 16 bit way, where its processors are (an episode's silence
+            // skipping; they're never on float)
+            override fun buildAudioRenderers(
+                context: android.content.Context, extensionRendererMode: Int, mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
+                enableDecoderFallback: Boolean, audioSink: androidx.media3.exoplayer.audio.AudioSink, eventHandler: android.os.Handler,
+                eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener, out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>,
+            ) {
+                out += object : androidx.media3.exoplayer.audio.MediaCodecAudioRenderer(
+                    context, codecAdapterFactory, mediaCodecSelector, enableDecoderFallback, eventHandler, eventListener, audioSink,
+                ) {
+                    override fun getMediaFormat(format: androidx.media3.common.Format, codecMimeType: String, codecMaxInputSize: Int, codecOperatingRate: Float) =
+                        super.getMediaFormat(format, codecMimeType, codecMaxInputSize, codecOperatingRate).also { mf ->
+                            if (Heard.bitsOf(format) <= 16 && mf.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING)) mf.removeKey(android.media.MediaFormat.KEY_PCM_ENCODING)
+                        }
+                }
+            }
         }.setEnableAudioFloatOutput(true).setEnableAudioOutputPlaybackParameters(true)
             // Android's own decoders first: Samsung's flac decoder, asked for float, says float and gives 16 bit (read
             // as float it was loud crackle, and Media3 counted half the time; Bronson's KA11, 2026-11-01)
@@ -751,6 +776,7 @@ class PlayerService : MediaLibraryService() {
                     // the equalizer changed on the screens: read again and applied
                     if (customCommand.customAction == EQ) {
                         equalize()
+                        silence()
                         // exact switched: even volume rests or comes back (it stayed as it was till the player started
                         // again); the DAC held or let go, and Media3 asked again where each format goes
                         levelling?.on = prefs.getBoolean("levelling", true) && !Exact.on(this@PlayerService)

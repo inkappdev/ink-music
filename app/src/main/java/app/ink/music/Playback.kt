@@ -299,6 +299,11 @@ object Playback {
     }
     /** How fast it plays (a podcast's episode: [Podcasts.speed]); a speaker plays at its own. */
     fun speed(v: Float) { if (!casting) controller?.setPlaybackSpeed(v) }
+    /** An episode's pauses skipped or not (kept in Podcasts; the player told, as for the equalizer: it reads it again). */
+    fun skipSilence(on: Boolean) {
+        Podcasts.skipSilence = on
+        controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.EQ, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
+    }
     /** Off, then the whole queue again, then this song again. */
     fun repeat() {
         // on a speaker: the speaker's (Casting.repeat), lit at once

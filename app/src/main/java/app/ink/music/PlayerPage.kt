@@ -300,7 +300,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             val none = sing && lines?.isEmpty() == true
             Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
                 if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
-                added = added, onAdd = if (canAddToList(n.song)) ({ addUp = true }) else null)
+                added = added, onAdd = if (canAddToList(n.song)) ({ addUp = true }) else null, episode = episode)
             Spacer(Modifier.height(12.dp))
             // the artist's name, big, a way to their page too
             Marquee(n.artist, n.moving && Marquees.on.collectAsState().value, Modifier.fillMaxWidth().bleedPastCutout().clickable(remember { MutableInteractionSource() }, indication = null,
@@ -334,7 +334,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
  * The player's second row, smaller: up next, lyrics, into a playlist, stop (sleep gone: Bronson, 2026-10-29).
  */
 @Composable
-private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null) {
+private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null, episode: Boolean = false) {
     val style = 14.sp
     // the words with no drawing everyone reads, stop last, away from next (it ends everything and closes the player)
     Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -342,6 +342,11 @@ private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit
         Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
         // into one of your playlists (lit a moment once it's in)
         if (onAdd != null) Word(if (added != null) "added" else "playlist", pixel(style, if (added != null) Ink.ink else SAID), touch = 10.dp, onClick = onAdd)
+        // an episode: its pauses skipped, lit when on (one choice for every episode)
+        if (episode) {
+            var skip by remember { mutableStateOf(Podcasts.skipSilence) }
+            Word("skip silence", pixel(style, if (skip) Ink.ink else OFF), touch = 10.dp) { skip = !skip; Playback.skipSilence(skip) }
+        }
         // stopped, the player goes too (the mini player's gone with it: nothing left to come back down to)
         Word("stop", pixel(style, if (n.playing) SAID else OFF), touch = 10.dp) { Playback.stop(); onStop() }
     } }

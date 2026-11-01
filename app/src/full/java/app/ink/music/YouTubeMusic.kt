@@ -125,7 +125,9 @@ object YouTubeMusic {
      * A song's audio stream (blocking: the player's loader, or a speaker's thread): its link and
      * type. For a speaker the m4a (every speaker plays AAC), else the best there is.
      */
-    fun stream(id: String, forSpeaker: Boolean, small: Boolean = false): Pair<String, String>? {
+    fun stream(asked: String, forSpeaker: Boolean, small: Boolean = false): Pair<String, String>? {
+        // the version chosen by hand for this song, if one is (Versions)
+        val id = app?.let { Versions.of(it, asked) }?.let { "y$it" } ?: asked
         val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.third > System.currentTimeMillis() }?.let { return it.first to it.second }
         init()
@@ -338,6 +340,11 @@ object YouTubeMusic {
 
     /** YouTube Music's song by these words, if it has one (blocking). */
     fun find(title: String, artist: String): Song? {
+        // a version chosen by hand for these words (Versions): that one
+        app?.let { Versions.byWords(it, title, artist) }?.let { v ->
+            return Song(id = "y$v", uri = Uri.parse("ytm://$v"), title = title, artist = artist, album = "", albumId = "y$v", albumArtist = artist,
+                duration = 0, disc = 1, track = 0, year = 0, format = "youtube").also(::remember)
+        }
         init()
         return runCatching {
             SearchInfo.getInfo(yt, yt.searchQHFactory.fromQuery("$artist $title", listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")).relatedItems
