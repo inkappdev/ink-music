@@ -566,7 +566,8 @@ private fun Scrubber(
         // the times at the ends, and dead centre between them what's heard; in a blend, the tempos and MIXING
         Box(Modifier.fillMaxWidth().padding(bottom = if (mix != null && (k != null || point != null)) 0.dp else 8.dp)) {
             if (k != null && mix != null) {
-                if (mix.bpmTo > 0) BasicText("${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM", style = pixel(SMALL, Ink.ink),
+                // beat-matched, the tempos; else said plainly it's the crossfade (Bronson: the tempos sometimes didn't show)
+                BasicText(if (mix.bpmTo > 0) "${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM" else "CROSSFADE", style = pixel(SMALL, Ink.ink),
                     modifier = Modifier.align(androidx.compose.ui.Alignment.CenterStart))
                 BasicText("MIXING", style = pixel(SMALL, Ink.ink), modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
             } else {
