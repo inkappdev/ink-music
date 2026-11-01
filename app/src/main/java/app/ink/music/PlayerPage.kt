@@ -993,21 +993,23 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         }
         steps += "even volume" to (if (exactOn) "resting: exact to a usb dac" else h.gain?.let { "%+.1f db".format(java.util.Locale.ROOT, it) + if (it == 0f) "" else ", so it sits with the rest" } ?: "off")
         if (!exactOn) acts["even volume"] = (if (levelOn) "turn off" else "turn on") to { levelOn = !levelOn; Playback.level(levelOn) }
-        steps += "equalizer" to (if (exactOn) "resting: exact to a usb dac" else h.eq.ifEmpty { "off" })
+        // ink music's own way to the DAC carries the equalizer (in 64 bit, at the song's rate); Android's way rests it
+        steps += "equalizer" to (if (h.slot > 0) h.eq.ifEmpty { "off" } + (if (h.eq.isNotEmpty()) "\nin 64 bit, at the song's own rate, on the way to the dac" else "")
+            else if (exactOn) "resting: exact to a usb dac" else h.eq.ifEmpty { "off" })
         // the equalizer's word only once there's one set (its own page sets it up)
-        if (!exactOn && (eqState.on || eqState.levels.any { it != 0 })) acts["equalizer"] = (if (eqState.on) "turn off" else "turn on") to {
+        if ((!exactOn || h.slot > 0) && (eqState.on || eqState.levels.any { it != 0 })) acts["equalizer"] = (if (eqState.on) "turn off" else "turn on") to {
             eqState = eqState.copy(on = !eqState.on); Playback.equalize(ctx, eqState)
         }
         // ink music's own way to the DAC: android set aside, the DAC's own word on its clock and any gaps
         if (h.slot > 0) {
-            steps += "to the dac" to "ink music's own driver · ${h.slot} bit · ${k(h.outRate)}\nevery sample the number it was in the file"
+            steps += "to the dac" to "ink music's own driver · ${h.slot} bit · ${k(h.outRate)}" + if (h.eq.isEmpty()) "\nevery sample the number it was in the file" else ""
             acts["to the dac"] = "exact: off" to { exactOn = false; Playback.exact(ctx, false) }
             steps += "android" to "set aside: ink music drives the dac itself"
             if (h.clock > 0) steps += "the dac's clock" to "%.1f hz, as the dac says it, a thousand times a second".format(java.util.Locale.ROOT, h.clock)
             steps += "gaps" to if (h.dropouts == 0) "none" else "${h.dropouts}: the phone fell behind"
         } else if (h.outRate > 0) steps += "to android" to "${if (h.outBits == 32) "32 bit float" else "${h.outBits} bit"} · ${k(h.outRate)}"
         // exact's word with a usb dac in (or exact on, to turn it off): without one it would only rest the rest
-        if (h.slot == 0 && Exact.available && (h.kind == "usb" || exactOn)) acts["android"] = (if (exactOn) "exact: off" else "exact to a dac") to { exactOn = !exactOn; Playback.exact(ctx, exactOn) }
+        if (h.slot == 0 && (h.kind == "usb" || exactOn)) acts["android"] = (if (exactOn) "exact: off" else "exact to a dac") to { exactOn = !exactOn; Playback.exact(ctx, exactOn) }
         if (h.slot == 0) steps += "android" to when {
             h.exact.startsWith("yes") -> "steps aside: bit-perfect to the dac"
             h.mixer > 0 && h.outRate > 0 && h.mixer != h.outRate -> "mixes at ${k(h.mixer)}: ${k(h.outRate)} resampled"
@@ -1048,6 +1050,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         }
         n.device.isNotEmpty() -> "the phone hands it on; what happens next is the speaker's"
         h == null -> ""
+        h.slot > 0 && h.eq.isNotEmpty() -> "close: your equalizer shapes it, in 64 bit; nothing else touches it. no mixer, no resampling, at its own rate straight to your dac"
         h.slot > 0 && h.dropouts > 0 -> "yes, but ${h.dropouts} ${if (h.dropouts == 1) "gap" else "gaps"}: every sample as in the file, at its own rate, by ink music's own driver; the phone fell behind ${if (h.dropouts == 1) "once" else "${h.dropouts} times"}"
         h.slot > 0 -> "yes: every sample as in the file, at its own rate, straight to your dac. android never touched it"
         h.exact.startsWith("yes") && h.bits > 16 && h.outBits in 1..16 -> "close: bit-perfect to your dac, but ${h.bits} bit made 16 on the way"

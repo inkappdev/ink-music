@@ -28,6 +28,12 @@
 
 struct urb_ctx { int frames; unsigned gen; };
 
+// the equalizer on the way to the DAC (exact with your equalizer): peaking filters, one a band, in 64 bit
+#define BANDS 10
+#define CHANNELS 8
+typedef struct { double b0, b1, b2, a1, a2; } biquad;
+typedef struct { double x1, x2, y1, y2; } biquad_state;
+
 typedef struct {
     int fd;
     unsigned char ep, fb_ep;
@@ -52,6 +58,11 @@ typedef struct {
     atomic_int gain_bits;           // float gain as bits (1.0: untouched)
     atomic_int stage, reaps;        // where the stream's thread is, and how many have come back (for the log)
     double acc;
+
+    int eq_n;                       // bands in use (0: untouched), under lock
+    biquad eq[BANDS];
+    biquad_state eqs[BANDS][CHANNELS];
+    double pre;                     // headroom for the boosts, so nothing clips
 
     pthread_t thread;
     struct usbdevfs_urb *urbs[URBS];
@@ -90,6 +101,14 @@ static int fill(dac_t *d, unsigned char *out, int n) {
                     memcpy(&x, b, 4); v = x; tail = (tail + 4) % d->ring_size;
                 } else { short x = (short) (d->ring[tail] | (d->ring[(tail + 1) % d->ring_size] << 8));
                     v = x / 32768.0; tail = (tail + 2) % d->ring_size; }
+                if (d->eq_n && c < CHANNELS) {
+                    v *= d->pre;
+                    for (int k = 0; k < d->eq_n; k++) {
+                        biquad *q = &d->eq[k]; biquad_state *st = &d->eqs[k][c];
+                        double y = q->b0 * v + q->b1 * st->x1 + q->b2 * st->x2 - q->a1 * st->y1 - q->a2 * st->y2;
+                        st->x2 = st->x1; st->x1 = v; st->y2 = st->y1; st->y1 = y; v = y;
+                    }
+                }
                 if (g != 1.0f) v *= g;
                 put(out + (size_t) f * d->out_frame + (size_t) c * d->sub, d->sub, d->bits, v);
             }
@@ -292,6 +311,34 @@ JNIEXPORT jint JNICALL Java_app_ink_music_UsbStream_state(JNIEnv *e, jclass c, j
 JNIEXPORT jint JNICALL Java_app_ink_music_UsbStream_underruns(JNIEnv *e, jclass c, jlong h) { return atomic_load(&of(h)->underruns); }
 JNIEXPORT jdouble JNICALL Java_app_ink_music_UsbStream_clock(JNIEnv *e, jclass c, jlong h) {
     dac_t *d = of(h); unsigned fb = atomic_load(&d->fb); return fb ? fb / 65536.0 * d->per_second : 0;
+}
+
+// the equalizer's bands (dB at each centre, Hz), as RBJ's peaking filters at the stream's rate, an octave wide;
+// none at all for flat (the samples left as they were)
+JNIEXPORT void JNICALL Java_app_ink_music_UsbStream_eq(JNIEnv *e, jclass c, jlong h, jfloatArray dbs, jintArray hzs) {
+    dac_t *d = of(h);
+    pthread_mutex_lock(&d->lock);
+    d->eq_n = 0;
+    double most = 0;
+    if (dbs) {
+        int n = (*e)->GetArrayLength(e, dbs); if (n > BANDS) n = BANDS;
+        jfloat *db = (*e)->GetFloatArrayElements(e, dbs, NULL);
+        jint *hz = (*e)->GetIntArrayElements(e, hzs, NULL);
+        for (int i = 0; i < n; i++) {
+            if (fabs(db[i]) < 0.05 || hz[i] >= d->rate * 0.45) continue;
+            double A = pow(10, db[i] / 40.0), w = 2 * M_PI * hz[i] / d->rate, cw = cos(w), alpha = sin(w) / (2 * 1.41);
+            double a0 = 1 + alpha / A;
+            biquad q = { (1 + alpha * A) / a0, -2 * cw / a0, (1 - alpha * A) / a0, -2 * cw / a0, (1 - alpha / A) / a0 };
+            d->eq[d->eq_n++] = q;
+            if (db[i] > most) most = db[i];
+        }
+        (*e)->ReleaseFloatArrayElements(e, dbs, db, JNI_ABORT);
+        (*e)->ReleaseIntArrayElements(e, hzs, hz, JNI_ABORT);
+    }
+    memset(d->eqs, 0, sizeof(d->eqs));
+    d->pre = pow(10, -most / 20.0);
+    pthread_mutex_unlock(&d->lock);
+    LOG("equalizer: %d bands, headroom %.1f db", d->eq_n, most);
 }
 
 JNIEXPORT void JNICALL Java_app_ink_music_UsbStream_gain(JNIEnv *e, jclass c, jlong h, jfloat g) {

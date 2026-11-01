@@ -21,7 +21,8 @@ object Exact {
     val available = Build.VERSION.SDK_INT >= 34
 
     private fun file(c: Context) = File(c.filesDir, "exact")
-    fun on(c: Context) = available && file(c).exists()
+    // ink music's own way to a DAC (UsbDac) works on any Android; Android's own bit-perfect path is asked only on 14 and up
+    fun on(c: Context) = file(c).exists()
     fun set(c: Context, on: Boolean) { runCatching { if (on) file(c).writeText("on") else file(c).delete() } }
 
     private val media get() = android.media.AudioAttributes.Builder()

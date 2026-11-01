@@ -184,6 +184,8 @@ class PlayerService : MediaLibraryService() {
         // exact to a usb dac: even volume rests too (both change the bits)
         val exact = Exact.on(this)
         levelling?.let { l -> val want = prefs.getBoolean("levelling", true) && !exact; if (l.on != want) { l.on = want; l.apply() } }
+        // exact with ink music's own way to the DAC: the equalizer goes with the samples (UsbDac.eq), Android's rests
+        Eq.read(this).let { st -> UsbDac.eq = if (exact && st.on && st.levels.any { it != 0 }) Eq.TEN.indices.map { st.levels.getOrElse(it) { 0 }.coerceIn(-Eq.RANGE, Eq.RANGE) / 100f }.toFloatArray() else null }
         val e = eq ?: return
         val st = Eq.read(this).let { if (exact) it.copy(on = false) else it }
         runCatching {
@@ -265,7 +267,7 @@ class PlayerService : MediaLibraryService() {
             gain = levelling?.takeIf { it.on }?.db,
             decoder = decoder, outBits = dac?.second?.alt?.bits ?: outBits, outRate = dac?.second?.rate ?: outRate,
             device = dac?.first?.name?.lowercase() ?: out.first, kind = if (dac != null) "usb" else out.second, mixer = Exact.mixer(this),
-            eq = Eq.read(this).takeIf { it.on && !Exact.on(this) }?.let { it.phones.ifEmpty { it.preset } }.orEmpty(),
+            eq = Eq.read(this).takeIf { it.on && (!Exact.on(this) || (dac != null && UsbDac.eq != null)) }?.let { it.phones.ifEmpty { it.preset } }.orEmpty(),
             exact = exactSaid,
             slot = dac?.second?.alt?.bits ?: 0, clock = dac?.second?.clock() ?: 0.0, dropouts = dac?.second?.underruns() ?: 0,
         )

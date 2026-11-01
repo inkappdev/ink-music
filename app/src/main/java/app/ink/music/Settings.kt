@@ -341,11 +341,12 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 }
 
                 // exact to a usb dac: android 14's bit-perfect path (Exact), the equalizer and even volume resting
-                if (Exact.available) Column(Modifier.cascade(6)) {
+                Column(Modifier.cascade(6)) {
                     BasicText("EXACT TO A USB DAC", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText("with a usb dac plugged in, the song's own bits at its own rate, past android's mixer. the equalizer and " +
-                        "even volume rest while it's on. whether your phone allows it, tap the format over the cover and see", style = pixel(12.sp, Ink.mid))
+                    BasicText("with a usb dac plugged in, ink music plays to it itself, on any phone: every sample as it is in the file, at " +
+                        "its own rate, android's mixer never touching it, the volume the dac's own. even volume rests; your equalizer comes along " +
+                        "if it's on (then it's not every sample as it was, and it says so). tap the format over the cover to see the whole way", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     var exact by remember { mutableStateOf(Exact.on(ctx)) }
                     Row {

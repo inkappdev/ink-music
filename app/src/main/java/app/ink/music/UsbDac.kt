@@ -22,6 +22,7 @@ object UsbStream {
     @JvmStatic external fun state(h: Long): Int
     @JvmStatic external fun clock(h: Long): Double
     @JvmStatic external fun gain(h: Long, g: Float)
+    @JvmStatic external fun eq(h: Long, db: FloatArray?, hz: IntArray?)
     @JvmStatic external fun stop(h: Long)
     @JvmStatic external fun close(h: Long)
     @JvmStatic external fun reattach(fd: Int, iface: Int)
@@ -152,6 +153,8 @@ object UsbDac {
             fun flush() = synchronized(this@Held) { if (h != 0L) { UsbStream.flush(h); lastPlayed = 0 } }
             fun played(): Long = synchronized(this@Held) { if (h != 0L) UsbStream.played(h).also { lastPlayed = it } else lastPlayed }
             fun gain(g: Float) = synchronized(this@Held) { if (h != 0L) UsbStream.gain(h, g) }
+            /** The equalizer on the way (dB a band at [Eq.TEN]), or none. */
+            fun eq(db: FloatArray?) = synchronized(this@Held) { if (h != 0L) UsbStream.eq(h, db, if (db != null) Eq.TEN.toIntArray() else null) }
             fun underruns(): Int = synchronized(this@Held) { if (h != 0L) UsbStream.underruns(h) else 0 }
             fun clock(): Double = synchronized(this@Held) { if (h != 0L) UsbStream.clock(h) else 0.0 }
             /** This stream over (only if it's still the DAC's: the next song's may have begun already). */
@@ -215,7 +218,7 @@ object UsbDac {
             if (!UsbStream.start(h, rate, channels, inFloat, a.sub, a.bits, 250)) { UsbStream.close(h); return null }
             streamAlt = a
             this.rate = rate
-            return Stream(h, rate, a).also { current = it }
+            return Stream(h, rate, a).also { current = it; it.eq(UsbDac.eq) }
         }
 
         private fun setRate(a: Alt, rate: Int) {
@@ -293,6 +296,14 @@ object UsbDac {
 
     @Volatile var held: Held? = null
         private set
+
+    /**
+     * The equalizer on the way to the DAC (dB a band), or null: off, or flat. Exact with your equalizer: worked out
+     * in 64 bit and sent on at the song's own rate, no mixer, no resampling; not every sample as it was any more,
+     * and the signal path says so.
+     */
+    @Volatile var eq: FloatArray? = null
+        set(v) { field = v; held?.now?.eq(v) }
 
     /** How loud the DAC is, 0 to 1 (its own volume): the volume buttons' while it's held. */
     @Volatile var level = .3f
