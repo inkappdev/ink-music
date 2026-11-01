@@ -23,7 +23,7 @@
 
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "ink-usb", __VA_ARGS__)
 
-#define URBS 16
+#define URBS 24
 #define MAX_PACKETS 32
 
 struct urb_ctx { int frames; unsigned gen; };
@@ -186,7 +186,9 @@ static void *run(void *arg) {
     for (int i = 0; i < URBS; i++) if (submit(d, i) < 0) { atomic_store(&d->running, 0); break; }
     if (d->fb_urb && atomic_load(&d->running)) submit_fb(d);
     int out = atomic_load(&d->running) ? URBS + (d->fb_urb ? 1 : 0) : 0;
-    int reaped = 0, errors = 0; time_t last = 0;
+    int reaped = 0, errors = 0, late = 0, missed = 0, why = 0; time_t last = 0;
+    // held up longer than what's in flight lasts: the DAC went without (no error says so; the next is sent late)
+    long window = (long) URBS * d->packets * 1000000L / d->per_second, longest = 0; struct timespec prev = { 0, 0 };
     LOG("thread: %d in flight", out);
     while (out > 0) {
         struct usbdevfs_urb *u = NULL;
@@ -205,14 +207,27 @@ static void *run(void *arg) {
         }
         int i = (int) (intptr_t) u->usercontext;
         if (u->status != 0) errors++;
+        // each packet's own word: one the controller couldn't send in its moment says so here, not in the transfer's
+        for (int p = 0; p < u->number_of_packets; p++) {
+            int st = u->iso_frame_desc[p].status;
+            if (st != 0) { missed++; if (!why) why = st; }
+        }
         // every ten seconds: how it goes
         struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
         reaped++;
+        if (prev.tv_sec) {
+            long waited = (ts.tv_sec - prev.tv_sec) * 1000000L + (ts.tv_nsec - prev.tv_nsec) / 1000;
+            if (waited > longest) longest = waited;
+            if (waited > window) late++;
+        }
+        prev = ts;
         if (ts.tv_sec / 10 != last) {
             last = ts.tv_sec / 10;
             pthread_mutex_lock(&d->lock); size_t used = d->used; pthread_mutex_unlock(&d->lock);
-            LOG("%s: %d back, played %lld, ring %zu bytes, underruns %d, errors %d, clock %.1f Hz", atomic_load(&d->playing) ? "playing" : "paused",
-                reaped, (long long) atomic_load(&d->played), used, atomic_load(&d->underruns), errors, atomic_load(&d->fb) / 65536.0 * d->per_second);
+            LOG("%s: %d back, played %lld, ring %zu bytes, underruns %d, errors %d, late %d (longest %ld ms of %ld), packets missed %d (%s), clock %.1f Hz",
+                atomic_load(&d->playing) ? "playing" : "paused", reaped, (long long) atomic_load(&d->played), used,
+                atomic_load(&d->underruns), errors, late, longest / 1000, window / 1000, missed, why ? strerror(-why) : "none", atomic_load(&d->fb) / 65536.0 * d->per_second);
+            longest = 0; why = 0;
         }
         if (d->ctx[i].gen == atomic_load(&d->gen)) atomic_fetch_add(&d->played, d->ctx[i].frames);
         atomic_store(&d->stage, 3);
@@ -245,8 +260,10 @@ JNIEXPORT jlong JNICALL Java_app_ink_music_UsbStream_open(JNIEnv *e, jclass c, j
     int iv = interval < 1 ? 1 : interval;
     d->period = d->high_speed ? 1 << (iv - 1) : 1;
     d->per_second = (d->high_speed ? 8000 : 1000) / d->period;
-    // about 1 ms a transfer, 16 in flight: 16 ms between the ring and the DAC. 128 packets in flight at most: the
-    // S26's controller stopped giving 16 of 16 back (256 in flight) after the 255th, for good (2026-11-01)
+    // about 1 ms a transfer, 24 in flight: 24 ms between the ring and the DAC, the most this thread can be held up
+    // (the phone busy) before the DAC hears nothing; 16 wasn't enough (Bronson, 2026-11-01: "when using the phone
+    // the music goes in and out"). 192 packets in flight at most: the S26's controller stopped giving 16 of 16 back
+    // (256 in flight) after the 255th, for good (2026-11-01)
     d->packets = d->per_second / 1000; if (d->packets < 1) d->packets = 1; if (d->packets > MAX_PACKETS) d->packets = MAX_PACKETS;
     pthread_mutex_init(&d->lock, NULL);
     float one = 1.0f; int b; memcpy(&b, &one, 4); atomic_store(&d->gain_bits, b);

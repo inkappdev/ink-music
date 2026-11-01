@@ -58,7 +58,7 @@ class UsbOutputProvider(private val c: Context, private val fallback: AudioOutpu
         val h = dac(config.sampleRate, channels, config.encoding) ?: return exclusive(config, channels) ?: fallback.getAudioOutput(config)
         val stream = h.begin(config.sampleRate, channels, config.encoding == C.ENCODING_PCM_FLOAT)
             ?: throw AudioOutputProvider.InitializationException()
-        return UsbAudioOutput(h, stream, config)
+        return UsbAudioOutput(c, h, stream, config)
     }
 
     /**
@@ -87,7 +87,7 @@ class UsbOutputProvider(private val c: Context, private val fallback: AudioOutpu
  * stream gone (the DAC unplugged, exact off), a write fails as recoverable, and Media3 asks again where to play.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
-class UsbAudioOutput(private val h: UsbDac.Held, private val stream: UsbDac.Held.Stream, private val config: AudioOutputProvider.OutputConfig) : AudioOutput {
+class UsbAudioOutput(private val c: Context, private val h: UsbDac.Held, private val stream: UsbDac.Held.Stream, private val config: AudioOutputProvider.OutputConfig) : AudioOutput {
     private val listeners = CopyOnWriteArraySet<AudioOutput.Listener>()
     private var scratch: ByteBuffer? = null
     private var started = false
@@ -113,9 +113,10 @@ class UsbAudioOutput(private val h: UsbDac.Held, private val stream: UsbDac.Held
 
     override fun play() {
         stream.play(true)
+        Audible.on(c)
         if (!started) { started = true; val now = System.currentTimeMillis(); listeners.forEach { it.onPositionAdvancing(now) } }
     }
-    override fun pause() { stream.play(false) }
+    override fun pause() { stream.play(false); Audible.off() }
 
     override fun write(buffer: ByteBuffer, encodedAccessUnitCount: Int, presentationTimeUs: Long): Boolean {
         if (released) return false
@@ -147,6 +148,7 @@ class UsbAudioOutput(private val h: UsbDac.Held, private val stream: UsbDac.Held
     override fun release() {
         if (released) return
         released = true
+        Audible.off()
         stream.end()
         listeners.forEach { it.onReleased() }
     }
@@ -180,4 +182,44 @@ class UsbAudioOutput(private val h: UsbDac.Held, private val stream: UsbDac.Held
     override fun attachAuxEffect(effectId: Int) {}
     override fun setAuxEffectSendLevel(level: Float) {}
     override fun setPreferredDevice(preferredDevice: AudioDeviceInfo?) {}
+}
+
+/**
+ * Silence to the phone's speaker while the DAC plays, so Android knows ink music is playing (Bronson, 2026-11-01:
+ * "when using the phone the music goes in and out"). Samsung holds back every process it doesn't hear playing while
+ * the phone animates (OLAF: unlocking, opening an app; up to a second), and the DAC's samples go past Android, so it
+ * didn't hear ours: the stream's thread stood still, and the DAC with it. Zeros, so nothing's heard.
+ */
+object Audible {
+    private var track: android.media.AudioTrack? = null
+
+    @Synchronized fun on(c: Context) {
+        if (track != null) return
+        val rate = 48_000
+        val min = android.media.AudioTrack.getMinBufferSize(rate, android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT)
+        val t = runCatching {
+            android.media.AudioTrack.Builder()
+                .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                .setAudioFormat(android.media.AudioFormat.Builder().setSampleRate(rate)
+                    .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT).build())
+                .setBufferSizeInBytes(min * 2).setTransferMode(android.media.AudioTrack.MODE_STREAM).build()
+        }.getOrNull() ?: return
+        // the speaker, not the DAC (ink music has it; Android can't open it)
+        c.getSystemService(android.media.AudioManager::class.java).getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }?.let { t.setPreferredDevice(it) }
+        runCatching { t.play() }.onFailure { t.release(); return }
+        track = t
+        Thread({
+            val zeros = ShortArray(min / 2)
+            while (track === t) if (t.write(zeros, 0, zeros.size) < 0) break
+        }, "ink-audible").apply { isDaemon = true; start() }
+        android.util.Log.i("ink-usb", "audible: silence to the speaker, so Android hears ink music playing")
+    }
+
+    @Synchronized fun off() {
+        val t = track ?: return
+        track = null
+        runCatching { t.pause(); t.flush(); t.release() }
+    }
 }
