@@ -394,8 +394,9 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
             // the title, and beside it the desktop's heart
             Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
                 // one line, a long one sliding along it while it plays: three lines took the cover's room, and it
-                // shrank for a long title (a listener, 2026-11-01). Still where marquees are off, or it moves less
-                val slides = t.moving && Marquees.on.collectAsState().value && !Moves.less.collectAsState().value
+                // shrank for a long title (a listener, 2026-11-01). Still where it moves less (not by marquees off: that's
+                // the giant name's)
+                val slides = t.moving && !Moves.less.collectAsState().value
                 FadeText(t.title.uppercase(), headline(32.sp), maxLines = 1, softWrap = false,
                     overflow = if (slides) TextOverflow.Clip else TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).then(if (slides) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 2_000, initialDelayMillis = 2_000) else Modifier))
