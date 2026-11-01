@@ -348,6 +348,11 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         "before its silence. never inside a record played in order, an episode or a station; it rests while exact is on", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     var cross by remember { mutableStateOf(Crossfade.on(ctx)) }
+                    // said plainly when it's on but resting (Bronson couldn't tell it wasn't crossfading: exact was on)
+                    if (cross && Exact.on(ctx)) {
+                        BasicText("resting now: exact to a usb dac is on (below)", style = pixel(12.sp, Ink.ink))
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Row {
                         Word("on", pixel(14.sp, if (cross) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { cross = true; Crossfade.set(ctx, true) }
                         Word("off", pixel(14.sp, if (!cross) Ink.ink else Ink.dim), touch = 8.dp) { cross = false; Crossfade.set(ctx, false) }
