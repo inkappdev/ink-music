@@ -23,8 +23,9 @@ sealed interface Updating {
 }
 
 /**
- * ink music keeping itself up to date on the computer, as the phone's full build does (2026-10-29): GitHub's
- * latest release looked at every six hours; one newer than this offered at the top of listen. Taken, this computer's
+ * ink music keeping itself up to date on the computer, as the phone's full build does (2026-10-29): the latest
+ * release looked at every six hours, inkhome.app's and GitHub's (the newer of the two that answer; GitHub suspended
+ * ink's account 2026-11-01, and a site of our own can't be); one newer than this offered at the top of listen. Taken, this computer's
  * download comes down (the Mac's dmg, Windows' msi, Linux's deb or rpm, as this one was installed), is checked against
  * the release's SHA256SUMS, and goes in its own system's way, then ink music opens again:
  *  - a Mac: the new app copied out of the dmg beside this one, swapped in once this one has quit (downloaded by ink
@@ -35,7 +36,8 @@ sealed interface Updating {
  */
 object Updates {
     // ink.updates and ink.self only for trying it against a release of one's own (tools/try-update)
-    private val LATEST = System.getProperty("ink.updates") ?: "https://api.github.com/repos/inkappdev/ink-music/releases/latest"
+    private val LATEST = System.getProperty("ink.updates")?.let { listOf(it) }
+        ?: listOf("https://inkhome.app/download/latest.json", "https://api.github.com/repos/inkappdev/ink-music/releases/latest")
     private const val EVERY = 6 * 3_600_000L
     val offer = MutableStateFlow<Update?>(null)
     val step = MutableStateFlow<Updating>(Updating.Offered)
@@ -73,7 +75,7 @@ object Updates {
             val k = kept()
             val seen = k.optJSONObject("seen")
             val fresh = System.currentTimeMillis() - k.optLong("at") < EVERY
-            val r = (if (fresh) seen else null) ?: runCatching { JSONObject(get(LATEST)) }.getOrNull() ?: return@launch
+            val r = (if (fresh) seen else null) ?: latest() ?: return@launch
             if (!fresh) runCatching { file.writeText(k.put("at", System.currentTimeMillis()).put("seen", r).toString()) }
             val version = r.optString("tag_name").removePrefix("v")
             if (!newer(version, Keys.version) || version == k.optString("aside")) return@launch
@@ -200,6 +202,10 @@ object Updates {
             }
         } finally { conn.disconnect() }
     }
+
+    /** The newest release of those that answer (the same shape from each: GitHub's). */
+    private fun latest(): JSONObject? = LATEST.mapNotNull { runCatching { JSONObject(get(it)) }.getOrNull() }
+        .reduceOrNull { a, b -> if (newer(b.optString("tag_name").removePrefix("v"), a.optString("tag_name").removePrefix("v"))) b else a }
 
     private fun get(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection

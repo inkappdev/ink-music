@@ -23,7 +23,7 @@ android {
         versionCode = 52
         versionName = "2.1.1"
         // ink weekly's weeks (tools/weekly.py writes them); -PweeklyUrl=... to try a week before it's pushed
-        val weekly = (project.findProperty("weeklyUrl") as String?) ?: "https://raw.githubusercontent.com/inkappdev/ink-music/main/weekly.json"
+        val weekly = (project.findProperty("weeklyUrl") as String?) ?: "https://inkhome.app/weekly.json"
         buildConfigField("String", "WEEKLY", "\"$weekly\"")
         // Last.fm's key and secret for ink music, kept out of git with the release key (a build without them has no Last.fm)
         buildConfigField("String", "LASTFM_KEY", "\"${release?.getProperty("lastfmKey").orEmpty()}\"")

@@ -17,7 +17,8 @@ import java.io.File
 /**
  * ink weekly: songs picked by hand by the people who make ink, a new week every Friday night.
  * The weeks are one file in the repo (weekly.json, written by tools/weekly.py from a YouTube Music
- * playlist), read from GitHub: kept on the phone and shown at once, asked for again once it's a few
+ * playlist), read from inkhome.app (GitHub's copy if the site can't be reached; GitHub suspended ink's account
+ * 2026-11-01): kept on the phone and shown at once, asked for again once it's a few
  * hours old. Nothing about you is sent. Each song plays from your own copy when you have it (the
  * phone's, your server's), else from YouTube Music (the full build; the play build keeps only yours).
  */
@@ -40,6 +41,7 @@ object Weekly {
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     private var loaded = false
+    private const val GITHUB = "https://raw.githubusercontent.com/inkappdev/ink-music/main/weekly.json"
 
     fun load(c: Context) {
         if (loaded) return
@@ -50,7 +52,7 @@ object Weekly {
             // a new week comes Friday night: asked again once what's kept is a few hours old
             if (f.exists() && System.currentTimeMillis() - f.lastModified() < 3 * 3_600_000L) return@launch
             runCatching {
-                val text = IndieChart.get(BuildConfig.WEEKLY)
+                val text = listOf(BuildConfig.WEEKLY, GITHUB).distinct().firstNotNullOf { u -> runCatching { IndieChart.get(u).also { parse(it) } }.getOrNull() }
                 raw.value = parse(text)
                 f.writeText(text)
             }.onFailure { android.util.Log.d("ink-weekly", "read: $it") }

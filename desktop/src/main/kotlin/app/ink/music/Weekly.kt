@@ -15,13 +15,14 @@ import java.io.File
 /**
  * ink weekly: songs picked by hand by the people who make ink, a new week every Friday night.
  * The weeks are one file in the repo (weekly.json, written by tools/weekly.py from a YouTube Music
- * playlist), read from GitHub: kept here and shown at once, asked for again once it's a few
+ * playlist), read from inkhome.app (GitHub's copy if the site can't be reached; GitHub suspended ink's account
+ * 2026-11-01): kept here and shown at once, asked for again once it's a few
  * hours old. Nothing about you is sent. Each song plays from your own copy when you have it (the
  * phone's, your server's), else from YouTube Music (the full build; the play build keeps only yours).
  */
 object Weekly {
-    /** Where the weeks are (the repo's own weekly.json, as the phone's build is told). */
-    private const val WEEKLY = "https://raw.githubusercontent.com/inkappdev/ink-music/main/weekly.json"
+    /** Where the weeks are (tools/weekly.py puts them on the site, as the phone's build is told), GitHub's copy after. */
+    private val WEEKLY = listOf("https://inkhome.app/weekly.json", "https://raw.githubusercontent.com/inkappdev/ink-music/main/weekly.json")
 
     /** A week: its number, the day it came out, its name and a line about it, its songs as they'll play. */
     data class Week(val week: Int, val date: String, val title: String, val note: String, val songs: List<Song>)
@@ -51,7 +52,7 @@ object Weekly {
             // a new week comes Friday night: asked again once what's kept is a few hours old
             if (f.exists() && System.currentTimeMillis() - f.lastModified() < 3 * 3_600_000L) return@launch
             runCatching {
-                val text = IndieChart.get(WEEKLY)
+                val text = WEEKLY.firstNotNullOf { u -> runCatching { IndieChart.get(u).also { parse(it) } }.getOrNull() }
                 raw.value = parse(text)
                 Home.write(f, text)
             }.onFailure { Log.d("weekly: $it") }

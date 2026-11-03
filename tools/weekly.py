@@ -2,7 +2,8 @@
 """
 ink weekly: this week's songs, picked by hand, put out Friday nights. Reads a public (or unlisted)
 YouTube Music playlist the way the app's InnerTube reader does (WEB_REMIX, signed out) and adds the
-week to the top of weekly.json at the repo's root, which the app reads from GitHub once a day.
+week to the top of weekly.json at the repo's root, which the apps read from inkhome.app (GitHub's copy
+after) once it's a few hours old.
 
     python3 tools/weekly.py <playlist link or id> ["THE TITLE"] ["a line about it"] [--push]
 
@@ -11,7 +12,9 @@ ink weekly above it); the line is the standing one unless given.
 
 Each song keeps its title, artist, record, length, YouTube id and cover: the app plays the
 listener's own copy when they have it (files or server), YouTube Music's otherwise. --push commits
-weekly.json alone and pushes it (as ink <hello@inkhome.app>).
+weekly.json alone (as ink <hello@inkhome.app>), puts it on the site (../inkhome-site/public/weekly.json,
+committed there and deployed: where the apps look first; GitHub suspended ink's account 2026-11-01), then
+pushes it to GitHub too (a push that fails says so and goes on).
 """
 import datetime
 import json
@@ -22,6 +25,8 @@ import sys
 import urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+SITE = os.environ.get("INK_SITE") or os.path.join(ROOT, "..", "inkhome-site")
+CLOUDFLARE = {"CLOUDFLARE_API_TOKEN_FILE": os.path.expanduser("~/.config/cloudflare/ink-token"), "CLOUDFLARE_ACCOUNT_ID": "16efec9f014bea73d78cbaf72b1d81dc"}
 FILE = os.environ.get("WEEKLY_FILE") or os.path.join(ROOT, "weekly.json")   # elsewhere to try it
 BASE = "https://music.youtube.com"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
@@ -137,8 +142,18 @@ def main():
         git = ["git", "-C", ROOT, "-c", "user.name=ink", "-c", "user.email=hello@inkhome.app"]
         subprocess.run(git + ["add", "weekly.json"], check=True)
         subprocess.run(git + ["commit", "-q", "-m", f"ink weekly {number}: {title}", "--", "weekly.json"], check=True)
-        subprocess.run(["git", "-C", ROOT, "push", "-q", "origin", "main"], check=True)
-        print("pushed: the app has it within a day (at once on its next open after a few hours)")
+        # the site: where the apps look first
+        site = ["git", "-C", SITE, "-c", "user.name=ink", "-c", "user.email=hello@inkhome.app"]
+        with open(FILE) as f, open(os.path.join(SITE, "public", "weekly.json"), "w") as g: g.write(f.read())
+        subprocess.run(site + ["add", "public/weekly.json"], check=True)
+        subprocess.run(site + ["commit", "-q", "-m", f"ink weekly {number}: {title}", "--", "public/weekly.json"], check=True)
+        env = dict(os.environ, CLOUDFLARE_API_TOKEN=open(CLOUDFLARE["CLOUDFLARE_API_TOKEN_FILE"]).read().strip(),
+                   CLOUDFLARE_ACCOUNT_ID=CLOUDFLARE["CLOUDFLARE_ACCOUNT_ID"])
+        subprocess.run(["npx", "wrangler@4", "pages", "deploy", "public", "--project-name", "inkhome", "--branch", "main"],
+                       cwd=SITE, env=env, check=True, stdout=subprocess.DEVNULL)
+        print("on inkhome.app: the apps have it within a day (at once on their next open after a few hours)")
+        if subprocess.run(["git", "-C", ROOT, "push", "-q", "origin", "main"]).returncode != 0:
+            print("GitHub's push failed (still suspended?): the site has it, which is where the apps look first")
 
 
 if __name__ == "__main__":
