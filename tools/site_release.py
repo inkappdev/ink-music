@@ -58,7 +58,10 @@ def main():
     if subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True).stdout.strip():
         sys.exit("uncommitted changes: commit them, so the source beside the build is what was built")
     src = ROOT / f"build/release/ink-music-{version}-source.tar.xz"
-    tar = subprocess.run(["git", "-C", str(ROOT), "archive", f"--prefix=ink-music-{version}/", "HEAD"], capture_output=True, check=True).stdout
+    # less the README's and the store's pictures (30 MB of them), as 2.1.1's had: the code and what builds it
+    tar = subprocess.run(["git", "-C", str(ROOT), "archive", f"--prefix=ink-music-{version}/", "HEAD", "--", ".",
+                          ":(exclude).github/*.gif", ":(exclude).github/*.png", ":(exclude).github/*.jpg", ":(exclude).github/shots",
+                          ":(exclude)fastlane/metadata/android/en-US/images"], capture_output=True, check=True).stdout
     src.write_bytes(subprocess.run(["xz", "-9", "-T0"], input=tar, capture_output=True, check=True).stdout)
     built["-source.tar.xz"] = src
 
