@@ -694,8 +694,8 @@ internal fun Field(name: String, value: String, onValue: (String) -> Unit, hint:
 
 /**
  * Your computer (2026-10-29): the computers paired, each when it was last in
- * step, sync now, forget; pairing one from here (shown, unpaired, only while one on this wifi is waiting for it, so no
- * one sees it before there's a Mac app to pair).
+ * step, sync now, forget; pairing one from here. Shown even with none found: a computer its firewall hides (Windows,
+ * a wifi it calls public) is never listed, and the way to type its address is on the page this opens.
  */
 @Composable
 private fun ComputerSetting(pages: Pages) {
@@ -708,11 +708,15 @@ private fun ComputerSetting(pages: Pages) {
         val stop = Computers.find(ctx) { c -> if (waiting.none { it.name == c.name }) waiting += c }
         onDispose { stop() }
     }
-    if (peers.isEmpty() && waiting.isEmpty()) return
     val scope = rememberCoroutineScope()
     BasicText("YOUR COMPUTER", style = headline(32.sp))
     Spacer(Modifier.height(6.dp))
-    if (peers.isEmpty()) {
+    if (peers.isEmpty() && waiting.isEmpty()) {
+        BasicText("ink music on a computer (mac, windows, linux) signed in to what this phone is, and the two kept in step on your wifi. " +
+            "on the computer: settings, your phone, pair your phone; then here", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(10.dp))
+        Word("SYNC WITH A COMPUTER", headline(28.sp), touch = 10.dp) { pages.open(Page.HandOver) }
+    } else if (peers.isEmpty()) {
         BasicText("${waiting.first().name.lowercase()} is waiting to pair with this phone: it's signed in to what this phone is, and the two keep in step " +
             "on your wifi from then on (what you've heard, what you love, what you were playing). nothing goes through anyone else", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(10.dp))
@@ -733,7 +737,7 @@ private fun ComputerSetting(pages: Pages) {
         Spacer(Modifier.height(10.dp))
         Row {
             Word("sync now", pixel(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { scope.launch { SyncPhone.now() } }
-            if (waiting.isNotEmpty()) Word("pair another", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.HandOver) }
+            Word("pair another", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.HandOver) }
         }
     }
     Spacer(Modifier.height(40.dp))

@@ -5,6 +5,7 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -50,6 +51,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.statusBars
@@ -520,8 +522,9 @@ private fun Grain() {
 
 /**
  * The times, then the 1 px line filling with the song in the cover's colour, ruled straight onto
- * the cover's top edge. Drag along it, or tap, to scrub: the times light while the finger is
- * down, the song jumps there on letting go.
+ * the cover's top edge. Drag along it, or tap, to scrub: the times light and the line grows to 4 dp (upward, its foot
+ * still on the cover) while the finger is down, the song jumps there on letting go. The finger's room reaches [REACH]
+ * above the times, as the hairline alone was hard to catch.
  */
 @Composable
 private fun Scrubber(
@@ -534,6 +537,7 @@ private fun Scrubber(
     // where the middle word sits: a tap there is the word's, not a seek
     var hole by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val margin = with(androidx.compose.ui.platform.LocalDensity.current) { 12.dp.toPx() }
+    val reach = with(androidx.compose.ui.platform.LocalDensity.current) { REACH.toPx() }
     var pos by remember { mutableLongStateOf(n.positionNow()) }
     LaunchedEffect(n) {
         while (true) { pos = n.positionNow(); if (!n.moving) break; delay(250) }
@@ -561,7 +565,8 @@ private fun Scrubber(
                     onDragEnd = { scrub.at?.let(Playback::seek); scrub.at = null },
                     onDragCancel = { scrub.at = null },
                 ) { c, _ -> c.consume(); if (duration > 0) scrub.at = where(c.position.x, size.width) }
-            },
+            }
+            .padding(top = REACH),
     ) {
         // the times at the ends, and dead centre between them what's heard; in a blend, the tempos and MIXING
         Box(Modifier.fillMaxWidth().padding(bottom = if (mix != null && (k != null || point != null)) 0.dp else 8.dp)) {
@@ -573,20 +578,32 @@ private fun Scrubber(
             } else {
                 BasicText(clock(shown), style = pixel(SMALL, times), modifier = Modifier.align(androidx.compose.ui.Alignment.CenterStart))
                 Box(Modifier.align(androidx.compose.ui.Alignment.Center)
-                    .onGloballyPositioned { hole = it.boundsInParent().inflate(margin) }) { middle() }
+                    .onGloballyPositioned { hole = it.boundsInParent().inflate(margin).translate(0f, reach) }) { middle() }
                 // to the mix point where there is one (the next song comes in there)
                 BasicText(if (n.duration > 0) "-" + clock(n.duration - shown) else "", style = pixel(SMALL, times),
                     modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
             }
         }
-        // the line sits on the cover's top edge: nothing between them
-        if (k != null && mix != null) MixBar(mix, k, old, new, line)
-        else if (point != null) MixPointBar(frac, point.cutAt.toFloat() / point.full, accent, line)
-        else Box(Modifier.fillMaxWidth().height(line).background(Ink.line)) {
-            Box(Modifier.fillMaxWidth(frac).height(line).background(accent))
+        // the line sits on the cover's top edge: nothing between them. Held, it grows upward over the times' gap, its
+        // room the same, so nothing below it moves
+        val held = scrub.at != null
+        val thick by animateDpAsState(if (held) maxOf(line, 4.dp) else line,
+            tween(if (held) Motion.ENTER else Motion.EXIT, easing = Motion.expo), label = "line")
+        val blend = k != null && mix != null
+        Box(Modifier.fillMaxWidth().height(line + if (blend || point != null) 8.dp else 0.dp)) {
+            val grow = Modifier.align(androidx.compose.ui.Alignment.BottomStart)
+                .wrapContentHeight(androidx.compose.ui.Alignment.Bottom, unbounded = true)
+            if (k != null && mix != null) MixBar(mix, k, old, new, thick, grow)
+            else if (point != null) MixPointBar(frac, point.cutAt.toFloat() / point.full, accent, thick, grow)
+            else Box(grow.fillMaxWidth().height(thick).background(Ink.line)) {
+                Box(Modifier.fillMaxWidth(frac).height(thick).background(accent))
+            }
         }
     }
 }
+
+/** How far above the times a finger still catches the line. */
+private val REACH = 14.dp
 
 /**
  * The iPod's clickwheel, with the cover as its hub (ink's): circle a thumb round it to scrub,
