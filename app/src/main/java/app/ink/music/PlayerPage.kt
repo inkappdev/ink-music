@@ -738,10 +738,10 @@ private val SPEAKER = listOf(
 )
 
 /** The player's controls as pixels, on the speaker's grid. Play and pause nine high, back and next seven (at 3 dp). */
-private val BACK = listOf("#...#", "#..##", "#.###", "#####", "#.###", "#..##", "#...#")
-private val PLAY = listOf("#....", "##...", "###..", "####.", "#####", "####.", "###..", "##...", "#....")
-private val PAUSE = listOf("##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##")
-private val NEXT = listOf("#...#", "##..#", "###.#", "#####", "###.#", "##..#", "#...#")
+internal val BACK = listOf("#...#", "#..##", "#.###", "#####", "#.###", "#..##", "#...#")
+internal val PLAY = listOf("#....", "##...", "###..", "####.", "#####", "####.", "###..", "##...", "#....")
+internal val PAUSE = listOf("##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##")
+internal val NEXT = listOf("#...#", "##..#", "###.#", "#####", "###.#", "##..#", "#...#")
 /** Shuffle and repeat (at 2 dp): two crossing ways; a loop, a lit pixel in it for repeat one. */
 private val SHUFFLE = listOf("........#..", "##....#####", "..#..#..#..", "...##......", "..#..#..#..", "##....#####", "........#..")
 private val REPEAT = listOf("..#........", ".##########", "#.#.......#", "#.........#", "#.......#.#", "##########.", "........#..")

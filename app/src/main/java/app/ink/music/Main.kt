@@ -317,6 +317,8 @@ private fun App() {
 
     val pages = remember { Pages() }
     var playerUp by rememberSaveable { mutableStateOf(false) }
+    // what plays on another device, opened from its bar ([RemotePlayerPage])
+    var remoteUp by remember { mutableStateOf(false) }
     BackHandler(playerUp) { playerUp = false }
     // a TV: a song, a record, a mix begun from the sofa brings the player up (as ink tv shows what starts playing)
     if (onTv()) LaunchedEffect(Unit) {
@@ -437,7 +439,7 @@ private fun App() {
             // (paused there: only while nothing waits here either, the mini player's own song, as it shows one)
             val here = Playback.now.collectAsState().value
             val elsewhere = Everywhere.remote.collectAsState().value?.takeIf { it.playing || here == null || here.stopped }
-            if (!stopping && !sideways() && !playingNow && elsewhere != null) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { RemoteMini(frost, elsewhere) }
+            if (!stopping && !sideways() && !playingNow && elsewhere != null) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { RemoteMini(frost, elsewhere, onOpen = { remoteUp = true }) }
             else if (!stopping && !sideways() && (!onTv() || playingNow)) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { MiniPlayer(frost, onOpen = { playerUp = true }) }
         }
         androidx.compose.animation.AnimatedVisibility(
@@ -446,6 +448,13 @@ private fun App() {
             exit = if (stopping) slideOutVertically(tween(STOP_MS, easing = Motion.expo)) { it } + fadeOut(tween(STOP_MS, delayMillis = STOP_MS / 2))
                 else slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) { PlayerPage(onClose = { playerUp = false }, onOpen = { playerUp = false; pages.open(it) }, onStop = { stopping = true; playerUp = false }) }
+        val remote = Everywhere.remote.collectAsState().value
+        LaunchedEffect(remote == null) { if (remote == null) remoteUp = false }
+        androidx.compose.animation.AnimatedVisibility(
+            remoteUp && remote != null,
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) { remote?.let { RemotePlayerPage(it) { remoteUp = false } } }
     }
 }
 

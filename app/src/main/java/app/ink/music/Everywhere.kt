@@ -2,6 +2,10 @@ package app.ink.music
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -221,13 +225,15 @@ object Everywhere {
  * on with it here at its second. Selection is brightness, as everywhere.
  */
 @Composable
-fun RemoteMini(frost: HazeState, r: Everywhere.Remote) {
+fun RemoteMini(frost: HazeState, r: Everywhere.Remote, onOpen: () -> Unit) {
     val pos by produceState(r.positionNow(), r) { while (true) { value = r.positionNow(); delay(500) } }
     val cover = rememberCover(r.song, 300)
     val length = r.length
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = true))
-        Column(Modifier.fillMaxWidth().background(Ink.black).navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
+        // its own taps, every one: a tap on its cover fell through to the cover under the bar and played that here
+        Column(Modifier.fillMaxWidth().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null, onClick = onOpen)
+            .navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
                 if (length > 0 && !r.song.station) Box(Modifier.fillMaxWidth((pos.toFloat() / length).coerceIn(0f, 1f)).height(1.dp).background(cover?.accent ?: Ink.ink))
             }
@@ -244,6 +250,59 @@ fun RemoteMini(frost: HazeState, r: Everywhere.Remote) {
                 }
                 Word("play here", pixel(14.sp), Modifier.padding(start = 6.dp), touch = 10.dp) { Everywhere.take(r) }
             }
+        }
+    }
+}
+
+/**
+ * What plays on another device, opened from its bar: the cover big, the song, where it plays, the line along the
+ * cover's top with the times over it, moving with it; back, pause or play, next steering it there; play here carrying
+ * on with it on this one. Closed by its arrow, back, or the other device stopping.
+ */
+@Composable
+fun RemotePlayerPage(r: Everywhere.Remote, onClose: () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onClose)
+    val pos by produceState(r.positionNow(), r) { while (true) { value = r.positionNow(); delay(250) } }
+    val cover = rememberCover(r.song, 900)
+    val length = r.length
+    val tv = onTv()
+    Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(bars).padding(horizontal = 20.dp, vertical = 14.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                BasicText((if (r.playing) "playing on " else "paused on ") + r.where, style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+                CloseArrow(onClick = onClose)
+            }
+            Spacer(Modifier.height(18.dp))
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                val side = minOf(maxWidth, maxHeight - 150.dp, if (tv) 520.dp else 560.dp).coerceAtLeast(120.dp)
+                Column {
+                    // the times over the line, the line along the cover's top, in the cover's colour
+                    Row(Modifier.width(side)) {
+                        BasicText(clock(pos), style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+                        if (length > 0 && !r.song.station) BasicText("-" + clock((length - pos).coerceAtLeast(0)), style = pixel(12.sp, Ink.mid))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Box(Modifier.width(side).height(1.dp).background(Ink.line)) {
+                        if (length > 0 && !r.song.station) Box(Modifier.fillMaxWidth((pos.toFloat() / length).coerceIn(0f, 1f)).height(1.dp).background(cover?.accent ?: Ink.ink))
+                    }
+                    CoverOf(r.song, r.song.album.ifEmpty { r.song.title }, Modifier.size(side))
+                    Spacer(Modifier.height(18.dp))
+                    BasicText(r.song.title.uppercase(), style = headline(30.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(6.dp))
+                    BasicText(r.song.artist.lowercase(), style = pixel(13.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                if (r.steerable) {
+                    Pixel(BACK, "back, there", Ink.ink, cell = 3.dp) { Everywhere.steer(r, "previous") }
+                    Pixel(if (r.playing) PAUSE else PLAY, if (r.playing) "pause, there" else "play, there", Ink.ink, cell = 3.dp) { Everywhere.steer(r, if (r.playing) "pause" else "play") }
+                    Pixel(NEXT, "next, there", Ink.ink, cell = 3.dp) { Everywhere.steer(r, "next") }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            Word("PLAY HERE", headline(28.sp), Modifier.align(Alignment.CenterHorizontally), touch = 10.dp) { Everywhere.take(r); onClose() }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
