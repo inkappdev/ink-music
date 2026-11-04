@@ -480,7 +480,7 @@ private fun PhoneSetting() {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
                         BasicText(p.name.uppercase(), style = headline(20.sp))
-                        BasicText(if (p.seen == 0L) "paired, not in step yet" else "in step " + ago(tick - p.seen), style = pixel(12.sp, Ink.mid))
+                        BasicText(if (p.seen == 0L) (if (p.hub) "paired through your phone" else "paired, not in step yet") else "in step " + ago(tick - p.seen), style = pixel(12.sp, Ink.mid))
                     }
                     Word("forget", pixel(13.sp, Ink.mid), touch = 8.dp) { SyncHub.forget(p.id) }
                 }

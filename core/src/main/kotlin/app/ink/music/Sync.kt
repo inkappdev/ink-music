@@ -59,6 +59,17 @@ object Sync {
                 .put("gotHeard", it.gotHeard).put("sentHeard", it.sentHeard).put("seen", it.seen).put("at", it.at).put("hub", it.hub) })))
         }
 
+        /**
+         * Heard from `id` (a sealed message of its opened): in step with it as of now. Devices the phone introduced
+         * (the TV and a computer) never call each other's /sync, only say what plays: this is how they're seen in step.
+         * Kept at most once a minute (a phone's /watch comes every 25 s).
+         */
+        @Synchronized fun heard(id: String) {
+            val p = peers().firstOrNull { it.id == id } ?: return
+            val now = System.currentTimeMillis()
+            if (now - p.seen > 60_000) put(p.copy(seen = now))
+        }
+
         @Synchronized fun forget(id: String) {
             val o = read()
             write(o.put("peers", JSONArray(peers().filter { it.id != id }.map { JSONObject().put("id", it.id).put("name", it.name).put("key", it.key)
@@ -319,7 +330,9 @@ object Sync {
     fun unsealed(kept: Kept, body: String): Pair<Peer, JSONObject>? {
         val o = JSONObject(body)
         val peer = kept.peers().firstOrNull { it.id == o.optString("id") } ?: return null
-        return peer to JSONObject(open(peer.key, o.getString("iv"), o.getString("data")))
+        val m = JSONObject(open(peer.key, o.getString("iv"), o.getString("data")))
+        kept.heard(peer.id)
+        return peer to m
     }
 
     /** The computer's answer to one, sealed. */

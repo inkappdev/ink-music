@@ -225,6 +225,7 @@ object SyncHub {
             "POST" to "/now" -> runCatching {
                 Sync.unsealed(kept, body)?.let { (peer, m) ->
                     live(peer, m.optJSONObject("now"))
+                    peers.value = kept.peers()   // heard from: in step (settings says how lately)
                     200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)))
                 } ?: (403 to "{}")
             }.getOrElse { 400 to "{}" }

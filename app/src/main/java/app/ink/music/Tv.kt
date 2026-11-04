@@ -384,6 +384,7 @@ object TvHub {
                 val (peer, m) = Sync.unsealed(kept, body) ?: return 403 to "{}"
                 // (the mini player's place shows it, live: no "continue here" card on listen as well)
                 Everywhere.household.put(peer.id, peer.name.removePrefix("ink music on "), m.optJSONObject("now"))
+                SyncPhone.peers.value = kept.peers()   // heard from: in step (settings says how lately)
                 200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)))
             }.getOrElse { 400 to "{}" }
             // a phone waiting for the next change anywhere: answered the moment one comes (or in 25 s, unchanged)
@@ -507,7 +508,7 @@ fun TvPhoneSetting() {
         Row(verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f)) {
                 BasicText(p.name.uppercase(), style = headline(22.sp))
-                BasicText(if (p.seen == 0L) "paired, not in step yet" else "in step " + ago(tick - p.seen), style = pixel(12.sp, Ink.mid))
+                BasicText(if (p.seen == 0L) (if (p.hub) "paired through your phone" else "paired, not in step yet") else "in step " + ago(tick - p.seen), style = pixel(12.sp, Ink.mid))
             }
             Word("forget", pixel(13.sp, Ink.mid), touch = 8.dp) { TvHub.forget(p.id) }
         }
