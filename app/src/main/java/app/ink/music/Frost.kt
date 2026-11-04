@@ -38,8 +38,9 @@ private val FEATHER = Easing { it * it * it }
 
 @Composable
 fun Modifier.softEdge(state: HazeState, towardBottom: Boolean): Modifier {
-    // moving less (a slower phone): no blur at all, the bar's edge as it is
-    if (Moves.less.collectAsState().value) return this
+    // moving less (a slower phone): no blur at all, the bar's edge as it is. A TV keeps it: two thin strips, and
+    // the onn (a slow box, so less) showed lists cut hard at both bars without them
+    if (Moves.less.collectAsState().value && !Device.tv) return this
     var height by remember { mutableIntStateOf(0) }
     val style = remember(height, towardBottom) {
         val h = height.toFloat().coerceAtLeast(1f)
@@ -58,7 +59,7 @@ fun Modifier.softEdge(state: HazeState, towardBottom: Boolean): Modifier {
 /** The soft edge sideways: what slides along a row toward what stands at its end (the tabs, toward "find"). */
 @Composable
 fun Modifier.softEdgeEnd(state: HazeState): Modifier {
-    if (Moves.less.collectAsState().value) return this
+    if (Moves.less.collectAsState().value && !Device.tv) return this
     var width by remember { mutableIntStateOf(0) }
     val style = remember(width) {
         HazeBlurStyle {

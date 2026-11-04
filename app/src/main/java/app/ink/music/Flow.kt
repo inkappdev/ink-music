@@ -97,7 +97,7 @@ fun RecordFlow(records: List<Album>, onOpen: (Album) -> Unit) {
         bars?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose { bars?.show(WindowInsetsCompat.Type.systemBars()) }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).noFocus().clickable(remember { MutableInteractionSource() }, indication = null) {}) {
         val side = minOf(maxHeight * .6f, maxWidth * .34f)
         val sides = (maxWidth - side) / 2
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {

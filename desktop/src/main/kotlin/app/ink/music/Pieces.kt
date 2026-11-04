@@ -239,8 +239,8 @@ fun Modifier.feather(
 
 /** A scrolling list's feather: each edge on while there's more of the list that way, easing on and off. */
 @Composable
-fun Modifier.feather(state: androidx.compose.foundation.gestures.ScrollableState): Modifier {
+fun Modifier.feather(state: androidx.compose.foundation.gestures.ScrollableState, topSize: Dp = 20.dp, bottomSize: Dp = 32.dp): Modifier {
     val top by androidx.compose.animation.core.animateFloatAsState(if (state.canScrollBackward) 1f else 0f, tween(Motion.FADE), label = "top")
     val bottom by androidx.compose.animation.core.animateFloatAsState(if (state.canScrollForward) 1f else 0f, tween(Motion.FADE), label = "bottom")
-    return feather({ top }, { bottom })
+    return feather({ top }, { bottom }, topSize, bottomSize)
 }

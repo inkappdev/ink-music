@@ -61,7 +61,7 @@ fun PlayOnPage(onClose: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize().background(Ink.black)
-            .clickable(remember { MutableInteractionSource() }, indication = null) {}
+            .noFocus().clickable(remember { MutableInteractionSource() }, indication = null) {}
             .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).navigationBarsPadding()
             .padding(horizontal = 20.dp),
     ) {
@@ -76,7 +76,7 @@ fun PlayOnPage(onClose: () -> Unit) {
         Spacer(Modifier.height(26.dp))
         LazyColumn(Modifier.weight(1f)) {
             item {
-                Place("this phone", phone ?: "its own speaker", lit = on == null) { if (on != null) Casting.bringBack(); onClose() }
+                Place("this ${Device.word}", phone ?: if (Device.tv) "its own sound" else "its own speaker", lit = on == null) { if (on != null) Casting.bringBack(); onClose() }
             }
             items(speakers, key = { it.key }) { s ->
                 val here = on?.key == s.key

@@ -7,6 +7,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -55,7 +56,9 @@ fun Cog(onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val c by animateColorAsState(if (pressed) Ink.mid else Ink.dim, tween(Motion.FADE), label = "cog")
-    Box(Modifier.clickable(src, indication = null, onClick = felt(then = onClick)).padding(6.dp)) {
+    // a TV's remote passes it by: settings is in the places' menu there, and the cog under "find" caught the way up,
+    // so up from the page's right went cog, then find, past "now playing" beside it
+    Box(Modifier.then(if (Device.tv) Modifier.noFocus() else Modifier).clickable(src, indication = null, onClick = felt(then = onClick)).padding(6.dp)) {
         Sprite(COG, c, 2.dp)
     }
 }
@@ -112,7 +115,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     BasicText("THE PHONE'S MUSIC", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
                     BasicText(
-                        if (folders.isEmpty()) "every folder on the phone. voice notes, recordings and clips under 30 seconds are left out"
+                        if (folders.isEmpty()) "every folder on the ${Device.word}. voice notes, recordings and clips under 30 seconds are left out"
                         else "only these folders. a tap takes one off",
                         style = pixel(12.sp, Ink.mid),
                     )
@@ -134,12 +137,10 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         SignIn()
                     } else {
                         // signed in: what it holds; a tap reads it again, a hold signs out
-                        Column(Modifier.pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { Server.sync() },
-                                onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); Server.signOut(ctx) },
-                            )
-                        }) {
+                        // a tap and a hold the remote can give too (OK, OK held), not a gesture only a finger can
+                        Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+                            onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); Server.signOut(ctx) },
+                            onClick = { Server.sync() })) {
                             BasicText("${a.name} at ${a.base.substringAfter("://")}", style = pixel(13.sp))
                             BasicText(
                                 "${a.user}   " + if (syncing) "reading your library" else "$count songs",
@@ -179,16 +180,13 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         if (w == null) {
                             BasicText("your playlists, liked songs, records and what you played lately, from your own account. " +
                                 "ink music isn't youtube's own app, and google could, rarely, mind one being used. " +
-                                "your sign-in stays on this phone and goes only to youtube", style = pixel(12.sp, Ink.mid))
+                                "your sign-in stays on this ${Device.word} and goes only to youtube", style = pixel(12.sp, Ink.mid))
                             Spacer(Modifier.height(10.dp))
                             Word("SIGN IN", headline(40.sp), touch = 10.dp) { YouTubeAccount.openSignIn(ctx) }
                         } else {
-                            Column(Modifier.pointerInput(Unit) {
-                                detectTapGestures(
-                                    onTap = { YouTubeAccount.sync() },
-                                    onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); YouTubeAccount.signOut(ctx) },
-                                )
-                            }) {
+                            Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+                                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); YouTubeAccount.signOut(ctx) },
+                                onClick = { YouTubeAccount.sync() })) {
                                 BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
                                 BasicText(
                                     if (reading) "reading your library" else "${tubeLists.size} ${if (tubeLists.size == 1) "playlist" else "playlists"}   " +
@@ -214,7 +212,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 }
 
                 // your computer: paired, kept in step on the wifi (Sync)
-                Column(Modifier.cascade(3)) { ComputerSetting(pages) }
+                Column(Modifier.cascade(3)) { if (onTv()) TvPhoneSetting() else ComputerSetting(pages) }
 
                 // private listening: a switch, nothing kept or told while it's on
                 Column(Modifier.cascade(3)) {
@@ -275,8 +273,8 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         BasicText("OFFLINE", style = headline(24.sp))
                         Spacer(Modifier.height(6.dp))
                         val mb = remember(kept) { Offline.bytes(ctx) / 1_048_576 }
-                        BasicText(if (kept.isEmpty()) "keep a song, a record or a playlist on the phone (keep offline: on its page, or held) to play it with no signal"
-                            else "${kept.size} ${if (kept.size == 1) "song" else "songs"} on this phone, $mb mb", style = pixel(12.sp, Ink.mid))
+                        BasicText(if (kept.isEmpty()) "keep a song, a record or a playlist on the ${Device.word} (keep offline: on its page, or held) to play it with no signal"
+                            else "${kept.size} ${if (kept.size == 1) "song" else "songs"} on this ${Device.word}, $mb mb", style = pixel(12.sp, Ink.mid))
                         Spacer(Modifier.height(12.dp))
                         BasicText("kept as: your server's original file (lossless if it is) and youtube's best, or smaller (mp3 320, and youtube's lighter stream)", style = pixel(12.sp, Ink.mid))
                         Spacer(Modifier.height(6.dp))
@@ -302,7 +300,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     BasicText("EQUALIZER", style = headline(24.sp))
                     Spacer(Modifier.height(6.dp))
                     val eqOn = remember { Eq.read(ctx).on }
-                    BasicText("ink music's own: the phone's bands, and a few shapes to start from" + if (eqOn) "   on" else "", style = pixel(12.sp, Ink.mid))
+                    BasicText("ink music's own: the ${Device.word}'s bands, and a few shapes to start from" + if (eqOn) "   on" else "", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
                     Word("open it", pixel(14.sp), touch = 8.dp) { pages.open(Page.Equalizer) }
                     Spacer(Modifier.height(40.dp))
@@ -501,7 +499,8 @@ private fun SettingsIndex(pages: Pages) {
     val soft = remember { !java.io.File(ctx.filesDir, "soft-off").exists() }
     @Composable
     fun Entry(word: String, said: String, part: String, order: Int) {
-        Column(Modifier.fillMaxWidth().cascade(order).pointerInput(part) { detectTapGestures { pages.open(Page.SettingsPart(part)) } }.padding(vertical = 12.dp)) {
+        Column(Modifier.fillMaxWidth().cascade(order).then(if (order == 1) Modifier.tvFirst() else Modifier)
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.SettingsPart(part)) }).padding(vertical = 12.dp)) {
             // the word itself carries on into its page, as its title
             BasicText(word, style = headline(40.sp), modifier = Modifier.carried("settings-$part"))
             Spacer(Modifier.height(4.dp))
@@ -532,7 +531,7 @@ private fun SettingsIndex(pages: Pages) {
         if (lastfm != null) "last.fm on" else null,
         if (Moves.less.value) "moving less" else null,
     ).joinToString(" · "), "listening", 4)
-    Entry("ABOUT", "version ${BuildConfig.VERSION_NAME} · what leaves the phone · free and open", "about", 5)
+    Entry("ABOUT", "version ${BuildConfig.VERSION_NAME} · what leaves the ${Device.word} · free and open", "about", 5)
 }
 
 /** Signing in to your server: its address, your name and password; what went wrong, said plainly. */
@@ -555,7 +554,7 @@ fun SignIn() {
                 Server.SignIn.WRONG -> "that name and password weren't right"
                 Server.SignIn.UNREACHABLE ->
                     if (!Server.localAllowed(ctx)) "ink music needs to reach devices on your wifi to find your server. tap sign in again to allow it"
-                    else "couldn't reach it. is the address right, and the phone on the same wifi?"
+                    else "couldn't reach it. is the address right, and the ${Device.word} on the same wifi?"
                 Server.SignIn.NOT_A_SERVER -> "something answered, but not a subsonic server"
             }
             trying = false
@@ -615,9 +614,9 @@ private fun ListenBrainzSetting() {
             }
         }
     } else {
-        Column(Modifier.pointerInput(Unit) {
-            detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ListenBrainz.disconnect(ctx); runCatching { SyncPhone.kept.signed("listenbrainz", System.currentTimeMillis()) } })
-        }) {
+        Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+            onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ListenBrainz.disconnect(ctx); runCatching { SyncPhone.kept.signed("listenbrainz", System.currentTimeMillis()) } },
+            onClick = {})) {
             BasicText(a.user.lowercase(), style = pixel(13.sp))
             BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(4.dp))
@@ -659,9 +658,9 @@ private fun LastFmSetting() {
             }
         }
     } else {
-        Column(Modifier.pointerInput(Unit) {
-            detectTapGestures(onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); LastFm.disconnect(ctx); runCatching { SyncPhone.kept.signed("lastfm", System.currentTimeMillis()) } })
-        }) {
+        Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+            onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); LastFm.disconnect(ctx); runCatching { SyncPhone.kept.signed("lastfm", System.currentTimeMillis()) } },
+            onClick = {})) {
             BasicText(a.name.lowercase(), style = pixel(13.sp))
             BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(4.dp))

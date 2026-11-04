@@ -233,9 +233,13 @@ object Playback {
             art = md.artworkUri?.toString(), format = "youtube").also(YouTubeMusic::remember)
     }
 
+    /** A queue begun here (a song, a record, a mix chosen), counted: a TV brings the player up for it ([Main]). */
+    val begun = MutableStateFlow(0)
+
     /** Plays `songs` from `start` (at `at` ms), as a queue; on the speaker while one is chosen. */
     fun play(songs: List<Song>, start: Int, at: Long = 0L, go: Boolean = true) {
         if (songs.isEmpty()) return
+        if (go) begun.value++
         val speaker = Casting.on.value
         if (speaker != null) { app?.let { Casting.play(it, speaker, songs, start, at) }; return }
         val c = controller ?: return

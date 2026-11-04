@@ -119,6 +119,21 @@ object YouTubeAccount {
         true
     }
 
+    /**
+     * A sign-in handed over from a phone (a TV signed in by it, [TvHub]): the phone's own [handover], tried (who is
+     * it?) and kept if it works.
+     */
+    suspend fun take(c: Context, auth: JSONObject): Boolean = withContext(Dispatchers.IO) {
+        val t = InnerTube(auth.optString("cookie"), auth.optString("visitor").ifEmpty { null },
+            auth.optString("sync").ifEmpty { null }, auth.optString("version").ifEmpty { InnerTube.VERSION })
+        val w = t.who()?.let { TubeWho(it.name, it.handle) } ?: return@withContext false
+        prefs(c).edit().putString("auth", seal(auth.toString())).putString("name", w.name).putString("handle", w.handle).apply()
+        if (app == null) { app = c.applicationContext; dir = java.io.File(c.filesDir, "youtube") }
+        tube = t; _who.value = w
+        sync()
+        true
+    }
+
     /** The sign-in as kept (cookies, visitor, account), for a computer signing in from this phone ([HandOverPage]). */
     fun handover(c: Context): String? = prefs(c).getString("auth", null)?.let { runCatching { open(it) }.getOrNull() }
 

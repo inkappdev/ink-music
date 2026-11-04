@@ -76,7 +76,7 @@ fun QueuePage(onClose: () -> Unit) {
 
     Column(
         Modifier.fillMaxSize().background(Ink.black)
-            .clickable(remember { MutableInteractionSource() }, indication = null) { options = null }
+            .noFocus().clickable(remember { MutableInteractionSource() }, indication = null) { options = null }
             .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).navigationBarsPadding(),
     ) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp), verticalAlignment = Alignment.Top) {

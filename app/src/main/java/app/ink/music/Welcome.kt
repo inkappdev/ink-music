@@ -265,6 +265,9 @@ private fun Sources(onAllowed: () -> Unit, onNext: () -> Unit) {
     }
     val account by Server.account.collectAsState()
     var server by remember { mutableStateOf(false) }
+    val tv = onTv()
+    SyncPhone.start(ctx)
+    val phones by SyncPhone.peers.collectAsState()
     androidx.compose.foundation.lazy.LazyColumn(
         Modifier.fillMaxSize().windowInsetsPadding(bars).navigationBarsPadding(),
         contentPadding = PaddingValues(horizontal = 28.dp, vertical = 24.dp),
@@ -274,7 +277,13 @@ private fun Sources(onAllowed: () -> Unit, onNext: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             BasicText("all of these, or any. you can change it later in settings", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(26.dp))
-            Source("this phone", if (phone) "its music files, read" else "the music files on it", phone) {
+            // a TV: signed in from the phone, nothing typed with the remote ([TvHub])
+            if (tv) {
+                Source("from your phone", phones.firstOrNull()?.let { "paired with ${it.name.lowercase()}: signed in to what it is" }
+                    ?: "sign this tv in to everything ink music on your phone is", phones.isNotEmpty()) {}
+                if (phones.isEmpty()) Box(Modifier.padding(top = 4.dp, bottom = 18.dp)) { PairPhone() }
+            }
+            if (!tv) Source("this phone", if (phone) "its music files, read" else "the music files on it", phone) {
                 if (!phone) ask.launch(Library.permission)
             }
             Source("your server", account?.let { "signed in at ${it.base.substringAfter("://")}" } ?: "navidrome or any subsonic server", account != null) {
@@ -286,7 +295,7 @@ private fun Sources(onAllowed: () -> Unit, onNext: () -> Unit) {
                 val who by YouTubeAccount.who.collectAsState()
                 Source("youtube music", who?.let { w -> "signed in as ${w.name.ifEmpty { w.handle }.lowercase()}" }
                     ?: "search and play anything, no account needed", true) {}
-                if (who == null) Column(Modifier.padding(bottom = 14.dp)) {
+                if (who == null && !tv) Column(Modifier.padding(bottom = 14.dp)) {
                     Word("sign in >", pixel(14.sp), touch = 10.dp) { YouTubeAccount.openSignIn(ctx) }
                     Spacer(Modifier.height(6.dp))
                     BasicText("if you like: your liked songs, playlists and artists. ink music isn't youtube's own app, " +
@@ -351,14 +360,16 @@ fun ArtistPicker(title: String, skip: Boolean, onDone: () -> Unit) {
             query = ""
         }
     }
+    // a TV's screen is wide and seen from across the room: six across, not the phone's three
+    val across = if (onTv()) 6 else 3
     Box(Modifier.fillMaxSize().background(Ink.black)) {
         LazyVerticalGrid(
-            GridCells.Fixed(3),
+            GridCells.Fixed(across),
             Modifier.fillMaxSize().windowInsetsPadding(bars),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 140.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item(span = { GridItemSpan(3) }) {
+            item(span = { GridItemSpan(across) }) {
                 Column {
                     BasicText(title, style = headline(36.sp))
                     Spacer(Modifier.height(8.dp))

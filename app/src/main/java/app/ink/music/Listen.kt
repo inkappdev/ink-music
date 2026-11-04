@@ -268,7 +268,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             }
             Spacer(Modifier.height(10.dp))
         }}
-        if (online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(4)) { KeptShelf(keptRecords, "kept on this phone", pages) }}
+        if (online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(4)) { KeptShelf(keptRecords, "kept on this ${Device.word}", pages) }}
         // the shows you follow, their newest episodes not yet heard through: a tap plays from where you stopped
         if (episodes.isNotEmpty()) item { Column(Modifier.cascade(4)) {
             Label("new episodes")

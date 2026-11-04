@@ -39,4 +39,5 @@ object YouTubeAccount {
     fun warmNow(ctx: android.content.Context, name: String) {}
     fun openSignIn(c: android.content.Context) {}
     fun handover(c: android.content.Context): String? = null
+    suspend fun take(c: android.content.Context, auth: org.json.JSONObject) = false
 }

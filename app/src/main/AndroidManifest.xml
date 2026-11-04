@@ -10,10 +10,16 @@
     <!-- Android 17: asked before an app may reach devices on the wifi (a server at home) -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
+    <!-- TVs too (Android TV / Google TV): no touch screen needed, and upright is the phone's way, not a must -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
+
     <application
         android:label="ink music"
         android:icon="@mipmap/icon"
         android:roundIcon="@mipmap/icon"
+        android:banner="@drawable/banner"
         android:theme="@style/Ink"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true">
@@ -31,6 +37,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- in a TV's row of apps -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 

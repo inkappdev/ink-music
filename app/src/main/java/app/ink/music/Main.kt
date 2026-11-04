@@ -30,6 +30,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.combinedClickable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -40,6 +41,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -140,6 +144,9 @@ class Main : ComponentActivity() {
         // opened again (the home screen, the notification) over ink music's own screens: those stay
         // as they were (the YouTube sign-in, mid-way), not a second library over them
         if (!isTaskRoot) { finish(); return }
+        // a TV never stands upright: the manifest's portrait is the phone's
+        Device.tv = isTv(this)
+        if (isTv(this)) requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         enableEdgeToEdge()
         Lyrics.start(this)
         Moments.start(this)
@@ -161,7 +168,7 @@ class Main : ComponentActivity() {
         Order.start(this)
         Seeds.start(this)
         Stations.curated(this)
-        setContent { App() }
+        setContent { TvFocus { App() } }
         // casting: the volume buttons, while ink music is open, go to the player's session, which turns the speaker
         // (Android gives them to a session only while it plays, and the phone's own player is paused under a speaker)
         lifecycleScope.launch {
@@ -171,6 +178,13 @@ class Main : ComponentActivity() {
         }
     }
 
+    /** A TV's remote pressed with nothing focused (Compose then hears nothing): the first thing on screen takes focus. */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (super.dispatchKeyEvent(event)) return true
+        val dpad = event.keyCode in android.view.KeyEvent.KEYCODE_DPAD_UP..android.view.KeyEvent.KEYCODE_DPAD_CENTER
+        return event.action == android.view.KeyEvent.ACTION_DOWN && dpad && isTv(this) && TvKeys.wake?.invoke() == true
+    }
+
     override fun onStart() {
         super.onStart()
         // your listening read again for the orders (lately, most, this hour: what was played since counts)
@@ -178,6 +192,8 @@ class Main : ComponentActivity() {
         Colours.start(this)
         Playback.connect(this)
         Order.opened()
+        // a TV: the phones paired with it listened for (it's their "computer")
+        if (isTv(this)) TvHub.start(this)
         // a paired computer: in step now, and every minute while open
         SyncPhone.start(this)
         SyncPhone.open()
@@ -302,6 +318,11 @@ private fun App() {
     val pages = remember { Pages() }
     var playerUp by rememberSaveable { mutableStateOf(false) }
     BackHandler(playerUp) { playerUp = false }
+    // a TV: a song, a record, a mix begun from the sofa brings the player up (as ink tv shows what starts playing)
+    if (onTv()) LaunchedEffect(Unit) {
+        var seen = Playback.begun.value
+        Playback.begun.collect { if (it != seen) { seen = it; playerUp = true } }
+    }
     BackHandler(pages.stack.isNotEmpty() && !playerUp) { pages.back() }
 
     Box(Modifier.fillMaxSize().background(Ink.black)) {
@@ -317,8 +338,22 @@ private fun App() {
         CompositionLocalProvider(LocalFoot provides foot) {
             Box(Modifier.fillMaxSize().hazeSource(frost)) {
                 // the library stays built under the pages (never thrown away to show one)
-                LibraryPage(pages, backHome = pages.stack.isEmpty() && !playerUp)
-                androidx.compose.animation.SharedTransitionLayout { val shared = this
+                // a TV: the library under a page (or the player) takes no focus, and the remote starts afresh on what's
+                // in front (its focus was left on the cover that opened it, under the page)
+                val covered = pages.stack.isNotEmpty() || playerUp
+                val tv = onTv()
+                // (the player takes it itself, on play)
+                val libraryFocus = rememberTvStart()
+                val pageFocus = rememberTvStart()
+                TvRefocus(pages.stack.size, playerUp, after = Motion.ENTER + 320L) { if (playerUp) null else if (pages.stack.isEmpty()) libraryFocus else pageFocus }
+                Box(if (tv) Modifier.covered(covered, libraryFocus) else Modifier) {
+                    CompositionLocalProvider(LocalTvStart provides libraryFocus) {
+                        LibraryPage(pages, backHome = pages.stack.isEmpty() && !playerUp, onPlayer = { playerUp = true })
+                    }
+                }
+                // the pages too, while the player is up over them
+                androidx.compose.animation.SharedTransitionLayout(if (tv) Modifier.covered(playerUp, pageFocus) else Modifier) { val shared = this
+                CompositionLocalProvider(LocalTvStart provides pageFocus) {
                 AnimatedContent(
                     targetState = pages.stack.lastOrNull(),
                     transitionSpec = {
@@ -384,6 +419,7 @@ private fun App() {
                     }
                 }
                 }
+                }
             }
         }
         // stopped, the player sinks all the way off the screen as the music fades (a quarter second), the song and
@@ -394,7 +430,10 @@ private fun App() {
         // playing was seen to start, a start not seen kept it hidden while a song played)
         LaunchedEffect(stopping) { if (stopping) { delay(1_000); stopping = false } }
         Box(Modifier.align(Alignment.BottomCenter).onSizeChanged { foot = with(density) { it.height.toDp() } }) {
-            if (!stopping && !sideways()) MiniPlayer(frost, onOpen = { playerUp = true })
+            // a TV: only while something plays; paused or stopped it was in the way (2026-11-03), and "now
+            // playing" at the top is the way back to the player
+            val playingNow = Playback.now.collectAsState().value?.playing == true
+            if (!stopping && !sideways() && (!onTv() || playingNow)) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { MiniPlayer(frost, onOpen = { playerUp = true }) }
         }
         androidx.compose.animation.AnimatedVisibility(
             playerUp,
@@ -413,7 +452,7 @@ private fun App() {
  * covers scrolling keeps its own.
  */
 @Composable
-private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
+private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () -> Unit = {}) {
     val albums by Library.albums.collectAsState()
     val songs by Library.songs.collectAsState()
     val read by Library.read.collectAsState()
@@ -429,8 +468,12 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     LaunchedEffect(tabs) { pager.scrollToPage(tabs.indexOf(tab).coerceAtLeast(0)) }
     val scope = rememberCoroutineScope()
     // back on another tab goes to listen, as a home; back on listen leaves (a tester's back left the app from albums)
-    BackHandler(backHome && pager.currentPage != 0) {
-        scope.launch { pager.animateScrollToPage(0, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
+    // a TV shows the place on its own, no pager: a remote doesn't swipe, and a pager's pages took no focus from the
+    // place's word above them (the onn, 2026-11-03: down went nowhere); places change from the menu
+    val tv = onTv()
+    BackHandler(backHome && (if (tv) tab != tabs[0] else pager.currentPage != 0)) {
+        if (tv) tab = tabs[0]
+        else scope.launch { pager.animateScrollToPage(0, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
     }
     val listenList = rememberLazyListState()
     val exploreList = rememberLazyListState()
@@ -497,13 +540,28 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     val foot = LocalFoot.current
     val sides = bars.only(WindowInsetsSides.Horizontal)
     // the lists start under the tab row (not under its band) and leave room to scroll under the mini player
-    val pad = PaddingValues(start = 20.dp, end = 20.dp, top = (head - BAND).coerceAtLeast(0.dp) + 6.dp, bottom = foot + 24.dp)
+    val pad = if (tv) PaddingValues(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 24.dp)
+        else PaddingValues(start = 20.dp, end = 20.dp, top = (head - BAND).coerceAtLeast(0.dp) + 6.dp, bottom = foot + 24.dp)
     Box(Modifier.fillMaxSize()) {
-    Box(Modifier.fillMaxSize().hazeSource(tabsFrost).windowInsetsPadding(sides)) {
-      HorizontalPager(
-        pager, Modifier.fillMaxSize(), key = { tabs[it] },
-        flingBehavior = stillOnItsPage(pager, PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo))),
-      ) { page ->
+    // a TV: the place between the place's word and the mini player, not under them. Compose's remote looks for the
+    // next thing down group by group, and a list running up under the word counted as above it, so down from the word
+    // skipped the whole page (the onn, 2026-11-03). Only the soft strip of each bar overlaps it, so what runs out of
+    // view still softens there, as on the phone
+    // a TV: the place's list feathers into the place's word and the mini player (ink tv's fade, ink's sizes: 28 dp,
+    // 44 at the foot), its top once scrolled, its foot while there's more; inside the blur's source, so the soft strip
+    // over it shows the faded list too
+    val placeList: androidx.compose.foundation.gestures.ScrollableState = when (tab) {
+        "listen" -> listenList; "ink" -> exploreList; "radio" -> radioGrid; "podcasts" -> podcastGrid
+        "albums" -> grid; "artists" -> artistList; "lists" -> listsList; else -> songList
+    }
+    // and while the places' menu is down over it, the place takes no focus: the remote is on the menu
+    val menuFocus = rememberTvStart()
+    // the menu folded, the remote back on the place's word (the library's own start)
+    val placeFocus = LocalTvStart.current ?: rememberTvStart()
+    TvRefocus(menu) { if (menu) menuFocus else placeFocus }
+    Box(Modifier.fillMaxSize().then(if (tv) Modifier.padding(top = (head - BAND).coerceAtLeast(0.dp), bottom = (foot - BAND).coerceAtLeast(0.dp)).covered(menu, placeFocus) else Modifier)
+        .hazeSource(tabsFrost).then(if (tv) Modifier.feather(placeList, 28.dp, 44.dp) else Modifier).windowInsetsPadding(sides)) {
+      val place: @Composable (Int) -> Unit = { page ->
        // what scrolls sideways inside a page (a row of covers) keeps its scroll: run to its end, it doesn't turn the page
        Box(Modifier.fillMaxSize().nestedScroll(keepSideways)) {
         when (tabs[page]) {
@@ -613,14 +671,23 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
         }
        }
       }
+      if (tv) place(tabs.indexOf(tab).coerceAtLeast(0))
+      else HorizontalPager(
+        pager, Modifier.fillMaxSize(), key = { tabs[it] },
+        flingBehavior = stillOnItsPage(pager, PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo))),
+      ) { page -> place(page) }
     }
     // the tab row on black; what scrolls up toward it softens just under it
     Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
       Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(bars)) {
         // the place you're on, one big word (2026-10-28: the row of words got crowded at six); a tap drops
         // every place down as big words, ink's menu (no hamburger: a word where an icon would go). Find stays put.
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu }),
+        // (on a TV, while the menu is down, the remote is on the menu: back folds it)
+        Row(Modifier.fillMaxWidth().then(if (tv) Modifier.covered(menu) else Modifier).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // the whole row a tap on the phone; on a TV the word alone, so the remote's lit place is the word
+            Row(Modifier.weight(1f).then(if (tv) Modifier.tvFirst() else Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu })),
+                verticalAlignment = Alignment.CenterVertically) {
+              Row(if (tv) Modifier.topRow(0).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu }) else Modifier,
                 verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.animation.AnimatedContent(tab, label = "place",
                     transitionSpec = { androidx.compose.animation.fadeIn(tween(Motion.ENTER, easing = Motion.expo)) togetherWith androidx.compose.animation.fadeOut(tween(Motion.EXIT)) },
@@ -629,8 +696,11 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
                 // the menu's chevron: down while shut, up while open
                 val turn by androidx.compose.animation.core.animateFloatAsState(if (menu) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "chevron")
                 Sprite(listOf("##...##", ".##.##.", "..###..", "...#..."), Ink.mid, 2.dp, Modifier.graphicsLayer { rotationZ = turn })
+              }
             }
-            Word("find", pixel(14.sp, Ink.mid), touch = 8.dp) { menu = false; pages.open(Page.Find) }
+            // a TV: what's playing a word away at the top, not a scroll down to the mini player at the foot
+            if (tv && Playback.now.collectAsState().value != null) Word("now playing", pixel(14.sp, Ink.mid), Modifier.padding(end = 28.dp).topRow(1), touch = 8.dp, onClick = onPlayer)
+            Word("find", pixel(14.sp, Ink.mid), Modifier.topRow(2), touch = 8.dp) { menu = false; pages.open(Page.Find) }
         }
       }
       Box(Modifier.fillMaxWidth().height(BAND).softEdge(tabsFrost, towardBottom = false))
@@ -646,13 +716,17 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
             androidx.compose.animation.fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
     ) {
         Column(
-            Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) { menu = false }
+            // a tap off the words folds it on the phone; a TV's back does that, and the remote lands on the words, not the panel
+            Modifier.fillMaxSize().background(Ink.black)
+                .then(if (tv) Modifier.padding(bottom = foot).tvStart(menuFocus).verticalScroll(rememberScrollState()) else Modifier.clickable(remember { MutableInteractionSource() }, indication = null) { menu = false })
                 .windowInsetsPadding(sides).padding(start = 20.dp, end = 20.dp, top = 10.dp),
         ) {
             tabs.forEachIndexed { i, t ->
-                Word(t.uppercase(), headline(48.sp, if (t == tab) Ink.ink else Ink.mid), Modifier.arrive(i, menu), touch = 4.dp) {
+                // a TV's screen is short: the places a size smaller, so all of them and settings sit above the mini player
+                Word(t.uppercase(), headline(if (tv) 32.sp else 48.sp, if (t == tab) Ink.ink else Ink.mid), Modifier.arrive(i, menu).then(if (t == tab) Modifier.tvFirst() else Modifier), touch = 4.dp) {
                     menu = false
-                    scope.launch { pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
+                    if (tv) tab = t
+                    else scope.launch { pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -677,7 +751,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     // upright again, the grid as it was
     val activity = LocalContext.current as? android.app.Activity
     val onRecords = tab == "albums" && backHome
-    androidx.compose.runtime.DisposableEffect(onRecords) {
+    if (!onTv()) androidx.compose.runtime.DisposableEffect(onRecords) {
         activity?.requestedOrientation = if (onRecords) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER
             else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         onDispose { activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
@@ -686,9 +760,9 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false) {
     }
 }
 
-/** The phone turned sideways (only the records can be: [RecordFlow]). */
+/** The phone turned sideways (only the records can be: [RecordFlow]); a TV, always wide, never is. */
 @Composable
-fun sideways() = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+fun sideways() = !onTv() && androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
 /**
  * The pager's fling, but none when it's still and on its page. A row of covers flung to its end hands the
@@ -807,12 +881,12 @@ private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRem
             if (slid.value < 0) BasicText("add to queue", style = pixel(13.sp, if (armed == -1) Ink.ink else Ink.dim))
         }
     Column(
-        Modifier.fillMaxWidth().offset { IntOffset(slid.value.roundToInt(), 0) }.background(Ink.black).pointerInput(s.id) {
-            detectTapGestures(
-                onTap = { if (open) open = false else tap() },
-                onLongPress = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); open = !open },
-            )
-        }.then(if (!swipe) Modifier else Modifier.pointerInput(s.id) {
+        Modifier.fillMaxWidth().offset { IntOffset(slid.value.roundToInt(), 0) }.background(Ink.black)
+            // a tap and a hold the remote gives too (OK, OK held): a finger-only gesture left a TV's songs unreachable
+            .combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); open = !open },
+                onClick = { if (open) open = false else tap() })
+            .then(if (!swipe) Modifier else Modifier.pointerInput(s.id) {
             var pulled = 0f
             fun letGo(act: Boolean) {
                 if (act) when (armed) {
@@ -897,17 +971,14 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
     }
     val yours = remember(a) { a.songs.map { it.id }.toSet() }
     val list = rememberLazyListState()
-    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
-        state = list,
-        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
-    ) {
-        item { Column(Modifier.cascade(0)) {
-            BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
+    // the cover, the record's name and its words: over the songs on the phone, beside them on a TV
+    val head: @Composable (Dp?) -> Unit = { side -> Column(Modifier.cascade(0)) {
+            if (side != null) CoverOf(a.songs.first(), a.title, Modifier.size(side))
+            else BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
                 CoverOf(a.songs.first(), a.title, Modifier.size(minOf(maxWidth, 560.dp)))
             }
             Spacer(Modifier.height(18.dp))
-            BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            BasicText(a.title.uppercase(), style = headline(if (side != null) 28.sp else 36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
             Word(a.artist.lowercase(), pixel(13.sp, Ink.mid), touch = 6.dp) { pages.open(Page.Artist(a.artist)) }
             Spacer(Modifier.height(4.dp))
@@ -919,7 +990,7 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
             )
             Spacer(Modifier.height(16.dp))
             Row {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(whole, 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(whole, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(whole.shuffled(), 0) }
                 KeepOffline(a.songs)
             }
@@ -929,13 +1000,46 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
                 Library.hide(ctx, a.id, !off); if (!off) pages.back()
             }
             Spacer(Modifier.height(14.dp))
-        }}
+        } }
+    val songs: LazyListScope.() -> Unit = {
         itemsIndexed(whole, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) {
             // numbered by place on the whole record; a song you don't have a step dimmer
             val number = if (whole.size > a.songs.size) "${i + 1}" else s.track.takeIf { it > 0 }?.toString() ?: "${i + 1}"
             SongRow(s, number = number, pages = pages, yours = s.id in yours) { Playback.play(whole, i) }
         }}
-    } }
+    }
+    // the whole record arriving from YouTube: the list kept your first song at its top (a list holds to the row it
+    // showed); on a TV, beside the cover, it starts at the record's first song again
+    val tv = onTv()
+    if (tv) LaunchedEffect(whole.size) { list.scrollToItem(0) }
+    FrostedPage(onClose = { pages.close() }) { frost, top ->
+        if (tv) TvBeside(frost, top, list, { head(it) }, songs)
+        else LazyColumn(
+            state = list,
+            modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+        ) {
+            item { head(null) }
+            songs()
+        }
+    }
+}
+
+/**
+ * A page on a TV: what it is on the left (a cover and its words, held still), its list on the right; the two side by
+ * side on the wide screen, as the computer's are, rather than the phone's one column with the cover the screen's width.
+ */
+@Composable
+fun TvBeside(frost: HazeState, top: Dp, list: androidx.compose.foundation.lazy.LazyListState, side: @Composable (Dp) -> Unit, rows: LazyListScope.() -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = (LocalFoot.current - BAND).coerceAtLeast(0.dp))) {
+    // the cover as big as leaves its words room under it (a TV's screen is short): the side held still, whole
+    val cover = (maxHeight - 250.dp).coerceIn(160.dp, 300.dp)
+    Row(Modifier.fillMaxSize()) {
+        Column(Modifier.width(300.dp).verticalScroll(rememberScrollState())) { side(cover) }
+        Spacer(Modifier.width(40.dp))
+        LazyColumn(state = list, modifier = Modifier.weight(1f).hazeSource(frost).feather(list, 28.dp, 44.dp), contentPadding = PaddingValues(bottom = 24.dp)) { rows() }
+    }
+    }
 }
 
 /** A row in "lists": its name big, a word on it small. */
@@ -977,7 +1081,7 @@ private fun LovedPage(pages: Pages) {
             BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(16.dp))
             if (theirs.isNotEmpty()) Row {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs, 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(theirs, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(theirs.shuffled(), 0) }
                 CoversWord()
                 Spacer(Modifier.weight(1f))
@@ -1020,7 +1124,7 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
             )
             Spacer(Modifier.height(16.dp))
             if (!all.isNullOrEmpty()) Row {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
                 CoversWord(Modifier.padding(end = 26.dp))
                 KeepOffline(all)
@@ -1101,7 +1205,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 )
                 Spacer(Modifier.height(16.dp))
                 if (playable.isNotEmpty()) Row {
-                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(playable, 0) }
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(playable, 0) }
                     Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(playable.shuffled(), 0) }
                     Word("radio", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.startRadio(playable.first()) }
                     // signed in: followed there (lit), or not
@@ -1217,7 +1321,7 @@ private fun KeptPage(pages: Pages) {
                 BasicText("${songs.size} songs, to play with no signal · %.1f gb".format(java.util.Locale.ROOT, Offline.bytes(ctx) / 1e9), style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(14.dp))
                 if (songs.isNotEmpty()) Row {
-                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs, 0) }
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(songs, 0) }
                     Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
                     CoversWord()
                 }
@@ -1272,7 +1376,7 @@ private fun WeeklyPage(number: Int, pages: Pages) {
                 BasicText("${w.songs.size} songs   ${w.songs.sumOf { it.duration } / 60_000} min", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(16.dp))
                 Row {
-                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(w.songs, 0) }
                     Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -1817,7 +1921,7 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             BasicText(if (all == null) "reading it from youtube music" else "${all.size} songs   youtube music", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(16.dp))
             if (!all.isNullOrEmpty()) Row {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
                 Box(Modifier.padding(end = 26.dp)) { KeepOffline(all) }
                 // signed in: saved to your library there (lit), or not
@@ -1863,7 +1967,7 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
             )
             Spacer(Modifier.height(16.dp))
             if (!all.isNullOrEmpty()) Row {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all, 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
                 CoversWord(Modifier.padding(end = 26.dp))
                 KeepOffline(all)
@@ -2046,7 +2150,7 @@ private fun PathPage(from: Song, pages: Pages) {
                 Spacer(Modifier.height(14.dp))
                 Row {
                     if (!way.isNullOrEmpty()) {
-                        Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(way, 0) }
+                        Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(way, 0) }
                         Word(when (kept) { true -> "kept"; false -> "the server didn't take it"; null -> "keep" }, pixel(14.sp, Ink.mid),
                             Modifier.padding(end = 26.dp), touch = 8.dp) {
                             if (kept == null) scope.launch { kept = Server.makePlaylist("${from.title} to ${end.title}", way) }
@@ -2157,7 +2261,18 @@ fun FrostedPage(onClose: (() -> Unit)? = null, content: @Composable (HazeState, 
         Modifier.fillMaxSize().onSizeChanged { tall = it.height }
             .nestedScroll(pulling).graphicsLayer { translationY = pull }.background(Ink.black),
     ) {
-        content(frost, top)
+        // a TV: the page between its close row and the mini player, overlapping only their soft strips (so what runs
+        // out of view still softens), as the library's place is: the remote finds the page under the close arrow
+        // then, and starts on the page, not on the arrow (it went close, then straight to the mini player)
+        if (onTv()) {
+            val foot = LocalFoot.current
+            val inside = rememberTvStart()
+            val fm = androidx.compose.ui.platform.LocalFocusManager.current
+            LaunchedEffect(Unit) { kotlinx.coroutines.delay(Motion.ENTER + 120L); inside.enter(fm) }
+            Box(Modifier.fillMaxSize().padding(top = top, bottom = (foot - BAND).coerceAtLeast(0.dp)).tvStart(inside)) {
+                CompositionLocalProvider(LocalFoot provides BAND, LocalTvStart provides inside) { content(frost, 0.dp) }
+            }
+        } else content(frost, top)
         Column(Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().height(bar).background(Ink.black))
             if (onClose != null) Row(

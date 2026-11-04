@@ -96,8 +96,33 @@ object Spotify {
         c.startActivity(Intent(c, SpotifySignIn::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    internal fun take(b: String, c: String?) {
-        bearer = b; client = c; _at.value = System.currentTimeMillis()
+    internal fun take(b: String, c: String?, at: Long = System.currentTimeMillis()) {
+        bearer = b; client = c; _at.value = at
+    }
+
+    /**
+     * Spotify's sign-in as the WebView keeps it (its cookies for open.spotify.com, sp_dc the one that matters), for a
+     * TV that asked ([Sync]: sealed under the pair's key, as YouTube's is); null signed out.
+     */
+    fun signInCookies(): String? = if (!signedIn()) null else
+        runCatching { CookieManager.getInstance().getCookie("https://open.spotify.com") }.getOrNull()?.takeIf { "sp_dc=" in it }
+
+    /** The phone's sign-in, put in this WebView's own store (a TV: no signing in with a remote); passes made from it after. */
+    fun takeSignIn(cookies: String) {
+        val m = CookieManager.getInstance()
+        cookies.split(";").map { it.trim() }.filter { '=' in it }.forEach { pair ->
+            m.setCookie("https://open.spotify.com", "$pair; Domain=.spotify.com; Path=/; Secure; Max-Age=31536000")
+        }
+        m.flush()
+        bearer = null; _at.value = 0L
+        android.util.Log.i("ink-spotify", "signed in from the phone: ${signedIn()}")
+    }
+
+    /** Passes the phone made (an hour's), for a TV that hasn't its sign-in yet: its canvases meanwhile. */
+    fun takePasses(json: String) {
+        if (signedIn()) return
+        val p = SpotifyCanvas.Pass.of(json) ?: return
+        if (p.fresh && p.bearer != bearer) take(p.bearer, p.client, p.at)
     }
 
     /** Signed in: Spotify's session cookie is there (a visitor's player asks with an anonymous pass, no use here). */

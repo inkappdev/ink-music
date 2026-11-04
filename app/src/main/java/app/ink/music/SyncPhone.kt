@@ -41,6 +41,8 @@ object SyncPhone {
     private var loop: Job? = null
     /** The queue here and where in it, as read just before a call. */
     @Volatile private var playing: Triple<List<Song>, Int, Long>? = null
+    /** The paired TVs asking for Spotify's sign-in (they say so on each call; kept for the next). */
+    private val askedSpotify = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     /** A love the computer made, being done here: not one to tell it about again. */
     @Volatile private var applying = false
 
@@ -84,6 +86,8 @@ object SyncPhone {
     suspend fun now() {
         val c = app ?: return
         if (kept.peers().isEmpty()) return
+        // a TV is called, never calls ([TvHub]): its peers are phones
+        if (isTv(c)) return
         one.withLock {
             // what plays here, read where the player's controller lives (the main thread) before going
             playing = kotlinx.coroutines.withContext(Dispatchers.Main) { runCatching { Playback.handover() }.getOrNull() }
@@ -219,6 +223,10 @@ object SyncPhone {
         // Spotify's passes, so the computer shows canvases too (it can't sign in to Spotify itself)
         override fun spotify(): String? = Spotify.handover(c, scope)
 
+        // a TV asks for Spotify's sign-in itself (no signing in with a remote): only it gets it, never a computer
+        override fun wanted(peer: Sync.Peer, what: List<String>) { if ("spotify" in what) askedSpotify += peer.id else askedSpotify -= peer.id }
+        override fun spotifySignIn(peer: Sync.Peer): String? = if (peer.id in askedSpotify) Spotify.signInCookies() else null
+
         override fun signedIn(what: String) {
             when (what) {
                 "server" -> Server.reload(c)
@@ -241,6 +249,33 @@ object SyncPhone {
             kotlinx.coroutines.runBlocking(Dispatchers.Main) { if (Playback.now.value?.playing == true) Playback.toggle() }
         }
     } }
+
+    /**
+     * This side as a TV answers a phone with it ([TvHub]: the TV is the phone's "computer"): what plays read first (the
+     * controller's thread), the phone's YouTube Music sign-in taken in, and none sent back.
+     */
+    fun hubSide(): Sync.Side? {
+        val c = app ?: return null
+        val base = side ?: return null
+        playing = kotlinx.coroutines.runBlocking(Dispatchers.Main) { runCatching { Playback.handover() }.getOrNull() }
+        return object : Sync.Side by base {
+            override fun youtube(): String? = null
+            override fun spotify(): String? = null
+            override fun spotifySignIn(peer: Sync.Peer): String? = null
+            // Spotify: its sign-in asked for while there's none here; the phone's passes meanwhile, for canvases
+            override fun wants(): List<String> = if (Spotify.signedIn()) emptyList() else listOf("spotify")
+            override fun takeSpotifySignIn(cookies: String) {
+                kotlinx.coroutines.runBlocking(Dispatchers.Main) { Spotify.takeSignIn(cookies) }
+            }
+            override fun takeSpotify(pass: String) = Spotify.takePasses(pass)
+            override fun takeYoutube(auth: String) {
+                val o = runCatching { JSONObject(auth) }.getOrNull() ?: return
+                val mine = YouTubeAccount.handover(c)?.let { runCatching { JSONObject(it) }.getOrNull() }
+                if (mine != null && mine.optString("cookie") == o.optString("cookie")) return
+                kotlinx.coroutines.runBlocking { YouTubeAccount.take(c, o) }
+            }
+        }
+    }
 
     /**
      * When what plays here last changed (a song, play, pause), so the newer of the two is the one carried on with: a
@@ -290,7 +325,7 @@ object SyncPhone {
         Playback.play(o.songs, o.index, if (o.position > 5_000 && !o.song.station) o.position else 0L)
         dismissed.value = o.at
         // the computer told to stop, at once
-        if (o.peer.isNotEmpty()) { kept.handed(o.peer, System.currentTimeMillis()); soon(500) }
+        if (o.peer.isNotEmpty()) { kept.handed(o.peer, System.currentTimeMillis()); TvHub.nudge(); soon(500) }
     }
 
     /** The phone as the computer lists it: its own name (settings, about), else its model. */
@@ -317,6 +352,8 @@ class Live(private val c: Context, private val player: () -> androidx.media3.com
 
     /** Something changed (main thread): told soon, a burst of changes as one; waiting on the computer while it plays. */
     fun changed() {
+        // a TV's phones call it ([TvHub]), it never calls them
+        if (isTv(c)) return
         val p = player() ?: return
         val playing = p.playWhenReady
         if (playing && !wasPlaying) runCatching { resumed.writeText(System.currentTimeMillis().toString()) }

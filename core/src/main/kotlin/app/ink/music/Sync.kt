@@ -170,6 +170,14 @@ object Sync {
         fun spotify(): String? = null
         /** Spotify passes from the phone (the computer). */
         fun takeSpotify(pass: String) {}
+        /** What this side asks the other for, beyond what's always sent ("spotify": its sign-in, a TV's). */
+        fun wants(): List<String> = emptyList()
+        /** The other asked for these (kept for the next call). */
+        fun wanted(peer: Peer, what: List<String>) {}
+        /** The phone's Spotify sign-in (its cookies), for a device that asked for it ([wants]); null: none, or not asked. */
+        fun spotifySignIn(peer: Peer): String? = null
+        /** Spotify's sign-in from the phone (a TV): kept, so it makes its own passes from then on. */
+        fun takeSpotifySignIn(cookies: String) {}
         /** A sign-in's file written from the other: read it again ("server", "listenbrainz", "lastfm"). */
         fun signedIn(what: String)
         /** heard.jsonl has the other's listens in it now. */
@@ -201,6 +209,8 @@ object Sync {
             .put("heard", JSONObject().put("lines", lines).put("upto", upto).put("want", want))
             .put("loves", kept.loves()).put("signed", signed).put("youtube", side.youtube() ?: "")
             .put("spotify", side.spotify() ?: "")
+            .put("spotifySignIn", side.spotifySignIn(peer) ?: "")
+            .put("wants", JSONArray(side.wants()))
             .put("podcasts", Podcasts.syncPart() ?: JSONObject.NULL)
             .put("now", side.now() ?: JSONObject.NULL).put("handed", kept.handedAt(peer.id))
     }
@@ -236,6 +246,8 @@ object Sync {
         m.optJSONObject("podcasts")?.let { if (runCatching { Podcasts.takeSync(it) }.getOrDefault(false)) runCatching { side.podcastsChanged() } }
         m.optString("youtube").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeYoutube(it) } }
         m.optString("spotify").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeSpotify(it) } }
+        m.optString("spotifySignIn").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeSpotifySignIn(it) } }
+        m.optJSONArray("wants")?.let { a -> runCatching { side.wanted(peer, (0 until a.length()).map(a::optString)) } }
         side.theirs(peer, m.optJSONObject("now"))
         // the other carried on with what plays here, since it was last pressed play: it stops here
         val handed = m.optLong("handed")

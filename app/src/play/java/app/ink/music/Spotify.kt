@@ -14,6 +14,9 @@ object Spotify {
     suspend fun canvas(c: Context, title: String, artist: String): String? = null
     fun signIn(c: Context) {}
     fun handover(c: Context, scope: kotlinx.coroutines.CoroutineScope): String? = null
+    fun signInCookies(): String? = null
+    fun takeSignIn(cookies: String) {}
+    fun takePasses(json: String) {}
     suspend fun playlists(): List<Import.Theirs>? = null
     suspend fun songs(id: String, got: (Int) -> Unit = {}): List<Import.Said>? = null
 }

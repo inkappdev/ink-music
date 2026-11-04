@@ -76,6 +76,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -191,7 +192,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             }
             .graphicsLayer { translationY = pull.value }
             .background(Ink.black)
-            .clickable(remember { MutableInteractionSource() }, indication = null) {},   // nothing under it takes a tap
+            .noFocus().clickable(remember { MutableInteractionSource() }, indication = null) {},   // nothing under it takes a tap
     ) {
         if (n == null) {
             Column(Modifier.windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).padding(20.dp)) {
@@ -221,7 +222,52 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         val look by Looks.on.collectAsState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val share = { scope.launch { ShareCard.share(ctx, n, look) }; Unit }
-        Column(
+        // an episode's notes where a song's lyrics go, shown by the same word
+        val episode = n.song?.episode == true
+        val notes = if (episode && sing) remember(n.song?.id) { Pods.notes(n.song!!.id) }.takeIf { it.isNotBlank() } else null
+        // the controls and the words under them: under the cover on the phone, beside it on a TV (where the remote
+        // starts on play)
+        val playFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+        val controls = @Composable {
+            // what's played with, drawn (as the speaker is), by how often it's pressed: play in the middle, under the
+            // thumb, the biggest; back and next either side; shuffle and repeat a size smaller at the ends, lit when on.
+            // A play shape says what it does, where "play" and "pause" read as a state to a tester (2026-10-28)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (episode) {
+                    // an episode: its speed at the left, back 15 s and on 30 s either side of play, its notes at the right
+                    EpisodeControls(n, notesOn = sing && notes != null)
+                    return@Row
+                }
+                Pixel(SHUFFLE, if (n.shuffle) "shuffle, on" else "shuffle, off", if (n.shuffle) Ink.ink else OFF) { Playback.shuffle() }
+                Pixel(BACK, "back", Ink.ink, cell = 3.dp) { dir = -1; Playback.previous() }
+                Pixel(if (n.playing) PAUSE else PLAY, if (n.playing) "pause" else "play", Ink.ink, Modifier.focusRequester(playFocus), cell = 3.dp) { Playback.toggle() }
+                Pixel(NEXT, "next", Ink.ink, cell = 3.dp) { dir = 1; Playback.next() }
+                val repeat = n.repeat
+                Pixel(
+                    if (repeat == androidx.media3.common.Player.REPEAT_MODE_ONE) REPEAT_ONE else REPEAT,
+                    when (repeat) { androidx.media3.common.Player.REPEAT_MODE_ONE -> "repeat one"; androidx.media3.common.Player.REPEAT_MODE_OFF -> "repeat, off"; else -> "repeat, on" },
+                    if (repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) Ink.ink else OFF,
+                ) { Playback.repeat() }
+            }
+            Spacer(Modifier.height(8.dp))
+            // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
+            // (lit with the cover still there read as broken to a tester)
+            val none = sing && lines?.isEmpty() == true
+            Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
+                if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
+                added = added, onAdd = if (canAddToList(n.song)) ({ addUp = true }) else null, episode = episode)
+        }
+        // a TV: what opens over the player (the queue, the speakers, a list, what's heard) has the remote; the player under it none
+        val over = queueUp || addUp || playOnUp || heardUp
+        TvRefocus(over)
+        if (onTv()) Box(Modifier.covered(over)) {
+            TvPlayer(n, line, accent, scrub, mixK, oldAccent, newAccent, dir, typing, { typing = it }, lyric, notes, sing, onOpen, share,
+                onHeard = { heardUp = true }, onQueue = { queueUp = true }, onSpeaker = { playOnUp = true }, onClose = onClose, playFocus = playFocus, own = !over, controls = controls)
+        }
+        else Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)),
         ) {
             Fit(least = 12f / 13) {
@@ -236,9 +282,6 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
             }
-            // an episode's notes where a song's lyrics go, shown by the same word
-            val episode = n.song?.episode == true
-            val notes = if (episode && sing) remember(n.song?.id) { Pods.notes(n.song!!.id) }.takeIf { it.isNotBlank() } else null
             val words = lyric != null || notes != null
             AnimatedContent(
                 targetState = words, modifier = Modifier.weight(1f),
@@ -284,36 +327,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             // shuffle, repeat, up next and sleep over dither); the art softens into the bar, never fades
             Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = true))
             Column(Modifier.fillMaxWidth().background(Ink.black).navigationBarsPadding().padding(top = 6.dp)) {
-            // what's played with, drawn (as the speaker is), by how often it's pressed: play in the middle, under the
-            // thumb, the biggest; back and next either side; shuffle and repeat a size smaller at the ends, lit when on.
-            // A play shape says what it does, where "play" and "pause" read as a state to a tester (2026-10-28)
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (episode) {
-                    // an episode: its speed at the left, back 15 s and on 30 s either side of play, its notes at the right
-                    EpisodeControls(n, notesOn = sing && notes != null)
-                    return@Row
-                }
-                Pixel(SHUFFLE, if (n.shuffle) "shuffle, on" else "shuffle, off", if (n.shuffle) Ink.ink else OFF) { Playback.shuffle() }
-                Pixel(BACK, "back", Ink.ink, cell = 3.dp) { dir = -1; Playback.previous() }
-                Pixel(if (n.playing) PAUSE else PLAY, if (n.playing) "pause" else "play", Ink.ink, cell = 3.dp) { Playback.toggle() }
-                Pixel(NEXT, "next", Ink.ink, cell = 3.dp) { dir = 1; Playback.next() }
-                val repeat = n.repeat
-                Pixel(
-                    if (repeat == androidx.media3.common.Player.REPEAT_MODE_ONE) REPEAT_ONE else REPEAT,
-                    when (repeat) { androidx.media3.common.Player.REPEAT_MODE_ONE -> "repeat one"; androidx.media3.common.Player.REPEAT_MODE_OFF -> "repeat, off"; else -> "repeat, on" },
-                    if (repeat != androidx.media3.common.Player.REPEAT_MODE_OFF) Ink.ink else OFF,
-                ) { Playback.repeat() }
-            }
-            Spacer(Modifier.height(8.dp))
-            // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
-            // (lit with the cover still there read as broken to a tester)
-            val none = sing && lines?.isEmpty() == true
-            Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
-                if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
-                added = added, onAdd = if (canAddToList(n.song)) ({ addUp = true }) else null, episode = episode)
+            controls()
             Spacer(Modifier.height(12.dp))
             // the artist's name, big, a way to their page too
             Marquee(n.artist, n.moving && Marquees.on.collectAsState().value, Modifier.fillMaxWidth().bleedPastCutout().clickable(remember { MutableInteractionSource() }, indication = null,
@@ -351,17 +365,17 @@ private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit
     val style = 14.sp
     // the words with no drawing everyone reads, stop last, away from next (it ends everything and closes the player)
     Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Word("up next", pixel(style, SAID), touch = 10.dp, onClick = onQueue)
-        Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), touch = 10.dp) { Lyrics.toggle() }
+        Word("up next", pixel(style, SAID), Modifier.tvLit(), touch = 10.dp, onClick = onQueue)
+        Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp) { Lyrics.toggle() }
         // into one of your playlists (lit a moment once it's in)
-        if (onAdd != null) Word(if (added != null) "added" else "playlist", pixel(style, if (added != null) Ink.ink else SAID), touch = 10.dp, onClick = onAdd)
+        if (onAdd != null) Word(if (added != null) "added" else "playlist", pixel(style, if (added != null) Ink.ink else SAID), Modifier.tvLit(), touch = 10.dp, onClick = onAdd)
         // an episode: its pauses skipped, lit when on (one choice for every episode)
         if (episode) {
             var skip by remember { mutableStateOf(Podcasts.skipSilence) }
-            Word("skip silence", pixel(style, if (skip) Ink.ink else OFF), touch = 10.dp) { skip = !skip; Playback.skipSilence(skip) }
+            Word("skip silence", pixel(style, if (skip) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp) { skip = !skip; Playback.skipSilence(skip) }
         }
         // stopped, the player goes too (the mini player's gone with it: nothing left to come back down to)
-        Word("stop", pixel(style, if (n.playing) SAID else OFF), touch = 10.dp) { Playback.stop(); onStop() }
+        Word("stop", pixel(style, if (n.playing) SAID else OFF), Modifier.tvLit(), touch = 10.dp) { Playback.stop(); onStop() }
     } }
 }
 
@@ -372,7 +386,8 @@ private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit
  * lyrics up), the cover at 96 dp (72, the mini player's, read as too small under the lines) with the words beside it. A new song pushes in.
  */
 @Composable
-private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit, onHeard: () -> Unit = {}, over: @Composable (Now) -> Unit = {}) {
+private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit, onHeard: () -> Unit = {},
+                 words: Boolean = true, over: @Composable (Now) -> Unit = {}) {
     AnimatedContent(
         targetState = n,
         // a station's new song pushes in too
@@ -408,44 +423,57 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 Sleeve(t, side, Modifier.clickwheel({ live }, scrub))
                 Box(Modifier.size(side)) { over(t) }
             }
-            Spacer(Modifier.height(20.dp))
-            // the title, and beside it the desktop's heart
-            Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
-                // one line, a long one sliding along it while it plays: three lines took the cover's room, and it
-                // shrank for a long title (a listener, 2026-11-01). Still where it moves less (not by marquees off: that's
-                // the giant name's)
-                val slides = t.moving && !Moves.less.collectAsState().value
-                FadeText(t.title.uppercase(), headline(32.sp), maxLines = 1, softWrap = false,
-                    overflow = if (slides) TextOverflow.Clip else TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).then(if (slides) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 2_000, initialDelayMillis = 2_000) else Modifier))
-                Heart(t.song, 3.dp, Modifier.padding(start = 8.dp))
+            if (words) {
+                Spacer(Modifier.height(20.dp))
+                SongWords(t, onOpen, onShare, onHeard)
             }
-            Spacer(Modifier.height(8.dp))
-            // an easter egg's word, when one's due (on repeat, a 100th time, a promise kept)
-            EggsNow.line(t.song)?.let { BasicText(it, style = pixel(SMALL, Ink.ink)); Spacer(Modifier.height(4.dp)) }
-            // on a speaker: what reaches it ("flac 24/96 on dining room speaker"); a tap, its signal path
-            if (t.device.isNotEmpty()) {
-                Word(listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" "),
-                    pixel(SMALL, SAID), onClick = onHeard)
-                Spacer(Modifier.height(4.dp))
+        }
+    }
+}
+
+/**
+ * The song's words under its cover: the title (a long one sliding along its line) and the heart, an easter egg's word,
+ * where it plays, the artist and the record (each a way to its page), share. Beside the cover on a TV ([TvPlayer]).
+ */
+@Composable
+private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHeard: () -> Unit, title: androidx.compose.ui.unit.TextUnit = 32.sp) {
+    Column {
+        // the title, and beside it the desktop's heart
+        Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
+            // one line, a long one sliding along it while it plays: three lines took the cover's room, and it
+            // shrank for a long title (a listener, 2026-11-01). Still where it moves less (not by marquees off: that's
+            // the giant name's)
+            val slides = t.moving && !Moves.less.collectAsState().value
+            FadeText(t.title.uppercase(), headline(title), maxLines = 1, softWrap = false,
+                overflow = if (slides) TextOverflow.Clip else TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).then(if (slides) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 2_000, initialDelayMillis = 2_000) else Modifier))
+            Heart(t.song, 3.dp, Modifier.padding(start = 8.dp).tvLit())
+        }
+        Spacer(Modifier.height(8.dp))
+        // an easter egg's word, when one's due (on repeat, a 100th time, a promise kept)
+        EggsNow.line(t.song)?.let { BasicText(it, style = pixel(SMALL, Ink.ink)); Spacer(Modifier.height(4.dp)) }
+        // on a speaker: what reaches it ("flac 24/96 on dining room speaker"); a tap, its signal path
+        if (t.device.isNotEmpty()) {
+            Word(listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" "),
+                pixel(SMALL, SAID), onClick = onHeard)
+            Spacer(Modifier.height(4.dp))
+        }
+        // the artist and the record, each a way to its page
+        Row(Modifier.fillMaxWidth()) {
+          Row(Modifier.weight(1f)) {
+            val song = t.song
+            FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false).tvLit().clickable(remember { MutableInteractionSource() }, indication = null,
+                    onClick = felt { if (song?.episode == true) showOf(song)?.let(onOpen) else artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
+            if (t.album.isNotBlank() && song?.episode != true) {
+                Spacer(Modifier.width(14.dp))
+                FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).tvLit().clickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Record(it.albumId)) } }))
             }
-            // the artist and the record, each a way to its page
-            Row(Modifier.fillMaxWidth()) {
-              Row(Modifier.weight(1f)) {
-                val song = t.song
-                FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
-                        onClick = felt { if (song?.episode == true) showOf(song)?.let(onOpen) else artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
-                if (t.album.isNotBlank() && song?.episode != true) {
-                    Spacer(Modifier.width(14.dp))
-                    FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false).clickable(remember { MutableInteractionSource() }, indication = null,
-                            onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Record(it.albumId)) } }))
-                }
-              }
-                // the song as a poster, for a story or a message
-                Word("share", pixel(SMALL, SAID), Modifier.padding(start = 12.dp), onClick = onShare)
-            }
+          }
+            // the song as a poster, for a story or a message
+            Word("share", pixel(SMALL, SAID), Modifier.padding(start = 12.dp).tvLit(), onClick = onShare)
         }
     }
 }
@@ -761,10 +789,14 @@ private fun NotesBlock(text: String, modifier: Modifier) {
 /** Whose page the song's artist opens: the record's artist, else the song's (none for a station). */
 private fun artistOf(n: Now): String? = n.song?.takeUnless { it.station || it.episode }?.let { it.albumArtist.ifBlank { it.artist } }?.takeIf { it.isNotBlank() }
 
-/** Close, wherever there's one: the down chevron (the player's; a word there before). */
+/**
+ * Close, wherever there's one: the down chevron (the player's; a word there before). On a TV never the remote's: its
+ * back button closes, and an arrow first in a page (settings' top right) sent the remote's first step down to the
+ * mini player under it, past the page.
+ */
 @Composable
 fun CloseArrow(colour: androidx.compose.ui.graphics.Color = Ink.mid, modifier: Modifier = Modifier, onClick: () -> Unit) =
-    Pixel(CLOSE, "close", colour, modifier, onClick = onClick)
+    Pixel(CLOSE, "close", colour, if (Device.tv) modifier.noFocus() else modifier, onClick = onClick)
 
 /** A pixel control: dimmer while pressed (as a word is), felt, room round it to touch, its name for a screen reader. */
 @Composable
@@ -776,7 +808,7 @@ internal fun Pixel(
     val pressed by src.collectIsPressedAsState()
     val c by androidx.compose.animation.animateColorAsState(if (pressed) Ink.mid else colour, tween(Motion.FADE), label = name)
     Box(
-        modifier.semantics { contentDescription = name; role = androidx.compose.ui.semantics.Role.Button }
+        modifier.tvLit().semantics { contentDescription = name; role = androidx.compose.ui.semantics.Role.Button }
             .clickable(src, indication = null, onClick = felt(then = onClick)).padding(horizontal = cell * 4, vertical = cell * 6),
     ) { Sprite(rows, c, cell, inner) }
 }
@@ -785,7 +817,7 @@ internal fun Pixel(
 @Composable
 private fun PlayOnSpeaker(casting: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val colour by androidx.compose.animation.animateColorAsState(if (casting) Ink.ink else SAID, tween(Motion.ENTER, easing = Motion.expo), label = "speaker")
-    Box(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(10.dp)) {
+    Box(modifier.tvLit().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(10.dp)) {
         Sprite(SPEAKER, colour, 2.dp)
     }
 }
@@ -998,7 +1030,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
             "server" -> if (h.made.isEmpty()) "your server, the file as it is" else "your server, made ${h.made} for you"
             "youtube" -> "youtube music, its ${h.made.ifEmpty { "best" }} stream"
             "station" -> "the station's stream"
-            else -> "this phone, the file as it is"
+            else -> "this ${Device.word}, the file as it is"
         } + (h.quality.takeIf { it >= 0 }?.let { "\n${Quality.words[it]} on ${if (h.metered) "mobile data" else "wifi"}" } ?: ""))
         steps += (if (h.from == "youtube" || h.from == "station") "the stream" else "the file") to listOfNotNull(
             h.codec, h.bits.takeIf { it > 0 }?.let { "$it bit" }, h.rate.takeIf { it > 0 }?.let(k),
@@ -1017,14 +1049,14 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         val song = n.song
         val from = song?.id?.let { when { it.startsWith("n") -> "server"; it.startsWith("y") -> "youtube"; it.startsWith("s") -> "station"; else -> "phone" } }
         if (h == null && from != null) {
-            steps += "from" to when (from) { "server" -> "your server"; "youtube" -> "youtube music"; "station" -> "the station"; else -> "this phone" }
+            steps += "from" to when (from) { "server" -> "your server"; "youtube" -> "youtube music"; "station" -> "the station"; else -> "this ${Device.word}" }
             listOfNotNull(song.format.takeIf { it.isNotBlank() }, song.bits.takeIf { it > 0 }?.let { "$it bit" }, song.rate.takeIf { it > 0 }?.let(k))
                 .takeIf { it.isNotEmpty() }?.let { steps += "the file" to it.joinToString(" · ") }
         }
         steps += "sent" to "to ${n.device.lowercase()}" + (n.quality.takeIf { it.isNotBlank() }?.let { ", $it" } ?: "") + when (from) {
             "server" -> "\nstreamed from your server"
-            "phone" -> "\nserved by this phone"
-            "youtube" -> "\nyoutube's stream, found by this phone"
+            "phone" -> "\nserved by this ${Device.word}"
+            "youtube" -> "\nyoutube's stream, found by this ${Device.word}"
             else -> ""
         }
         val r = said
@@ -1066,13 +1098,13 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
             acts["to the dac"] = "exact: off" to { exactOn = false; Playback.exact(ctx, false) }
             steps += "android" to "set aside: ink music drives the dac itself"
             if (h.clock > 0) steps += "the dac's clock" to "%.1f hz, as the dac says it, a thousand times a second".format(java.util.Locale.ROOT, h.clock)
-            steps += "gaps" to if (h.dropouts == 0) "none" else "${h.dropouts}: a moment the music didn't come in time (the phone busy, or the stream slow)"
+            steps += "gaps" to if (h.dropouts == 0) "none" else "${h.dropouts}: a moment the music didn't come in time (the ${Device.word} busy, or the stream slow)"
         } else if (h.outRate > 0) steps += "to android" to "${if (h.outBits == 32) "32 bit float" else "${h.outBits} bit"} · ${k(h.outRate)}"
         // exact's word with a usb dac in (or exact on, to turn it off): without one it would only rest the rest
         if (h.slot == 0 && (h.kind == "usb" || exactOn)) acts["android"] = (if (exactOn) "exact: off" else "exact to a dac") to { exactOn = !exactOn; Playback.exact(ctx, exactOn) }
         if (h.slot == 0 && h.exclusive > 0) {
             steps += "android" to "opened your player's own output for ink music alone, at ${k(h.exclusive)}: no mixer, no resampling"
-            steps += "gaps" to if (h.dropouts == 0) "none" else "${h.dropouts}: a moment the music didn't come in time (the phone busy, or the stream slow)"
+            steps += "gaps" to if (h.dropouts == 0) "none" else "${h.dropouts}: a moment the music didn't come in time (the ${Device.word} busy, or the stream slow)"
         } else if (h.slot == 0) steps += "android" to when {
             h.exact.startsWith("yes") -> "steps aside: bit-perfect to the dac"
             h.mixer > 0 && h.outRate > 0 && h.mixer != h.outRate -> "mixes at ${k(h.mixer)}: ${k(h.outRate)} resampled"
@@ -1214,7 +1246,7 @@ private fun HeardWord(n: Now, typing: Boolean, onOpen: () -> Unit) {
     if (h != null) last = h
     androidx.compose.animation.AnimatedVisibility(h != null && !typing,
         enter = fadeIn(tween(SETTLE, easing = SETTLING)), exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
-        last?.let { Word(it.word, pixel(SMALL, if (it.lossless) Ink.ink else SAID), onClick = onOpen) }
+        last?.let { Word(it.word, pixel(SMALL, if (it.lossless) Ink.ink else SAID), Modifier.tvLit(), onClick = onOpen) }
     }
 }
 
@@ -1290,3 +1322,61 @@ object Showcase {
 
 /** Inside the look's preview (not the player). */
 val LocalPreview = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
+ * The player on a TV (2026-11-03): the wide screen side by side, as ink tv's now playing is. On the left the cover as
+ * big as the height allows, the line along its top with the times over it, the song's words under it; on the right
+ * the lyrics when they're on (big, beside the cover, read from the sofa), the controls and their words at its foot;
+ * the artist's name along the bottom, smaller than the phone's. Steered by the remote: each piece is a word or a pixel.
+ */
+@Composable
+private fun TvPlayer(
+    n: Now, line: Now, accent: Color, scrub: Scrub, mixK: Float?, oldAccent: Color, newAccent: Color, dir: Int,
+    typing: Boolean, onTyping: (Boolean) -> Unit, lyric: Lyric?, notes: String?, sing: Boolean,
+    onOpen: (Page) -> Unit, share: () -> Unit, onHeard: () -> Unit, onQueue: () -> Unit, onSpeaker: () -> Unit, onClose: () -> Unit,
+    playFocus: androidx.compose.ui.focus.FocusRequester, own: Boolean, controls: @Composable () -> Unit,
+) {
+    // the remote starts on play, once the player has come in (after the app's own first focus)
+    LaunchedEffect(Unit) { delay(Motion.ENTER + 200L); runCatching { playFocus.requestFocus() } }
+    // its controls light themselves (over its look, the screen's dim left a lighter square round the lit one), while
+    // nothing's over it: the queue and the rest are on black, dimmed as every page is
+    androidx.compose.runtime.DisposableEffect(own) {
+        if (own) TvKeys.ownLight++
+        onDispose { if (own) TvKeys.ownLight-- }
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalTvOwnLight provides own) {
+    Column(Modifier.fillMaxSize()) {
+        Centred(
+            start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), Modifier.tvLit(), touch = 10.dp, onClick = onQueue) },
+            middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier, onSpeaker) },
+            end = { CloseArrow(SAID, onClick = onClose) },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+        )
+        Row(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
+            // the cover as big as the height leaves after the line and the times over it
+            BoxWithConstraints(Modifier.fillMaxHeight()) {
+                val room = (maxHeight - 44.dp).coerceIn(160.dp, 460.dp)
+                Column(Modifier.width(room)) {
+                    androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
+                        Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
+                        Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping) }
+                    }
+                }
+            }
+            Spacer(Modifier.width(48.dp))
+            // beside it: the song's words, its lyrics when they're on (big, read from the sofa), the controls at the foot
+            Column(Modifier.weight(1f).fillMaxHeight().padding(top = 36.dp)) {
+                SongWords(n, onOpen, share, onHeard, title = 40.sp)
+                when {
+                    sing && notes != null -> NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp))
+                    sing && lyric != null -> LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp))
+                    else -> Spacer(Modifier.weight(1f))
+                }
+                controls()
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+        Marquee(n.artist, n.moving && Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 72.sp)
+    }
+    }
+}
