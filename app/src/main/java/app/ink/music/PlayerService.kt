@@ -418,14 +418,17 @@ class PlayerService : MediaLibraryService() {
 
         override fun pause() {
             if (leaving) return   // already on its way
-            if (!on() || !isPlaying) { fading++; leaving = false; return super.pause() }
+            // (a stop's fade cut short by this pause: it's over, so the player isn't left saying it's ending forever)
+            if (!on() || !isPlaying) { fading++; leaving = false; ending = false; return super.pause() }
             fade(volume, 0f, 250) { leaving = false; super.pause(); volume = level() }
             leaving = true
         }
 
         /** Stop: faded out, let go, and back to the song's start (rewound once quiet: before, its first moment was heard). */
         override fun stop() {
-            if (ending) return
+            // stop asked again while one's fading (or one cut short, which left `ending` on and every stop after
+            // ignored: the TV's stop did nothing, 2026-11-04): stopped now
+            if (ending) { fading++; ending = false; leaving = false; super.stop(); super.seekTo(currentMediaItemIndex, 0); volume = level(); return }
             prefs.edit().putBoolean("stopped", true).apply()
             if (!on() || !isPlaying) { fading++; leaving = false; super.stop(); return super.seekTo(currentMediaItemIndex, 0) }
             // stopped now in truth: no longer told so ahead of time
