@@ -403,6 +403,7 @@ class Live(private val c: Context, private val player: () -> androidx.media3.com
         }
         return JSONObject().put("queue", queue).put("index", index - from).put("position", p.currentPosition).put("positionAt", System.currentTimeMillis())
             .put("playing", p.playWhenReady).put("at", System.currentTimeMillis()).put("device", device())
+            .put("length", p.duration.takeIf { it > 0 } ?: 0L)
     }
 
     private fun peers() = kept.peers().filter { ':' in it.at }

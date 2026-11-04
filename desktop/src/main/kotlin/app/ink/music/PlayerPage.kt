@@ -440,7 +440,7 @@ fun RemotePlayerPage(o: Continue.Offer, open: (Page) -> Unit, onClose: () -> Uni
                 Row {
                     Column(Modifier.width(side + off)) {
                         // the times, the line in the cover's colour, filling as it plays there
-                        val length = o.song.duration
+                        val length = o.length
                         Row(Modifier.width(side).padding(bottom = 6.dp)) {
                             BasicText(if (o.song.station) "live" else clock(pos), style = pixel(12.sp, Ink.mid))
                             Spacer(Modifier.weight(1f))
@@ -491,7 +491,7 @@ fun RemotePlayerPage(o: Continue.Offer, open: (Page) -> Unit, onClose: () -> Uni
                                 if (all.isNullOrEmpty()) BasicText(lyricsSaid(all), style = pixel(13.sp, Ink.mid))
                                 else LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.fillMaxSize(), big = true)
                             } else {
-                                val n = remember(o.song.id) { Player.Now(o.song, 0, o.playing, o.song.duration) }
+                                val n = remember(o.song.id) { Player.Now(o.song, 0, o.playing, o.length) }
                                 Notes(n, null, o.device.ifEmpty { null } ?: o.from)
                             }
                         }

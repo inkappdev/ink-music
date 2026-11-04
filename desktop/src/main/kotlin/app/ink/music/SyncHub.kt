@@ -121,7 +121,7 @@ object SyncHub {
         scope.launch {
             val now = side.now()?.let { n ->
                 Sync.nowOf(n.getJSONArray("queue"), n.optInt("index"), Player.position.value, n.optBoolean("playing"), "", playedAt)
-                    .put("sent", System.currentTimeMillis())
+                    .put("sent", System.currentTimeMillis()).put("length", Player.now.value?.duration ?: 0L)
             }
             household.put(kept.id(), TubeAccount.name, now)
             for (p in kept.peers().filter { it.hub && ':' in it.at }) post(p.at, "/now", Sync.sealed(kept, p, JSONObject().put("now", now ?: JSONObject.NULL)))
@@ -377,7 +377,9 @@ object SyncHub {
 /** What the other device was playing, offered here: "on your phone: … continue here". */
 object Continue {
     data class Offer(val from: String, val songs: List<Song>, val index: Int, val position: Long, val playing: Boolean, val at: Long, val peer: String = "",
-                     val device: String = "", val positionAt: Long = 0L, val seen: Long = System.currentTimeMillis()) {
+                     val device: String = "", val positionAt: Long = 0L, val seen: Long = System.currentTimeMillis(), val told: Long = 0L) {
+        /** The song's length: its own, else what the player playing it says (a YouTube record's songs come without). */
+        val length: Long get() = song.duration.takeIf { it > 0 } ?: told
         val song: Song get() = songs[index]
         /** Where it is now: where it was said to be, and on since, if it's playing. */
         fun positionNow(): Long = if (playing && positionAt > 0) position + (System.currentTimeMillis() - positionAt).coerceIn(0, 10 * 60_000L) else position
@@ -397,7 +399,7 @@ object Continue {
         }
         if (songs.isEmpty() || at < 0) return null
         return Offer(from.lowercase(), songs, at, o.optLong("position"), o.optBoolean("playing"), o.optLong("at"), peer,
-            o.optString("device"), o.optLong("positionAt"))
+            o.optString("device"), o.optLong("positionAt"), told = o.optLong("length"))
     }
 
     /** Carried on with here, where it was; the phone told to stop (at its next call, or its player's next ask). */
@@ -477,7 +479,7 @@ fun remoteNow(): Continue.Offer? {
 fun RemoteBar(o: Continue.Offer, onArtist: (String) -> Unit, onOpen: () -> Unit = {}) {
     val cover = rememberCover(o.song, 300)
     val pos by produceState(o.positionNow(), o) { while (true) { value = o.positionNow(); kotlinx.coroutines.delay(500) } }
-    val length = o.song.duration
+    val length = o.length
     Column(Modifier.fillMaxWidth().background(Ink.black).padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
         // the line, in the cover's colour, filling as it plays there
         Box(Modifier.fillMaxWidth().padding(bottom = 8.dp).height(1.dp).background(Ink.line)) {

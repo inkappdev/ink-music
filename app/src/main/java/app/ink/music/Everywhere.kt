@@ -58,12 +58,14 @@ object Everywhere {
     /** Another device's playing, to show here: its queue as songs here, where in it, how far, heard when (this clock). */
     data class Remote(
         val peer: String, val name: String, val device: String, val steerable: Boolean,
-        val songs: List<Song>, val index: Int, val position: Long, val heard: Long, val playing: Boolean,
+        val songs: List<Song>, val index: Int, val position: Long, val heard: Long, val playing: Boolean, val told: Long = 0L,
     ) {
         val song: Song get() = songs[index]
+        /** The song's length: its own, else what the player playing it says (a YouTube record's songs come without). */
+        val length: Long get() = song.duration.takeIf { it > 0 } ?: told
         /** Where it is now: where it was when heard, and on since while it plays (to the song's end at most). */
         fun positionNow(): Long =
-            if (!playing) position else (position + System.currentTimeMillis() - heard).coerceAtMost(song.duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
+            if (!playing) position else (position + System.currentTimeMillis() - heard).coerceAtMost(length.takeIf { it > 0 } ?: Long.MAX_VALUE)
         /** Where it plays, as said under it: the speaker it's on, else the device ("on living room tv"). */
         val where: String get() = (device.takeIf { it.isNotEmpty() } ?: name).lowercase()
     }
@@ -106,7 +108,7 @@ object Everywhere {
         // steered directly where it's a peer of this one (a phone's are all devices that listen; a TV's phones
         // through their waiting call)
         val steerable = peers[id] != null
-        return Remote(id, e.optString("name"), now.optString("device"), steerable, songs, at, now.optLong("position"), e.optLong("heard"), now.optBoolean("playing"))
+        return Remote(id, e.optString("name"), now.optString("device"), steerable, songs, at, now.optLong("position"), e.optLong("heard"), now.optBoolean("playing"), now.optLong("length"))
     }
 
     // ---- a phone: waiting on each device that listens, while ink music is open ----
@@ -169,7 +171,7 @@ object Everywhere {
                 val (songs, index, position) = h
                 val from = (index - 50).coerceAtLeast(0)
                 Sync.nowOf(JSONArray(songs.subList(from, minOf(songs.size, index + 250)).map(SyncPhone::wire)), index - from,
-                    position, n.playing, "", System.currentTimeMillis()).put("sent", System.currentTimeMillis())
+                    position, n.playing, "", System.currentTimeMillis()).put("sent", System.currentTimeMillis()).put("length", n.duration)
             }
             household.put(me, SyncPhone.deviceName(c), now)
             for (p in SyncPhone.kept.peers().filter { it.hub && ':' in it.at }) {
@@ -222,7 +224,7 @@ object Everywhere {
 fun RemoteMini(frost: HazeState, r: Everywhere.Remote) {
     val pos by produceState(r.positionNow(), r) { while (true) { value = r.positionNow(); delay(500) } }
     val cover = rememberCover(r.song, 300)
-    val length = r.song.duration
+    val length = r.length
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = true))
         Column(Modifier.fillMaxWidth().background(Ink.black).navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
