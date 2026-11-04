@@ -155,7 +155,8 @@ object Everywhere {
 
     private fun publishing() {
         scope.launch {
-            Playback.now.map { it?.song?.id to it?.playing }.distinctUntilChanged().collect { publish() }
+            // and once the song's length is known (it comes after the song, for a YouTube stream)
+            Playback.now.map { Triple(it?.song?.id, it?.playing, (it?.duration ?: 0L) > 0) }.distinctUntilChanged().collect { publish() }
         }
         // while it plays, told again now and then: a seek, a slow clock, all set right
         scope.launch {
