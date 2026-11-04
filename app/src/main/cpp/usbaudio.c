@@ -55,6 +55,7 @@ typedef struct {
     atomic_int underruns;
     int starved;                    // the ring ran dry (the stream's thread only)
     int primed;                     // the song's first samples have gone (before them, no gap counts)
+    int held;                       // frames of silence sent while a song's start waits for its cushion
     atomic_uint fb;                 // samples a packet, 16.16 (0: none yet)
     atomic_int gain_bits;           // float gain as bits (1.0: untouched)
     atomic_int stage, reaps;        // where the stream's thread is, and how many have come back (for the log)
@@ -90,6 +91,20 @@ static int fill(dac_t *d, unsigned char *out, int n) {
         atomic_store(&d->stage, 5);
         pthread_mutex_lock(&d->lock);
         atomic_store(&d->stage, 6);
+        // a song's start (or a seek's) held back till there's a cushion: a fifth of a second, or most of the ring.
+        // Begun on the first few ms that came, a stream slow to get going ran dry at once: a gap at nearly every
+        // change of rate (2026-11-04: 37 ms in hand as a YouTube song began after a 96 kHz file). Not held for more
+        // than half a second, so a song's last moment never waits for a cushion that won't come
+        if (!d->primed) {
+            size_t cushion = (size_t) (d->rate / 5) * d->in_frame;
+            if (cushion > d->ring_size * 3 / 4) cushion = d->ring_size * 3 / 4 - (d->ring_size * 3 / 4) % d->in_frame;
+            if (d->used < cushion && d->held < d->rate / 2) {
+                d->held += n;
+                pthread_mutex_unlock(&d->lock);
+                memset(out, 0, (size_t) n * d->out_frame);
+                return 0;
+            }
+        }
         size_t have = d->used / d->in_frame;
         got = (int) (have < (size_t) n ? have : (size_t) n);
         size_t tail = (d->head + d->ring_size - d->used) % d->ring_size;
@@ -279,7 +294,7 @@ JNIEXPORT jboolean JNICALL Java_app_ink_music_UsbStream_start(JNIEnv *e, jclass 
     d->sub = sub; d->bits = bits; d->out_frame = sub * channels; d->acc = 0;
     d->ring_size = (size_t) rate * d->in_frame * ringMs / 1000;
     d->ring_size -= d->ring_size % d->in_frame;
-    d->ring = malloc(d->ring_size); d->head = 0; d->used = 0;
+    d->ring = malloc(d->ring_size); d->head = 0; d->used = 0; d->primed = 0; d->held = 0; d->starved = 0;
     atomic_store(&d->played, 0); atomic_store(&d->fb, 0); atomic_store(&d->underruns, 0); atomic_store(&d->playing, 0);
     int size = d->max_packet * d->packets;
     for (int i = 0; i < URBS; i++) d->urbs[i] = iso_urb(d->ep, d->packets, size, (void *) (intptr_t) i);
@@ -321,6 +336,7 @@ JNIEXPORT void JNICALL Java_app_ink_music_UsbStream_flush(JNIEnv *e, jclass c, j
     atomic_store(&d->played, 0);
     d->starved = 0;
     d->primed = 0;
+    d->held = 0;
     pthread_mutex_unlock(&d->lock);
 }
 
