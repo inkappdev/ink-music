@@ -141,10 +141,23 @@ object SyncHub {
     /** What a phone's player (or a TV) says it plays now (null: nothing, it stopped). */
     private fun live(peer: Sync.Peer, now: JSONObject?) {
         household.put(peer.id, peer.name, now)
-        if (now == null) { if (theirs.value?.peer == peer.id) theirs.value = null; return }
-        // where it is placed in this clock: where it was when sent, from now (its clock and ours never meet)
-        val here = JSONObject(now.toString()).put("position", Sync.positionWhenSent(now)).put("positionAt", System.currentTimeMillis())
-        Continue.offer(peer.name, here, ::resolve, peer.id)?.let { theirs.value = it }
+        theirs.value = elsewhere()
+    }
+
+    /**
+     * What to show of the other devices' playing: the latest heard of those playing, else the latest paused (as the
+     * phone and the TV choose, [Everywhere]). One device after another took the bar as each told it, so a TV playing
+     * and a phone paused took turns there (2026-11-04).
+     */
+    private fun elsewhere(): Continue.Offer? {
+        val me = kept.id()
+        val others = household.entries().filter { it.optString("id") != me && it.optJSONObject("now")?.optJSONArray("queue") != null }
+        val e = others.filter { it.optJSONObject("now")?.optBoolean("playing") == true }.maxByOrNull { it.optLong("heard") }
+            ?: others.maxByOrNull { it.optLong("heard") } ?: return null
+        val now = e.getJSONObject("now")
+        // placed in this clock: where it was when heard here, from then
+        val here = JSONObject(now.toString()).put("positionAt", e.optLong("heard"))
+        return Continue.offer(e.optString("name"), here, ::resolve, e.optString("id"))?.copy(seen = e.optLong("heard"))
     }
 
     /** A phone paired (from the pairing's sealed hello): kept, and listened for from now on. */
@@ -350,7 +363,9 @@ object SyncHub {
         override fun podcastsChanged() { scope.launch { Pods.load() } }
 
         override fun theirs(peer: Sync.Peer, now: JSONObject?) {
-            theirs.value = now?.let { Continue.offer(peer.name, it, ::resolve, peer.id) }
+            // the minute's sync says it too: one more report of that device, chosen among the rest as any other
+            household.put(peer.id, peer.name, now)
+            theirs.value = elsewhere()
         }
 
         override fun resumedAt(): Long = resumedAt
