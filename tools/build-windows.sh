@@ -21,8 +21,9 @@ if [ ! -f "$out/libmpv-2.dll" ]; then
   work=$(mktemp -d)
   curl -fsSL -o "$work/mpv.7z" "$url"
   mkdir -p "$work/x" "$out"
-  # Windows' own tar (libarchive) opens a 7z; 7-Zip if it's there
-  if command -v 7z >/dev/null; then 7z x "$work/mpv.7z" -o"$work/x" >/dev/null; else tar -xf "$work/mpv.7z" -C "$work/x"; fi
+  # Windows' own tar (libarchive) opens a 7z, called by its path: Git Bash's tar is GNU's, which can't; 7-Zip if it's there
+  if command -v 7z >/dev/null; then 7z x "$work/mpv.7z" -o"$work/x" >/dev/null
+  else "$(cygpath "${SYSTEMROOT:-C:\\Windows}")/System32/tar.exe" -xf "$(cygpath -w "$work/mpv.7z")" -C "$(cygpath -w "$work/x")"; fi
   cp "$work/x/libmpv-2.dll" "$out/"
   rm -rf "$work"
 fi
