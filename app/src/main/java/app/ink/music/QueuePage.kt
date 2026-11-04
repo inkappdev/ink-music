@@ -158,3 +158,51 @@ fun QueuePage(onClose: () -> Unit) {
         }
     }
 }
+
+/**
+ * Up next on another device (opened from its now playing): its queue as [QueuePage] draws this phone's, the song
+ * playing there lit, the ones before dim. Only looked at: that device keeps its own order.
+ */
+@Composable
+fun RemoteQueuePage(r: Everywhere.Remote, onClose: () -> Unit) {
+    androidx.activity.compose.BackHandler(onBack = onClose)
+    val list = rememberLazyListState()
+    LaunchedEffect(Unit) { if (r.index > 0) list.scrollToItem((r.index - 1).coerceAtLeast(0)) }
+    Column(
+        Modifier.fillMaxSize().background(Ink.black).noFocus().clickable(remember { MutableInteractionSource() }, indication = null) {}
+            .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout)).navigationBarsPadding(),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                BasicText("UP NEXT", style = headline(40.sp))
+                Spacer(Modifier.height(6.dp))
+                BasicText("${r.songs.size} songs   on ${r.where.removePrefix("ink music on ")}", style = pixel(12.sp, Ink.mid))
+            }
+            CloseArrow(onClick = onClose)
+        }
+        Spacer(Modifier.height(14.dp))
+        val soft = dev.chrisbanes.haze.rememberHazeState()
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(state = list, modifier = Modifier.fillMaxSize().hazeSource(soft), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp)) {
+                itemsIndexed(r.songs) { i, q ->
+                    val tone = when {
+                        i == r.index -> Ink.ink
+                        i < r.index -> Ink.dim
+                        else -> Ink.mid
+                    }
+                    Row(Modifier.fillMaxWidth().height(ROW), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            BasicText(q.title.uppercase(), style = headline(18.sp, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            BasicText(q.artist.lowercase(), style = pixel(12.sp, if (tone == Ink.ink) Ink.mid else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (i == r.index) {
+                            Spacer(Modifier.width(12.dp))
+                            BasicText(if (r.playing) "playing" else "paused", style = pixel(12.sp, Ink.mid))
+                        }
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(BAND).softEdge(soft, towardBottom = false))
+        }
+    }
+}

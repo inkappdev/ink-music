@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -255,9 +257,11 @@ fun RemoteMini(frost: HazeState, r: Everywhere.Remote, onOpen: () -> Unit) {
 }
 
 /**
- * What plays on another device, opened from its bar: the cover big, the song, where it plays, the line along the
- * cover's top with the times over it, moving with it; back, pause or play, next steering it there; play here carrying
- * on with it on this one. Closed by its arrow, back, or the other device stopping.
+ * What plays on another device, opened from its bar (2026-11-04, its second look): the device big at the top (this
+ * is somewhere else playing, not here), the cover and the song in the middle as the player has them (the line along
+ * the cover's top in its colour, the times over it, moving with it); back, pause or play, next steering it there; up
+ * next, its queue, as the player's own; play here carrying on with it on this one; and the artist's giant marquee along the
+ * foot as on the player, drifting while it plays there. Closed by its arrow, back, or the other device stopping.
  */
 @Composable
 fun RemotePlayerPage(r: Everywhere.Remote, onClose: () -> Unit) {
@@ -266,43 +270,63 @@ fun RemotePlayerPage(r: Everywhere.Remote, onClose: () -> Unit) {
     val cover = rememberCover(r.song, 900)
     val length = r.length
     val tv = onTv()
+    var queueUp by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(bars).padding(horizontal = 20.dp, vertical = 14.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                BasicText((if (r.playing) "playing on " else "paused on ") + r.where, style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+        Column(Modifier.fillMaxSize().windowInsetsPadding(bars).navigationBarsPadding()) {
+            // where it plays, big: the device's own name
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    BasicText(if (r.playing) "playing on" else "paused on", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(2.dp))
+                    BasicText(r.where.removePrefix("ink music on ").uppercase(), style = headline(if (tv) 40.sp else 34.sp),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 CloseArrow(onClick = onClose)
             }
-            Spacer(Modifier.height(18.dp))
-            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                val side = minOf(maxWidth, maxHeight - 150.dp, if (tv) 520.dp else 560.dp).coerceAtLeast(120.dp)
-                Column {
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 20.dp)) {
+                // the cover as big as fits with the song under it
+                val words = 104.dp
+                // (and a breath above and below it: it crowded the device's name)
+                val side = minOf(maxWidth, maxHeight - words - 40.dp, if (tv) 520.dp else 560.dp).coerceAtLeast(120.dp)
+                Column(Modifier.align(Alignment.Center).width(side)) {
                     // the times over the line, the line along the cover's top, in the cover's colour
-                    Row(Modifier.width(side)) {
+                    Row(Modifier.fillMaxWidth()) {
                         BasicText(clock(pos), style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
                         if (length > 0 && !r.song.station) BasicText("-" + clock((length - pos).coerceAtLeast(0)), style = pixel(12.sp, Ink.mid))
                     }
                     Spacer(Modifier.height(6.dp))
-                    Box(Modifier.width(side).height(1.dp).background(Ink.line)) {
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
                         if (length > 0 && !r.song.station) Box(Modifier.fillMaxWidth((pos.toFloat() / length).coerceIn(0f, 1f)).height(1.dp).background(cover?.accent ?: Ink.ink))
                     }
                     CoverOf(r.song, r.song.album.ifEmpty { r.song.title }, Modifier.size(side))
-                    Spacer(Modifier.height(18.dp))
-                    BasicText(r.song.title.uppercase(), style = headline(30.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(16.dp))
+                    BasicText(r.song.title.uppercase(), style = headline(28.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(6.dp))
                     BasicText(r.song.artist.lowercase(), style = pixel(13.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 if (r.steerable) {
                     Pixel(BACK, "back, there", Ink.ink, cell = 3.dp) { Everywhere.steer(r, "previous") }
                     Pixel(if (r.playing) PAUSE else PLAY, if (r.playing) "pause, there" else "play, there", Ink.ink, cell = 3.dp) { Everywhere.steer(r, if (r.playing) "pause" else "play") }
                     Pixel(NEXT, "next, there", Ink.ink, cell = 3.dp) { Everywhere.steer(r, "next") }
                 }
             }
-            Spacer(Modifier.height(18.dp))
-            Word("PLAY HERE", headline(28.sp), Modifier.align(Alignment.CenterHorizontally), touch = 10.dp) { Everywhere.take(r); onClose() }
-            Spacer(Modifier.height(8.dp))
+            // the player's second row, as on this phone's own: what plays there after this
+            Spacer(Modifier.height(10.dp))
+            Word("up next", pixel(14.sp, Ink.ink.copy(alpha = .75f)), Modifier.align(Alignment.CenterHorizontally), touch = 10.dp) { queueUp = true }
+            Spacer(Modifier.height(14.dp))
+            Word("PLAY HERE", headline(26.sp), Modifier.align(Alignment.CenterHorizontally), touch = 10.dp) { Everywhere.take(r); onClose() }
+            Spacer(Modifier.height(10.dp))
+            // the artist, giant, along the foot as on the player: drifting while it plays there, still while paused
+            Marquee(r.song.artist, r.playing && Marquees.on.collectAsState().value, Modifier.fillMaxWidth().bleedPastCutout(), size = if (tv) 100.sp else 110.sp)
         }
+        androidx.compose.animation.AnimatedVisibility(
+            queueUp,
+            enter = androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } +
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)),
+            exit = androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } +
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.EXIT, easing = Motion.expo)),
+        ) { RemoteQueuePage(r, onClose = { queueUp = false }) }
     }
 }
