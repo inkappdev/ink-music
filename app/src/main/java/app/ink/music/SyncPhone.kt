@@ -58,8 +58,10 @@ object SyncPhone {
         peers.value = kept.peers()
     }
 
-    /** While the app's open: in step now, and every minute. */
+    /** While the app's open: in step now, and every minute; what plays elsewhere heard as it changes ([Everywhere]). */
     fun open() {
+        app?.let { Everywhere.start(it) }
+        Everywhere.watch()
         loop?.cancel()
         loop = scope.launch {
             var n = 0
@@ -74,7 +76,7 @@ object SyncPhone {
         }
     }
 
-    fun closed() { loop?.cancel(); loop = null; soon(1_000) }
+    fun closed() { loop?.cancel(); loop = null; Everywhere.unwatch(); soon(1_000) }
 
     /** In step a moment from now (a love, a sign-in), a few changes going as one. */
     fun soon(ms: Long = 8_000) {
@@ -223,6 +225,12 @@ object SyncPhone {
         // Spotify's passes, so the computer shows canvases too (it can't sign in to Spotify itself)
         override fun spotify(): String? = Spotify.handover(c, scope)
 
+        // this phone's other devices that listen, for this one to know directly (a TV and a computer then tell each
+        // other what they play): each with the key the phone made for the two, and where it was last
+        override fun intros(peer: Sync.Peer): JSONArray = JSONArray(kept.peers().filter { it.id != peer.id && ':' in it.at }.map {
+            JSONObject().put("id", it.id).put("name", it.name.removePrefix("ink music on ")).put("key", kept.introKey(peer.id, it.id)).put("at", it.at)
+        })
+
         // a TV asks for Spotify's sign-in itself (no signing in with a remote): only it gets it, never a computer
         override fun wanted(peer: Sync.Peer, what: List<String>) { if ("spotify" in what) askedSpotify += peer.id else askedSpotify -= peer.id }
         override fun spotifySignIn(peer: Sync.Peer): String? = if (peer.id in askedSpotify) Spotify.signInCookies() else null
@@ -262,6 +270,22 @@ object SyncPhone {
             override fun youtube(): String? = null
             override fun spotify(): String? = null
             override fun spotifySignIn(peer: Sync.Peer): String? = null
+            // a TV introduces no one; the phone's other devices it's introduced to are kept, to tell what plays
+            override fun intros(peer: Sync.Peer): JSONArray = JSONArray()
+            override fun introduced(list: JSONArray) {
+                val me = kept.id()
+                for (i in 0 until list.length()) {
+                    val o = list.optJSONObject(i) ?: continue
+                    val id = o.optString("id"); val key = o.optString("key"); val at = o.optString("at")
+                    if (id.isEmpty() || key.isEmpty() || id == me) continue
+                    val had = kept.peers().firstOrNull { it.id == id }
+                    if (had != null && !had.hub) continue   // a phone of this TV's own, paired by code
+                    if (had == null || had.key != key || (':' in at && had.at != at))
+                        kept.put(Sync.Peer(id, o.optString("name"), key, seen = had?.seen ?: 0L, at = at.ifEmpty { had?.at.orEmpty() }, hub = true))
+                }
+                peers.value = kept.peers()
+                Everywhere.publish()
+            }
             // Spotify: its sign-in asked for while there's none here; the phone's passes meanwhile, for canvases
             override fun wants(): List<String> = if (Spotify.signedIn()) emptyList() else listOf("spotify")
             override fun takeSpotifySignIn(cookies: String) {
@@ -384,6 +408,8 @@ class Live(private val c: Context, private val player: () -> androidx.media3.com
     private fun peers() = kept.peers().filter { ':' in it.at }
 
     private fun tell(now: JSONObject?) {
+        // when it's sent, by this clock: the one hearing it works out where it is from that, not from our clock
+        now?.put("sent", System.currentTimeMillis())
         for (p in peers()) runCatching {
             val r = post(p.at, "/now", Sync.sealed(kept, p, JSONObject().put("now", now ?: JSONObject.NULL)), 4_000) ?: return@runCatching
             stopIfHanded(Sync.replied(p, r).optLong("handed"))
@@ -405,7 +431,7 @@ class Live(private val c: Context, private val player: () -> androidx.media3.com
                 m.optString("do").takeIf { it.isNotEmpty() }?.let { what ->
                     main.post {
                         player()?.run {
-                            when (what) { "play" -> play(); "pause" -> pause(); "next" -> seekToNextMediaItem(); "previous" -> seekToPrevious() }
+                            when (what) { "play" -> play(); "pause" -> pause(); "next" -> seekToNextMediaItem(); "previous" -> seekToPrevious(); "seek" -> seekTo(m.optLong("ms")) }
                         }
                     }
                 }

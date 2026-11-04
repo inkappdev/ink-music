@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -662,9 +664,14 @@ fun InkMoodsShelf() {
     // one row of tiles, right now's three bigger, then the rest (as the Mac's: the three as words and the rest as
     // tiles didn't belong together)
     Heading("right now", said ?: "moods for ${Moods.said()}, then the rest")
+    // every tile as tall as the tallest seen (a big one, first in sight): the row is as tall as the tiles in sight,
+    // so it shrank once the big three slid away and the shelves under it jumped up (2026-11-03)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var tallest by remember { mutableStateOf(0.dp) }
     Shelf(now + InkMoods.ALL.filter { it !in now }) { m ->
         val big = m in now
-        Column(Modifier.width(if (big) 200.dp else 150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { go(m) })) {
+        Column(Modifier.width(if (big) 200.dp else 150.dp).heightIn(min = tallest)
+            .onSizeChanged { with(density) { it.height.toDp() }.let { h -> if (h > tallest) tallest = h } }.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { go(m) })) {
             Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.BottomStart) {
                 kept[m.key]?.art?.let { art -> Dithered(remember(art) { faceSong("mood " + m.key, art) }, Modifier.fillMaxSize(), px = 400) }
                 // its name on a black tab in the corner (pale dithers swallowed it)

@@ -433,7 +433,12 @@ private fun App() {
             // a TV: only while something plays; paused or stopped it was in the way (2026-11-03), and "now
             // playing" at the top is the way back to the player
             val playingNow = Playback.now.collectAsState().value?.playing == true
-            if (!stopping && !sideways() && (!onTv() || playingNow)) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { MiniPlayer(frost, onOpen = { playerUp = true }) }
+            // nothing playing here, something on another ink device: that, live, steered from here ([Everywhere])
+            // (paused there: only while nothing waits here either, the mini player's own song, as it shows one)
+            val here = Playback.now.collectAsState().value
+            val elsewhere = Everywhere.remote.collectAsState().value?.takeIf { it.playing || here == null || here.stopped }
+            if (!stopping && !sideways() && !playingNow && elsewhere != null) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { RemoteMini(frost, elsewhere) }
+            else if (!stopping && !sideways() && (!onTv() || playingNow)) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { MiniPlayer(frost, onOpen = { playerUp = true }) }
         }
         androidx.compose.animation.AnimatedVisibility(
             playerUp,

@@ -632,7 +632,8 @@ class PlayerService : MediaLibraryService() {
             }
 
             override fun onEvents(p: Player, events: Player.Events) {
-                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_TIMELINE_CHANGED)) live.changed()
+                // a seek too, so the others' lines jump with it
+                if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_PLAY_WHEN_READY_CHANGED, Player.EVENT_TIMELINE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY)) live.changed()
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) onAir?.changed()
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) keep(p)
                 if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) tell()   // the new song's format, if it's read

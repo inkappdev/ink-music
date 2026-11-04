@@ -62,6 +62,8 @@ object SyncHub {
     @Volatile var resumedAt = 0L
     /** A love the phone made, being done here: not one to tell it about again. */
     @Volatile private var applying = false
+    /** What plays on each ink device, as heard here (this one's too), for a phone's /watch ([Sync.Household]). */
+    val household = Sync.Household()
 
     fun start() {
         scope.launch {
@@ -76,6 +78,17 @@ object SyncHub {
                 was = Player.now.value?.playing == true
                 // kept on the server too, for the phone away from home
                 Player.now.value?.let { n -> Server.saveQueue(Player.queue.value, n.index, Player.position.value) }
+                publish()
+            }
+        }
+        // what it was left with, said once at the start (a phone opening later sees it), then again while it plays
+        // now and then (a seek, a slow clock, set right)
+        scope.launch {
+            kotlinx.coroutines.delay(3_000)
+            publish()
+            while (true) {
+                kotlinx.coroutines.delay(15_000)
+                if (Player.now.value?.playing == true) publish()
             }
         }
         // the queue the phone left on the server (away from the wifi): offered, when it's the newest
@@ -95,16 +108,43 @@ object SyncHub {
     /** A press made here for a phone's player ("play", "pause", "next", "previous"), handed over on its waiting call. */
     private val asked = java.util.concurrent.ConcurrentHashMap<String, String>()
 
-    /** The phone's playing, steered from here (the bottom bar): told it on its waiting call, at once. */
+    /** The phone's playing, steered from here (the bottom bar): told it on its waiting call, at once; a TV directly. */
     fun steer(peer: String, what: String) {
+        val p = kept.peers().firstOrNull { it.id == peer }
+        if (p != null && p.hub) { scope.launch { post(p.at, "/do", Sync.sealed(kept, p, JSONObject().put("do", what))) }; return }
         asked[peer] = what
         synchronized(handing) { handing.notifyAll() }
     }
 
-    /** What a phone's player says it plays now (null: nothing, it stopped). */
+    /** What plays here now, to the household here and every device that listens (a TV the phone introduced). */
+    fun publish() {
+        scope.launch {
+            val now = side.now()?.let { n ->
+                Sync.nowOf(n.getJSONArray("queue"), n.optInt("index"), Player.position.value, n.optBoolean("playing"), "", playedAt)
+                    .put("sent", System.currentTimeMillis())
+            }
+            household.put(kept.id(), TubeAccount.name, now)
+            for (p in kept.peers().filter { it.hub && ':' in it.at }) post(p.at, "/now", Sync.sealed(kept, p, JSONObject().put("now", now ?: JSONObject.NULL)))
+        }
+    }
+
+    /** A sealed ask of another device that listens; its answer, or null. */
+    private fun post(at: String, path: String, body: String): String? = runCatching {
+        val c = java.net.URL("http://$at$path").openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 3_000; c.readTimeout = 5_000; c.requestMethod = "POST"; c.doOutput = true
+        try {
+            c.outputStream.use { it.write(body.toByteArray()) }
+            if (c.responseCode == 200) c.inputStream.bufferedReader().readText() else null
+        } finally { c.disconnect() }
+    }.getOrNull()
+
+    /** What a phone's player (or a TV) says it plays now (null: nothing, it stopped). */
     private fun live(peer: Sync.Peer, now: JSONObject?) {
+        household.put(peer.id, peer.name, now)
         if (now == null) { if (theirs.value?.peer == peer.id) theirs.value = null; return }
-        Continue.offer(peer.name, now, ::resolve, peer.id)?.let { theirs.value = it }
+        // where it is placed in this clock: where it was when sent, from now (its clock and ours never meet)
+        val here = JSONObject(now.toString()).put("position", Sync.positionWhenSent(now)).put("positionAt", System.currentTimeMillis())
+        Continue.offer(peer.name, here, ::resolve, peer.id)?.let { theirs.value = it }
     }
 
     /** A phone paired (from the pairing's sealed hello): kept, and listened for from now on. */
@@ -186,6 +226,28 @@ object SyncHub {
                     200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)).put("do", asked.remove(peer.id) ?: ""))
                 } ?: (403 to "{}")
             }.getOrElse { 400 to "{}" }
+            // a phone waiting for the next change anywhere: answered the moment one comes (or in 25 s, unchanged)
+            "POST" to "/watch" -> runCatching {
+                Sync.unsealed(kept, body)?.let { (peer, m) ->
+                    val v = household.await(m.optLong("since"), 25_000)
+                    200 to Sync.reply(peer, JSONObject().put("version", v).put("devices", household.snapshot()))
+                } ?: (403 to "{}")
+            }.getOrElse { 400 to "{}" }
+            // steered from another device: done here
+            "POST" to "/do" -> runCatching {
+                Sync.unsealed(kept, body)?.let { (peer, m) ->
+                    val on = Player.now.value?.playing == true
+                    when (m.optString("do")) {
+                        "play" -> if (!on) Player.toggle()
+                        "pause" -> if (on) Player.toggle()
+                        "next" -> Player.next()
+                        "previous" -> Player.previous()
+                        "seek" -> Player.seek(m.optLong("ms"))
+                    }
+                    publish()
+                    200 to Sync.reply(peer, JSONObject().put("ok", true))
+                } ?: (403 to "{}")
+            }.getOrElse { 400 to "{}" }
             "POST" to "/sync" -> runCatching {
                 val r = Sync.answer(side, kept, body, k.inetAddress.hostAddress + ":" + (server?.localPort ?: Sync.PORT))
                 peers.value = kept.peers()
@@ -260,6 +322,22 @@ object SyncHub {
 
         override fun takeSpotify(pass: String) = SpotifyHanded.take(pass)
 
+        // the phone's other devices that listen (a TV), kept to tell what plays here and be told theirs
+        override fun introduced(list: JSONArray) {
+            val me = kept.id()
+            for (i in 0 until list.length()) {
+                val o = list.optJSONObject(i) ?: continue
+                val id = o.optString("id"); val key = o.optString("key"); val at = o.optString("at")
+                if (id.isEmpty() || key.isEmpty() || id == me) continue
+                val had = kept.peers().firstOrNull { it.id == id }
+                if (had != null && !had.hub) continue
+                if (had == null || had.key != key || (':' in at && had.at != at))
+                    kept.put(Sync.Peer(id, o.optString("name"), key, seen = had?.seen ?: 0L, at = at.ifEmpty { had?.at.orEmpty() }, hub = true))
+            }
+            peers.value = kept.peers()
+            publish()
+        }
+
         override fun signedIn(what: String) {
             when (what) {
                 "server" -> Server.start()
@@ -313,8 +391,11 @@ object Continue {
         val at = if (p > 5_000 && !o.song.station) p else 0L
         // the phone (or its speaker) told to stop first, so the two don't play over each other
         if (o.peer.isNotEmpty()) {
-            SyncHub.kept.handed(o.peer, System.currentTimeMillis())
-            synchronized(SyncHub.handing) { SyncHub.handing.notifyAll() }
+            if (SyncHub.kept.peers().firstOrNull { it.id == o.peer }?.hub == true) SyncHub.steer(o.peer, "pause")
+            else {
+                SyncHub.kept.handed(o.peer, System.currentTimeMillis())
+                synchronized(SyncHub.handing) { SyncHub.handing.notifyAll() }
+            }
         }
         Casting.on.value?.let { to -> Casting.play(to, o.songs, o.index, at) } ?: Player.takeBack(o.songs, o.index, at, go = true)
         dismissed.value = o.at

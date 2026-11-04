@@ -285,12 +285,18 @@ object TvHub {
 
     /** Opened on a TV: paired phones listened for. */
     fun start(c: Context) {
-        if (app == null) { app = c.applicationContext; SyncPhone.start(c) }
+        if (app == null) { app = c.applicationContext; SyncPhone.start(c); Everywhere.start(c) }
         if (SyncPhone.kept.peers().isNotEmpty()) listen()
     }
 
     /** The TV carried on with a phone's playing ([SyncPhone.take]): its waiting call told now. */
     fun nudge() = synchronized(handing) { handing.notifyAll() }
+
+    /** A press made here for a phone's player ("play", "pause", "next", "previous", "seek"), given on its waiting call. */
+    private val asked = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
+
+    /** A phone's playing steered from here ([Everywhere.steer]): told it at once, on the call it's waiting on. */
+    fun ask(peer: String, what: String, ms: Long) { asked[peer] = what to ms; nudge() }
 
     /** Ready for a phone: a key and its code shown, announced on the wifi, till [stopAwait]. */
     @Synchronized fun await() {
@@ -372,19 +378,46 @@ object TvHub {
                     Sync.SIGNINS.entries.joinToString { (what, f) -> what + if (java.io.File(side.dir, f).exists()) " in" else " out" })
                 if (r == null) 403 to "{}" else 200 to r
             }.getOrElse { android.util.Log.d("ink-sync", "tv sync: $it"); 400 to "{}" }
+            // what another plays now (a phone's player, a computer), as it changes: shown here, and kept for a
+            // phone's /watch
             "/now" -> runCatching {
                 val (peer, m) = Sync.unsealed(kept, body) ?: return 403 to "{}"
-                SyncPhone.hubSide()?.theirs(peer, m.optJSONObject("now"))
+                // (the mini player's place shows it, live: no "continue here" card on listen as well)
+                Everywhere.household.put(peer.id, peer.name.removePrefix("ink music on "), m.optJSONObject("now"))
                 200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)))
+            }.getOrElse { 400 to "{}" }
+            // a phone waiting for the next change anywhere: answered the moment one comes (or in 25 s, unchanged)
+            "/watch" -> runCatching {
+                val (peer, m) = Sync.unsealed(kept, body) ?: return 403 to "{}"
+                val v = Everywhere.household.await(m.optLong("since"), 25_000)
+                200 to Sync.reply(peer, JSONObject().put("version", v).put("devices", Everywhere.household.snapshot()))
+            }.getOrElse { 400 to "{}" }
+            // steered from another: done here
+            "/do" -> runCatching {
+                val (peer, m) = Sync.unsealed(kept, body) ?: return 403 to "{}"
+                val what = m.optString("do"); val ms = m.optLong("ms")
+                kotlinx.coroutines.runBlocking(Dispatchers.Main) {
+                    val on = Playback.now.value?.playing == true
+                    when (what) {
+                        "play" -> if (!on) Playback.toggle()
+                        "pause" -> if (on) Playback.toggle()
+                        "next" -> Playback.next()
+                        "previous" -> Playback.previous()
+                        "seek" -> Playback.seek(ms)
+                    }
+                }
+                Everywhere.publish()
+                200 to Sync.reply(peer, JSONObject().put("ok", true))
             }.getOrElse { 400 to "{}" }
             "/wait" -> runCatching {
                 val (peer, m) = Sync.unsealed(kept, body) ?: return 403 to "{}"
                 val since = m.optLong("since")
                 val until = System.currentTimeMillis() + 25_000
                 synchronized(handing) {
-                    while (kept.handedAt(peer.id) <= since && System.currentTimeMillis() < until) handing.wait(maxOf(1L, until - System.currentTimeMillis()))
+                    while (kept.handedAt(peer.id) <= since && asked[peer.id] == null && System.currentTimeMillis() < until) handing.wait(maxOf(1L, until - System.currentTimeMillis()))
                 }
-                200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)).put("do", ""))
+                val d = asked.remove(peer.id)
+                200 to Sync.reply(peer, JSONObject().put("handed", kept.handedAt(peer.id)).put("do", d?.first ?: "").put("ms", d?.second ?: 0L))
             }.getOrElse { 400 to "{}" }
             else -> 404 to "{}"
         }

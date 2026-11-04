@@ -28,7 +28,7 @@ object Sync {
 
     /** A device paired with this one: its id and name, the key the two keep, how far each got with the other's history. */
     data class Peer(val id: String, val name: String, val key: String, val gotHeard: Int = 0, val sentHeard: Int = 0,
-                    val seen: Long = 0, val at: String = "")
+                    val seen: Long = 0, val at: String = "", val hub: Boolean = false)
 
     // ---- this device and its pairs, kept in the app's folder (sync.json) ----
 
@@ -49,20 +49,20 @@ object Sync {
         }
 
         fun peers(): List<Peer> = read().optJSONArray("peers")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map {
-            Peer(it.getString("id"), it.optString("name"), it.getString("key"), it.optInt("gotHeard"), it.optInt("sentHeard"), it.optLong("seen"), it.optString("at"))
+            Peer(it.getString("id"), it.optString("name"), it.getString("key"), it.optInt("gotHeard"), it.optInt("sentHeard"), it.optLong("seen"), it.optString("at"), it.optBoolean("hub"))
         } }.orEmpty()
 
         @Synchronized fun put(p: Peer) {
             val o = read()
             val list = peers().filter { it.id != p.id } + p
             write(o.put("peers", JSONArray(list.map { JSONObject().put("id", it.id).put("name", it.name).put("key", it.key)
-                .put("gotHeard", it.gotHeard).put("sentHeard", it.sentHeard).put("seen", it.seen).put("at", it.at) })))
+                .put("gotHeard", it.gotHeard).put("sentHeard", it.sentHeard).put("seen", it.seen).put("at", it.at).put("hub", it.hub) })))
         }
 
         @Synchronized fun forget(id: String) {
             val o = read()
             write(o.put("peers", JSONArray(peers().filter { it.id != id }.map { JSONObject().put("id", it.id).put("name", it.name).put("key", it.key)
-                .put("gotHeard", it.gotHeard).put("sentHeard", it.sentHeard).put("seen", it.seen).put("at", it.at) })))
+                .put("gotHeard", it.gotHeard).put("sentHeard", it.sentHeard).put("seen", it.seen).put("at", it.at).put("hub", it.hub) })))
         }
 
         /** Loves as last changed on either: song key to {on, at, song}. */
@@ -71,6 +71,19 @@ object Sync {
             val o = read(); val l = o.optJSONObject("loves") ?: JSONObject()
             l.put(key, JSONObject().put("on", on).put("at", at).put("song", song))
             write(o.put("loves", l))
+        }
+
+        /**
+         * The key two of this phone's devices share, made here once and kept (both are handed it by [intros]), so the
+         * two tell each other what they play without a code of their own.
+         */
+        @Synchronized fun introKey(a: String, b: String): String {
+            val pair = listOf(a, b).sorted().joinToString("|")
+            val o = read(); val keys = o.optJSONObject("intros") ?: JSONObject()
+            keys.optString(pair).takeIf { it.isNotEmpty() }?.let { return it }
+            val made = ByteArray(32).also { SecureRandom().nextBytes(it) }.let { Base64.getEncoder().encodeToString(it) }
+            write(o.put("intros", keys.put(pair, made)))
+            return made
         }
 
         /** When this device carried on with what `peer` was playing ("continue here"): that one stops, if it hasn't played since. */
@@ -178,6 +191,13 @@ object Sync {
         fun spotifySignIn(peer: Peer): String? = null
         /** Spotify's sign-in from the phone (a TV): kept, so it makes its own passes from then on. */
         fun takeSpotifySignIn(cookies: String) {}
+        /**
+         * The phone's other devices, for `peer` to know directly ({id, name, key, at}): two that listen (a computer, a
+         * TV) then tell each other what they play, with a key the phone made for the two. Empty on all but the phone.
+         */
+        fun intros(peer: Peer): JSONArray = JSONArray()
+        /** Devices the phone introduced: kept as peers that listen (hub), to tell what plays here and be steered. */
+        fun introduced(list: JSONArray) {}
         /** A sign-in's file written from the other: read it again ("server", "listenbrainz", "lastfm"). */
         fun signedIn(what: String)
         /** heard.jsonl has the other's listens in it now. */
@@ -211,6 +231,7 @@ object Sync {
             .put("spotify", side.spotify() ?: "")
             .put("spotifySignIn", side.spotifySignIn(peer) ?: "")
             .put("wants", JSONArray(side.wants()))
+            .put("intros", side.intros(peer))
             .put("podcasts", Podcasts.syncPart() ?: JSONObject.NULL)
             .put("now", side.now() ?: JSONObject.NULL).put("handed", kept.handedAt(peer.id))
     }
@@ -248,6 +269,7 @@ object Sync {
         m.optString("spotify").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeSpotify(it) } }
         m.optString("spotifySignIn").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeSpotifySignIn(it) } }
         m.optJSONArray("wants")?.let { a -> runCatching { side.wanted(peer, (0 until a.length()).map(a::optString)) } }
+        m.optJSONArray("intros")?.takeIf { it.length() > 0 }?.let { runCatching { side.introduced(it) } }
         side.theirs(peer, m.optJSONObject("now"))
         // the other carried on with what plays here, since it was last pressed play: it stops here
         val handed = m.optLong("handed")
@@ -310,5 +332,97 @@ object Sync {
     fun replied(peer: Peer, body: String): JSONObject {
         val o = JSONObject(body)
         return JSONObject(open(peer.key, o.getString("iv"), o.getString("data")))
+    }
+
+    // ---- what plays on every device, as each says it (2026-11-04: every ink app showing every other, live) ----
+
+    /**
+     * A device's playing as it tells it, ready to send: what [Sync.song] gives for each in the queue, where, and
+     * whether it plays. `position` is where it is at the moment it's sent (`sent`, the sender's clock): the one
+     * reading it works out where it is now from when it heard it, its own clock, so two clocks never meet.
+     */
+    fun nowOf(queue: JSONArray, index: Int, position: Long, playing: Boolean, device: String, changed: Long): JSONObject =
+        JSONObject().put("queue", queue).put("index", index).put("position", position).put("positionAt", System.currentTimeMillis())
+            .put("playing", playing).put("at", changed).put("device", device)
+
+    /** Where in its song a told playing was when it was heard (sent and heard close enough to be one moment). */
+    fun positionWhenSent(now: JSONObject): Long {
+        val p = now.optLong("position")
+        val sent = now.optLong("sent"); val at = now.optLong("positionAt")
+        return if (now.optBoolean("playing") && sent > 0 && at > 0) p + (sent - at).coerceIn(0, 60_000) else p
+    }
+
+    /**
+     * What plays on each device this one knows (its own too), each with when it was heard here: kept by a device that
+     * listens (a computer, a TV), every one told it (`/now`), asked for whole by a phone (`/watch`), which waits on it
+     * till something changes. The ages it gives are this device's own, so a phone reading them needs no clock of ours.
+     */
+    class Household {
+        private val lock = Object()
+        private val all = LinkedHashMap<String, JSONObject>()
+        @Volatile var version = 0L
+            private set
+        /** Told on each change (the screens show it). */
+        @Volatile var changed: (() -> Unit)? = null
+
+        /** A device's playing heard now (null: it stopped, or plays nothing). */
+        fun put(id: String, name: String, now: JSONObject?) {
+            synchronized(lock) {
+                val p = now?.let { positionWhenSent(it) }
+                all[id] = JSONObject().put("id", id).put("name", name).put("heard", System.currentTimeMillis())
+                    .put("now", now?.let { JSONObject(it.toString()).put("position", p) } ?: JSONObject.NULL)
+                version++
+                lock.notifyAll()
+            }
+            runCatching { changed?.invoke() }
+        }
+
+        /** Everyone's, as heard here: each with its age (ms since heard) for another to place in its own time. */
+        fun snapshot(): JSONArray = synchronized(lock) {
+            val t = System.currentTimeMillis()
+            JSONArray(all.values.map { JSONObject(it.toString()).put("age", t - it.optLong("heard")) })
+        }
+
+        /** Each device's entry as heard here ({id, name, heard, now}). */
+        fun entries(): List<JSONObject> = synchronized(lock) { all.values.map { JSONObject(it.toString()) } }
+
+        /** Another device's whole household taken in (a phone's, from `/watch`): each placed in this device's time. */
+        fun takeSnapshot(a: JSONArray) {
+            synchronized(lock) {
+                val t = System.currentTimeMillis()
+                for (i in 0 until a.length()) {
+                    val e = a.optJSONObject(i) ?: continue
+                    val id = e.optString("id").ifEmpty { continue }
+                    val heard = t - e.optLong("age")
+                    // the newer of what's known here and what it says wins (a phone may have heard it itself)
+                    if ((all[id]?.optLong("heard") ?: 0L) > heard) continue
+                    all[id] = JSONObject().put("id", id).put("name", e.optString("name")).put("heard", heard).put("now", e.opt("now") ?: JSONObject.NULL)
+                }
+                version++
+                lock.notifyAll()
+            }
+            runCatching { changed?.invoke() }
+        }
+
+        /** Waits (a while at most) till something's changed since `since`; the version then. */
+        fun await(since: Long, ms: Long): Long {
+            synchronized(lock) {
+                val until = System.currentTimeMillis() + ms
+                while (version <= since && System.currentTimeMillis() < until) lock.wait(maxOf(1L, until - System.currentTimeMillis()))
+                return version
+            }
+        }
+    }
+
+    /**
+     * Where a heard playing is now, in this device's time: where it was when heard, and on since if it plays (a song's
+     * length at most: an hour asleep didn't run a song on past its end).
+     */
+    fun positionNow(entry: JSONObject, length: Long = 0L): Long {
+        val now = entry.optJSONObject("now") ?: return 0L
+        val p = now.optLong("position")
+        if (!now.optBoolean("playing")) return p
+        val run = (System.currentTimeMillis() - entry.optLong("heard")).coerceIn(0, 6 * 3_600_000L)
+        return if (length > 0) minOf(length, p + run) else p + run
     }
 }
