@@ -83,7 +83,12 @@ fun SettingsPage(onClose: () -> Unit) {
                             Spacer(Modifier.height(36.dp)); FilesSetting()
                         }
                         "the look" -> LookSetting()
-                        "sound" -> { SoundSetting(); Spacer(Modifier.height(36.dp)); KeptSetting() }
+                        "sound" -> {
+                            SoundSetting()
+                            Spacer(Modifier.height(36.dp)); TransitionsSetting()
+                            Spacer(Modifier.height(36.dp)); EqualizerSetting()
+                            Spacer(Modifier.height(36.dp)); KeptSetting()
+                        }
                         "listening" -> {
                             PrivateSetting()
                             Spacer(Modifier.height(36.dp)); ListenBrainzSetting()
@@ -118,8 +123,11 @@ object Settings {
         "sound" -> {
             val sound by Player.sound.collectAsState()
             val kept by Offline.kept.collectAsState()
+            val mode by Crossfade.mode.collectAsState()
+            val eq by Eq.state.collectAsState()
             listOfNotNull(if (sound.device == "auto") "the ${if (Home.mac) "mac" else "computer"}'s choice" else "its own output",
-                if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded", kept.size.takeIf { it > 0 }?.let { "$it kept" }).joinToString(" · ")
+                if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded", mode.takeIf { it != Crossfade.OFF },
+                if (eq.on) "equalizer ${eq.label}" else null, kept.size.takeIf { it > 0 }?.let { "$it kept" }).joinToString(" · ")
         }
         "the look" -> {
             val behind by Looks.on.collectAsState()

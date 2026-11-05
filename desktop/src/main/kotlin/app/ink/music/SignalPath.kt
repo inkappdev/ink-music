@@ -80,6 +80,7 @@ fun SignalPath(h: Heard?, onClose: () -> Unit) {
     val speaker by Casting.on.collectAsState()
     val quality by Casting.quality.collectAsState()
     val now by Player.now.collectAsState()
+    val eq by Eq.state.collectAsState()
     val computer = if (Home.mac) "mac" else "computer"
     // what mpv hands on, read again each second (a word below changes it: its reload is seen)
     val out by produceState<Player.Out?>(null, speaker) {
@@ -140,6 +141,10 @@ fun SignalPath(h: Heard?, onClose: () -> Unit) {
             else -> "%+.1f db, so it sits with the rest".format(java.util.Locale.ROOT, g)
         })
         acts["even volume"] = (if (sound.even) "turn off" else "turn on") to { Player.sound(sound.copy(even = !sound.even)) }
+        if (eq.on) {
+            steps += "equalizer" to eq.label + if (eq.shaping) "" else ", every band at nought"
+            acts["equalizer"] = "turn off" to { Eq.set(eq.copy(on = false)) }
+        }
         steps += "volume" to when {
             muted -> "muted"
             volume >= 100 -> "100, left as it is"
@@ -194,6 +199,7 @@ fun SignalPath(h: Heard?, onClose: () -> Unit) {
         else -> {
             val touched = listOfNotNull(
                 "even volume moves it".takeIf { sound.even && h.gain != null && h.gain != 0f },
+                "the equalizer shapes it".takeIf { eq.on },
                 "the volume turns it down".takeIf { muted || volume < 100 },
                 "${system(o.ao)} mixes it".takeIf { !alone && o.ao != "null" },
                 "it's resampled ${Heard.khz(h.rate)} to ${k(o.rate)}".takeIf { h.rate > 0 && o.rate > 0 && h.rate != o.rate },

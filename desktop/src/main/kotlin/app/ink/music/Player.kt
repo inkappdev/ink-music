@@ -66,7 +66,9 @@ object Player {
     fun sound(to: Sound) {
         val was = sound.value
         sound.value = to
-        mpv?.let { m ->
+        // alone: one deck has the output, so no handover under way
+        if (to.exclusive && !was.exclusive) Crossfade.settle()
+        decks.forEach { m ->
             if (to.device != was.device) m.set("audio-device", to.device)
             if (to.exclusive != was.exclusive) { m.set("audio-exclusive", if (to.exclusive) "yes" else "no"); m.command("ao-reload") }
             if (to.even != was.even) m.set("replaygain", if (to.even) "album" else "no")
@@ -77,9 +79,15 @@ object Player {
     /** The queue in its own order while shuffled (back to it when shuffle's off). */
     private var unshuffled: List<Song>? = null
 
-    private var mpv: Mpv? = null
-    /** The thread reading mpv's events (Player.listen), waited for before mpv is let go. */
-    private var listener: Thread? = null
+    /**
+     * Two decks, turn about (Crossfade): the one playing, and the one free, where the next song's readied for a
+     * transition. With transitions off the second only waits.
+     */
+    @Volatile private var mpv: Mpv? = null
+    @Volatile private var spareDeck: Mpv? = null
+    private val decks get() = listOfNotNull(mpv, spareDeck)
+    /** The threads reading each deck's events (Player.listen), waited for before mpv is let go. */
+    private val listeners = mutableListOf<Thread>()
     /** Even volume's level for a song that has none in its tags (dB). */
     const val UNTAGGED = -7f
     @Volatile private var paused = true
@@ -110,23 +118,7 @@ object Player {
 
     fun start() {
         mpv = try {
-            Mpv(mapOf(
-                "vid" to "no", "audio-display" to "no", "terminal" to "no", "idle" to "yes",
-                "gapless-audio" to "yes",
-                // even volume from the files' own tags: a record's level, a song's when it has none
-                "replaygain" to if (sound.value.even) "album" else "no", "replaygain-clip" to "no",
-                // a song with no gain anywhere: about where most of a library sits (the phone's, ReplayGain's -18 LUFS
-                // from today's masters), so an untagged song isn't the odd loud one out
-                "replaygain-fallback" to UNTAGGED.toString(),
-                // the Mac's media keys and Now Playing are ink's own (NowPlaying.kt): mpv's, as a library, is never told the song
-                "media-controls" to if (NowPlaying.ours) "no" else "yes", "input-media-keys" to if (NowPlaying.ours) "no" else "yes",
-                "audio-client-name" to "ink music", "title" to "ink music",
-                "ytdl" to "no", "cache" to "yes",
-                "volume" to volume.value.toString(), "volume-max" to "100",
-                "audio-device" to sound.value.device, "audio-exclusive" to if (sound.value.exclusive) "yes" else "no",
-                "loop-playlist" to if (repeat.value == 1) "inf" else "no", "loop-file" to if (repeat.value == 2) "inf" else "no",
-                // -Dink.ao=null: silent, to try it without playing out loud
-            ) + listOfNotNull(System.getProperty("ink.ao")?.let { "ao" to it }))
+            deck(main = true)
         } catch (e: Throwable) {
             // on Linux the system's libmpv plays (it isn't carried in the app; its package asks for it, but a
             // package opened some other way may not have): said how to get it on this system
@@ -135,19 +127,23 @@ object Player {
                 else "can't play: ${e.message?.lowercase()}"
             null
         }
-        val m = mpv ?: return
+        mpv ?: return
+        spareDeck = runCatching { deck(main = false) }.getOrNull()
         trouble.value = null
         missing.value = null
         NowPlaying.start()
-        m.observe("pause", Mpv.FLAG)
-        m.observe("playlist-pos", Mpv.INT64)
-        m.observe("duration", Mpv.DOUBLE)
-        m.observe("time-pos", Mpv.DOUBLE)
-        // a station's stream says what it's playing (ICY), as its title
-        m.observe("media-title", Mpv.STRING)
-        // a YouTube song's stream found as it opens (they expire: never ahead of time)
-        m.hook("on_load")
-        listener = Thread({ listen(m) }, "mpv").apply { isDaemon = true; start() }
+        for (d in decks) {
+            d.observe("pause", Mpv.FLAG)
+            d.observe("playlist-pos", Mpv.INT64)
+            d.observe("duration", Mpv.DOUBLE)
+            d.observe("time-pos", Mpv.DOUBLE)
+            // a station's stream says what it's playing (ICY), as its title
+            d.observe("media-title", Mpv.STRING)
+            // a YouTube song's stream found as it opens (they expire: never ahead of time)
+            d.hook("on_load")
+            listeners += Thread({ listen(d) }, "mpv").apply { isDaemon = true; start() }
+        }
+        Crossfade.start()
         // the queue as it was, once the library knows its songs (a server's come from disk in a moment)
         scope.launch {
             // (a queue of songs dropped from elsewhere comes back whole, the library or no)
@@ -155,6 +151,30 @@ object Player {
             restore()
         }
     }
+
+    /** A deck: mpv as ink music has it (the second silent and paused till a transition wants it). */
+    private fun deck(main: Boolean): Mpv = Mpv(mapOf(
+            "vid" to "no", "audio-display" to "no", "terminal" to "no", "idle" to "yes",
+            "gapless-audio" to "yes",
+            // even volume from the files' own tags: a record's level, a song's when it has none
+            "replaygain" to if (sound.value.even) "album" else "no", "replaygain-clip" to "no",
+            // a song with no gain anywhere: about where most of a library sits (the phone's, ReplayGain's -18 LUFS
+            // from today's masters), so an untagged song isn't the odd loud one out
+            "replaygain-fallback" to UNTAGGED.toString(),
+            // the Mac's media keys and Now Playing are ink's own (NowPlaying.kt): mpv's, as a library, is never told the song
+            "media-controls" to if (NowPlaying.ours) "no" else "yes", "input-media-keys" to if (NowPlaying.ours) "no" else "yes",
+            "audio-client-name" to "ink music", "title" to "ink music",
+            "ytdl" to "no", "cache" to "yes",
+            "volume" to volume.value.toString(), "volume-max" to "100",
+            "audio-device" to sound.value.device, "audio-exclusive" to if (sound.value.exclusive) "yes" else "no",
+            "loop-playlist" to if (repeat.value == 1) "inf" else "no", "loop-file" to if (repeat.value == 2) "inf" else "no",
+            // the equalizer, automix's bass (ffmpeg's filters, steered as they change)
+            "af" to chain(),
+            // -Dink.ao=null: silent, to try it without playing out loud
+        ) + listOfNotNull(System.getProperty("ink.ao")?.let { "ao" to it }) + (if (main) emptyMap() else mapOf(
+            "pause" to "yes", "volume" to "0", "media-controls" to "no", "input-media-keys" to "no",
+            "loop-playlist" to "no", "loop-file" to "no",
+        )))
 
     private fun restore() {
         try { restoring() } finally { restored = true }
@@ -194,7 +214,15 @@ object Player {
 
     private fun listen(m: Mpv) {
         while (true) {
-            when (val e = m.next()) {
+            val e = m.next()
+            // the free deck: only its stream found as it opens, and its song readied (Crossfade)
+            if (m !== mpv) when (e) {
+                is Mpv.Hook -> {}
+                is Mpv.Loaded -> { Crossfade.loaded(m); continue }
+                is Mpv.Shutdown -> return
+                else -> continue
+            }
+            when (e) {
                 is Mpv.Changed -> when (e.name) {
                     "pause" -> {
                         paused = e.value as? Boolean ?: true
@@ -235,6 +263,8 @@ object Player {
                     }.start()
                 }
                 is Mpv.Loaded -> {
+                    // the equalizer moved while the song before played: its filters as they are now
+                    if (staleChain) { staleChain = false; m.set("af", chain()) }
                     val s = _queue.value.getOrNull(index)
                     // an episode at its own speed (a song always at 1), from where you stopped in it
                     m.set("speed", if (s?.episode == true) "%.2f".format(java.util.Locale.ROOT, Podcasts.speed) else "1")
@@ -310,11 +340,11 @@ object Player {
         if (casting) return Casting.setVolume(to / 100f)
         volume.value = to
         if (muted.value && to > 0) mute(false)
-        mpv?.set("volume", to.toString())
+        if (!Crossfade.fading) mpv?.set("volume", to.toString())
         scope.launch { runCatching { Home.write(File(Home.dir, "volume"), to.toString()) } }
     }
 
-    fun mute(on: Boolean = !muted.value) { muted.value = on; mpv?.set("mute", if (on) "yes" else "no") }
+    fun mute(on: Boolean = !muted.value) { muted.value = on; decks.forEach { it.set("mute", if (on) "yes" else "no") } }
 
     /** Repeat's next step: off, all, one. */
     fun repeat() {
@@ -501,6 +531,7 @@ object Player {
     fun pauseHere(handed: List<Song>) {
         if (!casting) waiting = _queue.value
         casting = true
+        Crossfade.settle()
         mpv?.set("pause", "yes")
         _queue.value = handed
         // the speaker says where it is when it changes; between, the clock runs on here
@@ -541,6 +572,7 @@ object Player {
     private fun load(songs: List<Song>, start: Int, go: Boolean) {
         val m = mpv ?: return
         if (songs.isEmpty()) return
+        Crossfade.settle()
         _queue.value = songs
         m.command("stop")
         m.command("playlist-clear")
@@ -576,6 +608,7 @@ object Player {
         if (casting) return Casting.jump(i)
         val m = mpv ?: return
         if (i !in _queue.value.indices) return
+        Crossfade.settle()
         m.set("playlist-pos", i.toString())
         m.set("pause", "no")
     }
@@ -586,13 +619,14 @@ object Player {
         if (casting) return
         val m = mpv ?: return
         if (i !in _queue.value.indices) return
+        if (i == index) Crossfade.settle()
         _queue.value = _queue.value.toMutableList().apply { removeAt(i) }
         m.command("playlist-remove", i.toString())
         keep()
     }
 
     /** Where a song plays from: its file, or the server's stream. */
-    private fun where(s: Song) = when {
+    internal fun where(s: Song) = when {
         // kept on the computer: from there, no signal needed (Offline)
         Offline.file(s.id) != null -> Offline.file(s.id)!!.path
         s.server -> Server.stream(s).orEmpty()
@@ -602,18 +636,20 @@ object Player {
         else -> s.path
     }
 
-    fun toggle() { if (casting) return Casting.toggle(); mpv?.command("cycle", "pause") }
+    fun toggle() { Crossfade.settle(); if (casting) return Casting.toggle(); mpv?.command("cycle", "pause") }
 
-    fun next() { if (casting) return Casting.next(); mpv?.command("playlist-next") }
+    fun next() { Crossfade.settle(); if (casting) return Casting.next(); mpv?.command("playlist-next") }
 
     /** Back: to the song's start, or (in its first seconds) the one before. */
     fun previous() {
         if (casting) return Casting.previous()
+        Crossfade.settle()
         val m = mpv ?: return
         if (position.value > 3_000 || index <= 0) seek(0) else m.command("playlist-prev")
     }
 
     fun seek(ms: Long) {
+        Crossfade.settle()
         position.value = ms
         if (casting) { castPos = ms; castAt = SystemClock.elapsedRealtime(); return Casting.seek(ms) }
         mpv?.command("seek", "%.3f".format(java.util.Locale.ROOT, ms / 1000.0), "absolute")
@@ -627,9 +663,79 @@ object Player {
     }
 
     fun stop() {
+        Crossfade.settle()
         mpv?.command("stop")
         _queue.value = emptyList()
         heard.value = null
+    }
+
+    // ---- the two decks, for Crossfade ----
+
+    internal fun active() = mpv
+    internal fun spare() = spareDeck
+    internal fun index() = index
+    internal fun position() = position.value
+    internal fun length() = duration
+    internal fun isPaused() = paused
+    /** Whether this computer plays (not a speaker). */
+    internal fun mixable() = !casting && mpv != null && spareDeck != null
+
+    /**
+     * The handover: the readied deck, its song sounding, is the player now, at the queue's `at`: the queue around its
+     * song again (it was readied with that one alone), repeat as set; the other deck, its song fading, let be.
+     */
+    internal fun become(b: Mpv, at: Int) {
+        val a = mpv ?: return
+        val q = _queue.value
+        mpv = b; spareDeck = a
+        index = at
+        duration = ((b.get("duration")?.toDoubleOrNull() ?: 0.0) * 1000).toLong()
+        paused = false
+        // the songs before it, each put in ahead of it; then the ones after
+        for (j in 0 until at) { b.command("loadfile", where(q[j]), "append"); b.command("playlist-move", (j + 1).toString(), j.toString()) }
+        for (j in at + 1 until q.size) b.command("loadfile", where(q[j]), "append")
+        b.set("loop-playlist", if (repeat.value == 1) "inf" else "no")
+        b.set("loop-file", if (repeat.value == 2) "inf" else "no")
+        // the system's media keys follow the deck that plays (mpv's own, where they're mpv's)
+        if (!NowPlaying.ours) { a.set("media-controls", "no"); a.set("input-media-keys", "no"); b.set("media-controls", "yes"); b.set("input-media-keys", "yes") }
+        heard.value = null
+        hear(b)
+        tell()
+        NowPlaying.moved()
+    }
+
+    // ---- the filters in mpv's chain: the equalizer's bands, automix's bass held back for a moment ----
+
+    @Volatile private var staleChain = false
+
+    private fun chain(): String {
+        val parts = mutableListOf<String>()
+        if (Crossfade.mode.value == Crossfade.AUTOMIX) parts += "highpass@bass=f=10"
+        val eq = Eq.state.value
+        if (eq.on) parts += Eq.filters(eq.levels)
+        return if (parts.isEmpty()) "" else "@ink:lavfi=[${parts.joinToString(",")}]"
+    }
+
+    /** The chain set again on a deck (one not playing, or as a song opens: no moment lost). */
+    internal fun chainOn(m: Mpv) { m.set("af", chain()) }
+
+    /** The chain changed in kind (a filter more or less): set again on both. */
+    internal fun rechain() { val c = chain(); decks.forEach { it.set("af", c) } }
+
+    /**
+     * The equalizer as it is now: turned on or off, the chain made again; a band moved, steered where it is (no reload,
+     * no gap), and the chain as written made right as the next song opens.
+     */
+    private var eqOn = Eq.state.value.on
+    fun equalize(s: Eq.State) {
+        if (s.on != eqOn) { eqOn = s.on; return rechain() }
+        if (!s.on) return
+        for (m in decks) {
+            m.command("af-command", "ink", "volume", "%.2fdB".format(java.util.Locale.ROOT, Eq.preamp(s.levels)), "volume@eqpre")
+            s.levels.forEachIndexed { i, mb -> m.command("af-command", "ink", "g", "%.2f".format(java.util.Locale.ROOT, mb / 100.0), "equalizer@eq$i") }
+        }
+        staleChain = true
+        spareDeck?.takeIf { Crossfade.fading.not() }?.let { if (it.get("idle-active") == "yes") chainOn(it) }
     }
 
     fun close() {
@@ -640,11 +746,12 @@ object Player {
         }
         // mpv let go only once the listener's out of mpv_wait_event: destroying it meanwhile hung for good (Linux, Win+Q,
         // 2026-10-29). Told to quit, it says shutdown and the listener returns; if it never does, the process ends anyway
-        mpv?.let { m ->
+        Crossfade.settle()
+        decks.zip(listeners).forEach { (m, l) ->
             runCatching { m.command("quit") }
-            listener?.join(2000)
-            if (listener?.isAlive == false) m.close()
+            l.join(2000)
+            if (!l.isAlive) m.close()
         }
-        mpv = null
+        mpv = null; spareDeck = null
     }
 }
