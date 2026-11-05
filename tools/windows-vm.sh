@@ -49,4 +49,6 @@ $env:JAVA_HOME="C:\b\jdk"; $env:GRADLE_USER_HOME="C:\b\gradle"
 
 mkdir -p build/release
 get "C:/b/src/build/release/ink-music-$version-windows.msi" "build/release/ink-music-$version-windows.msi"
+# scp brings Windows' permissions with it (-rw----r-x): made an ordinary file's again, as the other builds are
+chmod 644 "build/release/ink-music-$version-windows.msi"
 ls -la "build/release/ink-music-$version-windows.msi"
