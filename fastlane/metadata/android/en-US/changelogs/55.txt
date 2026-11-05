@@ -1,0 +1,7 @@
+- Crossfade and automix on Mac, Windows and Linux, the beats matched as on the phone
+- The equalizer on the computer too: ten bands, shapes, a correction for your headphones
+- Signing out of ListenBrainz or Last.fm stays signed out, not put back by a paired device
+- No gap as a song begins on a USB DAC
+- Another device's song shows its length from the start
+- Your laptop now DJs. It still won't take requests
+- Do something nice for someone today. Lend them your headphones
