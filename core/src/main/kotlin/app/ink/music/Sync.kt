@@ -108,6 +108,16 @@ object Sync {
         @Synchronized fun signed(what: String, at: Long) {
             val o = read(); write(o.put("signed", (o.optJSONObject("signed") ?: JSONObject()).put(what, at)))
         }
+        /**
+         * Whether each sign-in's file was here at the last exchange: one gone since was signed out of here, and is
+         * stamped so (ListenBrainz's and Last.fm's disconnect only delete their file; the other's was put back over it).
+         */
+        @Synchronized fun there(what: String, here: Boolean): Boolean {
+            val o = read(); val t = o.optJSONObject("there") ?: JSONObject()
+            val was = t.optBoolean(what)
+            if (was != here) write(o.put("there", t.put(what, here)))
+            return was
+        }
     }
 
     // ---- sealed under the key a pair keeps ----
@@ -234,7 +244,10 @@ object Sync {
         val signed = JSONObject()
         SIGNINS.forEach { (what, name) ->
             val f = File(side.dir, name)
-            if (f.exists()) runCatching { signed.put(what, JSONObject().put("text", f.readText()).put("at", f.lastModified())) }
+            val here = f.exists()
+            // signed out of here since the last exchange: not put back by the other's, unless it's signed in after
+            if (kept.there(what, here) && !here) kept.signed(what, System.currentTimeMillis())
+            if (here) runCatching { signed.put(what, JSONObject().put("text", f.readText()).put("at", f.lastModified())) }
         }
         return JSONObject().put("id", kept.id()).put("name", side.name)
             .put("heard", JSONObject().put("lines", lines).put("upto", upto).put("want", want))
@@ -270,7 +283,7 @@ object Sync {
                 val text = t.optString("text"); val at = t.optLong("at")
                 val here = if (f.exists()) f.lastModified() else kept.signedAt(what)
                 if (text.isNotEmpty() && at > here && (!f.exists() || f.readText() != text)) {
-                    runCatching { f.writeText(text); f.setLastModified(at); side.signedIn(what) }
+                    runCatching { f.writeText(text); f.setLastModified(at); kept.there(what, true); side.signedIn(what) }
                 }
             }
         }
