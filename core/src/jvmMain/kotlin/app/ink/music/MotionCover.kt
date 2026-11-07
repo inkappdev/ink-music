@@ -137,19 +137,14 @@ object MotionCover {
     }
 
     private fun get(url: String, bearer: String?): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 8_000; c.readTimeout = 12_000
-        c.setRequestProperty("User-Agent", AGENT)
-        if (bearer != null) {
-            c.setRequestProperty("Authorization", "Bearer $bearer")
-            c.setRequestProperty("Origin", "https://music.apple.com")
-            c.setRequestProperty("Referer", "https://music.apple.com/")
-        }
-        val code = c.responseCode
+        val h = mutableMapOf("User-Agent" to AGENT)
+        if (bearer != null) { h["Authorization"] = "Bearer $bearer"; h["Origin"] = "https://music.apple.com"; h["Referer"] = "https://music.apple.com/" }
+        val r = http(url, headers = h, connectMs = 8_000, readMs = 12_000)
+        val code = r.code
         // turned away: the pass lapsed or changed, read again next time
         if ((code == 401 || code == 403) && bearer != null) { refused += bearer; pass = null; passUntil = 0; nextTry = 0 }
         if (code >= 400) error("http $code")
-        return c.inputStream.use { it.bufferedReader().readText() }
+        return r.text
     }
 
     private fun load() {

@@ -531,16 +531,9 @@ object Curation {
 
     /** A page's text, its redirects followed (Stereogum answers 308, which Java's connection leaves be). */
     fun get(url: String): String {
-        var at = URL(url)
-        repeat(5) {
-            val c = at.openConnection() as HttpURLConnection
-            c.connectTimeout = 8_000; c.readTimeout = 15_000; c.instanceFollowRedirects = false
-            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) $AGENT")
-            try {
-                if (c.responseCode in 300..399) { at = URL(at, c.getHeaderField("Location") ?: error("redirect nowhere")); return@repeat }
-                return c.inputStream.bufferedReader().use { it.readText() }
-            } finally { c.disconnect() }
-        }
-        error("too many redirects: $url")
+        val r = http(url, headers = mapOf("User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) $AGENT"), connectMs = 8_000, readMs = 15_000, follow = 4)
+        if (r.code in 300..399) error("too many redirects: $url")
+        if (r.code >= 400) throw IOException("${r.code} $url")
+        return r.text
     }
 }

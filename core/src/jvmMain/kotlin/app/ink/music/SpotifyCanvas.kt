@@ -121,31 +121,21 @@ object SpotifyCanvas {
     }.getOrNull()
 
     private fun get(url: String, pass: Pass): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 10_000; c.readTimeout = 15_000
-        c.setRequestProperty("User-Agent", pass.agent)
-        val code = c.responseCode
-        if (code >= 400) error("get: http $code")
-        return c.inputStream.use { it.bufferedReader().readText() }
+        val r = http(url, headers = mapOf("User-Agent" to pass.agent), connectMs = 10_000, readMs = 15_000)
+        if (r.code >= 400) error("get: http ${r.code}")
+        return r.text
     }
 
     /** One of the web player's queries (the computer's JVM sends Origin only as allowed at its start: Main). */
     fun ask(operation: String, hash: String, vars: JSONObject, pass: Pass): JSONObject {
         val body = JSONObject().put("variables", vars).put("operationName", operation)
             .put("extensions", JSONObject().put("persistedQuery", JSONObject().put("version", 1).put("sha256Hash", hash)))
-        val c = URL(QUERY).openConnection() as HttpURLConnection
-        c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 10_000; c.readTimeout = 20_000
-        c.setRequestProperty("Authorization", "Bearer ${pass.bearer}")
-        pass.client?.let { c.setRequestProperty("client-token", it) }
-        c.setRequestProperty("Content-Type", "application/json;charset=UTF-8")
-        c.setRequestProperty("Accept", "application/json")
-        c.setRequestProperty("app-platform", "WebPlayer")
-        c.setRequestProperty("Origin", "https://open.spotify.com")
-        c.setRequestProperty("Referer", "https://open.spotify.com/")
-        c.setRequestProperty("User-Agent", pass.agent)
-        c.outputStream.use { it.write(body.toString().toByteArray()) }
-        val code = c.responseCode
-        val text = (if (code < 400) c.inputStream else c.errorStream)?.use { it.bufferedReader().readText() }.orEmpty()
+        val h = mutableMapOf("Authorization" to "Bearer ${pass.bearer}", "Content-Type" to "application/json;charset=UTF-8", "Accept" to "application/json",
+            "app-platform" to "WebPlayer", "Origin" to "https://open.spotify.com", "Referer" to "https://open.spotify.com/", "User-Agent" to pass.agent)
+        pass.client?.let { h["client-token"] = it }
+        val r = http(QUERY, "POST", h, body.toString().encodeToByteArray(), 10_000, 20_000)
+        val code = r.code
+        val text = r.text
         if (code == 401) throw Refused()
         if (code >= 400) error("$operation: http $code")
         val root = JSONObject(text)

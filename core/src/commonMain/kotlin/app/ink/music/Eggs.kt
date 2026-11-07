@@ -1,10 +1,8 @@
 package app.ink.music
 
-import java.time.DayOfWeek
-import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneId
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 
 /**
  * ink music's easter eggs (2026-10-29),
@@ -14,7 +12,7 @@ import java.time.ZoneId
  */
 object Eggs {
     /** The greeting's own words at odd hours, or null for the usual: after three in the morning, a Friday night. */
-    fun greeting(at: LocalDateTime = LocalDateTime.now()): String? = when {
+    fun greeting(at: LocalDateTime = localNow()): String? = when {
         at.hour in 3..4 -> "STILL UP?"
         at.dayOfWeek == DayOfWeek.FRIDAY && at.hour in 17..23 -> "FRIDAY. FINALLY."
         else -> null
@@ -24,10 +22,10 @@ object Eggs {
     fun onRepeat(heardIds: List<String>, id: String): Boolean = heardIds.size >= 4 && heardIds.takeLast(4).all { it == id }
 
     /** Its 100th play today: the day a song reaches a hundred, its heart's gold (the 100th listen's start, if it was today). */
-    fun golden(plays: List<Long>): Boolean = plays.size >= 100 && day(plays.sorted()[99]) == LocalDate.now()
+    fun golden(plays: List<Long>): Boolean = plays.size >= 100 && day(plays.sorted()[99]) == today()
 
     /** Years since your first listen, if today's its day (a year in, two...); 0 otherwise. */
-    fun anniversary(firstAt: Long, today: LocalDate = LocalDate.now()): Int {
+    fun anniversary(firstAt: Long, today: LocalDate = today()): Int {
         if (firstAt <= 0) return 0
         val first = day(firstAt)
         return if (first.month == today.month && first.dayOfMonth == today.dayOfMonth && today.year > first.year) today.year - first.year else 0
@@ -39,5 +37,5 @@ object Eggs {
     /** The Konami code, as keys' names: ↑ ↑ ↓ ↓ ← → ← → B A. */
     val KONAMI = listOf("up", "up", "down", "down", "left", "right", "left", "right", "b", "a")
 
-    private fun day(ms: Long): LocalDate = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate()
+    private fun day(ms: Long): LocalDate = localDay(ms)
 }

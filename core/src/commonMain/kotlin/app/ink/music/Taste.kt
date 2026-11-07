@@ -59,7 +59,7 @@ class Taste private constructor(
          */
         fun of(
             plays: List<Play>, skips: List<Play> = emptyList(), loved: Collection<String> = emptyList(), kept: Collection<String> = emptyList(),
-            related: Map<String, List<String>> = emptyMap(), refused: Collection<String> = emptyList(), now: Long = System.currentTimeMillis(),
+            related: Map<String, List<String>> = emptyMap(), refused: Collection<String> = emptyList(), now: Long = nowMs(),
         ): Taste {
             val weight = HashMap<String, Double>()
             val times = HashMap<String, Int>()
@@ -111,7 +111,7 @@ object ForYou {
         items: List<T>, taste: (T) -> Double, picked: (T) -> Double, fresh: (T) -> Double, tired: (T) -> Double,
         day: Long, stretch: Double = .3,
     ): List<Placed<T>> {
-        val r = java.util.Random(day * 31 + items.size)
+        val r = kotlin.random.Random(day * 31 + items.size)
         val jitter = items.associateWith { r.nextDouble() * .08 }
         val shown = items.filter { taste(it) >= 0 && tired(it) > 0 }
         val near = shown.filter { taste(it) >= NEAR }

@@ -109,19 +109,12 @@ object LastFm {
         ).joinToString("") { "%02x".format(it) }
         val body = (all + ("api_sig" to sig) + ("format" to "json")).entries
             .joinToString("&") { URLEncoder.encode(it.key, "UTF-8") + "=" + URLEncoder.encode(it.value, "UTF-8") }
-        val c = URL(API).openConnection() as HttpURLConnection
-        try {
-            c.requestMethod = "POST"; c.connectTimeout = 10_000; c.readTimeout = 20_000; c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            c.setRequestProperty("User-Agent", AGENT)
-            c.outputStream.use { it.write(body.toByteArray()) }
-            val code = c.responseCode
-            val text = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            val o = runCatching { JSONObject(text) }.getOrDefault(JSONObject())
-            // 11 / 16: Last.fm busy, try later (kept); 29: too many at once; the rest (a bad song, a session gone) said and dropped
-            val error = o.optInt("error")
-            if (code >= 500 || error == 11 || error == 16 || error == 29) throw java.io.IOException("last.fm said ${o.optString("message", code.toString())}")
-            return o
-        } finally { c.disconnect() }
+        val r = http(API, "POST", mapOf("Content-Type" to "application/x-www-form-urlencoded", "User-Agent" to AGENT), body.encodeToByteArray(), 10_000, 20_000, follow = 0)
+        val code = r.code
+        val o = runCatching { JSONObject(r.text) }.getOrDefault(JSONObject())
+        // 11 / 16: Last.fm busy, try later (kept); 29: too many at once; the rest (a bad song, a session gone) said and dropped
+        val error = o.optInt("error")
+        if (code >= 500 || error == 11 || error == 16 || error == 29) throw IOException("last.fm said ${o.optString("message", code.toString())}")
+        return o
     }
 }

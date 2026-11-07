@@ -310,17 +310,9 @@ object Podcasts {
 
     /** A link's bytes, its redirects followed (feeds move: http to https, one host to another). */
     private fun bytes(url: String): ByteArray {
-        var at = URL(url)
-        repeat(6) {
-            val c = at.openConnection() as HttpURLConnection
-            c.connectTimeout = 10_000; c.readTimeout = 20_000; c.instanceFollowRedirects = false
-            c.setRequestProperty("User-Agent", AGENT)
-            try {
-                if (c.responseCode in 300..399) { at = URL(at, c.getHeaderField("Location") ?: error("redirect nowhere")); return@repeat }
-                if (c.responseCode !in 200..299) error("${c.responseCode} $url")
-                return c.inputStream.use { it.readBytes() }
-            } finally { c.disconnect() }
-        }
-        error("too many redirects: $url")
+        val r = http(url, headers = mapOf("User-Agent" to AGENT), connectMs = 10_000, readMs = 20_000, follow = 5)
+        if (r.code in 300..399) error("too many redirects: $url")
+        if (r.code !in 200..299) error("${r.code} $url")
+        return r.body
     }
 }

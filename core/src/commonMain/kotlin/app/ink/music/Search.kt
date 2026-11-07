@@ -1,6 +1,5 @@
 package app.ink.music
 
-import java.text.Normalizer
 
 /**
  * How find matches what's typed, both apps (2026-10-29): forgiving of
@@ -8,12 +7,11 @@ import java.text.Normalizer
  * and of words in any order or spread over a song's title, artist and record ("demarco salad" finds Salad Days).
  */
 object Search {
-    private val marks = Regex("\\p{Mn}+")
     private val apart = Regex("[^\\p{L}\\p{N}]+")
 
     /** Text as it's compared: lowercase, no accents, "&" said "and", apostrophes dropped, other punctuation a space. */
     fun fold(s: String): String =
-        Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(marks, "")
+        fold(s)
             .replace("&", " and ").replace("'", "").replace("’", "")
             .replace(apart, " ").trim()
 

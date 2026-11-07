@@ -1,5 +1,6 @@
 package app.ink.music
 
+import kotlinx.datetime.toJavaLocalDate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
@@ -201,7 +202,8 @@ fun FestivalPoster(f: Festivals.Festival, modifier: Modifier, onClick: () -> Uni
 /** "nov 2 – 8", "dec 11 – 12", "nov 30 – dec 2". */
 fun dates(f: Festivals.Festival): String {
     val m = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.ENGLISH)
-    return (if (f.start.month == f.end.month) "${m.format(f.start)} – ${f.end.dayOfMonth}" else "${m.format(f.start)} – ${m.format(f.end)}").lowercase()
+    val (a, b) = f.start.toJavaLocalDate() to f.end.toJavaLocalDate()
+    return (if (a.month == b.month) "${m.format(a)} – ${b.dayOfMonth}" else "${m.format(a)} – ${m.format(b)}").lowercase()
 }
 
 /** A festival's page: its name and when, its whole lineup as faces in a grid, a station of them, the lineup's source. */

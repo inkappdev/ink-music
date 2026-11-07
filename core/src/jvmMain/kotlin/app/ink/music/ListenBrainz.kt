@@ -98,21 +98,13 @@ object ListenBrainz {
     }
 
     private fun call(method: String, path: String, token: String, body: JSONObject?): JSONObject? {
-        val c = URL(API + path).openConnection() as HttpURLConnection
-        try {
-            c.requestMethod = method; c.connectTimeout = 10_000; c.readTimeout = 20_000
-            c.setRequestProperty("Authorization", "Token $token")
-            c.setRequestProperty("User-Agent", AGENT)
-            if (body != null) {
-                c.doOutput = true; c.setRequestProperty("Content-Type", "application/json")
-                c.outputStream.use { it.write(body.toString().toByteArray()) }
-            }
-            val code = c.responseCode
-            val text = (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            // a refusal (a bad listen, a token gone) isn't worth keeping; only the network failing is
-            if (code == 401) return JSONObject(text.ifEmpty { "{}" })
-            if (code >= 500 || code == 429) throw java.io.IOException("listenbrainz answered $code")
-            return runCatching { JSONObject(text) }.getOrNull()
-        } finally { c.disconnect() }
+        val h = mutableMapOf("Authorization" to "Token $token", "User-Agent" to AGENT)
+        if (body != null) h["Content-Type"] = "application/json"
+        val r = http(API + path, method, h, body?.toString()?.encodeToByteArray(), 10_000, 20_000, follow = 0)
+        val code = r.code; val text = r.text
+        // a refusal (a bad listen, a token gone) isn't worth keeping; only the network failing is
+        if (code == 401) return JSONObject(text.ifEmpty { "{}" })
+        if (code >= 500 || code == 429) throw IOException("listenbrainz answered $code")
+        return runCatching { JSONObject(text) }.getOrNull()
     }
 }

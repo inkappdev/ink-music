@@ -1,18 +1,20 @@
 package app.ink.music
 
-import java.time.LocalDate
-import java.time.temporal.ChronoUnit
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.daysUntil
+import kotlinx.datetime.plus
 
 /**
  * ink's festivals (2026-10-28): the ones worth hearing ahead of, their lineups as announced, kept by hand in
  * ink-festivals.json as ink weekly is (no free feed of lineups exists). The ones on, or starting within two months,
- * become a section on explore: who's playing, and a station of them. Plain Java, shared.
+ * become a section on explore: who's playing, and a station of them. Shared by every app.
  */
 object Festivals {
     data class Festival(val name: String, val city: String, val start: LocalDate, val end: LocalDate, val link: String, val artists: List<String>) {
         /** "on now", "tomorrow", "in 9 days", "in 3 weeks", as of `today`. */
-        fun when_(today: LocalDate = LocalDate.now()): String {
-            val days = ChronoUnit.DAYS.between(today, start)
+        fun when_(today: LocalDate = today()): String {
+            val days = today.daysUntil(start).toLong()
             return when {
                 days <= 0 -> "on now"
                 days == 1L -> "tomorrow"
@@ -23,7 +25,7 @@ object Festivals {
     }
 
     fun read(text: String): List<Festival> = runCatching {
-        val a = org.json.JSONObject(text).getJSONArray("festivals")
+        val a = JSONObject(text).getJSONArray("festivals")
         (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             val names = o.getJSONArray("artists")
             Festival(o.getString("name"), o.optString("city"), LocalDate.parse(o.getString("start")), LocalDate.parse(o.getString("end")),
@@ -32,6 +34,6 @@ object Festivals {
     }.getOrDefault(emptyList())
 
     /** Those on now or starting within `days`, the soonest first. */
-    fun soon(all: List<Festival>, today: LocalDate = LocalDate.now(), days: Long = 60): List<Festival> =
-        all.filter { !it.end.isBefore(today) && !it.start.isAfter(today.plusDays(days)) }.sortedBy { it.start }
+    fun soon(all: List<Festival>, today: LocalDate = today(), days: Long = 60): List<Festival> =
+        all.filter { it.end >= today && it.start <= today.plus(DatePeriod(days = days.toInt())) }.sortedBy { it.start }
 }

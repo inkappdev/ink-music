@@ -37,8 +37,6 @@ object FoundCovers {
     }
 
     private fun reachable(): Boolean = runCatching {
-        val c = URL("https://itunes.apple.com/").openConnection() as HttpURLConnection
-        c.connectTimeout = 5_000; c.readTimeout = 5_000; c.requestMethod = "HEAD"
-        try { c.responseCode > 0 } finally { c.disconnect() }
+        http("https://itunes.apple.com/", "HEAD", connectMs = 5_000, readMs = 5_000, follow = 0).code > 0
     }.getOrDefault(false)
 }

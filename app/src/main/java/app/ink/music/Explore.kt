@@ -1,5 +1,6 @@
 package app.ink.music
 
+import kotlinx.datetime.toJavaLocalDate
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -178,7 +179,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
 private fun Issue(records: List<Picks.Shown>, chart: List<IndieChart.Entry>, friday: Curation.Week?) {
     val taste by Fresh.taste.collectAsState()
     val note = remember(records, chart, friday, taste) { Fresh.note(records, chart, friday, taste) }
-    val day = remember { java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM", java.util.Locale.ENGLISH).format(Moment.issueDay()).lowercase() }
+    val day = remember { java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM", java.util.Locale.ENGLISH).format(Moment.issueDay().toJavaLocalDate()).lowercase() }
     Column(Modifier.padding(horizontal = 20.dp).padding(top = 2.dp, bottom = 18.dp)) {
         BasicText("no. ${Moment.issue()}   $day", style = pixel(12.sp, Ink.mid))
         note?.let { BasicText(it, style = pixel(12.sp, Ink.ink).copy(lineHeight = 20.sp), modifier = Modifier.padding(top = 6.dp)) }
@@ -871,7 +872,8 @@ private fun FestivalPoster(f: Festivals.Festival, onClick: () -> Unit) {
 /** "nov 2 – 8", "nov 30 – dec 2". */
 private fun dates(f: Festivals.Festival): String {
     val m = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.ENGLISH)
-    return (if (f.start.month == f.end.month) "${m.format(f.start)} – ${f.end.dayOfMonth}" else "${m.format(f.start)} – ${m.format(f.end)}").lowercase()
+    val (a, b) = f.start.toJavaLocalDate() to f.end.toJavaLocalDate()
+    return (if (a.month == b.month) "${m.format(a)} – ${b.dayOfMonth}" else "${m.format(a)} – ${m.format(b)}").lowercase()
 }
 
 /** A festival's page: its name and when, a station, its whole lineup as faces, two across. */

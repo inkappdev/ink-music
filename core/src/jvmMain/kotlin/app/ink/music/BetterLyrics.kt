@@ -18,16 +18,14 @@ object BetterLyrics {
     /** The song's lines (empty: none to be had); null when the service couldn't be reached. Blocking. */
     fun of(title: String, artist: String, seconds: Long, agent: String): List<Timed>? {
         val q = "s=" + enc(title) + "&a=" + enc(artist) + (if (seconds > 0) "&d=$seconds" else "")
-        val c = URL("https://lyrics-api.boidu.dev/getLyrics?$q").openConnection() as HttpURLConnection
         return try {
-            c.connectTimeout = 8_000; c.readTimeout = 10_000
-            c.setRequestProperty("User-Agent", agent)
-            when (c.responseCode) {
-                200 -> parse(JSONObject(c.inputStream.bufferedReader().use { it.readText() }).optString("ttml"))
+            val r = http("https://lyrics-api.boidu.dev/getLyrics?$q", headers = mapOf("User-Agent" to agent), connectMs = 8_000, readMs = 10_000)
+            when (r.code) {
+                200 -> parse(JSONObject(r.text).optString("ttml"))
                 in 400..499 -> emptyList()   // not had, or a key wanted: none
                 else -> null
             }
-        } catch (e: Exception) { null } finally { c.disconnect() }
+        } catch (e: Exception) { null }
     }
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")

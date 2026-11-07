@@ -55,9 +55,8 @@ class TasteTest {
     }
 
     @Test fun issueTurnsAtSix() {
-        val at = java.time.LocalDateTime.of(2026, 10, 26, 7, 0)
-        assertEquals(1, Moment.issue(at))
-        assertEquals(1, Moment.issue(at.plusDays(1).withHour(5)))
-        assertEquals(2, Moment.issue(at.plusDays(1).withHour(6)))
+        assertEquals(1, Moment.issue(kotlinx.datetime.LocalDateTime(2026, 10, 26, 7, 0)))
+        assertEquals(1, Moment.issue(kotlinx.datetime.LocalDateTime(2026, 10, 27, 5, 0)))
+        assertEquals(2, Moment.issue(kotlinx.datetime.LocalDateTime(2026, 10, 27, 6, 0)))
     }
 }

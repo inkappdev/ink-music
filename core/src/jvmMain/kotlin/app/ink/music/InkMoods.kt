@@ -1,8 +1,7 @@
 package app.ink.music
 
-import java.time.DayOfWeek
-import java.time.LocalDate
-import java.time.LocalDateTime
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDateTime
 
 /**
  * ink's own moods (2026-10-28: YouTube's signed-out moods "suck"; "just want them to be cooler"): each a few
@@ -33,7 +32,7 @@ object InkMoods {
     )
 
     /** Three for now: the hour, weekday or weekend. */
-    fun now(at: LocalDateTime = LocalDateTime.now()): List<Mood> {
+    fun now(at: LocalDateTime = localNow()): List<Mood> {
         val weekend = at.dayOfWeek == DayOfWeek.SATURDAY || at.dayOfWeek == DayOfWeek.SUNDAY
         val going = at.dayOfWeek == DayOfWeek.FRIDAY || at.dayOfWeek == DayOfWeek.SATURDAY
         val keys = when (at.hour) {
@@ -53,22 +52,22 @@ object InkMoods {
      * A mood's songs (title, artist), its tags taken in turn: each tag's top songs on Last.fm from a page that moves each
      * week (so the same mood is a new one next week), two an artist at most. Blocking; empty without a Last.fm key.
      */
-    fun songs(m: Mood, key: String, week: Long = LocalDate.now().toEpochDay() / 7): List<Pair<String, String>> {
+    fun songs(m: Mood, key: String, week: Long = today().toEpochDays().toLong() / 7): List<Pair<String, String>> {
         if (key.isBlank()) return emptyList()
         val each = m.tags.mapIndexed { i, tag ->
             val page = 1 + ((week + i) % 4).toInt()
             runCatching {
-                val q = java.net.URLEncoder.encode(tag, "UTF-8")
-                val o = org.json.JSONObject(Curation.get("https://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag=$q&limit=50&page=$page&api_key=$key&format=json"))
+                val q = urlEncode(tag)
+                val o = JSONObject(Curation.get("https://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag=$q&limit=50&page=$page&api_key=$key&format=json"))
                 val a = o.optJSONObject("tracks")?.optJSONArray("track") ?: return@runCatching emptyList()
                 (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("name") to (it.optJSONObject("artist")?.optString("name") ?: "") }
-            }.getOrDefault(emptyList()).shuffled(java.util.Random(week * 31 + i))
+            }.getOrDefault(emptyList()).shuffled(kotlin.random.Random(week * 31 + i))
         }
         // the artists those tags are most given to: none of theirs here
         val out = (NEVER + m.not).flatMap { tag ->
             runCatching {
-                val q = java.net.URLEncoder.encode(tag, "UTF-8")
-                val o = org.json.JSONObject(Curation.get("https://ws.audioscrobbler.com/2.0/?method=tag.gettopartists&tag=$q&limit=300&api_key=$key&format=json"))
+                val q = urlEncode(tag)
+                val o = JSONObject(Curation.get("https://ws.audioscrobbler.com/2.0/?method=tag.gettopartists&tag=$q&limit=300&api_key=$key&format=json"))
                 val a = o.optJSONObject("topartists")?.optJSONArray("artist") ?: return@runCatching emptyList()
                 (0 until a.length()).map { a.getJSONObject(it).optString("name").lowercase() }
             }.getOrDefault(emptyList())
