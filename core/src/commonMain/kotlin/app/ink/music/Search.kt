@@ -11,7 +11,8 @@ object Search {
 
     /** Text as it's compared: lowercase, no accents, "&" said "and", apostrophes dropped, other punctuation a space. */
     fun fold(s: String): String =
-        fold(s)
+        // the platform's fold (Platform.kt), named in full: a bare fold(s) here is this one, calling itself for ever
+        app.ink.music.fold(s)
             .replace("&", " and ").replace("'", "").replace("’", "")
             .replace(apart, " ").trim()
 
