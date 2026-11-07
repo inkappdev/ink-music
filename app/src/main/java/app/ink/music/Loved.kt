@@ -121,6 +121,8 @@ object Loved {
         app?.let { prefs(it).edit().putStringSet("ids", local)
             .putString("tube", JSONArray().apply { _tube.value.forEach { put(it.json()) } }.toString()).apply() }
         publish()
+        // and on Last.fm, beside the scrobbles (not a station's or an episode's)
+        if (!s.station && !s.episode) app?.let { c -> scope.launch { LastFm.love(c, s, on) } }
         // told to a paired computer soon
         SyncPhone.loved(s, on)
     }

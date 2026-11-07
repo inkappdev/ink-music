@@ -24,3 +24,4 @@ suspend fun LastFm.connect(c: Context, name: String, password: String) = connect
 fun LastFm.disconnect(c: Context) = disconnect(c.scrobbling())
 fun LastFm.playingNow(c: Context, s: ListenBrainz.Said) = playingNow(c.scrobbling(), s)
 fun LastFm.listened(c: Context, s: ListenBrainz.Said, at: Long) = listened(c.scrobbling(), s, at)
+fun LastFm.love(c: Context, s: Song, on: Boolean) = love(c.scrobbling(), s.artist, s.title, on)

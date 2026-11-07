@@ -81,6 +81,18 @@ object LastFm {
         log("${s.artist} - ${s.title}: ${if (ok) "scrobbled" else "kept"} (${all.size})")
     }
 
+    /**
+     * A love (or its undoing) said on Last.fm too, as track.love / track.unlove (blocking), so it's there beside the
+     * scrobbles for anything that reads your loved tracks; not kept if it fails (the heart here is what holds it).
+     */
+    fun love(dir: File, artist: String, title: String, on: Boolean) {
+        val a = read(dir) ?: return
+        if (!available || artist.isBlank() || title.isBlank()) return
+        runCatching { call(mapOf("method" to if (on) "track.love" else "track.unlove", "artist" to artist, "track" to title, "sk" to a.key)) }
+            .onSuccess { log("$artist - $title: ${if (on) "loved" else "unloved"}") }
+            .onFailure { log("love: $it") }
+    }
+
     private fun said(s: ListenBrainz.Said) = buildMap {
         put("artist", s.artist); put("track", s.title)
         if (s.album.isNotEmpty()) put("album", s.album)

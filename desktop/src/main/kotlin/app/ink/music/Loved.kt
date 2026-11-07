@@ -93,6 +93,8 @@ object Loved {
         }
         publish()
         keep()
+        // and on Last.fm, beside the scrobbles
+        scope.launch { LastFm.love(Home.dir, s.artist, s.title, on) }
         // told to a paired phone at its next call
         SyncHub.loved(s, on)
     }
