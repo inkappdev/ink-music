@@ -1,12 +1,6 @@
 package app.ink.music
 
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLDecoder
-import java.time.LocalDate
-import java.time.OffsetDateTime
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
+import kotlinx.datetime.LocalDate
 
 /**
  * What people pick, read from their own public feeds (2026-10-28): critics' records (Pitchfork's reviews, Stereogum's
@@ -36,7 +30,7 @@ object Curation {
             val raw = tag("description")
             Item(
                 title = plain(tag("title")), link = plain(tag("link")),
-                at = runCatching { ZonedDateTime.parse(plain(tag("pubDate")), DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }.getOrDefault(0L),
+                at = rfc1123(plain(tag("pubDate"))) ?: 0L,
                 text = sentence(plain(raw)), raw = raw,
                 tags = Regex("<category[^>]*>(.*?)</category>", RegexOption.DOT_MATCHES_ALL).findAll(it).map { c -> plain(cdata(c.groupValues[1])) }.toList(),
                 thumb = Regex("""<media:thumbnail url="([^"]+)"""").find(it)?.groupValues?.get(1),
@@ -91,7 +85,7 @@ object Curation {
 
     private fun pitchforkRecords() = items("https://pitchfork.com/feed/feed-album-reviews/rss").map { i ->
         // the cover's own file name says it best: "The Olivia Tremor Control The Same Place.jpg"
-        val file = i.thumb?.let { URLDecoder.decode(it.substringAfterLast('/'), "UTF-8").substringBeforeLast('.') }.orEmpty()
+        val file = i.thumb?.let { urlDecode(it.substringAfterLast('/')).substringBeforeLast('.') }.orEmpty()
         val artist = file.takeIf { it.endsWith(i.title, true) }?.dropLast(i.title.length)?.trim(' ', '-', '–')?.ifEmpty { null } ?: slugArtist(i.link, i.title)
         Pick(true, i.title, artist, "pitchfork", i.text, i.link, i.at, i.thumb?.takeIf { file.isNotEmpty() })
     }
@@ -203,7 +197,7 @@ object Curation {
         val link = "https://daily.bandcamp.com$post"
         val page = get(link)
         val at = Regex(""""datePublished"\s*:\s*"([^"]+)"""").find(page)?.groupValues?.get(1)
-            ?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() } ?: (System.currentTimeMillis() - 14L * 86_400_000)
+            ?.let { iso8601(it) } ?: (nowMs() - 14L * 86_400_000)
         // each record a heading: the artist, then its link with its name ("<h3>claire rousay & Martyna Basta<br><a
         // href=...><em>hotel room</em></a></h3>"; the player beside it names the label's page, not the artist)
         val records = Regex("""<h3>\s*([^<]+?)<br\s*/?>\s*<a href="([^"]+)"[^>]*>(.*?)</a>\s*</h3>""", RegexOption.DOT_MATCHES_ALL).findAll(page).map { m ->
@@ -322,7 +316,7 @@ object Curation {
             "bandcamp.com" in link -> Regex("""<meta property="og:image" content="([^"]+)"""").find(get(link))?.groupValues?.get(1)
                 ?.replace(Regex("_\\d+\\.jpg$"), "_16.jpg")
             "music.apple.com" in link -> Regex("/(\\d{6,})").findAll(link.substringBefore("?")).lastOrNull()?.groupValues?.get(1)?.let { id ->
-                org.json.JSONObject(get("https://itunes.apple.com/lookup?id=$id")).optJSONArray("results")?.optJSONObject(0)
+                JSONObject(get("https://itunes.apple.com/lookup?id=$id")).optJSONArray("results")?.optJSONObject(0)
                     ?.optString("artworkUrl100")?.takeIf { it.isNotEmpty() }?.replace(Regex("/\\d+x\\d+[a-z-]*\\.(jpg|png)$"), "/1200x1200bb.$1")
             }
             else -> null
@@ -361,7 +355,7 @@ object Curation {
      * The record of the day: one picked by people, from the last fortnight, the same all day; one more than one critic
      * named first. Null with none.
      */
-    fun recordOfTheDay(picks: List<Pick>, day: LocalDate = LocalDate.now()): Pick? = recordsOfTheDay(picks, day).firstOrNull()
+    fun recordOfTheDay(picks: List<Pick>, day: LocalDate = today()): Pick? = recordsOfTheDay(picks, day).firstOrNull()
 
     /**
      * The day's record and the ones to fall back on, in turn: a turn a day through the fortnight's most named (every one
@@ -370,20 +364,19 @@ object Curation {
      * that YouTube Music has (a record's often reviewed before it's on streaming, or sold only on Bandcamp: Josh
      * Johnson's Animative, 2026-10-29).
      */
-    fun recordsOfTheDay(picks: List<Pick>, day: LocalDate = LocalDate.now()): List<Pick> {
-        val since = System.currentTimeMillis() - 14L * 86_400_000
+    fun recordsOfTheDay(picks: List<Pick>, day: LocalDate = today()): List<Pick> {
+        val since = nowMs() - 14L * 86_400_000
         val records = picks.filter { it.record && it.at >= since }.ifEmpty { picks.filter { it.record } }
         if (records.isEmpty()) return emptyList()
         val named = records.groupBy { key(it) }.values.sortedWith(compareByDescending<List<Pick>> { it.size }.thenByDescending { g -> g.maxOf { it.at } })
         val best = named.take(maxOf(7, named.count { it.size > 1 }))
-        val turn = (day.toEpochDay() % best.size).toInt()
+        val turn = (day.toEpochDays().toLong() % best.size).toInt()
         // the first who picked each, with what was said (the line said, where any did)
         return (best.drop(turn) + best.take(turn) + named.drop(best.size)).map { g -> g.firstOrNull { it.said.isNotBlank() } ?: g.first() }
     }
 
     /** Whether picks read at `at` want reading again: half a day old, or read before today. */
-    fun stale(at: Long): Boolean = System.currentTimeMillis() - at > 12 * 3_600_000L ||
-        java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault()).toLocalDate() != LocalDate.now()
+    fun stale(at: Long): Boolean = nowMs() - at > 12 * 3_600_000L || localDay(at) != today()
 
     /** Who else named the same record ("pitchfork, nme"). */
     fun namedBy(p: Pick, picks: List<Pick>): List<String> = picks.filter { key(it) == key(p) }.map { it.from }.distinct()
@@ -400,30 +393,30 @@ object Curation {
         // a show, not a song ("|Echoes|", "[station id]")
         .filter { it.title.isNotBlank() && it.artist.isNotBlank() && !it.artist.startsWith("|") && !it.artist.startsWith("[") }
 
-    private fun recent(at: Long) = System.currentTimeMillis() - at < 12 * 60_000L
+    private fun recent(at: Long) = nowMs() - at < 12 * 60_000L
 
-    private fun kexp(): Triple<String, String, String?>? = org.json.JSONObject(get("https://api.kexp.org/v2/plays/?limit=1")).getJSONArray("results").optJSONObject(0)
-        ?.takeIf { it.optString("play_type") == "trackplay" && recent(OffsetDateTime.parse(it.getString("airdate")).toInstant().toEpochMilli()) }
+    private fun kexp(): Triple<String, String, String?>? = JSONObject(get("https://api.kexp.org/v2/plays/?limit=1")).getJSONArray("results").optJSONObject(0)
+        ?.takeIf { it.optString("play_type") == "trackplay" && recent(iso8601(it.getString("airdate")) ?: 0L) }
         ?.let { Triple(it.optString("song"), it.optString("artist"), it.optString("image_uri").ifEmpty { it.optString("thumbnail_uri") }.ifEmpty { null }) }
 
-    private fun kcrw(): Triple<String, String, String?>? = org.json.JSONArray(get("https://tracklist-api.kcrw.com/Music/all/1")).optJSONObject(0)
-        ?.takeIf { recent(OffsetDateTime.parse(it.getString("datetime")).toInstant().toEpochMilli()) }
+    private fun kcrw(): Triple<String, String, String?>? = JSONArray(get("https://tracklist-api.kcrw.com/Music/all/1")).optJSONObject(0)
+        ?.takeIf { recent(iso8601(it.getString("datetime")) ?: 0L) }
         ?.let { Triple(it.optString("title"), it.optString("artist"), it.optString("albumImageLarge").replace("100x100bb", "600x600bb").ifEmpty { null }) }
 
-    private fun current(): Triple<String, String, String?>? = org.json.JSONObject(get("https://nowplaying.publicradio.org/the-current/playlist")).getJSONObject("data").getJSONArray("songs").optJSONObject(0)
-        ?.takeIf { recent(OffsetDateTime.parse(it.getString("played_at")).toInstant().toEpochMilli()) }
+    private fun current(): Triple<String, String, String?>? = JSONObject(get("https://nowplaying.publicradio.org/the-current/playlist")).getJSONObject("data").getJSONArray("songs").optJSONObject(0)
+        ?.takeIf { recent(iso8601(it.getString("played_at")) ?: 0L) }
         ?.let { Triple(it.optString("title"), it.optString("artist"), it.optString("art_url").ifEmpty { null }) }
 
     private fun xpn(): Triple<String, String, String?>? {
-        val there = java.time.ZoneId.of("America/New_York")
-        return org.json.JSONArray(get("https://origin.xpn.org/utils/playlist/json/${LocalDate.now(there)}.json")).optJSONObject(0)
-            ?.takeIf { recent(java.time.LocalDateTime.parse(it.getString("timeslice"), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")).atZone(there).toInstant().toEpochMilli()) }
+        return JSONArray(get("https://origin.xpn.org/utils/playlist/json/${todayIn("America/New_York")}.json")).optJSONObject(0)
+            ?.takeIf { o -> Regex("""(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})""").find(o.getString("timeslice"))?.groupValues?.map { it.toIntOrNull() ?: 0 }
+                ?.let { g -> recent(zoned("America/New_York", g[1], g[2], g[3], g[4], g[5], g[6])) } == true }
             ?.let { Triple(it.optString("song"), it.optString("artist"), it.optString("image").ifEmpty { null }) }
     }
 
     private fun fip(): Triple<String, String, String?>? {
-        val now = System.currentTimeMillis() / 1000
-        val steps = org.json.JSONObject(get("https://api.radiofrance.fr/livemeta/pull/7")).getJSONObject("steps")
+        val now = nowMs() / 1000
+        val steps = JSONObject(get("https://api.radiofrance.fr/livemeta/pull/7")).getJSONObject("steps")
         return steps.keys().asSequence().map { steps.getJSONObject(it) }
             .firstOrNull { it.optString("embedType") == "song" && it.optLong("start") <= now + 30 && now < it.optLong("end") }
             ?.let { st ->
@@ -433,9 +426,9 @@ object Curation {
     }
 
     private fun wfuv(): Triple<String, String, String?>? {
-        val there = java.time.ZoneId.of("America/New_York")
-        return org.json.JSONObject(get("https://wfuv.org/sites/default/files/player/playlist/now_playing.json")).optJSONObject("live")
-            ?.takeIf { it.optString("event_type") == "MUSIC" && recent(java.time.LocalDateTime.parse(it.getString("timestamp"), DateTimeFormatter.ofPattern("MMddyyyy-HHmmss")).atZone(there).toInstant().toEpochMilli()) }
+        return JSONObject(get("https://wfuv.org/sites/default/files/player/playlist/now_playing.json")).optJSONObject("live")
+            ?.takeIf { o -> o.optString("event_type") == "MUSIC" && Regex("""(\d{2})(\d{2})(\d{4})-(\d{2})(\d{2})(\d{2})""").find(o.getString("timestamp"))?.groupValues?.map { it.toIntOrNull() ?: 0 }
+                ?.let { g -> recent(zoned("America/New_York", g[3], g[1], g[2], g[4], g[5], g[6])) } == true }
             ?.let { Triple(it.optString("title"), it.optString("artist"), null) }
     }
 
@@ -466,8 +459,8 @@ object Curation {
 
     private fun deezerOrThrow(title: String, artist: String, record: Boolean): String? {
         fun plainName(s: String) = folded(s).replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
-        val q = java.net.URLEncoder.encode("artist:\"${artist.substringBefore(",").trim()}\" ${if (record) "album" else "track"}:\"$title\"", "UTF-8")
-        val o = org.json.JSONObject(get("https://api.deezer.com/search/${if (record) "album" else "track"}?q=$q&limit=8"))
+        val q = urlEncode("artist:\"${artist.substringBefore(",").trim()}\" ${if (record) "album" else "track"}:\"$title\"")
+        val o = JSONObject(get("https://api.deezer.com/search/${if (record) "album" else "track"}?q=$q&limit=8"))
         val results = o.optJSONArray("data") ?: return null
         val want = plainName(artist.substringBefore(",")); val wt = plainName(title)
         return (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
@@ -490,8 +483,8 @@ object Curation {
 
     private fun itunesOrThrow(title: String, artist: String, record: Boolean): String? {
         fun plainName(s: String) = folded(s).replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
-        val term = java.net.URLEncoder.encode("$artist $title", "UTF-8")
-        val o = org.json.JSONObject(get("https://itunes.apple.com/search?term=$term&entity=${if (record) "album" else "song"}&limit=8"))
+        val term = urlEncode("$artist $title")
+        val o = JSONObject(get("https://itunes.apple.com/search?term=$term&entity=${if (record) "album" else "song"}&limit=8"))
         val results = o.optJSONArray("results") ?: return null
         return (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
             val a = plainName(r.optString("artistName")); val want = plainName(artist.substringBefore(","))
@@ -503,7 +496,7 @@ object Curation {
     // ---- text ----
 
     /** Lower case, accents off ("Lila Iké" is "lila ike": a station writes it one way, iTunes the other). */
-    fun folded(s: String): String = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+    fun folded(s: String): String = fold(s)
 
     private fun cdata(s: String) = s.replace("<![CDATA[", "").replace("]]>", "")
 

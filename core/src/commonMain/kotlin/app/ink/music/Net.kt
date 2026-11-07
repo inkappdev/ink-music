@@ -32,6 +32,21 @@ fun urlEncode(s: String): String = buildString {
 }
 private const val HEX = "0123456789ABCDEF"
 
+/** A form's or a query's value decoded, as Java's URLDecoder does it (+ as a space, %XX as UTF-8 bytes). */
+fun urlDecode(s: String): String {
+    val out = ArrayList<Byte>(s.length)
+    var i = 0
+    while (i < s.length) {
+        val c = s[i]
+        when {
+            c == '+' -> { out.add(' '.code.toByte()); i++ }
+            c == '%' && i + 2 < s.length -> { out.add(s.substring(i + 1, i + 3).toInt(16).toByte()); i += 3 }
+            else -> { c.toString().encodeToByteArray().forEach { out.add(it) }; i++ }
+        }
+    }
+    return out.toByteArray().decodeToString()
+}
+
 /** Bytes as lower-case hex. */
 fun ByteArray.hex(): String = joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
 

@@ -5,6 +5,7 @@ package app.ink.music
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
@@ -34,3 +35,13 @@ fun rfc1123(s: String): Long? {
     val days = LocalDate(year, month + 1, d.toInt()).toEpochDays().toLong()
     return ((days * 86_400 + h.toInt() * 3_600 + min.toInt() * 60 + (sec.toIntOrNull() ?: 0)) - offset * 60L) * 1000
 }
+
+/** An ISO 8601 moment ("2026-11-07T12:34:56-08:00", "…Z", with fractions): ms since 1970, or null. */
+fun iso8601(s: String): Long? = runCatching { Instant.parse(s.trim()).toEpochMilliseconds() }.getOrNull()
+
+/** A wall-clock time in a named zone ("America/New_York"), as ms since 1970. */
+fun zoned(zone: String, year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int): Long =
+    kotlinx.datetime.LocalDateTime(year, month, day, hour, minute, second).toInstant(TimeZone.of(zone)).toEpochMilliseconds()
+
+/** Today in a named zone. */
+fun todayIn(zone: String): LocalDate = Instant.fromEpochMilliseconds(nowMs()).toLocalDateTime(TimeZone.of(zone)).date
