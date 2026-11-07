@@ -1,0 +1,48 @@
+# The iPhone app's Xcode project, made by xcodegen (tools/build-ios.sh): the Swift wrapper, the Kotlin framework built
+# from ios/, the two fonts. Signed with Bronson's own Apple ID (a free account's builds last 7 days).
+name: InkMusic
+options:
+  bundleIdPrefix: app.ink
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: DASBFN6QZT
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+targets:
+  InkMusic:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: ../../app/src/main/res/font
+        buildPhase: resources
+    dependencies:
+      - framework: ../build/bin/iosArm64/releaseFramework/InkMusic.framework
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.ink.music.iphone
+        PRODUCT_NAME: ink music
+        FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../build/bin/iosArm64/releaseFramework
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: ink music
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        UILaunchScreen:
+          UIColorName: ""
+        UIBackgroundModes: [audio]
+        UIUserInterfaceStyle: Dark
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        CADisableMinimumFrameDurationOnPhone: true
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: "ink music plays from your server and finds your speakers and computer on this network."

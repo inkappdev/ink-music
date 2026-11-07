@@ -22,3 +22,5 @@ include(":desktop")
 include(":core")
 // YouTube Music's own API, by hand (InnerTube.kt): the phone's full build and the desktop's, never the play build
 include(":youtube")
+// ink music on an iPhone: only with -Pios, on a Mac (tools/build-ios.sh)
+if (providers.gradleProperty("ios").orNull != null) include(":ios")
