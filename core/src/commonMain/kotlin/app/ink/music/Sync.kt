@@ -181,6 +181,11 @@ object Sync {
         fun loved(key: String, on: Boolean, song: JSONObject)
         /** The phone's YouTube Music sign-in, to hand the computer (null: none, or not the phone). */
         fun youtube(): String? = null
+        /**
+         * The YouTube Music sign-in for `peer` in particular: the phone's for every computer, as before; a computer's
+         * only for a device that asked for it ([wants] "youtube": the iPhone, which can't sign in itself).
+         */
+        fun youtube(peer: Peer): String? = youtube()
         /** A YouTube Music sign-in from the phone (the computer). */
         fun takeYoutube(auth: String) {}
         /** The phone's Spotify passes (an hour's), for the computer's canvases ([SpotifyCanvas.Pass]); null: none. */
@@ -234,7 +239,7 @@ object Sync {
         }
         return JSONObject().put("id", kept.id()).put("name", side.name)
             .put("heard", JSONObject().put("lines", lines).put("upto", upto).put("want", want))
-            .put("loves", kept.loves()).put("signed", signed).put("youtube", side.youtube() ?: "")
+            .put("loves", kept.loves()).put("signed", signed).put("youtube", side.youtube(peer) ?: "")
             .put("spotify", side.spotify() ?: "")
             .put("spotifySignIn", side.spotifySignIn(peer) ?: "")
             .put("wants", JSONArray(side.wants()))

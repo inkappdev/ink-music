@@ -89,6 +89,12 @@ object TubeAccount {
     /** The cookie signed in with, if any (a sign-in handed again is taken only if it's another). */
     fun cookie(): String? = auth?.optString("cookie")
 
+    /** The sign-in as the phone hands it (cookie, visitor, sync, version), to hand on to a device that asks (the iPhone). */
+    fun handover(): String? = auth?.let { a ->
+        JSONObject().put("cookie", a.optString("cookie")).put("visitor", a.optString("visitor")).put("sync", a.optString("sync"))
+            .put("version", a.optString("version")).toString()
+    }
+
     /** The sign-in handed over: tried (who are they?), kept if it works. */
     fun take(o: JSONObject): Who? {
         val cookie = o.optString("cookie").ifEmpty { return null }

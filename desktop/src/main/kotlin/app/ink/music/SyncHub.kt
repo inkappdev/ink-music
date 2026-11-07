@@ -301,6 +301,9 @@ object SyncHub {
         }
     }
 
+    /** The devices asking for YouTube's sign-in (they say so on each call). */
+    private val askedYoutube = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     val side = object : Sync.Side {
         override val dir: File get() = Home.dir
         override val name: String get() = TubeAccount.name
@@ -327,6 +330,10 @@ object SyncHub {
             applying = true
             try { Loved.toggle(s) } finally { applying = false }
         }
+
+        // the iPhone asks for YouTube's sign-in (it has no way to sign in itself): only a device that asks is handed it
+        override fun wanted(peer: Sync.Peer, what: List<String>) { if ("youtube" in what) askedYoutube += peer.id else askedYoutube -= peer.id }
+        override fun youtube(peer: Sync.Peer): String? = if (peer.id in askedYoutube) TubeAccount.handover() else null
 
         override fun takeYoutube(auth: String) {
             val o = runCatching { JSONObject(auth) }.getOrNull() ?: return

@@ -24,7 +24,7 @@ interface TubeJs {
  *  - the iOS app's link, which plays a music video (not a song) with no token.
  * Blocking: off the main thread.
  */
-class TubeStream(private val js: TubeJs, private val dir: File, private val cookie: String? = null) {
+class TubeStream(private val js: TubeJs, private val dir: File, private val signed: InnerTube? = null) {
     data class Stream(val url: String, val mime: String, val kbps: Int, val how: String)
 
     private val guard = Guard()
@@ -40,13 +40,13 @@ class TubeStream(private val js: TubeJs, private val dir: File, private val cook
     private fun ready(): Pair<InnerTube, InnerTube.Session>? = guard.run {
         val s = session
         if (t != null && s != null && code != null) return@run t!! to s
-        val got = InnerTube(cookie).session() ?: return@run null
-        val tube = InnerTube(cookie, got.visitorData, got.dataSyncId?.substringBefore("||")?.takeIf { cookie != null && it.isNotEmpty() })
+        val got = (signed ?: InnerTube()).session() ?: return@run null
+        val tube = signed ?: InnerTube(null, got.visitorData)
         val url = got.playerUrl ?: return@run null
         val kept = player(url, tube) ?: return@run null
         t = tube; session = got; code = kept.first; sts = kept.second
-        streaming = (if (cookie != null) got.dataSyncId else got.visitorData)?.let { js.poToken(it) }
-        log("session: ${if (cookie != null) "signed in" else "a visitor"}, player ${url.substringAfter("/player/").substringBefore('/')}, " +
+        streaming = (if (signed != null) got.dataSyncId else got.visitorData)?.let { js.poToken(it) }
+        log("session: ${if (signed != null) "signed in" else "a visitor"}, player ${url.substringAfter("/player/").substringBefore('/')}, " +
             "streaming poToken ${if (streaming != null) "made" else "none"}")
         tube to got
     }
@@ -65,7 +65,9 @@ class TubeStream(private val js: TubeJs, private val dir: File, private val cook
     /** Forgotten, so the next song makes a new session (a token turned away, the player changed). */
     fun reset() = guard.run { t = null; session = null; code = null; streaming = null }
 
-    fun stream(videoId: String): Stream? = vision(videoId) ?: web(videoId) ?: ios(videoId)
+    // signed in, the web player's first: only it offers Premium's 256k and your uploads
+    fun stream(videoId: String): Stream? =
+        if (signed != null) web(videoId) ?: vision(videoId) ?: ios(videoId) else vision(videoId) ?: web(videoId) ?: ios(videoId)
 
     private var visitor: String? = null
 
