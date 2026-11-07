@@ -833,24 +833,9 @@ private fun Times(n: Player.Now, modifier: Modifier = Modifier) {
     BasicText(if (n.song.station) "live" else "${clock(pos)} / ${clock(n.duration)}", style = pixel(12.sp, Ink.mid), modifier = modifier)
 }
 
-/** The 1 px line filling with the song in the cover's colour; a click along it goes there. */
+/** The line filling with the song in the cover's colour, to go anywhere in it ([SeekLine]). */
 @Composable
-fun Line(n: Player.Now, accent: Color, modifier: Modifier = Modifier) {
-    val pos by Player.position.collectAsState()
-    // a station has no length (mpv's guess is the stream's buffer): the line stays a hairline
-    val frac = if (n.duration > 0 && !n.song.station) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
-    // a line too thin to aim at: its click reaches 8 dp either side of it
-    Box(
-        modifier.fillMaxWidth().height(17.dp).pointerInput(n.duration) {
-            detectTapGestures { at -> if (n.duration > 0 && !n.song.station) Player.seek((at.x / size.width * n.duration).toLong()) }
-        },
-        contentAlignment = Alignment.BottomStart,
-    ) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
-            Box(Modifier.fillMaxWidth(frac).height(1.dp).background(accent))
-        }
-    }
-}
+fun Line(n: Player.Now, accent: Color, modifier: Modifier = Modifier) = SeekLine(n, accent, modifier)
 
 /** The queue, as words: played dim, the one playing lit, the rest as they come. A click plays from there. */
 @Composable

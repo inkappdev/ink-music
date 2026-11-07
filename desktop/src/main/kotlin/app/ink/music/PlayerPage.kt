@@ -47,6 +47,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.runtime.MutableState
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -254,41 +263,74 @@ fun Backdrop(cover: Cover?, look: Look, song: Song? = null, playing: Boolean = f
 }
 
 /**
- * The times, then the 1 px line filling with the song in the cover's colour, ruled straight onto the cover's top
- * edge, what's heard dead centre between the times. Click along the line, or drag, to go there: the times light
- * while the mouse is down, the song jumps there on letting go.
+ * The times, then the line filling with the song in the cover's colour, ruled straight onto the cover's top edge, what's
+ * heard dead centre between the times. The line is the [SeekLine]: the times light while it's held.
  */
 @Composable
 fun Scrubber(n: Player.Now, accent: Color, modifier: Modifier = Modifier, middle: @Composable () -> Unit = {}) {
     val pos by Player.position.collectAsState()
-    var at by remember { mutableStateOf<Long?>(null) }
+    val held = remember { mutableStateOf<Long?>(null) }
+    val at = held.value
     val live = !n.song.station && n.duration > 0
     val shown = at ?: pos
     val times by animateColorAsState(if (at != null) Ink.ink else Ink.mid, tween(Motion.FADE), label = "times")
-    fun where(x: Float, width: Int) = ((x / width).coerceIn(0f, 1f) * n.duration).toLong()
     Column(modifier) {
         Box(Modifier.fillMaxWidth()) {
             BasicText(if (n.song.station) "live" else clock(shown), style = pixel(12.sp, times), modifier = Modifier.align(Alignment.CenterStart))
             Box(Modifier.align(Alignment.Center)) { middle() }
             if (live) BasicText("-" + clock((n.duration - shown).coerceAtLeast(0)), style = pixel(12.sp, times), modifier = Modifier.align(Alignment.CenterEnd))
         }
-        val frac = if (live) (shown.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
-        // a line too thin to aim at: its click reaches up 16 dp over it
-        Box(
-            Modifier.fillMaxWidth().height(17.dp)
-                .pointerInput(n.duration, n.song.id) { detectTapGestures { o -> if (live) Player.seek(where(o.x, size.width)) } }
-                .pointerInput(n.duration, n.song.id) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { o -> if (live) at = where(o.x, size.width) },
-                        onDragEnd = { at?.let(Player::seek); at = null },
-                        onDragCancel = { at = null },
-                    ) { c, _ -> c.consume(); if (live) at = where(c.position.x, size.width) }
-                },
-            contentAlignment = Alignment.BottomStart,
-        ) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
-                Box(Modifier.fillMaxWidth(frac).height(1.dp).background(accent))
+        SeekLine(n, accent, held = held)
+    }
+}
+
+/**
+ * A song's line to go anywhere in it (2026-11-07: "an easier way to scrub songs on desktop"): under the mouse it thickens
+ * and says the time a click would go to, the hand over it; a click goes there, a drag goes along (the song jumps on
+ * letting go), the wheel or a trackpad's swipe moves five seconds a notch; ← and → ten (Main's keys). Its reach is
+ * 24 dp over the line, the line itself on its foot (on the cover's top edge, in the player).
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: MutableState<Long?> = remember { mutableStateOf(null) }) {
+    val pos by Player.position.collectAsState()
+    val live = !n.song.station && n.duration > 0
+    var hover by remember { mutableStateOf<Float?>(null) }   // where the mouse is along it, 0 to 1
+    var width by remember { mutableStateOf(1) }
+    val at = held.value
+    val frac = if (live) ((at ?: pos).toFloat() / n.duration).coerceIn(0f, 1f) else 0f
+    val thick by animateDpAsState(if (live && (hover != null || at != null)) 3.dp else 1.dp, tween(Motion.FADE), label = "thick")
+    fun where(x: Float) = ((x / width).coerceIn(0f, 1f) * n.duration).toLong()
+    Box(
+        modifier.fillMaxWidth().height(24.dp).onSizeChanged { width = it.width.coerceAtLeast(1) }
+            .then(if (live) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier)
+            .onPointerEvent(PointerEventType.Move) { hover = (it.changes.first().position.x / width).coerceIn(0f, 1f) }
+            .onPointerEvent(PointerEventType.Exit) { hover = null }
+            .onPointerEvent(PointerEventType.Scroll) { e ->
+                if (!live) return@onPointerEvent
+                val d = e.changes.first().scrollDelta
+                val step = if (kotlin.math.abs(d.x) > kotlin.math.abs(d.y)) d.x else d.y
+                if (step != 0f) Player.seek((Player.position.value + (step * 5_000).toLong()).coerceIn(0, (n.duration - 1_000).coerceAtLeast(0)))
             }
+            .pointerInput(n.duration, n.song.id) { detectTapGestures { o -> if (live) Player.seek(where(o.x)) } }
+            .pointerInput(n.duration, n.song.id) {
+                detectHorizontalDragGestures(
+                    onDragStart = { o -> if (live) held.value = where(o.x) },
+                    onDragEnd = { held.value?.let(Player::seek); held.value = null },
+                    onDragCancel = { held.value = null },
+                ) { c, _ -> c.consume(); if (live) { held.value = where(c.position.x); hover = (c.position.x / width).coerceIn(0f, 1f) } }
+            },
+    ) {
+        // where a click would go (or where it's held), its time over the line
+        val h = if (at != null) at.toFloat() / n.duration else hover
+        if (live && h != null) {
+            var label by remember { mutableStateOf(0) }
+            BasicText(clock(if (at != null) at else (h * n.duration).toLong()), style = pixel(12.sp, Ink.ink),
+                modifier = Modifier.align(Alignment.TopStart).onSizeChanged { label = it.width }
+                    .offset { IntOffset((h * width - label / 2f).toInt().coerceIn(0, (width - label).coerceAtLeast(0)), 0) })
+        }
+        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(thick).background(Ink.line)) {
+            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(accent))
         }
     }
 }
