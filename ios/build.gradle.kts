@@ -15,6 +15,8 @@ kotlin {
         commonMain.dependencies {
             // what every ink music shares (core, made multiplatform): sync, picks, taste, scrobbling, podcasts...
             implementation(project(":core"))
+            // YouTube Music's own API, by hand, and its streams (shared with the phone's full build and the computer)
+            implementation(project(":youtube"))
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.ui)

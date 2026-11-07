@@ -10,7 +10,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-data class Album(val id: String, val title: String, val artist: String, val cover: String?, val year: Int)
+/** A record: your server's, or YouTube Music's (`youtube`: its browse id, its cover a link). */
+data class Album(val id: String, val title: String, val artist: String, val cover: String?, val year: Int, val youtube: Boolean = false)
 /**
  * A song, an episode or a station: `kind` says which ("server", "episode", "station"); `url` the stream where it isn't
  * the server's; `cover` a server cover id, or a picture's own link (http...).

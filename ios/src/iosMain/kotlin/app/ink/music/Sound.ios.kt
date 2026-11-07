@@ -100,7 +100,23 @@ actual object Sound {
         done()
         heardOf = s; heardAt = nowMs(); heardMs = 0; tickAt = 0
         resumed = nowMs()
+        if (s.kind == "youtube") {
+            // YouTube's link found as it starts (off the main thread: the player, its challenges, its tokens)
+            val at = index
+            _now.value = Now(s, false, 0, s.duration, index, queue.size)
+            scope.launch {
+                val link = Here.off { Tube.stream(s.id) }
+                if (index != at || queue.getOrNull(index)?.id != s.id) return@launch
+                if (link == null) { println("ink-youtube ${s.id}: no stream, on to the next"); if (index + 1 < queue.size) { index++; load() }; return@launch }
+                start(s, NSURL.URLWithString(link) ?: return@launch)
+            }
+            return
+        }
         val url = Server.stream(s)?.let { NSURL.URLWithString(it) } ?: return
+        start(s, url)
+    }
+
+    private fun start(s: Song, url: NSURL) {
         val item = AVPlayerItem(uRL = url)
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         endObserver = NSNotificationCenter.defaultCenter.addObserverForName(AVPlayerItemDidPlayToEndTimeNotification, item, NSOperationQueue.mainQueue) { _ ->

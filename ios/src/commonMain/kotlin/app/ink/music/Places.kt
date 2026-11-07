@@ -49,7 +49,7 @@ object Pages {
     fun close() { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
 }
 
-val PLACES = listOf("listen", "records", "ink", "podcasts", "radio", "settings")
+val PLACES = listOf("listen", "records", "find", "ink", "podcasts", "radio", "settings")
 
 /** The places under one big word: pressed, the others drop down under it (as the phone's). The player at the foot. */
 @Composable
@@ -63,6 +63,7 @@ fun Places() {
             when (Pages.place) {
                 "listen" -> ListenPlace(top, foot)
                 "records" -> RecordsPlace(top, foot)
+                "find" -> FindPlace(top, foot)
                 "ink" -> InkPlace(top, foot)
                 "podcasts" -> PodcastsPlace(top, foot)
                 "radio" -> RadioPlace(top, foot)

@@ -160,7 +160,9 @@ fun RecordTile(a: Album, modifier: Modifier) {
 /** A record: its cover across, its name, play, its songs; back closes it. */
 @Composable
 fun Record(a: Album, onClose: () -> Unit) {
-    val songs by produceState<List<Song>?>(null, a.id) { value = runCatching { Server.songs(a.id) }.getOrDefault(emptyList()) }
+    val songs by produceState<List<Song>?>(null, a.id) {
+        value = runCatching { if (a.youtube) Here.off { Tube.songs(a) } else Server.songs(a.id) }.getOrDefault(emptyList())
+    }
     val now by Sound.now.collectAsState()
     LazyColumn(Modifier.fillMaxSize().background(Ink.black).windowInsetsPadding(WindowInsets.safeDrawing),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = if (now != null) 110.dp else 30.dp)) {

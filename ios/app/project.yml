@@ -20,6 +20,13 @@ targets:
         buildPhase: resources
       - path: ../../app/src/main/assets/ink-radio.json
         buildPhase: resources
+      # YouTube's streams: yt-dlp's solver (ejs, Unlicense) and NewPipe's BotGuard page, as the phone has them
+      - path: ../../app/src/full/assets/ejs/yt.solver.lib.min.js
+        buildPhase: resources
+      - path: ../../app/src/full/assets/ejs/yt.solver.core.min.js
+        buildPhase: resources
+      - path: ../../app/src/full/assets/po_token.html
+        buildPhase: resources
     dependencies:
       - framework: ../build/bin/iosArm64/releaseFramework/InkMusic.framework
         embed: true

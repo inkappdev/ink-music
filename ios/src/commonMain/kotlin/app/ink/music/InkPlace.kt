@@ -76,12 +76,13 @@ fun InkPlace(top: Dp, foot: Dp) {
     val friday by produceState<Curation.Week?>(null) { value = Here.off { Curation.outThisFriday() } }
     val aired by produceState(emptyList<Curation.Aired>()) { value = Here.off { Curation.onAir() } }
     var said by remember { mutableStateOf<Pair<String, String>?>(null) }
-    // a pick: your server's record of it if you have it, else said so where it was pressed
+    // a pick: your server's record of it if you have it, else YouTube Music's, else said so where it was pressed
     fun open(p: Curation.Pick) {
-        said = Curation.key(p) to "looking on your server"
+        said = Curation.key(p) to "looking"
         scope.launch {
             val a = runCatching { Server.find(p.title, p.artist, p.record) }.getOrNull()
-            if (a != null) { said = null; Pages.open(Page.Record(a)) } else said = Curation.key(p) to "not on your server"
+                ?: runCatching { Here.off { Tube.find(p.title, p.artist, p.record) } }.getOrNull()
+            if (a != null) { said = null; Pages.open(Page.Record(a)) } else said = Curation.key(p) to "couldn't find it"
         }
     }
     val all = picks.orEmpty()

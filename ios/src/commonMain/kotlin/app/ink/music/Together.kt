@@ -37,16 +37,18 @@ object Together {
     fun forget(id: String) { kept.forget(id); peers.value = kept.peers() }
 
     /** A song as the other is told it: a server song by the phone's id for it ("n" and the server's). */
-    fun wire(s: Song): JSONObject = Sync.song(if (s.kind == "server") "n" + s.id else s.id, s.title, s.artist, s.album,
+    fun wire(s: Song): JSONObject = Sync.song(when (s.kind) { "server" -> "n" + s.id; "youtube" -> "y" + s.id; else -> s.id }, s.title, s.artist, s.album,
         if (s.kind == "server") "na" + s.albumId else s.albumId, s.artist, s.duration, s.cover?.takeIf { it.startsWith("http") })
 
-    /** A song the other told of, here: a server song by its id, a station by its, else not (YouTube's: not here yet). */
+    /** A song the other told of, here: a server song by its id, a station by its, YouTube's by its. */
     private fun resolve(o: JSONObject): Song? {
         val id = o.optString("id")
         return when {
             id.startsWith("n") && !id.startsWith("na") -> Song(id.drop(1), o.optString("title"), o.optString("artist"), o.optString("album"),
                 o.optString("albumId").removePrefix("na"), o.optString("albumId").removePrefix("na").ifEmpty { id.drop(1) }, o.optLong("duration"), 0, 1)
             id.startsWith("s") -> Radio.stations().firstOrNull { it.song.id == id }?.song
+            id.startsWith("y") -> Song(id.drop(1), o.optString("title"), o.optString("artist"), o.optString("album"), o.optString("albumId"),
+                o.optString("art").ifEmpty { null }, o.optLong("duration"), 0, 1, kind = "youtube")
             else -> null
         }
     }

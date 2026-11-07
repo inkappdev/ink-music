@@ -30,7 +30,7 @@ object Heard {
 
     fun add(s: Song, at: Long, ms: Long) {
         if (ms < ENOUGH || s.title.isEmpty() || s.kind == "station") return
-        val id = when (s.kind) { "server" -> "n" + s.id; else -> s.id }
+        val id = when (s.kind) { "server" -> "n" + s.id; "youtube" -> "y" + s.id; else -> s.id }
         guard.run {
             runCatching {
                 File(Here.dir, "heard.jsonl").appendText(JSONObject().put("at", at).put("id", id).put("title", s.title).put("artist", s.artist)
