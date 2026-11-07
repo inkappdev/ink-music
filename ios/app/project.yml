@@ -18,6 +18,8 @@ targets:
       - path: Sources
       - path: ../../app/src/main/res/font
         buildPhase: resources
+      - path: ../../app/src/main/assets/ink-radio.json
+        buildPhase: resources
     dependencies:
       - framework: ../build/bin/iosArm64/releaseFramework/InkMusic.framework
         embed: true
@@ -45,4 +47,5 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
-        NSLocalNetworkUsageDescription: "ink music plays from your server and finds your speakers and computer on this network."
+        NSBonjourServices: [_inksync._tcp, _inkmusic._tcp]
+        NSLocalNetworkUsageDescription: "ink music plays from your server and keeps in step with ink music on your computer, on this wifi."

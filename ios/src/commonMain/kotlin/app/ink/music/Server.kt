@@ -11,8 +11,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 data class Album(val id: String, val title: String, val artist: String, val cover: String?, val year: Int)
+/**
+ * A song, an episode or a station: `kind` says which ("server", "episode", "station"); `url` the stream where it isn't
+ * the server's; `cover` a server cover id, or a picture's own link (http...).
+ */
 data class Song(val id: String, val title: String, val artist: String, val album: String, val albumId: String, val cover: String?,
-                val duration: Long, val track: Int, val disc: Int)
+                val duration: Long, val track: Int, val disc: Int, val kind: String = "server", val url: String? = null)
 
 /**
  * Your Navidrome (Subsonic), as the phone and the computer read it: signed in once (a token and its salt kept, never the
@@ -23,9 +27,23 @@ object Server {
 
     val account = MutableStateFlow(load())
 
+    /** The sign-in as the phone and the computer keep it (server-account.json, carried by sync), else as kept here before. */
     private fun load(): Account? {
+        runCatching {
+            val o = JSONObject(File(Here.dir, "server-account.json").readText())
+            return Account(o.getString("base"), o.getString("user"), o.getString("token"), o.getString("salt"))
+        }
         val base = Store.get("server.base") ?: return null
         return Account(base, Store.get("server.user") ?: return null, Store.get("server.token") ?: return null, Store.get("server.salt") ?: return null)
+    }
+
+    /** The sign-in file written by sync from the other device: read again. */
+    fun reload() { account.value = load() }
+
+    private fun keep(a: Account?) {
+        val f = File(Here.dir, "server-account.json")
+        if (a == null) { f.delete(); return }
+        Keep.write(f, JSONObject().put("base", a.base).put("user", a.user).put("salt", a.salt).put("token", a.token).put("name", "server").toString())
     }
 
     private fun q(s: String) = s.encodeToByteArray().joinToString("") { b ->
@@ -51,11 +69,11 @@ object Server {
         val salt = (1..12).map { "abcdefghijklmnopqrstuvwxyz0123456789".random() }.joinToString("")
         val a = Account(base, user.trim(), md5(password + salt), salt)
         call("ping", a = a)
-        Store.set("server.base", a.base); Store.set("server.user", a.user); Store.set("server.token", a.token); Store.set("server.salt", a.salt)
+        keep(a)
         account.value = a
     }
 
-    fun signOut() { listOf("server.base", "server.user", "server.token", "server.salt").forEach { Store.set(it, null) }; account.value = null }
+    fun signOut() { listOf("server.base", "server.user", "server.token", "server.salt").forEach { Store.set(it, null) }; keep(null); account.value = null }
 
     private fun str(o: JsonObject, k: String) = o[k]?.jsonPrimitive?.contentOrNull
 
@@ -64,22 +82,51 @@ object Server {
         val out = ArrayList<Album>()
         while (out.size < 5000) {
             val page = (call("getAlbumList2", "type" to type, "size" to 500, "offset" to out.size)["albumList2"]?.jsonObject?.get("album") as? JsonArray).orEmpty()
-            page.map { it.jsonObject }.forEach { a ->
-                out += Album(str(a, "id")!!, str(a, "name") ?: str(a, "title").orEmpty(), str(a, "artist").orEmpty(), str(a, "coverArt"), a["year"]?.jsonPrimitive?.intOrNull ?: 0)
-            }
+            page.map { it.jsonObject }.forEach { out += album(it) }
             if (page.size < 500) break
         }
         return out
     }
 
+    /** One page of records in the server's order ("newest", "frequent", "recent", "starred", "random"). */
+    suspend fun shelf(type: String, n: Int = 20): List<Album> =
+        (call("getAlbumList2", "type" to type, "size" to n)["albumList2"]?.jsonObject?.get("album") as? JsonArray).orEmpty().map { album(it.jsonObject) }
+
+    private fun album(a: JsonObject) =
+        Album(str(a, "id")!!, str(a, "name") ?: str(a, "title").orEmpty(), str(a, "artist").orEmpty(), str(a, "coverArt"), a["year"]?.jsonPrimitive?.intOrNull ?: 0)
+
+    private fun song(s: JsonObject) =
+        Song(str(s, "id")!!, str(s, "title").orEmpty(), str(s, "artist").orEmpty(), str(s, "album").orEmpty(), str(s, "albumId").orEmpty(),
+            str(s, "coverArt"), (s["duration"]?.jsonPrimitive?.intOrNull ?: 0) * 1000L, s["track"]?.jsonPrimitive?.intOrNull ?: 0,
+            s["discNumber"]?.jsonPrimitive?.intOrNull ?: 1)
+
     /** A record's songs, in their order. */
     suspend fun songs(albumId: String): List<Song> =
-        (call("getAlbum", "id" to albumId)["album"]?.jsonObject?.get("song") as? JsonArray).orEmpty().map { it.jsonObject }.map { s ->
-            Song(str(s, "id")!!, str(s, "title").orEmpty(), str(s, "artist").orEmpty(), str(s, "album").orEmpty(), str(s, "albumId").orEmpty(),
-                str(s, "coverArt"), (s["duration"]?.jsonPrimitive?.intOrNull ?: 0) * 1000L, s["track"]?.jsonPrimitive?.intOrNull ?: 0,
-                s["discNumber"]?.jsonPrimitive?.intOrNull ?: 1)
-        }.sortedWith(compareBy({ it.disc }, { it.track }))
+        (call("getAlbum", "id" to albumId)["album"]?.jsonObject?.get("song") as? JsonArray).orEmpty().map { song(it.jsonObject) }
+            .sortedWith(compareBy({ it.disc }, { it.track }))
 
-    fun stream(s: Song): String? = account.value?.let { url(it, "stream", "id" to s.id, "format" to "raw") }
-    fun cover(id: String, size: Int): String? = account.value?.let { url(it, "getCoverArt", "id" to id, "size" to size) }
+    /** A record by its id (a shelf's, a pick found). */
+    suspend fun record(id: String): Album? = call("getAlbum", "id" to id)["album"]?.jsonObject?.let(::album)
+
+    /** Records and songs by a search. */
+    suspend fun search(q: String, records: Int = 20, songs: Int = 30): Pair<List<Album>, List<Song>> {
+        val r = call("search3", "query" to q, "albumCount" to records, "songCount" to songs, "artistCount" to 0)["searchResult3"]?.jsonObject
+        return (r?.get("album") as? JsonArray).orEmpty().map { album(it.jsonObject) } to (r?.get("song") as? JsonArray).orEmpty().map { song(it.jsonObject) }
+    }
+
+    /** A critic's pick found on your server: the record (or the song's record) of that name by that artist, or null. */
+    suspend fun find(title: String, artist: String, record: Boolean): Album? {
+        val t = Search.fold(title.substringBefore(" (").substringBefore(" [")); val a = Search.fold(artist)
+        fun same(name: String, by: String) = Search.fold(name.substringBefore(" (").substringBefore(" [")) == t &&
+            Search.fold(by).let { it == a || it.startsWith("$a ") || a.startsWith("$it ") }
+        val (albums, songs) = runCatching { search("$artist $title", 10, 10) }.getOrDefault(emptyList<Album>() to emptyList())
+        return if (record) albums.firstOrNull { same(it.title, it.artist) }
+        else songs.firstOrNull { same(it.title, it.artist) }?.let { s -> runCatching { record(s.albumId) }.getOrNull() }
+    }
+
+    fun stream(s: Song): String? = s.url ?: account.value?.let { url(it, "stream", "id" to s.id, "format" to "raw") }
+    fun cover(id: String, size: Int): String? = if (id.startsWith("http")) id else account.value?.let { url(it, "getCoverArt", "id" to id, "size" to size) }
+
+    /** Told the server it was heard (its play counts, its "recent"; a ListenBrainz link there too). */
+    suspend fun scrobble(id: String) { runCatching { call("scrobble", "id" to id, "submission" to true) } }
 }

@@ -13,4 +13,9 @@ expect object Sound {
     fun next()
     fun previous()
     fun seek(ms: Long)
+    /** What's queued and where (for "continue here" on the other devices). */
+    fun queue(): List<Song>
+    /** When play was last pressed here (sync: a stop asked for before it passed over). */
+    val resumedAt: Long
+    fun pause()
 }

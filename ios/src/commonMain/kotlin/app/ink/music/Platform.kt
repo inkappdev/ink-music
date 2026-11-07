@@ -11,3 +11,12 @@ expect object Store {
 expect fun md5(s: String): String
 expect fun decodeImage(bytes: ByteArray): ImageBitmap?
 expect fun fontBytes(name: String): ByteArray
+
+/** The app's own folder for its files (Application Support). */
+expect fun appFolder(): String
+/** A file shipped in the app (ink-radio.json). */
+expect fun bundleText(name: String, ext: String): String?
+/** Services of a type on this wifi (Bonjour), each as (its name, "host:port"); the returned function stops looking. */
+expect fun browse(type: String, found: (String, String) -> Unit): () -> Unit
+/** This iPhone's name, as it calls itself ("Bronson's iPhone"). */
+expect fun deviceName(): String

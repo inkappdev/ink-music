@@ -61,3 +61,42 @@ actual fun decodeImage(bytes: ByteArray): ImageBitmap? = runCatching { org.jetbr
 
 actual fun fontBytes(name: String): ByteArray =
     NSBundle.mainBundle.pathForResource(name, "ttf")?.let { NSData.dataWithContentsOfFile(it)?.toByteArray() } ?: ByteArray(0)
+
+actual fun appFolder(): String {
+    val base = platform.Foundation.NSSearchPathForDirectoriesInDomains(platform.Foundation.NSApplicationSupportDirectory, platform.Foundation.NSUserDomainMask, true)
+        .firstOrNull() as? String ?: platform.Foundation.NSTemporaryDirectory()
+    return "$base/ink"
+}
+
+actual fun bundleText(name: String, ext: String): String? =
+    NSBundle.mainBundle.pathForResource(name, ext)?.let { NSData.dataWithContentsOfFile(it)?.toByteArray()?.decodeToString() }
+
+actual fun deviceName(): String = platform.UIKit.UIDevice.currentDevice.name
+
+/** Bonjour: browsing for a type, each found resolved to its host and port (kept alive here till stopped). */
+private class Browser(val found: (String, String) -> Unit) : platform.darwin.NSObject(),
+    platform.Foundation.NSNetServiceBrowserDelegateProtocol, platform.Foundation.NSNetServiceDelegateProtocol {
+    val browser = platform.Foundation.NSNetServiceBrowser()
+    val resolving = ArrayList<platform.Foundation.NSNetService>()
+
+    override fun netServiceBrowser(browser: platform.Foundation.NSNetServiceBrowser, didFindService: platform.Foundation.NSNetService, moreComing: Boolean) {
+        resolving += didFindService
+        didFindService.delegate = this
+        didFindService.resolveWithTimeout(5.0)
+    }
+
+    override fun netServiceDidResolveAddress(sender: platform.Foundation.NSNetService) {
+        val host = sender.hostName?.trimEnd('.') ?: return
+        found(sender.name, "$host:${sender.port}")
+    }
+}
+
+private val browsers = ArrayList<Browser>()
+
+actual fun browse(type: String, found: (String, String) -> Unit): () -> Unit {
+    val b = Browser { name, at -> platform.darwin.dispatch_async(platform.darwin.dispatch_get_main_queue()) { found(name, at) } }
+    b.browser.delegate = b
+    b.browser.searchForServicesOfType("$type.", "local.")
+    browsers += b
+    return { b.browser.stop(); b.resolving.forEach { it.stop() }; browsers -= b }
+}
