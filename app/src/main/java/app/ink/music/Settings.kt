@@ -101,6 +101,14 @@ fun SettingsPage(pages: Pages, part: String? = null) {
             }
             if (part == null) {
                 BasicText("version ${BuildConfig.VERSION_NAME}", style = pixel(12.sp, Ink.mid))
+                // looking for a newer one now (the full build: the play build's store does it), and what it found
+                if (Updates.manual) {
+                    val said by Updates.said.collectAsState()
+                    val offer by Updates.offer.collectAsState()
+                    Word("check for an update", pixel(12.sp), Modifier.padding(top = 6.dp), touch = 8.dp) { Updates.check(ctx, now = true) }
+                    said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 2.dp)) }
+                    offer?.let { Spacer(Modifier.height(14.dp)); UpdateCard(it, side = 0.dp) }
+                }
                 Spacer(Modifier.height(34.dp))
                 SettingsIndex(pages)
             } else Spacer(Modifier.height(30.dp))

@@ -43,13 +43,13 @@ sealed interface Updating {
  * line's shape with no album to colour it.
  */
 @Composable
-fun UpdateCard(u: Update) {
+fun UpdateCard(u: Update, side: androidx.compose.ui.unit.Dp = 20.dp) {
     val ctx = LocalContext.current
     val step by Updates.step.collectAsState()
     val now by Playback.now.collectAsState()
     var all by remember(u.version) { mutableStateOf(false) }
     val shown = if (all) u.notes else u.notes.take(3)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 4.dp, bottom = 22.dp).animateContentSize(tween(Motion.ENTER, easing = Motion.expo))) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = side).padding(top = 4.dp, bottom = 22.dp).animateContentSize(tween(Motion.ENTER, easing = Motion.expo))) {
         BasicText("new ink music", style = pixel(12.sp, Ink.mid))
         BasicText(u.version, style = headline(44.sp), maxLines = 1, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
         shown.forEach { BasicText(it.lowercase(), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 5.dp)) }

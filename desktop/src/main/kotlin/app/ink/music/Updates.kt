@@ -69,16 +69,27 @@ object Updates {
     private val file = File(Home.dir, "update.json")
     private fun kept() = runCatching { JSONObject(file.readText()) }.getOrDefault(JSONObject())
 
-    fun check() {
+    /** What a check asked for in settings found: "looking", "up to date", or why it couldn't (null: nothing to say). */
+    val said = MutableStateFlow<String?>(null)
+    /** Whether this copy can update itself (not run from the source): settings' "check for an update" shown. */
+    val manual: Boolean get() = self != null && Keys.version.isNotEmpty()
+
+    /**
+     * Looks for a newer release: by itself (at most every six hours, a version put aside left aside), or `now`, asked
+     * in settings (2026-11-07): looked for at once, whatever was put aside, and said what it found.
+     */
+    fun check(now: Boolean = false) {
         if (self == null || Keys.version.isEmpty()) return
         scope.launch {
+            if (now) said.value = "looking"
             val k = kept()
             val seen = k.optJSONObject("seen")
-            val fresh = System.currentTimeMillis() - k.optLong("at") < EVERY
-            val r = (if (fresh) seen else null) ?: latest() ?: return@launch
+            val fresh = !now && System.currentTimeMillis() - k.optLong("at") < EVERY
+            val r = (if (fresh) seen else null) ?: latest() ?: run { if (now) said.value = "couldn't reach the updates. try again in a moment"; return@launch }
             if (!fresh) runCatching { file.writeText(k.put("at", System.currentTimeMillis()).put("seen", r).toString()) }
             val version = r.optString("tag_name").removePrefix("v")
-            if (!newer(version, Keys.version) || version == k.optString("aside")) return@launch
+            if (!newer(version, Keys.version) || (!now && version == k.optString("aside"))) { if (now) said.value = "up to date"; return@launch }
+            if (now) said.value = null
             val assets = r.optJSONArray("assets") ?: return@launch
             val all = (0 until assets.length()).map { assets.getJSONObject(it) }
             val it = all.firstOrNull { mine(it.optString("name")) } ?: return@launch

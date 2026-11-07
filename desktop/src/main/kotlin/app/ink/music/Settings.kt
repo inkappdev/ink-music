@@ -206,7 +206,16 @@ private fun AboutSetting() {
     BasicText("INK MUSIC", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     BasicText("free and open, gpl-3.0. no ads, no account, nothing sold", style = pixel(12.sp, Ink.mid))
+    if (Keys.version.isNotEmpty()) BasicText("version ${Keys.version}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
     if (Keys.build.isNotEmpty()) BasicText("build ${Keys.build}", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(top = 4.dp))
+    // looking for a newer one now, and what it found (the update itself shown here to take)
+    if (Updates.manual) {
+        val said by Updates.said.collectAsState()
+        val offer by Updates.offer.collectAsState()
+        Word("check for an update", pixel(12.sp), Modifier.padding(top = 6.dp), touch = 8.dp) { Updates.check(now = true) }
+        said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 2.dp)) }
+        offer?.let { Spacer(Modifier.height(14.dp)); UpdateCard(it) }
+    }
     Spacer(Modifier.height(10.dp))
     Word("the code", pixel(14.sp, Ink.mid), touch = 8.dp) { browse("https://github.com/inkappdev/ink-music") }
     Spacer(Modifier.height(36.dp))
