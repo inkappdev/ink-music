@@ -160,6 +160,7 @@ actual object Sound {
         if (heardMs >= Heard.ENOUGH) {
             Heard.add(s, heardAt, heardMs)
             if (s.kind == "server") scope.launch { Server.scrobble(s.id) }
+            if (s.kind == "youtube") Here.work.launch { Tube.played(s.id) }
         }
         if (s.kind == "episode") { val p = position(); Here.work.launch { if (Podcasts.place(s.id) != -1L) Podcasts.setPlace(s.id, p) } }
     }

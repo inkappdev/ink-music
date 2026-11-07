@@ -49,6 +49,7 @@ fun SettingsPlace(top: Dp, foot: Dp) {
     val account by Server.account.collectAsState()
     val peers by Together.peers.collectAsState()
     val said by Together.said.collectAsState()
+    val who by Tube.who.collectAsState()
     val scope = rememberCoroutineScope()
     var syncing by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top, bottom = foot)) {
@@ -74,7 +75,11 @@ fun SettingsPlace(top: Dp, foot: Dp) {
                 }
                 Word("pair a computer", pixel(14.sp, if (peers.isEmpty()) Ink.ink else Ink.mid)) { Pages.pairing = true }
             }
-            Section("ink music", "free, open source, for your iphone. youtube music comes later") {
+            Section("youtube music", who?.let { "signed in as ${it.name.lowercase()}" + if (it.handle.isNotEmpty()) ", ${it.handle.lowercase()}" else "" }
+                ?: if (peers.isEmpty()) "pair a computer signed in to youtube music, and it comes across" else "comes across from your computer at the next sync") {
+                if (who != null) Word("sign out here", pixel(14.sp, Ink.mid)) { Tube.signOut() }
+            }
+            Section("ink music", "free, open source, for your iphone") {
                 BasicText("made by ink", style = pixel(12.sp, Ink.mid))
             }
         }

@@ -67,6 +67,9 @@ object Together {
         }
         override fun loved(key: String, on: Boolean, song: JSONObject) {}
         override fun signedIn(what: String) { if (what == "server") Server.reload(); changed.value++ }
+        // YouTube's sign-in asked of the computer (it hands on the phone's): the iPhone can't sign in itself
+        override fun wants(): List<String> = listOf("youtube")
+        override fun takeYoutube(auth: String) { Tube.take(auth); changed.value++ }
         override fun heardChanged() { changed.value++ }
         override fun podcastsChanged() { changed.value++ }
         override fun theirs(peer: Sync.Peer, now: JSONObject?) { theirs.value = now?.let { offer(peer, it) } }

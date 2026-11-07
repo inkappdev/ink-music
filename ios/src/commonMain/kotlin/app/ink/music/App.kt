@@ -62,7 +62,7 @@ import kotlinx.coroutines.launch
 fun App() {
     val account by Server.account.collectAsState()
     val peers by Together.peers.collectAsState()
-    LaunchedEffect(Unit) { Here.dir; Together.open() }
+    LaunchedEffect(Unit) { Here.dir; Here.off { Tube.start() }; Together.open() }
     Box(Modifier.fillMaxSize().background(Ink.black)) {
         if (account == null) {
             if (Pages.pairing) Pairing { Pages.pairing = false } else SignIn(paired = peers.isNotEmpty())

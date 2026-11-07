@@ -38,6 +38,8 @@ fun ListenPlace(top: Dp, foot: Dp) {
             .map { (name, type) -> name to runCatching { Server.shelf(type, 24) }.getOrDefault(emptyList()).filter { seen.add(it.id) } }
             .filter { it.second.isNotEmpty() }
     }
+    val who by Tube.who.collectAsState()
+    val tube by produceState<Tube.Library?>(Tube.library.value, who, changed) { value = Here.off { Tube.readLibrary() } }
     val episodes by produceState<List<Pair<Podcasts.Show, Podcasts.Episode>>>(emptyList(), changed) { value = Here.off { Podcasts.fresh(n = 8) } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top - 26.dp, bottom = foot)) {
         offer?.let { o ->
@@ -57,6 +59,24 @@ fun ListenPlace(top: Dp, foot: Dp) {
         if (episodes.isNotEmpty()) item {
             Label("new episodes")
             episodes.take(4).forEach { (show, e) -> Named(e.title, show.title) { Sound.play(listOf(episodeSong(show, e)), 0) } }
+        }
+        tube?.let { lib ->
+            if (lib.mixes.isNotEmpty()) item(key = "mixes") {
+                Label("your mixes")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(lib.mixes, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) } }
+            }
+            if (lib.liked.isNotEmpty()) item(key = "liked") {
+                Label("liked on youtube")
+                lib.liked.take(4).forEachIndexed { i, s -> Named(s.title, s.artist) { Sound.play(lib.liked, i) } }
+                Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                    Word("play all ${lib.liked.size}", pixel(14.sp)) { Sound.play(lib.liked, 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid)) { Sound.play(lib.liked.shuffled(), 0) }
+                }
+            }
+            if (lib.lists.isNotEmpty()) item(key = "lists") {
+                Label("your playlists")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(lib.lists, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) } }
+            }
         }
         if (shelves == null) item { Label("reading your server") }
         shelves.orEmpty().forEach { (name, albums) ->
