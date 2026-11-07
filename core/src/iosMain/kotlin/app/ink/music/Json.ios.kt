@@ -40,6 +40,8 @@ actual class JSONObject actual constructor() {
         map.putAll(v.map)
     }
 
+    actual constructor(map: Map<*, *>) : this() { map.forEach { (k, v) -> if (k != null) put(k.toString(), v) } }
+
     actual fun put(key: String, value: Any?): JSONObject { if (value == null) map.remove(key) else map[key] = wrap(value); return this }
     actual fun opt(key: String): Any? = map[key]
     actual fun has(key: String): Boolean = map.containsKey(key)

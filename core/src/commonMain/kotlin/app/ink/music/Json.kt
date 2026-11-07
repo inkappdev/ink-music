@@ -6,6 +6,7 @@ package app.ink.music
  */
 expect class JSONObject() {
     constructor(source: String)
+    constructor(map: Map<*, *>)
     fun put(key: String, value: Any?): JSONObject
     fun opt(key: String): Any?
     fun has(key: String): Boolean

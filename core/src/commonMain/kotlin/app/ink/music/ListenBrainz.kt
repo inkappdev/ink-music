@@ -2,15 +2,12 @@ package app.ink.music
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * ListenBrainz (listenbrainz.org, MetaBrainz's open listening history): what you play, told there
@@ -67,7 +64,9 @@ object ListenBrainz {
     }
 
     /** A listen (blocking): sent, with any kept from before; kept to send later if it can't go. */
-    @Synchronized fun listened(dir: File, s: Said, at: Long) {
+    private val guard = Guard()
+    fun listened(dir: File, s: Said, at: Long) = guard.run { listened0(dir, s, at) }
+    private fun listened0(dir: File, s: Said, at: Long) {
         val a = read(dir) ?: return
         val w = waiting(dir)
         val before = runCatching { w.readLines().mapNotNull { runCatching { JSONObject(it) }.getOrNull() } }.getOrDefault(emptyList())

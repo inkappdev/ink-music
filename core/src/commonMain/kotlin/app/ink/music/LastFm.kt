@@ -1,15 +1,11 @@
 package app.ink.music
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-import java.security.MessageDigest
 
 /**
  * Last.fm: what you play, scrobbled there, as ListenBrainz has it. Connected once by your Last.fm name and password
@@ -65,7 +61,9 @@ object LastFm {
     }
 
     /** A scrobble (blocking): sent, with any kept from before (fifty a call); kept to send later if it can't go. */
-    @Synchronized fun listened(dir: File, s: ListenBrainz.Said, at: Long) {
+    private val guard = Guard()
+    fun listened(dir: File, s: ListenBrainz.Said, at: Long) = guard.run { listened0(dir, s, at) }
+    private fun listened0(dir: File, s: ListenBrainz.Said, at: Long) {
         val a = read(dir) ?: return
         if (!available) return
         val w = waiting(dir)
@@ -104,11 +102,9 @@ object LastFm {
     private fun call(params: Map<String, String>): JSONObject {
         val all = params + ("api_key" to key)
         // the signature: every parameter, sorted by name, name then value, the secret on the end, md5
-        val sig = MessageDigest.getInstance("MD5").digest(
-            (all.toSortedMap().entries.joinToString("") { it.key + it.value } + secret).toByteArray(),
-        ).joinToString("") { "%02x".format(it) }
+        val sig = md5((all.entries.sortedBy { it.key }.joinToString("") { it.key + it.value } + secret).encodeToByteArray()).hex()
         val body = (all + ("api_sig" to sig) + ("format" to "json")).entries
-            .joinToString("&") { URLEncoder.encode(it.key, "UTF-8") + "=" + URLEncoder.encode(it.value, "UTF-8") }
+            .joinToString("&") { urlEncode(it.key) + "=" + urlEncode(it.value) }
         val r = http(API, "POST", mapOf("Content-Type" to "application/x-www-form-urlencoded", "User-Agent" to AGENT), body.encodeToByteArray(), 10_000, 20_000, follow = 0)
         val code = r.code
         val o = runCatching { JSONObject(r.text) }.getOrDefault(JSONObject())

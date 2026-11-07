@@ -19,12 +19,9 @@ kotlin {
         commonMain.dependencies {
             // dates and times everywhere (the iPhone has no java.time)
             api("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1")
+            // coroutines (the phone's is 1.9, the computer's Compose brings its own: the newest of them is used)
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
         }
-        jvmMain.dependencies {
-            // each app brings its own (the phone 1.9, the desktop with Compose): the JVM only compiles against it
-            compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-        }
-        if (ios) iosMain.dependencies { implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2") }
         jvmMain.dependencies {
             // Android has its own org.json; the desktop brings one
             compileOnly("org.json:json:20240303")
