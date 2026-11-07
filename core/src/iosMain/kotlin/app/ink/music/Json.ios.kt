@@ -234,3 +234,4 @@ private class Parser(val s: String) {
         return t.toDoubleOrNull() ?: throw JSONException("not a number: $t")
     }
 }
+actual val JSON_NULL: Any = JsonNull

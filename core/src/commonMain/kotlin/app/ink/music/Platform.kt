@@ -15,3 +15,12 @@ expect fun nowMs(): Long
 
 /** Lower case, accents off ("Lila Iké" is "lila ike"). */
 expect fun fold(s: String): String
+
+/** A lock one can wait on inside of, till woken or a while has passed (Java's wait and notifyAll; NSCondition). */
+expect class Signal() {
+    fun <T> run(f: () -> T): T
+    /** Inside [run] only: the lock let go while waiting. */
+    fun await(ms: Long)
+    /** Inside [run] only: every waiter woken. */
+    fun wake()
+}

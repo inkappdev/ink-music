@@ -57,3 +57,6 @@ expect class JSONArray() {
     fun getJSONArray(index: Int): JSONArray
     fun remove(index: Int): Any?
 }
+
+/** JSON's null as a value put in an object (org.json's JSONObject.NULL). */
+expect val JSON_NULL: Any
