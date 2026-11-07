@@ -13,6 +13,8 @@ kotlin {
     }
     sourceSets {
         commonMain.dependencies {
+            // what every ink music shares (core, made multiplatform): sync, picks, taste, scrobbling, podcasts...
+            implementation(project(":core"))
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.ui)

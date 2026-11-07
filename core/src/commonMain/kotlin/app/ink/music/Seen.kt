@@ -7,7 +7,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
-import kotlin.jvm.Synchronized
+import kotlin.concurrent.Volatile
 import kotlin.time.Duration.Companion.hours
 
 /**
@@ -21,6 +21,7 @@ class Seen(private val file: File) {
 
     private val all = HashMap<String, Entry>()
     @Volatile private var dirty = false
+    private val guard = Guard()
 
     init {
         runCatching {
@@ -35,7 +36,8 @@ class Seen(private val file: File) {
     }
 
     /** Shown now (counted once a day). */
-    @Synchronized fun shown(key: String, now: Long = nowMs()) {
+    fun shown(key: String, now: Long = nowMs()) = guard.run { shown0(key, now) }
+    private fun shown0(key: String, now: Long) {
         val e = all[key]
         if (e == null) { all[key] = Entry(now, now, 1, 0, 0, false); dirty = true; return }
         // back after resting a week and more: shown afresh
@@ -44,26 +46,28 @@ class Seen(private val file: File) {
         e.last = now
     }
 
-    @Synchronized fun tapped(key: String, now: Long = nowMs()) {
+    fun tapped(key: String, now: Long = nowMs()) = guard.run { tapped0(key, now) }
+    private fun tapped0(key: String, now: Long) {
         val e = all.getOrPut(key) { Entry(now, now, 1, 0, 0, false) }
         e.taps++; e.tappedAt = now; dirty = true
     }
 
     /** Not for me: never shown again. */
-    @Synchronized fun hide(key: String) { all.getOrPut(key) { Entry(nowMs(), nowMs(), 1, 0, 0, false) }.hidden = true; dirty = true }
+    fun hide(key: String) = guard.run { all.getOrPut(key) { Entry(nowMs(), nowMs(), 1, 0, 0, false) }.hidden = true; dirty = true }
 
     /** When it was first shown; null never. */
-    @Synchronized fun first(key: String): Long? = all[key]?.first
+    fun first(key: String): Long? = guard.run { all[key]?.first }
 
-    @Synchronized fun taps(key: String): Int = all[key]?.taps ?: 0
-    @Synchronized fun days(key: String): Int = all[key]?.days ?: 0
-    @Synchronized fun tappedAt(key: String): Long = all[key]?.tappedAt ?: 0
+    fun taps(key: String): Int = guard.run { all[key]?.taps ?: 0 }
+    fun days(key: String): Int = guard.run { all[key]?.days ?: 0 }
+    fun tappedAt(key: String): Long = guard.run { all[key]?.tappedAt ?: 0 }
 
     /**
      * How fresh it still is to you, 1 to 0: shown on a day or two unopened it's fine, three .55, four .35, five or more it
      * rests (.05) a week from when it was last shown; opened, .8 (it's yours now, not news); said not for you, 0.
      */
-    @Synchronized fun fresh(key: String, now: Long = nowMs()): Double {
+    fun fresh(key: String, now: Long = nowMs()): Double = guard.run { fresh0(key, now) }
+    private fun fresh0(key: String, now: Long): Double {
         val e = all[key] ?: return 1.0
         if (e.hidden) return 0.0
         if (e.taps > 0) return .8
@@ -77,7 +81,8 @@ class Seen(private val file: File) {
     }
 
     /** Written down (now and then: a shelf shown asks often). */
-    @Synchronized fun save() {
+    fun save() = guard.run { save0() }
+    private fun save0() {
         if (!dirty) return
         dirty = false
         val o = JSONObject()

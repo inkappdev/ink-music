@@ -5,6 +5,11 @@ package app.ink.music
  * and the computer's, as before; iosMain: the iPhone's).
  */
 
+/** A lock: one thread at a time through `run` (Java's synchronized on the JVM, NSRecursiveLock on the iPhone). */
+expect class Guard() {
+    fun <T> run(f: () -> T): T
+}
+
 /** Now, in ms since 1970 (the wall clock). */
 expect fun nowMs(): Long
 

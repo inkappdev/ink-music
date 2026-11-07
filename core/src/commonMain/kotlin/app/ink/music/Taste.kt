@@ -74,7 +74,7 @@ class Taste private constructor(
             // three songs' worth lately is near (.63); ten, very (.96)
             weight.forEach { (n, w) -> near[n] = 1 - exp(-w / 3.0); why[n] = Why.Played(times[n] ?: 0) }
             for (a in loved) for (n in names(a).take(1)) { near[n] = min(1.0, (near[n] ?: 0.0) + .35); if (why[n] == null || (near[n] ?: 0.0) < .5) why[n] = Why.Loved }
-            for (a in kept) for (n in names(a).take(1)) if ((near[n] ?: 0.0) < .15) { near[n] = .15; why.putIfAbsent(n, Why.Kept) }
+            for (a in kept) for (n in names(a).take(1)) if ((near[n] ?: 0.0) < .15) { near[n] = .15; if (n !in why) why[n] = Why.Kept }
             // left in its first seconds, lately: a little further each time (never more than .4 off)
             val off = HashMap<String, Double>()
             for (s in skips) if (now - s.at < 60 * DAY) for (n in names(s.artist).take(1)) off[n] = min(.4, (off[n] ?: 0.0) + .06)
