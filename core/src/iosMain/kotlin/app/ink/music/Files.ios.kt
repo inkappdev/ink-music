@@ -63,3 +63,8 @@ actual fun File.appendText(text: String) {
 actual fun File.readLines(): List<String> = readText().lines().let { if (it.lastOrNull()?.isEmpty() == true) it.dropLast(1) else it }
 actual fun File.readBytes(): ByteArray = NSData.dataWithContentsOfFile(getPath())?.toBytes() ?: throw IOException("can't read ${getPath()}")
 actual fun File.writeBytes(bytes: ByteArray) { if (!bytes.data().writeToFile(getPath(), true)) throw IOException("can't write ${getPath()}") }
+actual fun File.moveOver(to: File): Boolean {
+    val fm = NSFileManager.defaultManager
+    if (to.exists()) fm.removeItemAtPath(to.getPath(), null)
+    return fm.moveItemAtPath(getPath(), to.getPath(), null)
+}

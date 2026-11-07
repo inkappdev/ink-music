@@ -1,23 +1,17 @@
 package app.ink.music
 
-import org.json.JSONArray
-import org.json.JSONObject
-import org.w3c.dom.Element
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-import java.security.MessageDigest
-import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.concurrent.Volatile
 
 /**
  * Podcasts (2026-10-31): a show is its RSS feed, an episode a file in it. Found through
  * Apple's directory (its search and its chart: free, no key, the feed's link in each), or a feed's link pasted. The
  * shows you follow, each show's episodes as last read, and where you stopped in each episode are kept as files in
- * [dir] (the app's: both the screens and the player read them, so files, never prefs). Plain Kotlin: the computer's
- * too, later.
+ * [dir] (the app's: both the screens and the player read them, so files, never prefs). Plain Kotlin, shared: the phone,
+ * the computer and the iPhone.
  */
 object Podcasts {
+    private val guard = Guard()
+
     /** Where it all's kept: each app sets it before anything else (`files/podcasts`). */
     @Volatile var dir: File? = null
 
@@ -41,7 +35,7 @@ object Podcasts {
 
     /** Shows by name, from Apple's directory. */
     fun search(term: String): List<Show> = runCatching {
-        val q = URLEncoder.encode(term.trim(), "UTF-8")
+        val q = urlEncode(term.trim())
         val a = JSONObject(get("https://itunes.apple.com/search?media=podcast&entity=podcast&limit=30&term=$q")).optJSONArray("results") ?: JSONArray()
         (0 until a.length()).mapNotNull { show(a.optJSONObject(it)) }
     }.getOrDefault(emptyList())
@@ -71,31 +65,24 @@ object Podcasts {
 
     /** A show and its episodes, newest first, read from its feed now (and kept); null if it can't be read. */
     fun fetch(feed: String): Pair<Show, List<Episode>>? = runCatching {
-        val doc = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = true
-            // a feed is someone else's file: no entities fetched or expanded from it
-            runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
-            runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
-            isExpandEntityReferences = false
-        }.newDocumentBuilder().parse(bytes(feed).inputStream())
-        val channel = doc.getElementsByTagName("channel").item(0) as? Element ?: return null
-        val showArt = child(channel, "image")?.getAttribute("href")?.takeIf { it.isNotEmpty() }
-            ?: child(channel, "image")?.let { child(it, "url")?.textContent?.trim() }
+        // a feed is someone else's file: read by our own reader, no entities fetched or expanded from it
+        val doc = Xml.parse(bytes(feed).decodeToString())
+        val channel = (if (doc.tag == "channel") doc else doc.all("channel").firstOrNull()) ?: return null
+        val showArt = channel.child("image")?.attr("href")?.takeIf { it.isNotEmpty() }
+            ?: channel.child("image")?.let { it.child("url")?.text?.trim() }
         val show = Show(
             feed, text(channel, "title"), text(channel, "author").ifEmpty { text(channel, "owner") }, showArt,
             plain(text(channel, "summary").ifEmpty { text(channel, "description") }), text(channel, "link"),
         )
-        val items = channel.getElementsByTagName("item")
-        val episodes = (0 until items.length).mapNotNull { i ->
-            val it = items.item(i) as? Element ?: return@mapNotNull null
-            val enc = child(it, "enclosure") ?: return@mapNotNull null
-            val url = enc.getAttribute("url").takeIf { u -> u.startsWith("http") } ?: return@mapNotNull null
+        val episodes = channel.all("item").mapNotNull {
+            val enc = it.child("enclosure") ?: return@mapNotNull null
+            val url = enc.attr("url").takeIf { u -> u.startsWith("http") } ?: return@mapNotNull null
             val guid = text(it, "guid").ifEmpty { url }
             Episode(
                 id = "e" + hash(feed + "\n" + guid).take(14), feed = feed, title = text(it, "title"), url = url,
-                mime = enc.getAttribute("type"), length = duration(text(it, "duration")), published = date(text(it, "pubDate")),
+                mime = enc.attr("type"), length = duration(text(it, "duration")), published = date(text(it, "pubDate")),
                 notes = plain(text(it, "encoded").ifEmpty { text(it, "description") }.ifEmpty { text(it, "summary") }),
-                art = child(it, "image")?.getAttribute("href")?.takeIf { a -> a.isNotEmpty() },
+                art = it.child("image")?.attr("href")?.takeIf { a -> a.isNotEmpty() },
             )
         }.sortedByDescending { it.published }
         keep(show, episodes)
@@ -103,9 +90,9 @@ object Podcasts {
     }.getOrNull()
 
     /** A show as last read (its episodes too), without the network. */
-    fun kept(feed: String): Pair<Show, List<Episode>>? = synchronized(this) {
-        cache[feed]?.let { return it }
-        val f = dir?.let { File(it, "shows/${hash(feed)}.json") }?.takeIf { it.isFile } ?: return null
+    fun kept(feed: String): Pair<Show, List<Episode>>? = guard.run k@{
+        cache[feed]?.let { return@k it }
+        val f = dir?.let { File(it, "shows/${hash(feed)}.json") }?.takeIf { it.isFile() } ?: return@k null
         runCatching {
             val o = JSONObject(f.readText())
             val show = showOf(o.getJSONObject("show"))
@@ -118,18 +105,18 @@ object Podcasts {
     private val episodes = HashMap<String, Pair<Show, Episode>>()
     private val byUrl = HashMap<String, String>()
 
-    private fun keep(show: Show, list: List<Episode>) = synchronized(this) {
+    private fun keep(show: Show, list: List<Episode>) = guard.run k@{
         cache[show.feed] = show to list
         list.forEach { episodes[it.id] = show to it; byUrl[it.url] = it.id }
-        val d = dir ?: return
+        val d = dir ?: return@k
         // the newest 300 kept (a show twenty years on has thousands: Rogan's 2,773)
         val o = JSONObject().put("show", showJson(show)).put("episodes", JSONArray(list.take(300).map(::episodeJson)))
         write(File(d, "shows/${hash(show.feed)}.json"), o.toString())
     }
 
     /** An episode by its id, and its show: from the shows read this run, else every show kept. */
-    fun episode(id: String): Pair<Show, Episode>? = synchronized(this) {
-        episodes[id]?.let { return it }
+    fun episode(id: String): Pair<Show, Episode>? = guard.run k@{
+        episodes[id]?.let { return@k it }
         dir?.let { File(it, "shows") }?.listFiles()?.forEach { f ->
             runCatching {
                 val o = JSONObject(f.readText())
@@ -146,7 +133,7 @@ object Podcasts {
     }
 
     /** The episode at a link (the player knows only the link: its kept file is found by the id). */
-    fun idOf(url: String): String? = synchronized(this) { byUrl[url] ?: run { episode(""); byUrl[url] } }
+    fun idOf(url: String): String? = guard.run { byUrl[url] ?: run { episode(""); byUrl[url] } }
 
     // ---- following ----
 
@@ -157,15 +144,15 @@ object Podcasts {
 
     fun follows(feed: String) = following().any { it.feed == feed }
 
-    fun follow(show: Show, on: Boolean) = synchronized(this) {
-        val d = dir ?: return
+    fun follow(show: Show, on: Boolean) = guard.run k@{
+        val d = dir ?: return@k
         val now = following().filter { it.feed != show.feed }.let { if (on) listOf(show) + it else it }
         write(File(d, "following.json"), JSONArray(now.map(::showJson)).toString())
     }
 
     /** The newest episodes of the shows you follow (the last `days`, two a show), not yet heard through, newest first. */
     fun fresh(days: Int = 14, n: Int = 20): List<Pair<Show, Episode>> {
-        val since = System.currentTimeMillis() - days * 86_400_000L
+        val since = nowMs() - days * 86_400_000L
         val places = places()
         // two a show at most: a daily one (The Daily) filled the whole shelf (2026-11-01)
         return following().flatMap { s -> kept(s.feed)?.let { (show, list) -> list.filter { it.published > since }.map { show to it } }.orEmpty()
@@ -178,16 +165,16 @@ object Podcasts {
         val d = dir ?: return
         following().forEach { s ->
             val f = File(d, "shows/${hash(s.feed)}.json")
-            if (!f.isFile || System.currentTimeMillis() - f.lastModified() > older) fetch(s.feed)
+            if (!f.isFile() || nowMs() - f.lastModified() > older) fetch(s.feed)
         }
     }
 
     // ---- where you stopped ----
 
     /** Each episode's place: (ms, when said); -1 heard through. */
-    fun places(): Map<String, Pair<Long, Long>> = synchronized(this) {
+    fun places(): Map<String, Pair<Long, Long>> = guard.run k@{
         runCatching {
-            val o = JSONObject(File(dir ?: return emptyMap(), "places.json").readText())
+            val o = JSONObject(File(dir ?: return@k emptyMap(), "places.json").readText())
             o.keys().asSequence().associateWith { k -> o.getJSONArray(k).let { it.getLong(0) to it.optLong(1) } }
         }.getOrDefault(emptyMap())
     }
@@ -195,10 +182,10 @@ object Podcasts {
     /** Where `id` was stopped (ms), 0 never begun, -1 heard through. */
     fun place(id: String): Long = places()[id]?.first ?: 0L
 
-    fun setPlace(id: String, ms: Long) = synchronized(this) {
-        val d = dir ?: return
+    fun setPlace(id: String, ms: Long) = guard.run k@{
+        val d = dir ?: return@k
         val o = runCatching { JSONObject(File(d, "places.json").readText()) }.getOrDefault(JSONObject())
-        o.put(id, JSONArray().put(ms).put(System.currentTimeMillis()))
+        o.put(id, JSONArray().put(ms).put(nowMs()))
         // the last thousand kept
         if (o.length() > 1000) o.keys().asSequence().toList()
             .sortedBy { o.getJSONArray(it).optLong(1) }.take(o.length() - 1000).forEach { o.remove(it) }
@@ -212,18 +199,18 @@ object Podcasts {
         val d = dir ?: return null
         val f = File(d, "following.json")
         val places = runCatching { JSONObject(File(d, "places.json").readText()) }.getOrDefault(JSONObject())
-        return JSONObject().put("following", if (f.isFile) JSONArray(f.readText()) else JSONArray())
-            .put("followingAt", if (f.isFile) f.lastModified() else 0L).put("places", places)
+        return JSONObject().put("following", if (f.isFile()) JSONArray(f.readText()) else JSONArray())
+            .put("followingAt", if (f.isFile()) f.lastModified() else 0L).put("places", places)
     }
 
     /** The other side's taken in: its shows if it changed them later, each episode's place where it was left later. */
-    fun takeSync(o: JSONObject): Boolean = synchronized(this) {
-        val d = dir ?: return false
+    fun takeSync(o: JSONObject): Boolean = guard.run k@{
+        val d = dir ?: return@k false
         var changed = false
         val f = File(d, "following.json")
         val at = o.optLong("followingAt")
         val theirs = o.optJSONArray("following")
-        if (theirs != null && at > (if (f.isFile) f.lastModified() else 0L) && (!f.isFile || f.readText() != theirs.toString())) {
+        if (theirs != null && at > (if (f.isFile()) f.lastModified() else 0L) && (!f.isFile() || f.readText() != theirs.toString())) {
             write(f, theirs.toString()); f.setLastModified(at); changed = true
         }
         val mine = runCatching { JSONObject(File(d, "places.json").readText()) }.getOrDefault(JSONObject())
@@ -249,11 +236,11 @@ object Podcasts {
 
     // ---- the files ----
 
-    fun hash(s: String): String = MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+    fun hash(s: String): String = sha1(s.encodeToByteArray()).hex()
 
     private fun write(f: File, text: String) {
-        f.parentFile?.mkdirs()
-        val t = File(f.parentFile, f.name + ".new")
+        f.getParentFile()?.mkdirs()
+        val t = File(f.getPath() + ".new")
         t.writeText(text)
         Keep.replace(t, f)
     }
@@ -269,13 +256,8 @@ object Podcasts {
 
     // ---- reading a feed ----
 
-    /** An element's first child of that name, any namespace (itunes:image, image). */
-    private fun child(e: Element, name: String): Element? {
-        val kids = e.childNodes
-        for (i in 0 until kids.length) (kids.item(i) as? Element)?.let { if ((it.localName ?: it.tagName.substringAfter(':')) == name) return it }
-        return null
-    }
-    private fun text(e: Element, name: String) = child(e, name)?.textContent?.trim().orEmpty()
+    /** An element's first child's text, by name in any namespace (itunes:summary, summary). */
+    private fun text(e: Xml, name: String) = e.child(name)?.text?.trim().orEmpty()
 
     /** "1:02:03", "62:03" or seconds, as ms. */
     private fun duration(s: String): Long {
@@ -284,16 +266,8 @@ object Podcasts {
         return (parts.fold(0.0) { a, p -> a * 60 + p } * 1000).toLong()
     }
 
-    private fun date(s: String): Long = runCatching {
-        java.time.ZonedDateTime.parse(s.trim().replace(Regex("\\s+"), " "), java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
-    }.getOrElse {
-        // "Mon, 3 Nov 2026 10:00:00 EST" and other zones RFC 1123's parser doesn't know: the zone dropped
-        runCatching {
-            val bare = s.trim().split(Regex("\\s+")).take(5).joinToString(" ")
-            java.time.LocalDateTime.parse(bare, java.time.format.DateTimeFormatter.ofPattern("EEE, d MMM yyyy HH:mm:ss", java.util.Locale.ENGLISH))
-                .toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
-        }.getOrDefault(0L)
-    }
+    /** RFC 1123 ("Mon, 3 Nov 2026 10:00:00 EST", a zone RFC 1123's parser doesn't know read too), else ISO 8601; 0 if neither. */
+    private fun date(s: String): Long = rfc1123(s) ?: iso8601(s) ?: 0L
 
     /** Show notes' HTML as plain text: paragraphs kept, links' words kept, tags and entities gone. */
     fun plain(html: String): String {
@@ -301,12 +275,12 @@ object Podcasts {
         t = t.replace(Regex("<[^>]+>"), "")
         t = t.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
             .replace("&#39;", "'").replace("&apos;", "'")
-            .replace(Regex("&#(\\d+);")) { m -> m.groupValues[1].toIntOrNull()?.let { String(Character.toChars(it)) } ?: "" }
-            .replace(Regex("&#x([0-9a-fA-F]+);")) { m -> m.groupValues[1].toIntOrNull(16)?.let { String(Character.toChars(it)) } ?: "" }
+            .replace(Regex("&#(\\d+);")) { m -> m.groupValues[1].toIntOrNull()?.let(::codePoint) ?: "" }
+            .replace(Regex("&#x([0-9a-fA-F]+);")) { m -> m.groupValues[1].toIntOrNull(16)?.let(::codePoint) ?: "" }
         return t.lines().map { it.trim().replace(Regex("\\s+"), " ") }.joinToString("\n").replace(Regex("\n{3,}"), "\n\n").trim()
     }
 
-    private fun get(url: String) = String(bytes(url))
+    private fun get(url: String) = bytes(url).decodeToString()
 
     /** A link's bytes, its redirects followed (feeds move: http to https, one host to another). */
     private fun bytes(url: String): ByteArray {

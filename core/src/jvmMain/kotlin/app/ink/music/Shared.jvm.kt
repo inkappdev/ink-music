@@ -11,3 +11,8 @@ actual fun File.appendText(text: String) = this.appendText(text, Charsets.UTF_8)
 actual fun File.readLines(): List<String> = this.readLines(Charsets.UTF_8)
 actual fun File.readBytes(): ByteArray = java.nio.file.Files.readAllBytes(toPath())
 actual fun File.writeBytes(bytes: ByteArray) { java.nio.file.Files.write(toPath(), bytes) }
+actual fun File.moveOver(to: File): Boolean = try {
+    java.nio.file.Files.move(toPath(), to.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE); true
+} catch (e: Exception) {
+    runCatching { java.nio.file.Files.move(toPath(), to.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING); true }.getOrDefault(false)
+}

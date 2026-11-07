@@ -27,3 +27,6 @@ expect fun File.appendText(text: String)
 expect fun File.readLines(): List<String>
 expect fun File.readBytes(): ByteArray
 expect fun File.writeBytes(bytes: ByteArray)
+
+/** This file moved over `to`, whatever's there; false if it couldn't be. */
+expect fun File.moveOver(to: File): Boolean
