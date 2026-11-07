@@ -111,9 +111,10 @@ object Updates {
                 when {
                     Home.mac -> mac(got)
                     Home.windows -> windows(got)
-                    else -> linux(got)
+                    else -> linux(got, u.version)
                 }
             }.onFailure {
+                note("${u.name}: $it")
                 step.value = Updating.Failed(if (it is IllegalStateException) it.message.orEmpty() else "couldn't download it")
             }
         }
@@ -154,7 +155,7 @@ object Updates {
     }
 
     /** The system asks for the password, and its own package manager puts it in (libmpv and all); then ink music again. */
-    private fun linux(pkg: File) {
+    private fun linux(pkg: File, version: String) {
         val tool = when {
             pkg.name.endsWith(".deb") && File("/usr/bin/apt-get").exists() -> listOf("apt-get", "install", "-y", pkg.path)
             pkg.name.endsWith(".rpm") && File("/usr/bin/dnf").exists() -> listOf("dnf", "install", "-y", pkg.path)
@@ -165,8 +166,29 @@ object Updates {
             run("xdg-open", pkg.parentFile.path)
             step.value = Updating.Failed("install ${pkg.name} from the folder that opened"); return
         }
-        if (!run("pkexec", *tool.toTypedArray())) error("it wasn't installed")
-        after("exec ${q(self!!)}")
+        val ok = run("pkexec", *tool.toTypedArray())
+        // what's installed now says whether it went in, not pkexec's answer (2026-11-07: dnf put 2.1.5 in, and ink music
+        // said it hadn't and stayed open on the old one)
+        val now = installed()
+        note("installed: pkexec ${if (ok) "ok" else "not ok"}, the system has ${now ?: "nothing"} (wanted $version)")
+        if (now != version) error("it wasn't installed")
+        // opened again from where the package puts it (this one's own file is gone now, replaced)
+        runCatching { after("exec ${q(LINUX_APP)}") }.onFailure { note("couldn't open it again: $it"); error("updated: open ink music again") }
+    }
+
+    private const val LINUX_APP = "/opt/ink-music/bin/ink music"
+
+    /** The version the system's package manager has of ink music now (rpm's or dpkg's), or null. */
+    private fun installed(): String? = runCatching {
+        val cmd = if (rpm) listOf("rpm", "-q", "--qf", "%{VERSION}", "ink-music") else listOf("dpkg-query", "-W", "-f=\${Version}", "ink-music")
+        val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText().trim()
+        if (p.waitFor() == 0) out.substringBefore('-').ifEmpty { null } else null
+    }.getOrNull()
+
+    /** A line in update.log (the app's folder): what an update did, for when one goes wrong. */
+    private fun note(line: String) = runCatching {
+        File(Home.dir, "update.log").appendText("${java.time.LocalDateTime.now().withNano(0)}  $line\n")
     }
 
     /** A script run once this ink music has quit (so nothing's in use), then quit. */
