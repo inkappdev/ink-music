@@ -1,10 +1,5 @@
 package app.ink.music
 
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-
 /**
  * Lyrics timed word by word, from Better Lyrics' service (as Meld has them; 2026-11-01): its TTML, each line and each
  * word with when it's sung, so the sung line lights word by word as it's sung,
@@ -28,7 +23,7 @@ object BetterLyrics {
         } catch (e: Exception) { null }
     }
 
-    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+    private fun enc(s: String) = urlEncode(s)
 
     /** TTML's lines (<p begin>) and words (<span begin>), the text between spans (a space) kept with the word before. */
     fun parse(ttml: String): List<Timed> {

@@ -1,9 +1,5 @@
 package app.ink.music
 
-import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-
 /**
  * A cover for a record whose files have none (2026-10-29), both apps: looked up by
  * its name and whose it is in the catalogs ([Curation.cover]: iTunes, then Deezer), the link kept in `dir` so each
@@ -11,7 +7,8 @@ import java.net.URL
  * A miss is kept only when iTunes could be reached, so a record looked at offline isn't written off.
  */
 object FoundCovers {
-    private val asking = java.util.concurrent.Semaphore(2)
+    private val gate = Signal()
+    private var asking = 0
     private const val WEEK = 7L * 24 * 3600 * 1000
     private val nameless = setOf("", "unknown", "unknown album", "unknown artist", "untitled")
 
@@ -19,21 +16,21 @@ object FoundCovers {
     fun link(dir: File, album: String, artist: String): String? {
         val a = album.trim(); val by = artist.trim()
         if (a.lowercase().trim('[', ']', '<', '>') in nameless || by.lowercase().trim('[', ']', '<', '>') in nameless) return null
-        val key = java.security.MessageDigest.getInstance("SHA-1").digest("${a.lowercase()}|${by.lowercase()}".toByteArray())
-            .joinToString("") { "%02x".format(it) }
+        val key = sha1("${a.lowercase()}|${by.lowercase()}".encodeToByteArray()).hex()
         val f = File(dir, "found-$key")
         if (f.exists()) {
             val kept = runCatching { f.readText() }.getOrDefault("")
             if (kept.isNotEmpty()) return kept
-            if (System.currentTimeMillis() - f.lastModified() < WEEK) return null
+            if (nowMs() - f.lastModified() < WEEK) return null
         }
-        asking.acquire()
+        // two at a time
+        gate.run { while (asking >= 2) gate.await(60_000); asking++ }
         try {
             val url = Curation.cover(a, by, record = true)
             if (url == null && !reachable()) return null
             runCatching { dir.mkdirs(); f.writeText(url.orEmpty()) }
             return url
-        } finally { asking.release() }
+        } finally { gate.run { asking--; gate.wake() } }
     }
 
     private fun reachable(): Boolean = runCatching {
