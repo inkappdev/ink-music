@@ -43,6 +43,7 @@ object Tube {
         Keep.write(file, JSONObject(auth).put("name", w.name).put("handle", w.handle).toString())
         start()
         library.value = null
+        warm()
     }
 
     fun signOut() {
@@ -83,6 +84,9 @@ object Tube {
 
     fun record(i: InnerTube.Item): Album = Album(i.id, i.title, i.subtitle.split(" • ").getOrNull(1) ?: i.subtitle, i.art,
         i.subtitle.split(" • ").lastOrNull()?.toIntOrNull() ?: 0, youtube = true)
+
+    /** The first song's slow parts made as the app opens (blocking). */
+    fun warm() { if (who.value != null) runCatching { streams.warm() } }
 
     /** A song's stream link (blocking), kept a few hours (YouTube's links last six). */
     fun stream(id: String): String? {

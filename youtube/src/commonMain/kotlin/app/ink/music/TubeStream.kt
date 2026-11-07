@@ -65,9 +65,25 @@ class TubeStream(private val js: TubeJs, private val dir: File, private val sign
     /** Forgotten, so the next song makes a new session (a token turned away, the player changed). */
     fun reset() = guard.run { t = null; session = null; code = null; streaming = null }
 
+    /** The slow parts made ahead, as the app opens (signed in: the session, the player's code, BotGuard's token). */
+    fun warm() {
+        if (signed == null) return
+        val (_, got) = ready() ?: return
+        // the solver reads the player once (near two seconds on the iPhone): done now, not on the first song
+        runCatching { js.solve(got.playerUrl ?: return, guard.run { code } ?: return, null, "warm") }
+    }
+
+    // the web player's turned away twice running: the plain way first, till it gives a song again
+    private var webMisses = 0
+
     // signed in, the web player's first: only it offers Premium's 256k and your uploads
-    fun stream(videoId: String): Stream? =
-        if (signed != null) web(videoId) ?: vision(videoId) ?: ios(videoId) else vision(videoId) ?: web(videoId) ?: ios(videoId)
+    fun stream(videoId: String): Stream? {
+        val t0 = nowMs()
+        val webFirst = signed != null && guard.run { webMisses } < 2
+        val s = if (webFirst) web(videoId) ?: vision(videoId) ?: ios(videoId) else vision(videoId) ?: web(videoId) ?: ios(videoId)
+        log("$videoId: ${s?.how ?: "none"} in ${nowMs() - t0} ms")
+        return s
+    }
 
     private var visitor: String? = null
 
@@ -93,7 +109,9 @@ class TubeStream(private val js: TubeJs, private val dir: File, private val sign
         Stream(link, pick.optString("mimeType").substringBefore(';'), rate(pick) / 1000, "visionos").also { log("$videoId: visionos, itag ${pick.optInt("itag")} ${it.kbps} kbps") }
     }.onFailure { log("$videoId visionos: $it") }.getOrNull()
 
-    private fun web(videoId: String): Stream? = runCatching {
+    private fun web(videoId: String): Stream? = webTried(videoId).also { s -> guard.run { webMisses = if (s != null) 0 else webMisses + 1 } }
+
+    private fun webTried(videoId: String): Stream? = runCatching {
         val (tube, s) = ready() ?: return null.also { log("$videoId: no session") }
         val url = s.playerUrl ?: return null
         val pot = js.poToken(videoId)

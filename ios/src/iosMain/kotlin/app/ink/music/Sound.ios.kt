@@ -15,6 +15,7 @@ import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.addPeriodicTimeObserverForInterval
+import platform.AVFoundation.automaticallyWaitsToMinimizeStalling
 import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.duration
@@ -75,6 +76,8 @@ actual object Sound {
         val session = AVAudioSession.sharedInstance()
         session.setCategory(AVAudioSessionCategoryPlayback, null)
         session.setActive(true, null)
+        // playing as soon as there's a little: YouTube's and the server's links fill faster than it plays
+        player.automaticallyWaitsToMinimizeStalling = false
         player.addPeriodicTimeObserverForInterval(CMTimeMakeWithSeconds(0.5, 600), null) { _ -> count(); tell() }
         val c = MPRemoteCommandCenter.sharedCommandCenter()
         c.playCommand.addTargetWithHandler { _ -> player.play(); resumed = nowMs(); tell(); MPRemoteCommandHandlerStatusSuccess }
@@ -129,6 +132,13 @@ actual object Sound {
         player.play()
         tell()
         cover(s)
+        ahead()
+    }
+
+    /** The next song's YouTube link found while this one plays, so it starts at once. */
+    private fun ahead() {
+        val n = queue.getOrNull(index + 1)?.takeIf { it.kind == "youtube" } ?: return
+        Here.work.launch { runCatching { Tube.stream(n.id) } }
     }
 
     actual fun toggle() { if (player.rate > 0f) player.pause() else { player.play(); resumed = nowMs() }; tell() }
