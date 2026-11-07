@@ -48,15 +48,16 @@ object Picks {
         if (readAt == 0L) {
             val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
             kept?.let(::show)
-            // a day kept before it was checked against YouTube Music: read again now
-            readAt = kept?.takeIf { it.optBoolean("checked") }?.optLong("at") ?: 1L
+            // a day kept before it was checked against YouTube Music, or before the editors' lists (v2): read again now
+            readAt = kept?.takeIf { it.optBoolean("checked") && it.optInt("v") >= 3 }?.optLong("at") ?: 1L
         }
         if (Curation.stale(readAt) && reading?.isActive != true) reading = scope.launch { read(file) }
     }
     private var reading: kotlinx.coroutines.Job? = null
 
     private suspend fun read(file: File) = coroutineScope {
-        val all = Curation.picks()
+        // the critics' feeds, and (the full build) editors' lists: the newest first
+        val all = (Curation.picks() + EditorsPicks.read()).sortedByDescending { it.at }
         if (all.isEmpty()) return@coroutineScope
         val firsts = all.groupBy(Curation::key).values.map { group -> group.first() to group.map { it.from }.distinct() }
         // covers: the feed's own, one found before, else iTunes', a few at a time and forty a read at most (it turns crowds away)
@@ -78,7 +79,7 @@ object Picks {
         today.value = day
         readAt = System.currentTimeMillis()
         runCatching {
-            file.writeText(JSONObject().put("at", readAt).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
+            file.writeText(JSONObject().put("at", readAt).put("v", 3).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
                 .put("songs", JSONArray(songs.value.map(::json))).toString())
         }
     }
@@ -154,8 +155,8 @@ object Picks {
         val friday = friday.value?.releases.orEmpty().map { Curation.Pick(true, it.title, it.artist, "out friday", "", it.link, 0, null) }
         val all = friday + records.value.map { it.pick } + songs.value.map { it.pick } + electronic.value
         return Curation.yours(all, known).take(16).map { y ->
-            // short, to fit under a tile: "stereogum · 40 plays", "out friday · yours"
-            Shown(y.pick, y.pick.art, listOf("${y.pick.from} · " + if (y.plays > 0) "${y.plays} plays" else "yours"))
+            // who picked it, nothing more (play counts were text for its own sake, 2026-11-07)
+            Shown(y.pick, y.pick.art, listOf(y.pick.from))
         }
     }
 
@@ -174,6 +175,19 @@ object Picks {
     /** A week's record as a pick (its genres where a critic's name would be), to show and find as picks are. */
     fun shown(r: Curation.Release, art: String?) = Shown(Curation.Pick(true, r.title, r.artist, "r/indieheads", "", r.link, 0, art), art,
         listOf(r.genres.take(2).joinToString(", ").lowercase()))
+
+    /**
+     * A cover, the record's or song's own (2026-11-07: the record of the day showed only its name, its feed's picture
+     * not loading; songs on the air with "(Prince Fatty Remix)" found nothing): iTunes', Deezer's, then again without
+     * what's in brackets and who's featured, then YouTube Music's. Null when none anywhere.
+     */
+    suspend fun coverFor(title: String, artist: String, record: Boolean): String? = withContext(Dispatchers.IO) {
+        val plain = title.replace(Regex("\\s*[(\\[][^)\\]]*[)\\]]"), "").replace(Regex("\\s+(feat\\.?|ft\\.?|with)\\s.*$", RegexOption.IGNORE_CASE), "").trim()
+        val who = artist.substringBefore(",").substringBefore(" & ").trim()
+        runCatching { Curation.cover(title, artist, record) }.getOrNull()
+            ?: plain.takeIf { it.isNotEmpty() && (it != title || who != artist) }?.let { runCatching { Curation.cover(it, who, record) }.getOrNull() }
+            ?: runCatching { if (record) YouTubeMusic.findRecord(plain.ifEmpty { title }, who)?.art else YouTubeMusic.find(plain.ifEmpty { title }, who)?.art }.getOrNull()
+    }
 
     suspend fun air() { val a = withContext(Dispatchers.IO) { Curation.onAir() }; if (a.isNotEmpty()) onAir.value = a }
 
@@ -243,11 +257,14 @@ object Discover {
             .ifEmpty { library.groupBy { it.albumArtist }.entries.sortedByDescending { it.value.size }.map { it.key }.filter { it.isNotBlank() && it != "unknown" } }
             .take(8)
         val sameWeek = kept?.optString("week") == week()
-        val sameDay = kept?.optString("day") == day()
-        val out = JSONObject().put("week", week()).put("day", day())
+        // the day's mixes made again when the day turns, or the part of it (this hour's: mornings, evenings...)
+        val sameDay = kept?.optString("day") == day() && kept.optString("part") == Moment.now().part.name
+        val out = JSONObject().put("week", week()).put("day", day()).put("part", Moment.now().part.name)
         val weekly = if (sameWeek) mixes.value.filter { it.key == "fresh" || it.key == "deep" }
             else listOfNotNull(freshFinds(c, topSongs, heard, mine), deepCuts(topArtists, library, heard, mine))
-        val daily = listOfNotNull(restOfTheRecord(all, library, heard), lovedLongAgo(all, library), aYearAgo(all, library), oneOfEach(library))
+        val daily = listOfNotNull(restOfTheRecord(all, library, heard), lovedLongAgo(all, library), aYearAgo(all, library), oneOfEach(library),
+            thisHour(all, library), justAdded(library, heard), backOfTheShelf(library, heard), aDecade(library),
+            runCatching { spotlight(topArtists, library) }.getOrNull(), runCatching { pickedForYou() }.getOrNull())
         mixes.value = weekly + daily
         out.put("mixes", JSONArray(mixes.value.map { m ->
             JSONObject().put("key", m.key).put("title", m.title).put("said", m.said).put("fresh", m.fresh).put("songs", JSONArray(m.songs.map { it.json() }))
@@ -360,6 +377,77 @@ object Discover {
             .values.map { it[r.nextInt(it.size)] }.shuffled(r).take(40)
         if (songs.size < 8) return null
         return Mix("each", "one of each", "a song from every artist you have", songs, "${songs.size} artists, new each day")
+    }
+
+    // ---- more of them (2026-11-07: "made for you is always the same four things") ----
+
+    /** What you play around this hour (an hour either side, these four months): your mornings, your late nights. */
+    private fun thisHour(all: List<History.Heard>, library: List<Song>): Mix? {
+        val z = java.time.ZoneId.systemDefault()
+        val now = java.time.LocalTime.now().hour
+        val since = System.currentTimeMillis() - 120L * 86_400_000
+        fun near(h: Int) = minOf(Math.abs(h - now), 24 - Math.abs(h - now)) <= 1
+        val songs = all.filter { it.at > since && near(java.time.Instant.ofEpochMilli(it.at).atZone(z).hour) }
+            .groupBy { it.id }.entries.sortedByDescending { e -> e.value.size }
+            .mapNotNull { e -> Library.song(e.key) ?: library.firstOrNull { Radio.key(it.title, it.artist) == Radio.key(e.value[0].title, e.value[0].artist) } ?: YouTubeMusic.known(e.key) }
+            .take(30).shuffled(java.util.Random(day().hashCode().toLong()))
+        if (songs.size < 8) return null
+        val part = when (Moment.now().part) { Moment.Part.MORNING -> "mornings"; Moment.Part.DAY -> "afternoons"; Moment.Part.EVENING -> "evenings"; Moment.Part.LATE -> "late nights" }
+        return Mix("hour", "your $part", "what you play around this hour", songs, "${songs.size} songs, as the hour turns")
+    }
+
+    /** Come in these six weeks, not yet played: the newest first. */
+    private fun justAdded(library: List<Song>, heard: Set<String>): Mix? {
+        val since = System.currentTimeMillis() - 42L * 86_400_000
+        val songs = library.filter { !it.tube && it.added > since && it.id !in heard && Radio.key(it.title, it.artist) !in heard }
+            .sortedWith(compareByDescending<Song> { it.added }.thenBy { it.disc }.thenBy { it.track }).take(40)
+        if (songs.size < 6) return null
+        return Mix("added", "just added", "come in these six weeks, not played yet", songs, "${songs.size} songs, newest first")
+    }
+
+    /** Had a year and more, never once played: a different handful each day. */
+    private fun backOfTheShelf(library: List<Song>, heard: Set<String>): Mix? {
+        val before = System.currentTimeMillis() - 365L * 86_400_000
+        val songs = library.filter { !it.tube && it.added in 1 until before && it.id !in heard && Radio.key(it.title, it.artist) !in heard }
+            .shuffled(java.util.Random(day().hashCode().toLong() * 7)).let { Radio.apart(it.take(60), "") }.take(30)
+        if (songs.size < 10) return null
+        return Mix("shelf", "back of the shelf", "yours a year and more, never played", songs, "${songs.size} songs, new each day")
+    }
+
+    /** One decade of what you have, a different one each day (any with fifteen songs or more). */
+    private fun aDecade(library: List<Song>): Mix? {
+        val by = library.filter { !it.tube && it.year in 1900..2100 }.groupBy { it.year / 10 * 10 }.filterValues { it.size >= 15 }
+        if (by.size < 2) return null
+        val decades = by.keys.sorted()
+        val d = decades[(LocalDate.now().toEpochDay() % decades.size).toInt()]
+        val r = java.util.Random(day().hashCode().toLong() * 11)
+        val songs = Radio.apart(by.getValue(d).shuffled(r).take(60), "").take(30)
+        return Mix("decade", "your ${d}s", "what you have from the ${d}s", songs, "${songs.size} songs, another decade tomorrow")
+    }
+
+    /** One of your nearest artists a day: their songs you have, and their best known you don't. */
+    private suspend fun spotlight(artists: List<String>, library: List<Song>): Mix? {
+        if (artists.isEmpty()) return null
+        val name = artists[(LocalDate.now().toEpochDay() % artists.size).toInt()]
+        val yours = library.filter { s -> s.albumArtist.equals(name, true) || s.artist.split(", ").any { it.equals(name, true) } }
+            .shuffled(java.util.Random(day().hashCode().toLong())).take(15)
+        val info = withTimeoutOrNull(8_000) { YouTubeAccount.artist(name, "").firstOrNull { it != null } }
+        val theirs = info?.top.orEmpty().filter { t -> yours.none { Radio.key(it.title, it.artist) == Radio.key(t.title, t.artist) } }.take(10)
+        val songs = (theirs + yours).distinctBy { Radio.key(it.title, it.artist) }
+        if (songs.size < 6) return null
+        return Mix("spotlight", "all ${name.lowercase()}", "one of the artists you play most, a different one each day", Radio.apart(songs, ""),
+            "${songs.size} songs by ${name.lowercase()}")
+    }
+
+    /** The critics' and editors' songs nearest your taste, as one to play (found on YouTube Music: the full build). */
+    private suspend fun pickedForYou(): Mix? {
+        if (!YouTubeMusic.available) return null
+        val near = Fresh.rank(Picks.songs.value).filter { !it.stretch }.take(24).map { it.item }
+        if (near.size < 6) return null
+        val found = coroutineScope { near.chunked(6).flatMap { g -> g.map { p -> async { runCatching { YouTubeMusic.find(p.pick.title, p.pick.artist) }.getOrNull() } }.awaitAll() } }
+            .filterNotNull().distinctBy { it.id }
+        if (found.size < 6) return null
+        return Mix("picked", "critics' picks", "critics' and editors' songs nearest your taste", found, "${found.size} songs, new each day")
     }
 
     /** New to you as a station: each of them's best known song in turn, radio after. */

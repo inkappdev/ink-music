@@ -85,6 +85,8 @@ dependencies {
     "fullImplementation"("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     "fullImplementation"(project(":youtube"))
     implementation(project(":core"))
+    // a tape's QR code (Nayuki's, MIT): one small class, nothing else
+    implementation("io.nayuki:qrcodegen:1.8.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")   // Android's own is a stub under unit tests
 }

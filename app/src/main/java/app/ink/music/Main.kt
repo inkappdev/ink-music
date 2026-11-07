@@ -143,7 +143,12 @@ class Main : ComponentActivity() {
         Moves.start(this)
         // opened again (the home screen, the notification) over ink music's own screens: those stay
         // as they were (the YouTube sign-in, mid-way), not a second library over them
-        if (!isTaskRoot) { finish(); return }
+        if (!isTaskRoot) {
+            // a tape's link opened from another app's task (a camera): handed to ink music's own, which opens it
+            if (Tapes.isTape(intent?.data)) runCatching { startActivity(android.content.Intent(intent).setClass(this, Main::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            finish(); return
+        }
+        Tapes.take(intent)
         // a TV never stands upright: the manifest's portrait is the phone's
         Device.tv = isTv(this)
         if (isTv(this)) requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -167,6 +172,7 @@ class Main : ComponentActivity() {
         Pods.start(this)
         Order.start(this)
         Seeds.start(this)
+        Fresh.start(this)
         Stations.curated(this)
         setContent { TvFocus { App() } }
         // casting: the volume buttons, while ink music is open, go to the player's session, which turns the speaker
@@ -176,6 +182,12 @@ class Main : ComponentActivity() {
                 mediaController = Playback.token?.takeIf { on }?.let { android.media.session.MediaController(this@Main, it) }
             }
         }
+    }
+
+    /** Opened again while up (singleTop): a tape's link, say. */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        Tapes.take(intent)
     }
 
     /** A TV's remote pressed with nothing focused (Compose then hears nothing): the first thing on screen takes focus. */
@@ -197,9 +209,12 @@ class Main : ComponentActivity() {
         // a paired computer: in step now, and every minute while open
         SyncPhone.start(this)
         SyncPhone.open()
+        // what's new is new since you were last here; your taste made again
+        Fresh.opened(this)
     }
 
     override fun onStop() {
+        Fresh.left(this)
         SyncPhone.closed()
         Playback.release()
         Order.left()
@@ -268,6 +283,10 @@ sealed interface Page {
     data class Mood(val mood: TubeMood) : Page
     data class Festival(val name: String) : Page
     data class SettingsPart(val part: String) : Page
+    /** A tape being made of these songs ([TapeMakePage]); [name], the list's. */
+    data class TapeMake(val songs: List<Song>, val name: String) : Page
+    /** A tape someone sent, by its link ([TapePage]). */
+    data class Tape(val link: String) : Page
     /** A podcast ([ShowPage]); `first`, the show as it was found, shown while its feed is read. */
     data class Show(val feed: String, val first: Podcasts.Show? = null) : Page {
         override fun equals(other: Any?) = other is Show && other.feed == feed
@@ -326,6 +345,8 @@ private fun App() {
         Playback.begun.collect { if (it != seen) { seen = it; playerUp = true } }
     }
     BackHandler(pages.stack.isNotEmpty() && !playerUp) { pages.back() }
+    // a tape's link opened (its QR code, a message): the tape, over whatever was up
+    LaunchedEffect(Unit) { Tapes.opened.collect { link -> if (link != null) { Tapes.opened.value = null; playerUp = false; pages.open(Page.Tape(link)) } } }
 
     Box(Modifier.fillMaxSize().background(Ink.black)) {
         // the first open: ink music before anything is asked
@@ -417,6 +438,8 @@ private fun App() {
                         is Page.Festival -> FestivalPage(p.name, pages)
                         is Page.Show -> ShowPage(p.feed, p.first, pages)
                         is Page.SettingsPart -> if (p.part == "look") LookPage(pages) else SettingsPage(pages, p.part)
+                        is Page.TapeMake -> TapeMakePage(p.songs, p.name, pages)
+                        is Page.Tape -> TapePage(p.link, pages)
                     }
                     }
                 }
@@ -875,7 +898,7 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
  * Not where a swipe turns the page (the library's songs): there, held is the way.
  */
 @Composable
-private fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, swipe: Boolean = true, yours: Boolean = true,
+internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRemove: (() -> Unit)? = null, swipe: Boolean = true, yours: Boolean = true,
                     cover: Boolean = false, onClick: () -> Unit) {
     val now by Playback.now.collectAsState()
     val on = now?.song?.id == s.id
@@ -1092,7 +1115,10 @@ private fun LovedPage(pages: Pages) {
         item { Column(Modifier.cascade(0)) {
             BasicText("LOVED", style = headline(44.sp))
             Spacer(Modifier.height(8.dp))
-            BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
+            Row {
+                BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(end = 26.dp))
+                if (theirs.isNotEmpty()) Word("make a tape", pixel(12.sp, Ink.mid), touch = 8.dp) { pages.open(Page.TapeMake(theirs, "loved")) }
+            }
             Spacer(Modifier.height(16.dp))
             if (theirs.isNotEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(theirs, 0) }
@@ -1107,6 +1133,54 @@ private fun LovedPage(pages: Pages) {
         }}
         itemsIndexed(theirs, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, pages = pages, cover = covers) { Playback.play(theirs, i) } }}
     } }
+}
+
+/**
+ * Where to keep songs found here (a Spotify playlist brought in, a tape): on YouTube Music, on your server. Each made
+ * once (a second tap made a second playlist), then "open it".
+ */
+@Composable
+internal fun KeepIt(name: String, found: List<Song>, pages: Pages) {
+    val scope = rememberCoroutineScope()
+    // where it's being made ("youtube", "server"), and once made, the page that opens it
+    var making by remember(name, found) { mutableStateOf<String?>(null) }
+    val made = remember(name, found) { androidx.compose.runtime.mutableStateMapOf<String, Page?>() }
+    var said by remember(name, found) { mutableStateOf<String?>(null) }
+    val who by YouTubeAccount.who.collectAsState()
+    val account by Server.account.collectAsState()
+    @Composable
+    fun Place(key: String, where: String, make: suspend () -> Pair<Boolean, Page?>) {
+        Spacer(Modifier.height(10.dp))
+        when {
+            made.containsKey(key) -> Row {
+                BasicText("made on $where", style = pixel(14.sp), modifier = Modifier.padding(end = 26.dp, top = 8.dp))
+                made[key]?.let { page -> Word("open it", pixel(14.sp), touch = 8.dp) { pages.open(page) } }
+            }
+            making == key -> BasicText("making it on $where", style = pixel(14.sp, Ink.dim), modifier = Modifier.padding(top = 8.dp))
+            else -> Word("make it on $where", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                if (making != null) return@Word
+                making = key
+                scope.launch {
+                    val (ok, opened) = make()
+                    if (ok) made[key] = opened
+                    making = null
+                }
+            }
+        }
+    }
+    if (who != null) Place("youtube", "youtube music") {
+        YouTubeAccount.makePlaylistOf(name, found)?.let { (list, n) -> said = "$n songs on youtube music"; true to Page.TubeList(list) }
+            ?: run { said = "youtube music didn't take it"; false to null }
+    }
+    if (account != null) Place("server", "your server") {
+        val before = Server.playlists.value.filter { it.name == name }.map { it.id }.toSet()
+        val there = found.count { Server.idOf(it) != null }
+        if (Server.makePlaylist(name, found)) {
+            said = "$there songs on your server (the ones it has)"
+            true to Server.playlists.value.firstOrNull { it.name == name && it.id !in before }?.let { Page.Playlist(it.id, it.name) }
+        } else { said = "the server didn't take it"; false to null }
+    }
+    said?.let { Spacer(Modifier.height(10.dp)); BasicText(it, style = pixel(12.sp, Ink.mid)) }
 }
 
 /** A playlist's page: its name big, play and shuffle, its songs in its order. */
@@ -1143,9 +1217,12 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
                 CoversWord(Modifier.padding(end = 26.dp))
                 KeepOffline(all)
             }
-            // deleting asks once more: the word says so, lit, for a moment
-            if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
-                if (!sure) sure = true else scope.launch { if (Server.deletePlaylist(id)) pages.back() }
+            Row(Modifier.padding(top = 10.dp)) {
+                if (!all.isNullOrEmpty()) Word("make a tape", pixel(12.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { pages.open(Page.TapeMake(all, name)) }
+                // deleting asks once more: the word says so, lit, for a moment
+                if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), touch = 8.dp) {
+                    if (!sure) sure = true else scope.launch { if (Server.deletePlaylist(id)) pages.back() }
+                }
             }
             Spacer(Modifier.height(14.dp))
         }}
@@ -1434,13 +1511,10 @@ private fun ImportPage(pages: Pages) {
     var progress by remember { mutableStateOf(0) }
     var matched by remember { mutableStateOf<List<Song?>?>(null) }
     var said by remember { mutableStateOf<String?>(null) }
-    // where it's being made ("youtube", "server"), and once made, the page that opens it (each made once)
-    var making by remember { mutableStateOf<String?>(null) }
-    val made = remember { androidx.compose.runtime.mutableStateMapOf<String, Page?>() }
     val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             val read = runCatching { Import.read(ctx, uri) }.getOrDefault(emptyList())
-            lists = read; chosen = read.singleOrNull(); matched = null; made.clear()
+            lists = read; chosen = read.singleOrNull(); matched = null
             said = if (read.isEmpty()) "no playlist in that file: an exportify csv, or spotify's Playlist1.json" else null
         }
     }
@@ -1471,11 +1545,9 @@ private fun ImportPage(pages: Pages) {
     }
     LaunchedEffect(chosen) {
         val c = chosen ?: return@LaunchedEffect
-        progress = 0; matched = null; made.clear(); said = null
+        progress = 0; matched = null; said = null
         matched = Import.match(c.songs) { progress = it }
     }
-    val who by YouTubeAccount.who.collectAsState()
-    val account by Server.account.collectAsState()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
@@ -1535,39 +1607,7 @@ private fun ImportPage(pages: Pages) {
                     BasicText("${found.size} of ${c.songs.size} found   ${found.count { !it.tube }} yours", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(16.dp))
                     Word("play it", pixel(14.sp), touch = 8.dp) { Playback.play(found, 0) }
-                    // where to keep it: each made once (a second tap made a second playlist), then "open it"
-                    @Composable
-                    fun Place(key: String, where: String, make: suspend () -> Pair<Boolean, Page?>) {
-                        Spacer(Modifier.height(10.dp))
-                        when {
-                            made.containsKey(key) -> Row {
-                                BasicText("made on $where", style = pixel(14.sp), modifier = Modifier.padding(end = 26.dp, top = 8.dp))
-                                made[key]?.let { page -> Word("open it", pixel(14.sp), touch = 8.dp) { pages.open(page) } }
-                            }
-                            making == key -> BasicText("making it on $where", style = pixel(14.sp, Ink.dim), modifier = Modifier.padding(top = 8.dp))
-                            else -> Word("make it on $where", pixel(14.sp, Ink.mid), touch = 8.dp) {
-                                if (making != null) return@Word
-                                making = key
-                                scope.launch {
-                                    val (ok, opened) = make()
-                                    if (ok) made[key] = opened
-                                    making = null
-                                }
-                            }
-                        }
-                    }
-                    if (who != null) Place("youtube", "youtube music") {
-                        YouTubeAccount.makePlaylistOf(c.name, found)?.let { (list, n) -> said = "$n songs on youtube music"; true to Page.TubeList(list) }
-                            ?: run { said = "youtube music didn't take it"; false to null }
-                    }
-                    if (account != null) Place("server", "your server") {
-                        val before = Server.playlists.value.filter { it.name == c.name }.map { it.id }.toSet()
-                        val there = found.count { Server.idOf(it) != null }
-                        if (Server.makePlaylist(c.name, found)) {
-                            said = "$there songs on your server (the ones it has)"
-                            true to Server.playlists.value.firstOrNull { it.name == c.name && it.id !in before }?.let { Page.Playlist(it.id, it.name) }
-                        } else { said = "the server didn't take it"; false to null }
-                    }
+                    KeepIt(c.name, found, pages)
                     said?.let { Spacer(Modifier.height(10.dp)); BasicText(it, style = pixel(12.sp, Ink.mid)) }
                     Spacer(Modifier.height(14.dp))
                 }
@@ -1995,6 +2035,7 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
             LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
             val scope = rememberCoroutineScope()
             Row(Modifier.padding(top = 10.dp)) {
+                songs?.takeIf { it.isNotEmpty() }?.let { all -> Word("make a tape", pixel(12.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { pages.open(Page.TapeMake(all, pl.name)) } }
                 val off = pl.id in hidden
                 Word(if (off) "show in ink music" else "hide", pixel(12.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) {
                     HiddenLists.set(pl.id, !off); if (!off) pages.back()

@@ -55,7 +55,7 @@ private val ROW = 58.dp   // every row the same height, so a carried one knows t
  * let go it settles there. Held and let go without moving, its "remove" shows beside it.
  */
 @Composable
-fun QueuePage(onClose: () -> Unit) {
+fun QueuePage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}) {
     val queue by Playback.queue.collectAsState()
     val now by Playback.now.collectAsState()
     val playing = now?.index ?: -1
@@ -93,6 +93,9 @@ fun QueuePage(onClose: () -> Unit) {
                     Word("radio", pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Playback.radio(!on) }
                     BasicText(if (on) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
                 }
+                // what's queued, from what plays now on, as a tape
+                val ahead = queue.drop(playing.coerceAtLeast(0)).mapNotNull { it.song }.filter { !it.station && !it.episode }
+                if (ahead.isNotEmpty()) Word("make a tape", pixel(13.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 8.dp) { onOpen(Page.TapeMake(ahead, "up next")) }
             }
             CloseArrow(onClick = onClose)
         }

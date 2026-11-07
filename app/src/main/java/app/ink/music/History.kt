@@ -40,7 +40,26 @@ object History {
         }
     }.getOrDefault(emptyList())
 
-    fun forget(c: Context) { file(c).delete() }
+    fun forget(c: Context) { file(c).delete(); skipsFile(c).delete() }
+
+    // ---- skips: what you moved on from in its first seconds (2026-11-07), for your taste (Taste); the last 500 kept ----
+
+    private fun skipsFile(c: Context) = File(c.filesDir, "skips.jsonl")
+
+    @Synchronized fun skipped(c: Context, at: Long, id: String, title: String, artist: String, ms: Long) {
+        if (title.isEmpty() || id.startsWith("s") || id.startsWith("e") || Private.on(c)) return
+        runCatching {
+            val f = skipsFile(c)
+            f.appendText(JSONObject().put("at", at).put("id", id).put("title", title).put("artist", artist).put("ms", ms).toString() + "\n")
+            if (f.length() > 120_000) f.writeText(f.readLines().takeLast(500).joinToString("\n", postfix = "\n"))
+        }
+    }
+
+    fun skips(c: Context): List<Heard> = runCatching {
+        skipsFile(c).readLines().mapNotNull { line ->
+            runCatching { val o = JSONObject(line); Heard(o.getLong("at"), o.getString("id"), o.getString("title"), o.getString("artist"), "", "", o.getLong("ms")) }.getOrNull()
+        }
+    }.getOrDefault(emptyList())
 
     /**
      * The song now playing, timed in the player: how long it has actually played (paused time not
@@ -66,6 +85,8 @@ object History {
                 val md = i.mediaMetadata
                 add(c, Heard(started, i.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(),
                     md.albumTitle?.toString().orEmpty(), md.extras?.getString(Levelling.RECORD).orEmpty(), played))
+                // moved on from in its first seconds (to another song, not stopped): a skip
+                if (next != null && played in 2_000 until ENOUGH) skipped(c, started, i.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(), played)
             }
             item = next; played = 0L; started = 0L
             if (moving) playing(true)

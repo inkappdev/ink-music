@@ -334,9 +334,22 @@ object YouTubeMusic {
         return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }.distinctBy { it.id }.take(80)
     }
 
+    /** A genre's editors' lists, as picks: the first list of each of its first three shelves, 20 songs each, taken in turn (blocking). */
+    fun editorsSongs(params: String): List<Song> {
+        val lists = InnerTube().mood(params).take(3).mapNotNull { it.items.firstOrNull { i -> i.kind == InnerTube.Kind.PLAYLIST } }
+        val each = lists.map { runCatching { InnerTube().tracks(it.id, 20).map { t -> trackSong(t) } }.getOrDefault(emptyList()) }
+        return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }.distinctBy { it.id }
+    }
+
     /** A record someone picked, found on YouTube Music: its name and artist matched; null when it hasn't it. */
     suspend fun findRecord(title: String, artist: String): TubeAlbum? =
         search("$artist $title").albums.firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
+
+    /** A YouTube song by its id, as a tape says it: its title and artist as said, its cover YouTube's own picture of it. */
+    fun byId(id: String, title: String, artist: String, ms: Long = 0): Song? = id.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }?.let { v ->
+        Song(id = "y$v", uri = Uri.parse("ytm://$v"), title = title, artist = artist, album = "", albumId = "y$v", albumArtist = artist,
+            duration = ms, disc = 1, track = 0, year = 0, art = "https://i.ytimg.com/vi/$v/hqdefault.jpg", format = "youtube").also(::remember)
+    }
 
     /** YouTube Music's song by these words, if it has one (blocking). */
     fun find(title: String, artist: String): Song? {

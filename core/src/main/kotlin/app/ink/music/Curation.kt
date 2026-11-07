@@ -47,10 +47,38 @@ object Curation {
     private val QUOTES = "\"“”‘’'"
 
     /** Every pick from every feed, the newest first (a feed that won't answer is passed over). */
-    fun picks(): List<Pick> = listOf(::pitchforkRecords, ::pitchforkSongs, ::stereogum, ::bandcamp, ::nme, ::quietus, ::aquarium, ::gorilla, ::npr, ::dusted, ::stereofox, ::fader)
+    fun picks(): List<Pick> = listOf(::pitchforkRecords, ::pitchforkSongs, ::stereogum, ::bandcamp, ::nme, ::quietus, ::aquarium, ::gorilla, ::npr, ::dusted, ::stereofox, ::fader,
+        ::bestFit, ::diy)
         .flatMap { f -> runCatching { f() }.getOrDefault(emptyList()) }
         .filter { it.title.isNotBlank() && it.artist.isNotBlank() }
         .sortedByDescending { it.at }
+
+    /**
+     * A new song said in a headline (2026-11-07, The Line of Best Fit's and DIY's news): "ELIO signs to FADER Label, shares
+     * new single “PRIMADONNA”": the artist before the first doing word, the song in its quotes. Headlines without a
+     * quoted song (tours, lineups, EPs) are passed over.
+     */
+    private val HEADLINE = Regex("""^(.{1,60}?)\s+(?:signs?|shares?|releases?|drops?|unveils?|returns?|announces?|is|are|teams?|reunites?|debuts?|offers?|previews?|delivers?|channels?|gets?|goes|go|celebrates?|makes?|marks?)\b.*?[“"‘]([^”"’]{1,80})[”"’]""")
+
+    private fun headlineSongs(url: String, from: String) = items(url).mapNotNull { i ->
+        val m = HEADLINE.find(i.title) ?: return@mapNotNull null
+        val artist = m.groupValues[1].trim().trimEnd(',')
+        if (artist.split(' ').size > 6) return@mapNotNull null
+        Pick(false, m.groupValues[2].trim(), artist, from, i.text, i.link, i.at, i.thumb)
+    }
+
+    /** The Line of Best Fit: songs from its news, and its album reviews ("Shygirl's SWALLOW! is brutally romantic..."). */
+    private fun bestFit(): List<Pick> {
+        val all = items("https://www.thelineofbestfit.com/feed")
+        val records = all.filter { i -> i.tags.any { it.equals("Albums", true) } }.mapNotNull { i ->
+            val m = Regex("""^(.{1,50}?)[’']s?\s+(.{1,80}?)\s+(?:is|are|was|finds?|sees?|offers?|marks?|proves?|shows?|feels?)\b""").find(i.title) ?: return@mapNotNull null
+            Pick(true, m.groupValues[2].trim(), m.groupValues[1].trim(), "the line of best fit", i.text, i.link, i.at, i.thumb)
+        }
+        return records + headlineSongs("https://www.thelineofbestfit.com/feed", "the line of best fit")
+    }
+
+    /** DIY: the new songs its news says (its own new bands, Neu, among them). */
+    private fun diy() = headlineSongs("https://diymag.com/feed", "diy")
 
     /** The artist from Pitchfork's link (".../reviews/albums/the-olivia-tremor-control-the-same-place/"), the title's slug taken off its end. */
     private fun slugArtist(link: String, title: String): String {
@@ -437,7 +465,7 @@ object Curation {
     fun deezer(title: String, artist: String, record: Boolean): String? = runCatching { deezerOrThrow(title, artist, record) }.getOrNull()
 
     private fun deezerOrThrow(title: String, artist: String, record: Boolean): String? {
-        fun plainName(s: String) = s.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
+        fun plainName(s: String) = folded(s).replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
         val q = java.net.URLEncoder.encode("artist:\"${artist.substringBefore(",").trim()}\" ${if (record) "album" else "track"}:\"$title\"", "UTF-8")
         val o = org.json.JSONObject(get("https://api.deezer.com/search/${if (record) "album" else "track"}?q=$q&limit=8"))
         val results = o.optJSONArray("data") ?: return null
@@ -461,7 +489,7 @@ object Curation {
     fun itunes(title: String, artist: String, record: Boolean): String? = runCatching { itunesOrThrow(title, artist, record) }.getOrNull()
 
     private fun itunesOrThrow(title: String, artist: String, record: Boolean): String? {
-        fun plainName(s: String) = s.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
+        fun plainName(s: String) = folded(s).replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
         val term = java.net.URLEncoder.encode("$artist $title", "UTF-8")
         val o = org.json.JSONObject(get("https://itunes.apple.com/search?term=$term&entity=${if (record) "album" else "song"}&limit=8"))
         val results = o.optJSONArray("results") ?: return null
@@ -473,6 +501,9 @@ object Curation {
     }
 
     // ---- text ----
+
+    /** Lower case, accents off ("Lila Iké" is "lila ike": a station writes it one way, iTunes the other). */
+    fun folded(s: String): String = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
 
     private fun cdata(s: String) = s.replace("<![CDATA[", "").replace("]]>", "")
 

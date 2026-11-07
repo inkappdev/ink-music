@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -61,7 +62,23 @@ import java.util.Calendar
  * artists' best-known songs (each a mix's start) and records, the week on indie radio, the
  * server's newest records, and radio. Each shelf shows once it has something.
  */
+/**
+ * A listen row that moves when one arrives above it (what's new since you were here, read a moment after it opens):
+ * slid down on ink's curve, not jumped; under less motion, no animation.
+ */
+@Composable
+private fun Modifier.moving(scope: androidx.compose.foundation.lazy.LazyItemScope): Modifier =
+    if (Moves.less.collectAsState().value) this
+    else with(scope) { this@moving.animateItem(fadeInSpec = null, placementSpec = tween(Motion.ENTER, easing = Motion.expo), fadeOutSpec = null) }
+
+/** Listen's shelves in their usual order (Fresh.order moves them for the moment). */
+val LISTEN_SHELVES = listOf("fromYours", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "because", "newToYou",
+    "onRepeat", "fresh", "inkRadio", "indie", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours",
+    "stations", "radio")
+
 object Listen {
+    /** Each time ink music is opened again after a while: the shelves' order is made anew for it. */
+    var visit by androidx.compose.runtime.mutableStateOf(0)
     /** When the listen page was first shown this run (its shelves cascade only then). */
     var shownAt = 0L
     val indie = MutableStateFlow<List<IndieChart.Entry>>(emptyList())
@@ -198,6 +215,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val songs by Library.songs.collectAsState()
     val recentSongs = remember(recent, songs) { recent.mapNotNull { Library.song(it.id) } }
     LaunchedEffect(songs.isNotEmpty()) { Discover.start(ctx, songs) }
+    // your taste made again once the library's read (what you keep and love counts)
+    LaunchedEffect(songs.isNotEmpty()) { if (songs.isNotEmpty()) Fresh.build(ctx) }
     // a played song as one to play again: the library's, else a YouTube song this run knows (liked, heard there, loved)
     val known = remember(liked, tubeHeard, lovedTube) { (liked + tubeHeard + lovedTube).associateBy { it.id } }
     fun songOf(id: String) = Library.song(id) ?: known[id] ?: YouTubeMusic.known(id)
@@ -219,6 +238,225 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val newest = remember(newestIds, albums) { newestIds.mapNotNull { id -> albums.firstOrNull { it.id == id } } }
     val yours = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(12) }
     val mixes = seeds.filter { it.hit != null }
+
+    // ---- keeping it fresh (Fresh): your taste, what's new since you were here, three of ten from INK ----
+    val taste by Fresh.taste.collectAsState()
+    val since by Fresh.since.collectAsState()
+    // new from your artists, the ones you've passed over stepping back (said not for you, gone)
+    val fromYoursNow = remember(fromYours, taste) {
+        fromYours.filter { !taste.refused(it.pick.artist) && (!Fresh.ready || Fresh.seen.fresh(Fresh.key(it.pick)) > .1) }
+            .sortedByDescending { if (Fresh.ready) Fresh.seen.fresh(Fresh.key(it.pick)) else 1.0 }
+    }
+    // from INK, for you: the critics' and djs' picks not already above, in your order, each saying why
+    val forYou = remember(pickedRecords, pickedSongs, electronic, fromYours, taste) {
+        val above = fromYours.map { Curation.key(it.pick) }.toSet()
+        val all = pickedRecords + pickedSongs + electronic.map { Picks.Shown(it, it.art, listOf(it.from)) }
+        Fresh.rank(all.filter { Curation.key(it.pick) !in above }, taste).take(16)
+    }
+    fun openPick(s: Picks.Shown) = scope.launch {
+        val a = if (s.pick.record) Picks.record(s.pick) else null
+        a?.let { pages.open(Page.Tube(it)) } ?: Picks.song(s.pick.title, s.pick.artist)?.let { Playback.play(listOf(it), 0) }
+    }
+    // a record begun lately and left partway (this phone's, three days): to pick up
+    val pickUp = remember(heard, albums) {
+        val lately = heard.filter { it.at > System.currentTimeMillis() - 3 * 86_400_000L && it.record.isNotEmpty() }
+        lately.asReversed().map { it.record }.distinct().firstNotNullOfOrNull { rec ->
+            val a = albums.firstOrNull { it.id == rec } ?: return@firstNotNullOfOrNull null
+            val got = lately.filter { it.record == rec }.map { it.id }.distinct().size
+            a.takeIf { it.songs.size >= 4 && got in 1 until (it.songs.size * 6 / 10) }
+        }
+    }
+    val sinceLines = remember(fromYoursNow, forYou, newest, episodes, pickUp, since) {
+        if (!Fresh.ready) return@remember emptyList<NewLine>()
+        fun new(key: String) = Fresh.seen.first(key).let { it == null || (since != null && it > since!!) }
+        val out = ArrayList<NewLine>()
+        pickUp?.let { a -> if (Fresh.seen.fresh("pickup:${a.id}") > .3) out += NewLine("pickup:${a.id}", a.title, "${a.artist.lowercase()}, left partway") { pages.open(Page.Record(a.id)) } }
+        fromYoursNow.filter { new(Fresh.key(it.pick)) }.take(2).forEach { y ->
+            out += NewLine(Fresh.key(y.pick), y.pick.title, "${y.pick.artist.lowercase()}, new") { openPick(y) }
+        }
+        forYou.firstOrNull { !it.stretch && new(Fresh.key(it.item.pick)) }?.let { p ->
+            out += NewLine(Fresh.key(p.item.pick), p.item.pick.title, p.item.pick.artist.lowercase() + (Fresh.reason(p.item, false, taste)?.let { ", $it" } ?: "")) { openPick(p.item) }
+        }
+        newest.filter { new("server:${it.id}") }.let { n -> n.firstOrNull()?.let { a ->
+            out += NewLine("server:${a.id}", a.title, if (n.size > 1) "${a.artist.lowercase()}, on your server, and ${n.size - 1} more" else "${a.artist.lowercase()}, on your server") { pages.open(Page.Record(a.id)) }
+            n.drop(1).forEach { Fresh.seen.shown("server:${it.id}") }
+        } }
+        episodes.filter { new("ep:${it.id}") }.let { n -> n.firstOrNull()?.let { e ->
+            out += NewLine("ep:${e.id}", e.title, if (n.size > 1) "${e.album.lowercase()}, and ${n.size - 1} more episodes" else "${e.album.lowercase()}, new episode") { Playback.play(listOf(e), 0) }
+            n.drop(1).forEach { Fresh.seen.shown("ep:${it.id}") }
+        } }
+        out.take(4)
+    }
+    // the shelves' order for this visit (held: a shelf doesn't move under your thumb)
+    val order = remember(Listen.visit) { Fresh.order(LISTEN_SHELVES) }
+    // one of each on the page (Unique): the shelves in the order shown, each a record only once, the higher shelf
+    // keeping it; on a shelf, an artist never twice in a row
+    val one = remember(order, fromYoursNow, forYou, recentSongs, tubeRecent, onRepeat, forgotten, indie, records, tubeRecords, newest, yours, fresh, uploads) {
+        val taken = HashSet<String>()
+        val m = HashMap<String, List<Any?>>()
+        for (k in order) when (k) {
+            "fromYours" -> m[k] = Unique.shelf(fromYoursNow, taken, { Unique.of(it) }, perArtist = true) { it.pick.artist }
+            "forYou" -> m[k] = Unique.shelf(forYou, taken, { Unique.of(it.item) }, perArtist = true) { it.item.pick.artist }
+            "jumpBack" -> { m[k] = Unique.shelf(recentSongs, taken, { Unique.of(it) }) { it.artist }; m["jumpBackTube"] = Unique.shelf(tubeRecent, taken, { Unique.of(it) }) { it.artist } }
+            "onRepeat" -> m[k] = Unique.shelf(onRepeat, taken, { Unique.of(it) }) { it.artist }
+            "forgotten" -> m[k] = Unique.shelf(forgotten, taken, { Unique.of(it) }) { it.artist }
+            "indie" -> m[k] = Unique.shelf(indie, taken, { e -> e.song?.let { Unique.of(it) } ?: Unique.record(null, e.artist, e.title) }) { it.artist }
+            "uploads" -> m[k] = Unique.shelf(uploads, taken, { Unique.of(it) }) { it.artist }
+            "fresh" -> m[k] = Unique.shelf(fresh, taken, { Unique.of(it) }) { it.artist }
+            "tubeRecords" -> m[k] = Unique.shelf(tubeRecords, taken, { Unique.of(it) }) { it.artist }
+            "records" -> m[k] = Unique.shelf(records, taken, { Unique.of(it) }) { it.artist }
+            "newest" -> m[k] = Unique.shelf(newest, taken, { Unique.of(it) }) { it.artist }
+            "yours" -> m[k] = Unique.shelf(yours, taken, { Unique.of(it) }) { it.artist }
+        }
+        m
+    }
+    @Suppress("UNCHECKED_CAST") fun <T> one(k: String): List<T> = (one[k] ?: emptyList<Any?>()) as List<T>
+    val uFromYours = one<Picks.Shown>("fromYours"); val uForYou = one<ForYou.Placed<Picks.Shown>>("forYou")
+    val uRecent = one<Song>("jumpBack"); val uTubeRecent = one<Song>("jumpBackTube")
+    val uOnRepeat = one<Song>("onRepeat"); val uForgotten = one<Song>("forgotten"); val uIndie = one<IndieChart.Entry>("indie")
+    val uUploads = one<Song>("uploads"); val uFresh = one<TubeAlbum>("fresh"); val uTubeRecords = one<TubeAlbum>("tubeRecords")
+    val uRecords = one<TubeAlbum>("records"); val uNewest = one<Album>("newest"); val uYours = one<Album>("yours")
+    val sections = LinkedHashMap<String, @Composable () -> Unit>()
+    // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: it's INK's cover now)
+    if (uFromYours.isNotEmpty()) sections["fromYours"] = {
+        Heading("new from your artists")
+        Shelf(uFromYours) { s ->
+            val art by androidx.compose.runtime.produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+            PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, pages)
+        }
+    }
+    // three of every ten from INK: the critics' and djs' picks, near your taste first, a stretch now and then
+    if (uForYou.isNotEmpty()) sections["forYou"] = {
+        Heading("picked for you", "by critics and djs")
+        Shelf(uForYou) { p ->
+            val s = p.item
+            val art by androidx.compose.runtime.produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+            PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, pages, Fresh.reason(s, p.stretch, taste), near = !p.stretch)
+        }
+    }
+    // made from your listening (Discover): fresh finds, deep cuts and the rest
+    sections["madeForYou"] = { MadeForYouShelf() }
+    if (uRecent.isNotEmpty() || uTubeRecent.isNotEmpty()) sections["jumpBack"] = {
+        Label("jump back in")
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // the library's songs only, found first: one skipped inside the row left its gap, pushing the row right
+            items(uRecent) { s ->
+                Tile(s, s.album.ifEmpty { s.title }, s.artist) {
+                    val record = albums.firstOrNull { it.id == s.albumId }
+                    if (record != null) pages.open(Page.Record(record.id)) else Playback.play(listOf(s), 0)
+                }
+            }
+            // youtube music's: played from there on, back through what you played before it
+            itemsIndexed(uTubeRecent) { i, s -> Tile(s, s.title, s.artist) { Playback.play(uTubeRecent, i) } }
+        }
+        Spacer(Modifier.height(10.dp))
+    }
+    if (online && keptRecords.isNotEmpty()) sections["kept"] = { KeptShelf(keptRecords, "kept on this ${Device.word}", pages) }
+    // the shows you follow, their newest episodes not yet heard through: a tap plays from where you stopped
+    if (episodes.isNotEmpty()) sections["episodes"] = {
+        Label("new episodes")
+        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            items(episodes.take(10), key = { it.id }) { e -> Tile(e, e.title, e.album) { Playback.play(listOf(e), 0) } }
+        }
+        Spacer(Modifier.height(10.dp))
+    }
+    // youtube music's own mixes for you (signed in): supermix, discover, new release, replay
+    if (tubeMixes.isNotEmpty()) sections["tubeMixes"] = {
+        Label("your mixes on youtube music")
+        Shelf(tubeMixes) { l -> Tile(null, l.name, l.said.ifEmpty { "mix" }.lowercase(), face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
+    }
+    if (mixes.isNotEmpty()) sections["mixes"] = {
+        Label("mixes for you")
+        Shelf(mixes) { a -> Tile(a.hit, a.name, "mix", face = a.face, dither = true) { scope.launch { Listen.mix(a.hit!!) } } }
+    }
+    sections["because"] = { BecauseYouLovedShelf() }
+    sections["newToYou"] = { NewToYouShelf(pages) }
+    if (uOnRepeat.size >= 3) sections["onRepeat"] = {
+        Label("on repeat")
+        ShelfIndexed(uOnRepeat) { i, s -> Tile(s, s.title, s.artist) { Playback.play(uOnRepeat, i) } }
+    }
+    // what your youtube music artists put out this year, newest first (none, no row)
+    if (uFresh.isNotEmpty()) sections["fresh"] = {
+        Label("new from your artists on youtube music")
+        Shelf(uFresh) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
+    }
+    // ink radio: the stations chosen by hand, the stars first
+    sections["inkRadio"] = {
+        val now by Playback.now.collectAsState()
+        val ink = remember { Stations.curated(ctx) }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Label("ink radio")
+            Spacer(Modifier.weight(1f))
+            Word("all", pixel(12.sp, Ink.mid), Modifier.padding(end = 16.dp), touch = 8.dp) { pages.open(Page.InkRadio) }
+        }
+        val starred = ink.filter { it.star }
+        ShelfIndexed(starred) { i, st ->
+            val on = now?.song?.id == st.song.id
+            StationTile(st.song, on, now?.playing == true, said = if (on) "on now" else st.city) { Playback.play(starred.map { it.song }, i) }
+        }
+    }
+    // the week on indie radio: what KEXP, KCRW and WXPN played most
+    if (uIndie.isNotEmpty()) sections["indie"] = {
+        val songs = remember(uIndie) { uIndie.mapNotNull { it.song } }
+        Label("the week on indie radio")
+        ShelfIndexed(uIndie) { i, e -> Tile(e.song, e.title, e.artist, number = i + 1) { Playback.play(songs, i) } }
+    }
+    if (uForgotten.size >= 4) sections["forgotten"] = {
+        Label("forgotten favorites")
+        ShelfIndexed(uForgotten) { i, s -> Tile(s, s.title, s.artist) { Playback.play(uForgotten, i) } }
+    }
+    // the songs you've uploaded to youtube music yourself (they play signed in)
+    if (uUploads.isNotEmpty()) sections["uploads"] = {
+        Label("your uploads on youtube music")
+        ShelfIndexed(uUploads) { i, s -> Tile(s, s.title, s.artist) { Playback.play(uUploads, i) } }
+    }
+    if (tubeLists.isNotEmpty()) sections["tubeLists"] = {
+        Label("your playlists")
+        Shelf(tubeLists) { l -> Tile(null, l.name, "playlist", face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
+    }
+    if (tubeArtists.isNotEmpty()) sections["tubeArtists"] = {
+        Label("your artists on youtube music")
+        Shelf(tubeArtists) { a -> Tile(null, a.name, "artist", face = a.face) { pages.open(Page.TubeArtist(a)) } }
+    }
+    if (uTubeRecords.isNotEmpty()) sections["tubeRecords"] = {
+        Label("your records on youtube music")
+        Shelf(uTubeRecords) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
+    }
+    if (uRecords.isNotEmpty()) sections["records"] = {
+        Label("from artists you love")
+        Shelf(uRecords) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
+    }
+    if (uNewest.isNotEmpty()) sections["newest"] = {
+        Label("new on your server")
+        Shelf(uNewest) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
+    }
+    if (uYours.isNotEmpty()) sections["yours"] = {
+        Label("from your records")
+        Shelf(uYours) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
+    }
+    // the genres you like, their stations each
+    if (stations.isNotEmpty()) sections["stations"] = {
+        val now by Playback.now.collectAsState()
+        stations.forEach { (word, list) ->
+            Label("$word radio")
+            ShelfIndexed(list.take(12)) { i, s ->
+                val on = now?.song?.id == s.id
+                StationTile(s, on, now?.playing == true, said = if (on) "on now" else word) { Playback.play(list, i) }
+            }
+        }
+    }
+    if (radio.isNotEmpty()) sections["radio"] = {
+        Label("radio")
+        val now by Playback.now.collectAsState()
+        Shelf(radio) { (word, tag) ->
+            val on = now?.song?.let { s -> s.station && Stations.found(tag)?.any { it.id == s.id } == true } == true
+            // tapped, its stations play (next is the next station)
+            RadioTile(word, on, now?.playing == true) {
+                scope.launch { Stations.top(ctx, tag).takeIf { it.isNotEmpty() }?.let { Playback.play(it, 0) } }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
 
     // the shelves arrive in turn once, as ink music opens (a tab, not a page: its own time, kept for the run)
     if (Listen.shownAt == 0L) Listen.shownAt = android.os.SystemClock.uptimeMillis()
@@ -243,141 +481,13 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         // what the computer was playing, to carry on with here (Sync)
         continued?.let { o -> item(key = "continue") { Column(Modifier.cascade(1)) { ContinueHere(o) } } }
         if (!online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(1)) { KeptShelf(keptRecords, "no data? no problem", pages) }}
-        // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: it's INK's cover now)
-        if (fromYours.isNotEmpty()) item { Column(Modifier.cascade(2)) {
-            Heading("new from your artists", "out this week or picked by critics, by artists you play")
-            Shelf(fromYours) { s ->
-                val art by androidx.compose.runtime.produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
-                PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, pages)
-            }
-        }}
-        // made from your listening (Discover): fresh finds, deep cuts and the rest
-        item { Column(Modifier.cascade(3)) { MadeForYouShelf() } }
-        if (recentSongs.isNotEmpty() || tubeRecent.isNotEmpty()) item { Column(Modifier.cascade(3)) {
-            Label("jump back in")
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                // the library's songs only, found first: one skipped inside the row left its gap, pushing the row right
-                items(recentSongs) { s ->
-                    Tile(s, s.album.ifEmpty { s.title }, s.artist) {
-                        val record = albums.firstOrNull { it.id == s.albumId }
-                        if (record != null) pages.open(Page.Record(record.id)) else Playback.play(listOf(s), 0)
-                    }
-                }
-                // youtube music's: played from there on, back through what you played before it
-                itemsIndexed(tubeRecent) { i, s -> Tile(s, s.title, s.artist) { Playback.play(tubeRecent, i) } }
-            }
-            Spacer(Modifier.height(10.dp))
-        }}
-        if (online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(4)) { KeptShelf(keptRecords, "kept on this ${Device.word}", pages) }}
-        // the shows you follow, their newest episodes not yet heard through: a tap plays from where you stopped
-        if (episodes.isNotEmpty()) item { Column(Modifier.cascade(4)) {
-            Label("new episodes")
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(episodes.take(10), key = { it.id }) { e -> Tile(e, e.title, e.album) { Playback.play(listOf(e), 0) } }
-            }
-            Spacer(Modifier.height(10.dp))
-        }}
-        // youtube music's own mixes for you (signed in): supermix, discover, new release, replay
-        if (tubeMixes.isNotEmpty()) item { Column(Modifier.cascade(5)) {
-            Label("your mixes on youtube music")
-            Shelf(tubeMixes) { l -> Tile(null, l.name, l.said.ifEmpty { "mix" }.lowercase(), face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
-        }}
-        if (mixes.isNotEmpty()) item { Column(Modifier.cascade(6)) {
-            Label("mixes for you")
-            Shelf(mixes) { a ->
-                Tile(a.hit, a.name, "mix", face = a.face, dither = true) { scope.launch { Listen.mix(a.hit!!) } }
-            }
-        }}
-        item { Column(Modifier.cascade(6)) { BecauseYouLovedShelf() } }
-        item { Column(Modifier.cascade(7)) { NewToYouShelf(pages) } }
-        if (onRepeat.size >= 3) item { Column(Modifier.cascade(7)) {
-            Label("on repeat")
-            ShelfIndexed(onRepeat) { i, s -> Tile(s, s.title, s.artist) { Playback.play(onRepeat, i) } }
-        }}
-        // what your youtube music artists put out this year, newest first (none, no row)
-        if (fresh.isNotEmpty()) item { Column(Modifier.cascade(8)) {
-            Label("new from your artists")
-            Shelf(fresh) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
-        }}
-        // ink radio: the stations chosen by hand, the stars first
-        item { Column(Modifier.cascade(9)) {
-            val now by Playback.now.collectAsState()
-            val ink = remember { Stations.curated(ctx) }
-            Row(verticalAlignment = Alignment.Bottom) {
-                Label("ink radio")
-                Spacer(Modifier.weight(1f))
-                Word("all", pixel(12.sp, Ink.mid), Modifier.padding(end = 16.dp), touch = 8.dp) { pages.open(Page.InkRadio) }
-            }
-            val starred = ink.filter { it.star }
-            ShelfIndexed(starred) { i, st ->
-                val on = now?.song?.id == st.song.id
-                StationTile(st.song, on, now?.playing == true, said = if (on) "on now" else st.city) {
-                    Playback.play(starred.map { it.song }, i)
-                }
-            }
-        }}
-        // the week on indie radio: what KEXP, KCRW and WXPN played most
-        if (indie.isNotEmpty()) item { Column(Modifier.cascade(10)) {
-            val songs = remember(indie) { indie.mapNotNull { it.song } }
-            Label("the week on indie radio")
-            ShelfIndexed(indie) { i, e -> Tile(e.song, e.title, e.artist, number = i + 1) { Playback.play(songs, i) } }
-        }}
-        if (forgotten.size >= 4) item { Column(Modifier.cascade(11)) {
-            Label("forgotten favorites")
-            ShelfIndexed(forgotten) { i, s -> Tile(s, s.title, s.artist) { Playback.play(forgotten, i) } }
-        }}
-        // the songs you've uploaded to youtube music yourself (they play signed in)
-        if (uploads.isNotEmpty()) item { Column(Modifier.cascade(12)) {
-            Label("your uploads on youtube music")
-            ShelfIndexed(uploads) { i, s -> Tile(s, s.title, s.artist) { Playback.play(uploads, i) } }
-        }}
-        if (tubeLists.isNotEmpty()) item { Column(Modifier.cascade(13)) {
-            Label("your playlists")
-            Shelf(tubeLists) { l -> Tile(null, l.name, "playlist", face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
-        }}
-        if (tubeArtists.isNotEmpty()) item { Column(Modifier.cascade(14)) {
-            Label("your artists on youtube music")
-            Shelf(tubeArtists) { a -> Tile(null, a.name, "artist", face = a.face) { pages.open(Page.TubeArtist(a)) } }
-        }}
-        if (tubeRecords.isNotEmpty()) item { Column(Modifier.cascade(15)) {
-            Label("your records on youtube music")
-            Shelf(tubeRecords) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
-        }}
-        if (records.isNotEmpty()) item { Column(Modifier.cascade(16)) {
-            Label("from artists you love")
-            Shelf(records) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
-        }}
-        if (newest.isNotEmpty()) item { Column(Modifier.cascade(17)) {
-            Label("new on your server")
-            Shelf(newest) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
-        }}
-        if (yours.isNotEmpty()) item { Column(Modifier.cascade(18)) {
-            Label("from your records")
-            Shelf(yours) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
-        }}
-        // the genres you like, their stations each
-        stations.forEach { (word, list) ->
-            item { Column(Modifier.cascade(19)) {
-                val now by Playback.now.collectAsState()
-                Label("$word radio")
-                ShelfIndexed(list.take(12)) { i, s ->
-                    val on = now?.song?.id == s.id
-                    StationTile(s, on, now?.playing == true, said = if (on) "on now" else word) { Playback.play(list, i) }
-                }
-            }}
+        // what's new since you were here, a line each (Fresh)
+        if (sinceLines.isNotEmpty()) item(key = "since") { Column(Modifier.cascade(1).moving(this)) { SinceYouWereHere(since, sinceLines) } }
+        // the shelves, in the moment's order (Fresh.order): each shown, and its taps counted, so the unopened sink
+        order.forEachIndexed { i, k ->
+            val body = sections[k] ?: return@forEachIndexed
+            item(key = k) { Column(Modifier.cascade(2 + i).moving(this).shelf(k)) { ShelfShown(k); body() } }
         }
-        if (radio.isNotEmpty()) item { Column(Modifier.cascade(20)) {
-            Label("radio")
-            val now by Playback.now.collectAsState()
-            Shelf(radio) { (word, tag) ->
-                val on = now?.song?.let { s -> s.station && Stations.found(tag)?.any { it.id == s.id } == true } == true
-                // tapped, its stations play (next is the next station)
-                RadioTile(word, on, now?.playing == true) {
-                    scope.launch { Stations.top(ctx, tag).takeIf { it.isNotEmpty() }?.let { Playback.play(it, 0) } }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-        }}
     }
     }
 }
