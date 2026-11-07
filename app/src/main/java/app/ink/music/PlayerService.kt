@@ -530,7 +530,7 @@ class PlayerService : MediaLibraryService() {
                     .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
                     .setAudioOutputProvider(usb)
                     // every song at 48 kHz while transitions are on (exact off): a change of rate stopped the sound a moment
-                    .setAudioProcessors(arrayOf(blend, Resample { Crossfade.on(this@PlayerService) && !Exact.on(this@PlayerService) }))
+                    .setAudioProcessors(arrayOf(blend, Resample { Crossfade.on(this@PlayerService) && !Exact.inUse(this@PlayerService) }))
                     .build()
             // the decoder asked for float only for a file deeper than 16 bit: a 16 bit or lossy one stays 16 bit (as
             // exact: the same numbers), and goes Media3's 16 bit way, where its processors are (an episode's silence
@@ -545,7 +545,11 @@ class PlayerService : MediaLibraryService() {
                 ) {
                     override fun getMediaFormat(format: androidx.media3.common.Format, codecMimeType: String, codecMaxInputSize: Int, codecOperatingRate: Float) =
                         super.getMediaFormat(format, codecMimeType, codecMaxInputSize, codecOperatingRate).also { mf ->
-                            if (Heard.bitsOf(format) <= 16 && mf.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING)) mf.removeKey(android.media.MediaFormat.KEY_PCM_ENCODING)
+                            // and with transitions on (no exact to a DAC), a deeper file 16 bit too: Media3's processors are
+                            // never on float, and the blend is one of them (24 bit songs never crossfaded, 2026-11-07); every
+                            // song's 48 kHz while transitions are on anyway
+                            val blending = Crossfade.on(this@PlayerService) && !Exact.inUse(this@PlayerService)
+                            if ((Heard.bitsOf(format) <= 16 || blending) && mf.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING)) mf.removeKey(android.media.MediaFormat.KEY_PCM_ENCODING)
                         }
                 }
             }
@@ -757,7 +761,8 @@ class PlayerService : MediaLibraryService() {
                     when {
                         asked != null -> { Shelf.ready(this@PlayerService); Auto.found(asked).let { MediaSession.MediaItemsWithStartPosition(it.map(Playback::item), 0, 0) } }
                         tapped != null -> MediaSession.MediaItemsWithStartPosition(tapped.first.map(Playback::item), tapped.second, startPositionMs.coerceAtLeast(0))
-                        else -> MediaSession.MediaItemsWithStartPosition(resolve(mediaItems), startIndex, startPositionMs)
+                        // the song begun on cut where it was measured before, so it too goes into the next (Crossfade)
+                        else -> resolve(mediaItems).let { r -> MediaSession.MediaItemsWithStartPosition(crossfade?.precut(r, startIndex, startPositionMs.coerceAtLeast(0)) ?: r, startIndex, startPositionMs) }
                     }
                 }
 

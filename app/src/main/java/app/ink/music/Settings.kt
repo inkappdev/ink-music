@@ -349,7 +349,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     val cross = mode != Crossfade.OFF
                     // said plainly when it's on but resting (it couldn't be told it wasn't crossfading: exact was on)
                     if (cross && Exact.on(ctx)) {
-                        BasicText("resting now: exact to a usb dac is on (below)", style = pixel(12.sp, Ink.ink))
+                        BasicText("resting while your usb dac is plugged in: exact is on (below)", style = pixel(12.sp, Ink.ink))
                         Spacer(Modifier.height(8.dp))
                     }
                     Row {

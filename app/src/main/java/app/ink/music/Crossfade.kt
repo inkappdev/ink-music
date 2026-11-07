@@ -154,7 +154,7 @@ class Crossfade(
 
     /** This song and the next: may one go into the other? */
     private fun allowed(): Boolean {
-        if (!on(c) || Exact.on(c) || casting() || exo.repeatMode == Player.REPEAT_MODE_ONE) return false
+        if (!on(c) || Exact.inUse(c) || casting() || exo.repeatMode == Player.REPEAT_MODE_ONE) return false
         val i = exo.currentMediaItemIndex
         val n = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET } ?: return false
         val a = exo.getMediaItemAt(i); val b = exo.getMediaItemAt(n)
@@ -359,6 +359,64 @@ class Crossfade(
 
     private val cutSongs = HashMap<String, MediaItem>()   // songs cut short, as they were
 
+    // ---- the song you press play on (2026-11-07) ----
+    // Only the next song is cut ahead (the one playing can't be, without a stop), so the song begun on never blended:
+    // "crossfading doesn't work at all", tried on two songs. Each song's handover is kept once measured
+    // (files/crossfade-cuts.json); a song heard before is cut where it was as it's put on, its end decoded while it plays.
+    private val cutsFile = File(c.filesDir, "crossfade-cuts.json")
+    private val cuts: MutableMap<String, LongArray> by lazy {
+        java.util.Collections.synchronizedMap(LinkedHashMap<String, LongArray>().apply {
+            runCatching { val o = org.json.JSONObject(cutsFile.readText()); o.keys().forEach { k -> val a = o.getJSONArray(k); put(k, longArrayOf(a.getLong(0), a.getLong(1), a.getLong(2))) } }
+        })
+    }
+    /** Songs cut as they were put on: where, and over how long their end is mixed in (the tail made once measured). */
+    private val precut = ConcurrentHashMap<String, LongArray>()
+
+    private fun keepCut(id: String, e: Ends) {
+        if (e.duration <= 0) return
+        cuts[id] = longArrayOf(e.handover, e.lastSound, e.duration)
+        // the newest 3000
+        val o = org.json.JSONObject()
+        synchronized(cuts) { cuts.entries.toList().takeLast(3000).forEach { (k, v) -> o.put(k, org.json.JSONArray().put(v[0]).put(v[1]).put(v[2])) } }
+        runCatching { Keep.write(cutsFile, o.toString()) }
+    }
+
+    /**
+     * A new queue (the player's own thread, as it's set): the song begun on cut at its kept handover, if it's been
+     * measured before, it goes into another song (not a record in order) and it's begun before its handover.
+     */
+    fun precut(items: List<MediaItem>, start: Int, at: Long): List<MediaItem> {
+        if (!on(c) || Exact.inUse(c) || casting()) return items
+        val item = items.getOrNull(start) ?: return items
+        val next = items.getOrNull(start + 1) ?: return items
+        val id = item.mediaId
+        if (listOf(id, next.mediaId).any { it.startsWith("e") || it.startsWith("s") }) return items
+        val record = item.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
+        if (record.isNotEmpty() && record == next.mediaMetadata.extras?.getString(Levelling.RECORD)) return items
+        val k = cuts[id] ?: return items
+        val handover = k[0]; val fade = (k[1] - handover).coerceIn(2_000, 12_000)
+        if (at >= handover - 5_000) return items
+        precut[id] = longArrayOf(handover, fade)
+        // its end already decoded this run: handed over at once (else once it's measured)
+        main.post { cutSongs[id] = item; tailOfPrecut(id) }
+        android.util.Log.d("ink-crossfade", "$id begun on: cut at ${handover / 1000.0}s as it's put on (kept from before), its end to be mixed in over ${fade / 1000.0}s")
+        return items.toMutableList().also { it[start] = item.buildUpon().setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(handover).build()).build() }
+    }
+
+    /** A song cut as it was put on, its end now decoded: handed to the blend (or said, if it couldn't be). */
+    private fun tailOfPrecut(id: String) {
+        val p = precut[id] ?: return
+        val b = blend ?: return
+        if (b.tails.containsKey(id)) return
+        val pcm = ends[id]?.end as? Pcm
+        val all = pcm?.all
+        if (pcm == null || all == null) return why(id, "begun on, its end couldn't be kept: it ends at its cut")
+        val pcmEnd = pcm.start + all.size / pcm.channels * 1000L / pcm.rate
+        if (pcm.start > p[0] || pcmEnd < p[0] + p[1]) return why(id, "begun on, its end decoded doesn't hold the cut")
+        b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, p[0], p[1])
+        android.util.Log.d("ink-crossfade", "$id: its end ready to mix in at ${p[0] / 1000.0}s")
+    }
+
     /**
      * The next song cut short where its handover is and its end handed to Blend, while it's still next (a playing song
      * can't be changed). Only a song decoded to its end, 16 bit, with a song after it that isn't an episode, a station,
@@ -366,19 +424,19 @@ class Crossfade(
      */
     private fun cut() {
         val b = blend ?: return
-        if (!on(c) || Exact.on(c)) { cutSongs.keys.toList().forEach(::uncut); return }
+        if (!on(c) || Exact.inUse(c)) { if (on(c)) why("-", "exact to a usb dac is on, and the dac is plugged in"); cutSongs.keys.toList().forEach(::uncut); return }
         val n = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET } ?: return
         val item = exo.getMediaItemAt(n)
         val id = item.mediaId
         if (id in cutSongs || id.startsWith("e") || id.startsWith("s")) return
         val e = ends[id] ?: return
-        val pcm = e.end as? Pcm ?: return
-        val all = pcm.all ?: return
-        val f = exo.currentTimeline.getNextWindowIndex(n, exo.repeatMode, exo.shuffleModeEnabled).takeIf { it != C.INDEX_UNSET } ?: return
+        val pcm = e.end as? Pcm ?: return why(id, "its end wasn't kept (deeper than 16 bit)")
+        val all = pcm.all ?: return why(id, "its end has no samples kept")
+        val f = exo.currentTimeline.getNextWindowIndex(n, exo.repeatMode, exo.shuffleModeEnabled).takeIf { it != C.INDEX_UNSET } ?: return why(id, "nothing after it")
         val following = exo.getMediaItemAt(f)
-        if (following.mediaId.startsWith("e") || following.mediaId.startsWith("s")) return
+        if (following.mediaId.startsWith("e") || following.mediaId.startsWith("s")) return why(id, "a station or an episode after it")
         val record = item.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
-        if (record.isNotEmpty() && record == following.mediaMetadata.extras?.getString(Levelling.RECORD) && f == n + 1) return
+        if (record.isNotEmpty() && record == following.mediaMetadata.extras?.getString(Levelling.RECORD) && f == n + 1) return why(id, "a record in order")
         // the beats matched, where both are sure and their tempos near: worked out (and the end stretched) apart
         val pcmEnd = pcm.start + all.size / pcm.channels * 1000L / pcm.rate
         if (id in planning) return
@@ -393,7 +451,7 @@ class Crossfade(
                 if (exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId } != id || id in cutSongs) return@post
                 val at = m?.cut ?: e.handover
                 val fade = m?.fade ?: (e.lastSound - at).coerceIn(2_000, 12_000)
-                if (pcm.start > at || pcmEnd < at + fade) return@post
+                if (pcm.start > at || pcmEnd < at + fade) return@post why(id, "its end decoded (${pcm.start / 1000.0}s to ${pcmEnd / 1000.0}s) doesn't hold the cut at ${at / 1000.0}s and its ${fade / 1000.0}s fade")
                 b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, at, fade,
                     m?.let { Blend.Stretched(following.mediaId, it.stretched, it.from, it.speed, it.period) })
                 cutSongs[id] = item
@@ -404,6 +462,10 @@ class Crossfade(
         }
     }
     private val planning = HashSet<String>()
+
+    /** Why a song won't blend into the next, said once a song (ink-crossfade): what a listener's log can tell us. */
+    private val said = HashSet<String>()
+    private fun why(id: String, reason: String) { if (said.add("$id $reason")) android.util.Log.d("ink-crossfade", "$id: no blend: $reason") }
 
     /** A beat-matched blend's plan: where to cut, over how long, the old song's end stretched to the new one's tempo. */
     private class Matched(val cut: Long, val fade: Long, val stretched: FloatArray, val from: Double, val speed: Double, val period: Double)
@@ -494,7 +556,7 @@ class Crossfade(
             if (id.startsWith("e") || id.startsWith("s") || !asked.add(id)) continue
             val uri = item.localConfiguration?.uri ?: item.requestMetadata.mediaUri ?: continue
             work.execute {
-                runCatching { ends(uri) }.onFailure { android.util.Log.d("ink-crossfade", "$id: $it") }.getOrNull()?.let { ends[id] = it; main.post { cut() } }
+                runCatching { ends(uri) }.onFailure { android.util.Log.d("ink-crossfade", "$id: $it") }.getOrNull()?.let { ends[id] = it; keepCut(id, it); main.post { cut(); tailOfPrecut(id) } }
             }
         }
     }
@@ -536,7 +598,7 @@ class Crossfade(
         val tail = beats(endPcm); val head = headPcm?.let { beats(it) }
         android.util.Log.d("ink-crossfade", "${uri.lastPathSegment}: ${dur / 1000}s, sound to ${lastSound / 1000.0}s, quiet from ${quiet?.div(1000.0)}, hand over at ${handover / 1000.0}s, starts ${firstSound}ms in; " +
             "beat at its end ${tail?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}, at its start ${head?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}")
-        return Ends(lastSound, handover, firstSound, tail, head, endPcm.takeIf { !deep }, dur)
+        return Ends(lastSound, handover, firstSound, tail, head, endPcm.takeIf { !deep || !Exact.inUse(c) }, dur)
     }
 
     /** A stretch of a song decoded: where it begins (ms), its samples made mono, their rate. */

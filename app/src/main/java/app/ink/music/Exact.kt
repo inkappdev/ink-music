@@ -23,6 +23,14 @@ object Exact {
     private fun file(c: Context) = File(c.filesDir, "exact")
     // ink music's own way to a DAC (UsbDac) works on any Android; Android's own bit-perfect path is asked only on 14 and up
     fun on(c: Context) = file(c).exists()
+    /**
+     * Exact in effect: on, and a USB DAC there to be exact to. Off the DAC (headphones over Bluetooth, the speaker) the
+     * phone plays as it would, transitions and all: exact left on once had silently stopped every crossfade (2026-11-07).
+     */
+    fun inUse(c: Context) = on(c) && runCatching {
+        c.getSystemService(android.media.AudioManager::class.java).getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).any { it.type in USB }
+    }.getOrDefault(true)
+
     fun set(c: Context, on: Boolean) { runCatching { if (on) file(c).writeText("on") else file(c).delete() } }
 
     private val media get() = android.media.AudioAttributes.Builder()
