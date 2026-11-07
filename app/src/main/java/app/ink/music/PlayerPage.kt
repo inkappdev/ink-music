@@ -338,7 +338,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             queueUp,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { QueuePage(onClose = { queueUp = false }, onOpen = { queueUp = false; onOpen(it) }) }
+        ) { QueuePage(onClose = { queueUp = false }) }
         androidx.compose.animation.AnimatedVisibility(
             addUp && n.song != null,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),

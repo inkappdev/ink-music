@@ -40,20 +40,6 @@
                 <!-- in a TV's row of apps -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-            <!-- a tape's link (Tape in core): inkhome.app/tape#..., opened here at once once Android has checked
-                 inkhome.app/.well-known/assetlinks.json; inkmusic://tape#... is the tape page's own way in -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="inkhome.app" android:pathPrefix="/tape" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="inkmusic" android:host="tape" />
-            </intent-filter>
         </activity>
 
         <!-- the player in its own process: the screens can be rebuilt (or crash) without a

@@ -345,12 +345,6 @@ object YouTubeMusic {
     suspend fun findRecord(title: String, artist: String): TubeAlbum? =
         search("$artist $title").albums.firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
 
-    /** A YouTube song by its id, as a tape says it: its title and artist as said, its cover YouTube's own picture of it. */
-    fun byId(id: String, title: String, artist: String, ms: Long = 0): Song? = id.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }?.let { v ->
-        Song(id = "y$v", uri = Uri.parse("ytm://$v"), title = title, artist = artist, album = "", albumId = "y$v", albumArtist = artist,
-            duration = ms, disc = 1, track = 0, year = 0, art = "https://i.ytimg.com/vi/$v/hqdefault.jpg", format = "youtube").also(::remember)
-    }
-
     /** YouTube Music's song by these words, if it has one (blocking). */
     fun find(title: String, artist: String): Song? {
         // a version chosen by hand for these words (Versions): that one

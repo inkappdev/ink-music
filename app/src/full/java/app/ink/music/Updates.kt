@@ -30,6 +30,10 @@ object Updates {
     private const val EVERY = 6 * 3_600_000L
     val offer = MutableStateFlow<Update?>(null)
     val step = MutableStateFlow<Updating>(Updating.Offered)
+    /** What a check asked for in settings found: "looking", "up to date", or why it couldn't look (null: nothing to say). */
+    val said = MutableStateFlow<String?>(null)
+    /** Whether this build looks for its own updates (settings' "check for an update" shown). */
+    val manual: Boolean get() = !BuildConfig.DEBUG
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     // who asked for it, "(#12, #15)": on GitHub, not on the card
     private val asked = Regex("""\s*\(#\d+(,\s*#\d+)*\)""")
@@ -38,16 +42,22 @@ object Updates {
     private fun file(c: Context) = File(c.filesDir, "update.json")
     private fun kept(c: Context) = runCatching { JSONObject(file(c).readText()) }.getOrDefault(JSONObject())
 
-    fun check(c: Context) {
+    /**
+     * Looks for a newer release: by itself (listen, at most every six hours, a version put aside left aside), or `now`,
+     * asked in settings (2026-11-07): looked for at once, whatever was put aside, and said what it found.
+     */
+    fun check(c: Context, now: Boolean = false) {
         if (BuildConfig.DEBUG) return  // a debug build has its own key: the installer would refuse it
         scope.launch {
+            if (now) said.value = "looking"
             val k = kept(c)
             val seen = k.optJSONObject("seen")
-            val fresh = System.currentTimeMillis() - k.optLong("at") < EVERY
-            val r = (if (fresh) seen else null) ?: latest() ?: return@launch
+            val fresh = !now && System.currentTimeMillis() - k.optLong("at") < EVERY
+            val r = (if (fresh) seen else null) ?: latest() ?: run { if (now) said.value = "couldn't reach the updates. try again in a moment"; return@launch }
             if (!fresh) file(c).writeText(k.put("at", System.currentTimeMillis()).put("seen", r).toString())
             val version = r.optString("tag_name").removePrefix("v")
-            if (!newer(version, BuildConfig.VERSION_NAME) || version == k.optString("aside")) return@launch
+            if (!newer(version, BuildConfig.VERSION_NAME) || (!now && version == k.optString("aside"))) { if (now) said.value = "up to date"; return@launch }
+            if (now) said.value = null
             val assets = r.optJSONArray("assets") ?: return@launch
             val all = (0 until assets.length()).map { assets.getJSONObject(it) }
             // the full build's APK (a play build on GitHub would silence YouTube: release.sh keeps it off)

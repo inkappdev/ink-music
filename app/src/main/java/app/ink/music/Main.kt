@@ -143,12 +143,7 @@ class Main : ComponentActivity() {
         Moves.start(this)
         // opened again (the home screen, the notification) over ink music's own screens: those stay
         // as they were (the YouTube sign-in, mid-way), not a second library over them
-        if (!isTaskRoot) {
-            // a tape's link opened from another app's task (a camera): handed to ink music's own, which opens it
-            if (Tapes.isTape(intent?.data)) runCatching { startActivity(android.content.Intent(intent).setClass(this, Main::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            finish(); return
-        }
-        Tapes.take(intent)
+        if (!isTaskRoot) { finish(); return }
         // a TV never stands upright: the manifest's portrait is the phone's
         Device.tv = isTv(this)
         if (isTv(this)) requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -182,12 +177,6 @@ class Main : ComponentActivity() {
                 mediaController = Playback.token?.takeIf { on }?.let { android.media.session.MediaController(this@Main, it) }
             }
         }
-    }
-
-    /** Opened again while up (singleTop): a tape's link, say. */
-    override fun onNewIntent(intent: android.content.Intent) {
-        super.onNewIntent(intent)
-        Tapes.take(intent)
     }
 
     /** A TV's remote pressed with nothing focused (Compose then hears nothing): the first thing on screen takes focus. */
@@ -283,10 +272,6 @@ sealed interface Page {
     data class Mood(val mood: TubeMood) : Page
     data class Festival(val name: String) : Page
     data class SettingsPart(val part: String) : Page
-    /** A tape being made of these songs ([TapeMakePage]); [name], the list's. */
-    data class TapeMake(val songs: List<Song>, val name: String) : Page
-    /** A tape someone sent, by its link ([TapePage]). */
-    data class Tape(val link: String) : Page
     /** A podcast ([ShowPage]); `first`, the show as it was found, shown while its feed is read. */
     data class Show(val feed: String, val first: Podcasts.Show? = null) : Page {
         override fun equals(other: Any?) = other is Show && other.feed == feed
@@ -345,8 +330,6 @@ private fun App() {
         Playback.begun.collect { if (it != seen) { seen = it; playerUp = true } }
     }
     BackHandler(pages.stack.isNotEmpty() && !playerUp) { pages.back() }
-    // a tape's link opened (its QR code, a message): the tape, over whatever was up
-    LaunchedEffect(Unit) { Tapes.opened.collect { link -> if (link != null) { Tapes.opened.value = null; playerUp = false; pages.open(Page.Tape(link)) } } }
 
     Box(Modifier.fillMaxSize().background(Ink.black)) {
         // the first open: ink music before anything is asked
@@ -438,8 +421,6 @@ private fun App() {
                         is Page.Festival -> FestivalPage(p.name, pages)
                         is Page.Show -> ShowPage(p.feed, p.first, pages)
                         is Page.SettingsPart -> if (p.part == "look") LookPage(pages) else SettingsPage(pages, p.part)
-                        is Page.TapeMake -> TapeMakePage(p.songs, p.name, pages)
-                        is Page.Tape -> TapePage(p.link, pages)
                     }
                     }
                 }
@@ -1115,10 +1096,7 @@ private fun LovedPage(pages: Pages) {
         item { Column(Modifier.cascade(0)) {
             BasicText("LOVED", style = headline(44.sp))
             Spacer(Modifier.height(8.dp))
-            Row {
-                BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(end = 26.dp))
-                if (theirs.isNotEmpty()) Word("make a tape", pixel(12.sp, Ink.mid), touch = 8.dp) { pages.open(Page.TapeMake(theirs, "loved")) }
-            }
+            BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(16.dp))
             if (theirs.isNotEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(theirs, 0) }
@@ -1136,7 +1114,7 @@ private fun LovedPage(pages: Pages) {
 }
 
 /**
- * Where to keep songs found here (a Spotify playlist brought in, a tape): on YouTube Music, on your server. Each made
+ * Where to keep songs found here (a Spotify playlist brought in): on YouTube Music, on your server. Each made
  * once (a second tap made a second playlist), then "open it".
  */
 @Composable
@@ -1217,12 +1195,9 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
                 CoversWord(Modifier.padding(end = 26.dp))
                 KeepOffline(all)
             }
-            Row(Modifier.padding(top = 10.dp)) {
-                if (!all.isNullOrEmpty()) Word("make a tape", pixel(12.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { pages.open(Page.TapeMake(all, name)) }
-                // deleting asks once more: the word says so, lit, for a moment
-                if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), touch = 8.dp) {
-                    if (!sure) sure = true else scope.launch { if (Server.deletePlaylist(id)) pages.back() }
-                }
+            // deleting asks once more: the word says so, lit, for a moment
+            if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
+                if (!sure) sure = true else scope.launch { if (Server.deletePlaylist(id)) pages.back() }
             }
             Spacer(Modifier.height(14.dp))
         }}
@@ -2035,7 +2010,6 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
             LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
             val scope = rememberCoroutineScope()
             Row(Modifier.padding(top = 10.dp)) {
-                songs?.takeIf { it.isNotEmpty() }?.let { all -> Word("make a tape", pixel(12.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { pages.open(Page.TapeMake(all, pl.name)) } }
                 val off = pl.id in hidden
                 Word(if (off) "show in ink music" else "hide", pixel(12.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) {
                     HiddenLists.set(pl.id, !off); if (!off) pages.back()

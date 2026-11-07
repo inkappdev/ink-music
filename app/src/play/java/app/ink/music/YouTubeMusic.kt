@@ -14,7 +14,6 @@ object YouTubeMusic {
     fun refused(id: String) {}
     fun related(id: String): List<Song> = emptyList()
     fun find(title: String, artist: String): Song? = null
-    fun byId(id: String, title: String, artist: String, ms: Long = 0): Song? = null
     fun moods(): List<TubeMood> = emptyList()
     fun mood(params: String): List<Pair<String, List<TubeList>>> = emptyList()
     fun moodStation(params: String): List<Song> = emptyList()
