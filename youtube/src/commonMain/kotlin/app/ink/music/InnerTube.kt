@@ -1,18 +1,13 @@
 package app.ink.music
 
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
+import kotlin.concurrent.Volatile
 
 /**
  * YouTube Music's own API (InnerTube, as its web page speaks it: "WEB_REMIX"), by hand, for what
  * NewPipe doesn't do: your library, signed in. Signed in by music.youtube.com's cookies, each
  * request signed as the page signs its own (SAPISIDHASH; Metrolist's way, GPL-3.0). Answers are
- * read by renderer wherever they sit, not by path, so a shelf moved still reads. Plain JVM (tried
- * in a unit test); the full build only. Not affiliated with YouTube or Google.
+ * read by renderer wherever they sit, not by path, so a shelf moved still reads. Shared (the phone's full
+ * build, the computer, the iPhone; tried in a unit test); never in the play build. Not affiliated with YouTube or Google.
  */
 class InnerTube(
     private val cookie: String? = null,
@@ -88,6 +83,21 @@ class InnerTube(
         }
         return out
     }
+
+    /**
+     * A search of YouTube Music, as its own search box asks (2026-11-07, the iPhone, which has no NewPipe): its songs,
+     * or its records, artists or playlists ([kind]), by its filters (the same `params` its page sends).
+     */
+    fun searchSongs(q: String, max: Int = 30): List<Track> = runCatching {
+        all(post("search", JSONObject().put("query", q).put("params", SEARCH_SONGS)), "musicResponsiveListItemRenderer")
+            .mapNotNull(::track).distinctBy { it.videoId }.take(max)
+    }.getOrDefault(emptyList())
+
+    fun searchItems(q: String, kind: Kind, max: Int = 20): List<Item> = runCatching {
+        val params = when (kind) { Kind.RECORD -> SEARCH_RECORDS; Kind.ARTIST -> SEARCH_ARTISTS; else -> SEARCH_PLAYLISTS }
+        all(post("search", JSONObject().put("query", q).put("params", params)), "musicResponsiveListItemRenderer")
+            .mapNotNull(::row).filter { it.kind == kind }.distinctBy { it.id }.take(max)
+    }.getOrDefault(emptyList())
 
     /** A mood or a genre on YouTube Music's own page of them (its `params` open it). */
     data class Mood(val title: String, val params: String, val genre: Boolean)
@@ -181,14 +191,10 @@ class InnerTube(
         val answer = post("player", JSONObject().put("videoId", videoId))
         val tracking = all(answer, "videostatsPlaybackUrl").firstOrNull()?.optString("baseUrl")?.takeIf { it.isNotEmpty() }
             ?: return false.also { trace?.invoke("played $videoId: no tracking link (${answer.optJSONObject("playabilityStatus")?.let { it.optString("status") + " " + it.optString("reason") }})") }
-        val cpn = (1..16).map { CPN[java.util.concurrent.ThreadLocalRandom.current().nextInt(CPN.length)] }.joinToString("")
-        val c = URL(tracking.replace("https://s.youtube.com", BASE) + "&ver=2&c=WEB_REMIX&cpn=$cpn").openConnection() as HttpURLConnection
-        try {
-            c.connectTimeout = 15_000; c.readTimeout = 20_000
-            headers(c)
-            trace?.invoke("played $videoId: ${c.responseCode} from ${tracking.substringBefore('?')}")
-            c.responseCode in 200..299
-        } finally { c.disconnect() }
+        val cpn = (1..16).map { CPN[kotlin.random.Random.nextInt(CPN.length)] }.joinToString("")
+        val code = http(tracking.replace("https://s.youtube.com", BASE) + "&ver=2&c=WEB_REMIX&cpn=$cpn", headers = headers(), connectMs = 15_000, readMs = 20_000).code
+        trace?.invoke("played $videoId: $code from ${tracking.substringBefore('?')}")
+        code in 200..299
     }.onFailure { trace?.invoke("played $videoId: $it") }.getOrDefault(false)
 
     /**
@@ -201,15 +207,11 @@ class InnerTube(
             .map { it.optString("browseId") }.firstOrNull { it.startsWith("MPLY") } ?: return emptyList()
         val client = JSONObject().put("clientName", "ANDROID_MUSIC").put("clientVersion", "7.27.52")
             .put("androidSdkVersion", 34).put("hl", "en").put("gl", "US")
-        val c = URL("$BASE/youtubei/v1/browse?prettyPrint=false").openConnection() as HttpURLConnection
-        val page = try {
-            c.requestMethod = "POST"; c.connectTimeout = 15_000; c.readTimeout = 20_000; c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/json")
-            c.setRequestProperty("User-Agent", "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14) gzip")
-            c.outputStream.use { it.write(JSONObject().put("browseId", id).put("context", JSONObject().put("client", client)).toString().toByteArray()) }
-            if (c.responseCode >= 400) return emptyList()
-            JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-        } finally { c.disconnect() }
+        val r = http("$BASE/youtubei/v1/browse?prettyPrint=false", "POST",
+            mapOf("Content-Type" to "application/json", "User-Agent" to "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14) gzip"),
+            JSONObject().put("browseId", id).put("context", JSONObject().put("client", client)).toString().encodeToByteArray(), 15_000, 20_000)
+        if (r.code >= 400) return emptyList()
+        val page = JSONObject(r.text)
         val lines = all(page, "lyricsData").firstOrNull()?.optJSONArray("timedLyricsData") ?: return emptyList()
         return (0 until lines.length()).mapNotNull { i ->
             val l = lines.optJSONObject(i) ?: return@mapNotNull null
@@ -223,23 +225,25 @@ class InnerTube(
      * is bound to it; ytcfg's DATASYNC_ID, in no API answer) and its player's code's address ("/s/player/...").
      */
     fun page(): Pair<String?, String?> = runCatching {
-        val c = URL("$BASE/").openConnection() as HttpURLConnection
-        try {
-            headers(c)
-            val page = c.inputStream.bufferedReader().use { it.readText() }
-            Regex("\"DATASYNC_ID\":\"([^\"]+)\"").find(page)?.groupValues?.get(1) to
-                Regex("\"jsUrl\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)?.let { if (it.startsWith("http")) it else BASE + it }
-        } finally { c.disconnect() }
+        val page = http("$BASE/", headers = headers()).also { if (it.code >= 400) throw IOException("page ${it.code}") }.text
+        Regex("\"DATASYNC_ID\":\"([^\"]+)\"").find(page)?.groupValues?.get(1) to
+            Regex("\"jsUrl\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)?.let { if (it.startsWith("http")) it else BASE + it }
     }.onFailure { trace?.invoke("page: $it") }.getOrDefault(null to null)
+
+    /** What music.youtube.com's page says of this session: the account's id (signed in), the player's address, the visitor's id. */
+    data class Session(val dataSyncId: String?, val playerUrl: String?, val visitorData: String?)
+
+    fun session(): Session? = runCatching {
+        val page = http("$BASE/", headers = headers()).also { if (it.code >= 400) throw IOException("page ${it.code}") }.text
+        fun cfg(k: String) = Regex("\"$k\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)
+        Session(cfg("DATASYNC_ID"), cfg("jsUrl")?.let { if (it.startsWith("http")) it else BASE + it },
+            cfg("VISITOR_DATA")?.replace("\\u003d", "=")?.replace("%3D", "="))
+    }.onFailure { trace?.invoke("session: $it") }.getOrNull()
 
     /** A player's code (a few megabytes of YouTube's own JavaScript), and the date it signs with ("signatureTimestamp"). */
     fun playerCode(url: String): Pair<String, Int?>? = runCatching {
-        val c = URL(url).openConnection() as HttpURLConnection
-        try {
-            c.setRequestProperty("User-Agent", UA)
-            val code = c.inputStream.bufferedReader().use { it.readText() }
-            code to Regex("(?:signatureTimestamp|sts):(\\d{5})").find(code)?.groupValues?.get(1)?.toIntOrNull()
-        } finally { c.disconnect() }
+        val code = http(url, headers = mapOf("User-Agent" to UA), readMs = 30_000).also { if (it.code >= 400) throw IOException("player ${it.code}") }.text
+        code to Regex("(?:signatureTimestamp|sts):(\\d{5})").find(code)?.groupValues?.get(1)?.toIntOrNull()
     }.onFailure { trace?.invoke("player code: $it") }.getOrNull()
 
     /**
@@ -339,31 +343,24 @@ class InnerTube(
         val context = JSONObject().put("client", client)
         if (asBrand) context.put("user", JSONObject().put("onBehalfOfUser", dataSyncId))
         body.put("context", context)
-        val c = URL("$BASE/youtubei/v1/$endpoint?prettyPrint=false$query").openConnection() as HttpURLConnection
-        try {
-            c.requestMethod = "POST"; c.connectTimeout = 15_000; c.readTimeout = 20_000; c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/json")
-            headers(c)
-            val t0 = System.nanoTime()
-            c.outputStream.use { it.write(body.toString().toByteArray()) }
-            val code = c.responseCode
-            val text = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            val t1 = System.nanoTime()
-            if (code >= 400) throw IOException("youtube music answered $code: ${text.take(200)}")
-            return JSONObject(text).also { trace?.invoke("$endpoint ${(t1 - t0) / 1_000_000} ms + read ${(System.nanoTime() - t1) / 1_000_000} ms, ${text.length / 1024} kB") }
-        } finally { c.disconnect() }
+        val t0 = nowMs()
+        val r = http("$BASE/youtubei/v1/$endpoint?prettyPrint=false$query", "POST", headers() + ("Content-Type" to "application/json"),
+            body.toString().encodeToByteArray(), 15_000, 20_000)
+        val text = r.text
+        if (r.code >= 400) throw IOException("youtube music answered ${r.code}: ${text.take(200)}")
+        return JSONObject(text).also { trace?.invoke("$endpoint ${nowMs() - t0} ms, ${text.length / 1024} kB") }
     }
 
     /** As the web page asks: its client, your visitor id, and signed in, your cookies and the request signed. */
-    private fun headers(c: HttpURLConnection) {
-        c.setRequestProperty("User-Agent", UA)
-        c.setRequestProperty("Origin", BASE); c.setRequestProperty("X-Origin", BASE); c.setRequestProperty("Referer", "$BASE/")
-        c.setRequestProperty("X-YouTube-Client-Name", "67"); c.setRequestProperty("X-YouTube-Client-Version", version)
-        visitorData?.let { c.setRequestProperty("X-Goog-Visitor-Id", it) }
+    private fun headers(): Map<String, String> = buildMap {
+        put("User-Agent", UA)
+        put("Origin", BASE); put("X-Origin", BASE); put("Referer", "$BASE/")
+        put("X-YouTube-Client-Name", "67"); put("X-YouTube-Client-Version", version)
+        visitorData?.let { put("X-Goog-Visitor-Id", it) }
         if (sapisid != null) {
-            c.setRequestProperty("Cookie", cookie)
-            c.setRequestProperty("Authorization", sign(sapisid))
-            c.setRequestProperty("X-Goog-AuthUser", "0")
+            put("Cookie", cookie!!)
+            put("Authorization", sign(sapisid))
+            put("X-Goog-AuthUser", "0")
         }
     }
 
@@ -372,13 +369,18 @@ class InnerTube(
         /** Each request's time and size, for the log (the app's: "ink-youtube"). */
         @Volatile var trace: ((String) -> Unit)? = null
         const val BASE = "https://music.youtube.com"
+        // the search page's filters (songs, records, artists, community playlists), as it sends them
+        private const val SEARCH_SONGS = "EgWKAQIIAWoMEA4QChADEAQQCRAF"
+        private const val SEARCH_RECORDS = "EgWKAQIYAWoMEA4QChADEAQQCRAF"
+        private const val SEARCH_ARTISTS = "EgWKAQIgAWoMEA4QChADEAQQCRAF"
+        private const val SEARCH_PLAYLISTS = "EgeKAQQoAEABagwQDhAKEAMQBBAJEAU="
         /** The web client's version when none was read at sign-in (YouTube takes one a little old). */
         const val VERSION = "1.20251020.01.00"
         private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
         /** "SAPISIDHASH <time>_<sha1 of time, SAPISID and origin>", as the web page signs. */
-        fun sign(sapisid: String, now: Long = System.currentTimeMillis() / 1000): String {
-            val sha = MessageDigest.getInstance("SHA-1").digest("$now $sapisid $BASE".toByteArray()).joinToString("") { "%02x".format(it) }
+        fun sign(sapisid: String, now: Long = nowMs() / 1000): String {
+            val sha = sha1("$now $sapisid $BASE".encodeToByteArray()).hex()
             return "SAPISIDHASH ${now}_$sha"
         }
 

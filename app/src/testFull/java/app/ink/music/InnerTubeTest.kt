@@ -7,6 +7,20 @@ import org.junit.Test
 class InnerTubeTest {
     private val yt = InnerTube()
 
+    @Test fun search() {
+        val songs = yt.searchSongs("mj lenderman she's leaving you")
+        println("songs ${songs.size}"); songs.take(3).forEach(::println)
+        assertTrue(songs.any { it.artists.any { a -> a.contains("Lenderman") } })
+        val records = yt.searchItems("manning fireworks", InnerTube.Kind.RECORD)
+        println("records ${records.size}"); records.take(3).forEach(::println)
+        assertTrue(records.any { it.id.startsWith("MPREb_") })
+        val artists = yt.searchItems("mj lenderman", InnerTube.Kind.ARTIST)
+        println("artists ${artists.size}"); artists.take(2).forEach(::println)
+        assertTrue(artists.any { it.id.startsWith("UC") })
+        val lists = yt.searchItems("indie rock 2026", InnerTube.Kind.PLAYLIST)
+        println("lists ${lists.size}"); lists.take(2).forEach(::println)
+    }
+
     @Test fun playlistSongs() {
         // a long public playlist: three pages, so continuations are followed
         val t = yt.tracks("VLPL0GvsLQil0MmYC96KEs_7dTNsLm1PS6JX", max = 600)
