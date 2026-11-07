@@ -227,8 +227,6 @@ object Home {
 
     /** Written whole or not at all. */
     fun write(f: File, text: String) {
-        val tmp = File(f.path + ".part")
-        tmp.writeText(text)
-        tmp.renameTo(f)
+        Keep.write(f, text)
     }
 }

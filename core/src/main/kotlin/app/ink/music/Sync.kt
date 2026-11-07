@@ -38,8 +38,7 @@ object Sync {
         @Synchronized fun read(): JSONObject = runCatching { JSONObject(file.readText()) }.getOrDefault(JSONObject())
 
         @Synchronized private fun write(o: JSONObject) {
-            val tmp = File(dir, "sync.json.part")
-            tmp.writeText(o.toString()); tmp.renameTo(file)
+            Keep.write(file, o.toString())
         }
 
         /** This device's own id, made once. */

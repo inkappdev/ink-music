@@ -153,7 +153,7 @@ object Covers {
         f.parentFile.mkdirs()
         val tmp = File(f.path + ".part")
         tmp.writeBytes(bytes)
-        tmp.renameTo(f)
+        Keep.replace(tmp, f)
     }
 
     /** A file's record's cover as a 600 px JPEG, for a speaker's screen (blocking); null with none. */

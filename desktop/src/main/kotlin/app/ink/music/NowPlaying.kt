@@ -141,7 +141,34 @@ object NowPlaying {
         objc.objc_autoreleasePoolPop(pool)
     }
 
+    /**
+     * The card told what plays. The cover is read first; then everything native at once, nothing waited on in between:
+     * an autorelease pool held open across a wait let another update (a seek, a crossfade's handover, both at a song's
+     * change) run in the gap on this thread and pop the pools out of order, so the first update's dictionary was freed
+     * under it and its next setObject:forKey: went to whatever took its place (the Mac's crash, 2026-11-07, 2.1.4).
+     */
     private suspend fun show(n: Player.Now?) {
+        val fetched = n?.song?.let { fetch(it) }
+        paint(n, fetched)
+    }
+
+    /** A cover read for the card: its key, its JPEG (null: none). */
+    private class Fetched(val key: String, val bytes: ByteArray?)
+
+    private fun keyOf(s: Song) = s.albumId + (s.art ?: "")
+
+    /** The song's cover as a JPEG, read only when it isn't the one shown (null then: keep the one shown). */
+    private suspend fun fetch(s: Song): Fetched? {
+        val key = keyOf(s)
+        if (key == shownCover) return null
+        val bytes = withContext(Dispatchers.IO) {
+            Covers.of(s, 600)?.image?.let { org.jetbrains.skia.Image.makeFromBitmap(it.asSkiaBitmap()).encodeToData(org.jetbrains.skia.EncodedImageFormat.JPEG, 90)?.bytes }
+        }
+        return Fetched(key, bytes)
+    }
+
+    /** Everything native for one update, in one pool, never suspended. */
+    private fun paint(n: Player.Now?, fetched: Fetched?) {
         val pool = objc.objc_autoreleasePoolPush()
         try {
             val center = msg(cls("MPNowPlayingInfoCenter"), "defaultCenter")
@@ -163,7 +190,9 @@ object NowPlaying {
             put("MPNowPlayingInfoPropertyElapsedPlaybackTime", num(Player.position.value / 1000.0))
             put("MPNowPlayingInfoPropertyPlaybackRate", num(if (n.playing) 1.0 else 0.0))
             put("MPNowPlayingInfoPropertyMediaType", num(1.0)) // audio
-            cover(s)?.let { put("artwork", it) }
+            // this song's cover, read for it (two updates can read the same one: made once)
+            if (fetched != null && fetched.key != shownCover && fetched.key == keyOf(s)) cover(fetched)
+            if (shownCover == keyOf(s)) artwork?.let { put("artwork", it) }
             msg(center, "setNowPlayingInfo:", info)
             msg(center, "setPlaybackState:", if (n.playing) 1L else 2L)
         } finally {
@@ -171,16 +200,11 @@ object NowPlaying {
         }
     }
 
-    /** The song's cover as the card's artwork (an NSImage behind a block), made again only when the cover changes. */
-    private suspend fun cover(s: Song): Pointer? {
-        val key = s.albumId + (s.art ?: "")
-        if (key == shownCover) return artwork
-        shownCover = key
-        val bytes = withContext(Dispatchers.IO) {
-            Covers.of(s, 600)?.image?.let { org.jetbrains.skia.Image.makeFromBitmap(it.asSkiaBitmap()).encodeToData(org.jetbrains.skia.EncodedImageFormat.JPEG, 90)?.bytes }
-        }
+    /** The card's artwork made from a cover read (an NSImage behind a block), the old one let go. */
+    private fun cover(f: Fetched) {
+        shownCover = f.key
         val old = image
-        image = bytes?.let { b ->
+        image = f.bytes?.let { b ->
             val m = Memory(b.size.toLong()).apply { write(0, b, 0, b.size) }
             val data = msg(cls("NSData"), "dataWithBytes:length:", m, b.size.toLong())
             msg(msg(cls("NSImage"), "alloc"), "initWithData:", data)
@@ -191,6 +215,5 @@ object NowPlaying {
             val size = Size.ByValue().apply { width = 600.0; height = 600.0 }
             msg(msg(cls("MPMediaItemArtwork"), "alloc"), "initWithBoundsSize:requestHandler:", size, artBlock)
         }
-        return artwork
     }
 }

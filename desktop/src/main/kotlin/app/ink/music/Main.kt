@@ -95,6 +95,8 @@ fun main() {
     linuxWindow()
     // ⌘Q (the app menu's Quit, the Dock's): the same whole quit as closing the window
     runCatching { java.awt.Desktop.getDesktop().setQuitHandler { _, response -> runCatching { quit() }; response.performQuit() } }
+    // what Windows' refused renames left stranded beside each kept file, put back first (Keep)
+    runCatching { Keep.recover(Home.dir); Keep.recover(java.io.File(Home.dir, "podcasts")) }
     Library.start()
     Server.start()
     Sorts.start()

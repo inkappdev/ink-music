@@ -43,7 +43,7 @@ object Plain {
                 val plain = Unfragment.plain(raw) ?: raw
                 val part = File(dir, "$video.part")
                 part.writeBytes(plain)
-                if (!part.renameTo(done)) { part.delete(); return null }
+                if (!Keep.replace(part, done)) { part.delete(); return null }
                 Log.d("plain $video: ${done.length() / 1024} kB in ${System.currentTimeMillis() - t0} ms")
             } catch (e: Exception) {
                 Log.d("plain $video: $e"); done.delete(); return null

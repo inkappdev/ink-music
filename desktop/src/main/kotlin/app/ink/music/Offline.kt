@@ -72,7 +72,7 @@ object Offline {
             } finally { c.disconnect() }
             if (total > 0) keeping.value = keeping.value + (s.id to (at.toFloat() / total).coerceIn(0f, 1f))
         }
-        if (part.length() > 0) { part.renameTo(File(dir, s.id)); kept.value = kept.value + s.id }
+        if (part.length() > 0) { Keep.replace(part, File(dir, s.id)); kept.value = kept.value + s.id }
     }
 
     /** These songs no longer kept (any on their way called off). */

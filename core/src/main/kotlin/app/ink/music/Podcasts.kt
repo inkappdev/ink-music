@@ -255,7 +255,7 @@ object Podcasts {
         f.parentFile?.mkdirs()
         val t = File(f.parentFile, f.name + ".new")
         t.writeText(text)
-        if (!t.renameTo(f)) { f.delete(); t.renameTo(f) }
+        Keep.replace(t, f)
     }
 
     private fun showJson(s: Show) = JSONObject().put("feed", s.feed).put("title", s.title).put("author", s.author)
