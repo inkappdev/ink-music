@@ -68,11 +68,11 @@ fun ListenPage(open: (Page) -> Unit) {
         val minute = Listening.minuteOfWeek(now)
         songs.mapNotNull { s -> heard.hour(s.id, minute)?.let { s to it } }.sortedByDescending { it.second }.map { it.first }.take(60)
     }
-    val hourRecords = remember(hourSongs, byId) { hourSongs.mapNotNull { byId[it.albumId] }.distinctBy { it.id }.take(7) }
-    val shelf = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(7) }
-    // what you play at this hour, topped up from your shelves to seven (one record played at this hour once showed
-    // a shelf of one, 2026-10-30)
-    val first = remember(hourRecords, shelf) { (hourRecords + shelf).distinctBy { it.id }.take(7) }
+    val hourRecords = remember(hourSongs, byId) { hourSongs.mapNotNull { byId[it.albumId] }.distinctBy { it.id }.take(21) }
+    val shelf = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(21) }
+    // what you play at this hour, topped up from your shelves (one record played at this hour once showed a shelf of
+    // one, 2026-10-30); as many as the width has room for (below)
+    val first = remember(hourRecords, shelf) { (hourRecords + shelf).distinctBy { it.id }.take(21) }
     val lately = remember(albums, heard) { albums.mapNotNull { a -> heard.lately("r:" + a.id)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
     val forgotten = remember(albums, heard) { albums.mapNotNull { a -> heard.forgotten("r:" + a.id, now)?.let { a to it } }.sortedByDescending { it.second }.map { it.first }.take(16) }
     val newest by produceState(emptyList<Album>(), account, albums) { value = Server.newest(16).mapNotNull { byId[it] } }
@@ -121,14 +121,21 @@ fun ListenPage(open: (Page) -> Unit) {
                 if (hourRecords.isNotEmpty()) "what you play at this hour" else "a few of yours, a new few each day") {
                 Word(if (hourRecords.isNotEmpty()) "play this hour" else "play these", pixel(14.sp), touch = 8.dp) { Player.play(play) }
             }
-            // one big, six beside it in two rows of three (four in a row left the big one's height empty beside it)
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Top) {
-                first.firstOrNull()?.let { a -> RecordTile(a, Modifier.weight(2f)) { open(Page.Record(a.id)) } }
-                Column(Modifier.weight(3f), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    first.drop(1).chunked(3).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                            row.forEach { a -> RecordTile(a, Modifier.weight(1f)) { open(Page.Record(a.id)) } }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            // one big, the rest beside it in two rows: covers about the size of every other shelf's, a wider window more
+            // of them, not bigger ones (sized by the window's share, a full screen's big one was ~590 dp and the shelf
+            // the whole first screen: "some of the albums feel huge", 2026-11-08). The big one two covers and the gap.
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val gap = 20.dp
+                val cols = ((maxWidth + gap) / (160.dp + gap)).toInt().coerceAtLeast(5)
+                val tile = (maxWidth - gap * (cols - 1)) / cols
+                val beside = cols - 2
+                Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.Top) {
+                    first.firstOrNull()?.let { a -> RecordTile(a, Modifier.width(tile * 2 + gap)) { open(Page.Record(a.id)) } }
+                    Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                        first.drop(1).take(beside * 2).chunked(beside).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                                row.forEach { a -> RecordTile(a, Modifier.width(tile)) { open(Page.Record(a.id)) } }
+                            }
                         }
                     }
                 }
