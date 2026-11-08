@@ -56,7 +56,9 @@ fun InkWeekly() {
     val latest = w.week == weeks.firstOrNull()?.week
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val room = maxWidth
-        val side = minOf(room * .46f, 540.dp)
+        // a cover still, a notch down: at full screen the mosaic was ~540 dp and the block the whole first screen ("the top
+        // ink block is too big", 2026-11-08)
+        val side = minOf(room * .36f, 360.dp)
         val wide = room >= 820.dp
         Column {
             Row(verticalAlignment = Alignment.Bottom) {
@@ -70,7 +72,7 @@ fun InkWeekly() {
             Spacer(Modifier.height(26.dp))
             // who's on it, running off both edges (still under less motion)
             val names = remember(w) { w.songs.map { it.artist.substringBefore(",").trim() }.distinct().joinToString("  ·  ") }
-            Marquee(names, Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 84.sp)
+            Marquee(names, Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 60.sp)
             Spacer(Modifier.height(22.dp))
             // the songs as a chart: three columns wide, the place big beside each
             val across = if (room >= 1100.dp) 3 else if (wide) 2 else 1
@@ -121,7 +123,7 @@ private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: (
         if (!latest) { Spacer(Modifier.width(18.dp)); Word("this week's", pixel(12.sp), touch = 6.dp, onClick = onLatest) }
     }
     Spacer(Modifier.height(10.dp))
-    BasicText(w.title.uppercase(), style = headline(if (big) 88.sp else 56.sp).copy(lineHeight = if (big) 84.sp else 54.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+    BasicText(w.title.uppercase(), style = headline(if (big) 64.sp else 48.sp).copy(lineHeight = if (big) 62.sp else 46.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
     if (w.note.isNotEmpty()) {
         Spacer(Modifier.height(14.dp))
         BasicText(w.note.lowercase(), style = pixel(14.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 23.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
