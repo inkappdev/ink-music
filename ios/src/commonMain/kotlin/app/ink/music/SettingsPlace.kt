@@ -79,6 +79,12 @@ fun SettingsPlace(top: Dp, foot: Dp) {
                 ?: if (peers.isEmpty()) "pair a computer signed in to youtube music, and it comes across" else "comes across from your computer at the next sync") {
                 if (who != null) Word("sign out here", pixel(14.sp, Ink.mid)) { Tube.signOut() }
             }
+            Section("the look", "behind the player: the cover in an effect") {
+                val look by Looks.on.collectAsState()
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(22.dp)) {
+                    for (l in Look.entries) Word(l.word, pixel(14.sp, if (l == look) Ink.ink else Ink.dim), touch = 8.dp) { Looks.set(l) }
+                }
+            }
             Section("ink music", "free, open source, for your iphone") {
                 BasicText("made by ink", style = pixel(12.sp, Ink.mid))
             }
