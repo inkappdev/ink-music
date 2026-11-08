@@ -125,6 +125,9 @@ object YouTubeMusic {
      * A song's audio stream (blocking: the player's loader, or a speaker's thread): its link and
      * type. For a speaker the m4a (every speaker plays AAC), else the best there is.
      */
+    /** YouTube's own loudness for a song, as a ReplayGain gain (dB), where its signed-in answer said it. */
+    val loudness = java.util.concurrent.ConcurrentHashMap<String, Float>()
+
     fun stream(asked: String, forSpeaker: Boolean, small: Boolean = false): Pair<String, String>? {
         // the version chosen by hand for this song, if one is (Versions)
         val id = app?.let { Versions.of(it, asked) }?.let { "y$it" } ?: asked
@@ -197,6 +200,12 @@ object YouTubeMusic {
         val status = answer.optJSONObject("playabilityStatus")
         if (status?.optString("status") != "OK") {
             android.util.Log.d("ink-youtube", "signed $vid: ${status?.optString("status")} ${status?.optString("reason")}"); return null
+        }
+        // its loudness as YouTube has it (signed in, the answer's whole: playerConfig.audioConfig), as a ReplayGain
+        // gain against -18 LUFS, for even volume (Levelling: YouTube's songs carry no tags; 2026-11-08)
+        answer.optJSONObject("playerConfig")?.optJSONObject("audioConfig")?.let { a ->
+            val lufs = if (a.has("perceptualLoudnessDb")) a.optDouble("perceptualLoudnessDb") else if (a.has("loudnessDb")) a.optDouble("loudnessDb") - 14 else Double.NaN
+            if (!lufs.isNaN()) loudness[id] = (-18 - lufs).toFloat()
         }
         val formats = answer.optJSONObject("streamingData")?.optJSONArray("adaptiveFormats") ?: return null
         val audio = (0 until formats.length()).map { formats.getJSONObject(it) }.filter { it.optString("mimeType").startsWith("audio/") }

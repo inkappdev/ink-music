@@ -56,8 +56,13 @@ class Resample(private val wanted: () -> Boolean) : BaseAudioProcessor() {
         channels = inputAudioFormat.channelCount
         step = inputAudioFormat.sampleRate.toDouble() / RATE
         history = FloatArray(0); have = 0
-        pos = (TAPS / 2 - 1).toDouble()   // the first output centred once enough has come
+        pos = (TAPS / 2 - 1).toDouble()   // the first output centred on the first sample, once enough has come
+        fresh = true
     }
+
+    // begun afresh: the first frame held before itself for half the window, so the first output is on the first sample
+    // (it began 31 samples in, ~0.7 ms of the song skipped at every change to a 44.1 song: "milisecond static", 2026-11-08)
+    private var fresh = true
 
     override fun onReset() { history = FloatArray(0); have = 0 }
 
@@ -66,11 +71,16 @@ class Resample(private val wanted: () -> Boolean) : BaseAudioProcessor() {
         val inFrames = inputBuffer.remaining() / (2 * ch)
         if (inFrames == 0) return
         // what's come added to what's left
-        val grown = FloatArray((have + inFrames) * ch)
-        System.arraycopy(history, 0, grown, 0, have * ch)
         val inp = inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-        for (i in 0 until inFrames * ch) grown[have * ch + i] = inp.short / 32768f
-        history = grown; have += inFrames
+        val pad = if (fresh) TAPS / 2 - 1 else 0
+        val grown = FloatArray((have + pad + inFrames) * ch)
+        System.arraycopy(history, 0, grown, 0, have * ch)
+        for (i in 0 until inFrames * ch) grown[(have + pad) * ch + i] = inp.short / 32768f
+        if (fresh) {
+            for (f in 0 until pad) for (c in 0 until ch) grown[(have + f) * ch + c] = grown[(have + pad) * ch + c]
+            fresh = false
+        }
+        history = grown; have += pad + inFrames
         // as many outputs as there's input round them for
         val last = have - TAPS / 2 - 1
         val count = if (pos > last) 0 else (floor((last - pos) / step).toInt() + 1)

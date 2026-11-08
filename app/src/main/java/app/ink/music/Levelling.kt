@@ -20,7 +20,7 @@ import kotlin.math.pow
  * songs stay quiet; anywhere else, the song's own. Down is the player's volume, up a
  * [LoudnessEnhancer] (its limiter keeps a quiet song lifted from clipping).
  */
-class Levelling(private val player: Player, private val context: android.content.Context) {
+class Levelling(private val player: Player, private val context: android.content.Context, private val blend: Blend? = null) {
     var on = true
         set(v) { field = v; apply() }
     /** What the player's volume is at, levelled (sleep's fade works down from it). */
@@ -40,6 +40,28 @@ class Levelling(private val player: Player, private val context: android.content
     fun apply() {
         val db = if (on) gain() else 0f
         this.db = db
+        // transitions on (every song through Blend, 16 bit): the gain's applied there, song by song, so the old song's end
+        // keeps its own under the next (through the volume it took the next one's at once); else the volume, as before
+        val inMix = blend != null && Crossfade.on(context) && !Exact.inUse(context)
+        blend?.levelled = inMix
+        if (inMix) {
+            player.currentMediaItem?.mediaId?.let { blend!!.gains[it] = 10f.pow(db / 20f) }
+            // and the next song's, ahead: the mix begins before the player says it's the next one's turn (its sound is
+            // made seconds ahead of what's heard), and the new song had come in at the old one's gain, then changed
+            // 4 s on (2026-11-08: "song got noticeably louder during mix")
+            player.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { player.getMediaItemAt(it) }?.let { n ->
+                val g = if (on) 10f.pow(gainOf(n, false) / 20f) else 1f
+                if (blend.gains[n.mediaId] != g) android.util.Log.d("ink-level", "${n.mediaId} next: ${"%.1f".format(20 * kotlin.math.log10(g))} dB ahead")
+                blend.gains[n.mediaId] = g
+            }
+            if (blend!!.gains.size > 200) blend.gains.keys.take(100).forEach { blend.gains.remove(it) }
+            level = 1f
+            player.volume = fade
+            enhancer()?.runCatching { setTargetGain(0); enabled = false }
+            android.util.Log.d("ink-level", "${player.currentMediaItem?.mediaId} ${"%.1f".format(db)} dB in the mix")
+            onApply?.invoke()
+            return
+        }
         level = 10f.pow(db.coerceAtMost(0f) / 20f)
         player.volume = level * fade
         val up = (db.coerceAtLeast(0f) * 100).toInt()   // millibels
@@ -84,14 +106,43 @@ class Levelling(private val player: Player, private val context: android.content
         return item.localConfiguration?.uri?.toString()?.let(read::get)
     }
 
-    private fun gain(): Float {
-        val item = player.currentMediaItem ?: return 0f
-        val album = inOrder(item)
-        val tags = tagged(player.currentTracks).let { if (it.track != null || it.album != null) it else mp4(item) ?: it }
+    /** A song's loudness as measured (Crossfade's decode of it), LUFS; set by the player. */
+    var measured: ((String) -> Double?)? = null
+    /** A song's loudest sample, measured (0..1). */
+    var peakOf: ((String) -> Double?)? = null
+
+    /**
+     * Every song 4 dB over ReplayGain's -18 LUFS: -14, where Spotify, YouTube, Apple Music and Tidal put theirs (at -18
+     * ink music sounded quieter than every other app; 2026-11-08). The same for all, so they stay even with each other.
+     */
+    private fun gain(): Float = player.currentMediaItem?.let { gainOf(it, true) } ?: 0f
+
+    /**
+     * Turned up no further than its loudest sample allows, and 1 dB on (the soft ceiling takes that): the preamp on top of
+     * a quiet song's ReplayGain had its peaks at the limiter (02:00 AM up 2.2 dB, 79 samples over, 2026-11-08). Turned
+     * down, or its peak not known, as it was.
+     */
+    private fun gainOf(item: MediaItem, playing: Boolean): Float {
+        val g = (rawGain(item, playing) + PREAMP).coerceIn(-15f, 12f)
+        if (g <= 0f) return g
+        val room = peakOf?.invoke(item.mediaId)?.let { (-20 * kotlin.math.log10(it) + 1).toFloat() } ?: return g
+        return minOf(g, room.coerceAtLeast(0f))
+    }
+
+    /** A song's gain: the one playing by its tags as the player read them too; the next by what's known ahead of it. */
+    private fun rawGain(item: MediaItem, playing: Boolean): Float {
+        // a YouTube song: YouTube's own loudness (signed in), else as measured; its Opus header's gain is 0 and said
+        // nothing (every one read 0.0 dB: YouTube's songs went unlevelled, 2026-11-08)
+        val id = item.mediaId
+        val heard = measured?.invoke(id)?.let { (-18 - it).toFloat().coerceIn(-15f, 10f) }
+        if (id.startsWith("y")) (YouTubeMusic.loudness[id] ?: heard)?.let { return it }
+        val album = if (playing) inOrder(item) else item.mediaMetadata.extras?.getString(RECORD)?.takeIf { it.isNotEmpty() }
+            ?.let { it == player.currentMediaItem?.mediaMetadata?.extras?.getString(RECORD) } == true
+        val tags = (if (playing) tagged(player.currentTracks) else Gains(null, null)).let { if (it.track != null || it.album != null) it else mp4(item) ?: it }
         val extras = item.mediaMetadata.extras
         fun said(key: String) = extras?.getFloat(key, Float.NaN)?.takeIf { !it.isNaN() }
         return (if (album) tags.album ?: said(ALBUM_GAIN) else null)
-            ?: tags.track ?: said(TRACK_GAIN) ?: tags.album ?: said(ALBUM_GAIN) ?: UNKNOWN
+            ?: tags.track ?: said(TRACK_GAIN) ?: tags.album ?: said(ALBUM_GAIN) ?: heard ?: UNKNOWN
     }
 
     /** A record played in order: the song before or after it in the queue is off the same record. */
@@ -127,6 +178,7 @@ class Levelling(private val player: Player, private val context: android.content
     companion object {
         /** A song with no gain anywhere: about where most of a library sits (ReplayGain's -18 LUFS, from today's masters). */
         const val UNKNOWN = -7f
+        const val PREAMP = 4f
         // what a queue item carries (its MediaMetadata's extras): the server's gains and its record
         const val TRACK_GAIN = "gain"
         const val ALBUM_GAIN = "albumGain"

@@ -3,6 +3,7 @@ package app.ink.music
 /** The play build has no YouTube Music: nothing found, nothing played. */
 object YouTubeMusic {
     const val available = false
+    val loudness = java.util.concurrent.ConcurrentHashMap<String, Float>()
     fun attach(c: android.content.Context) {}
     fun known(id: String): Song? = null
     fun remember(s: Song) {}

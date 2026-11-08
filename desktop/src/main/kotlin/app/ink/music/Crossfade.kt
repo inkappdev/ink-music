@@ -68,7 +68,11 @@ object Crossfade {
 
     /** Where a song's sound ends (ms), where its handover begins, where its sound begins; its beat at its end and start. */
     data class Ends(val lastSound: Long, val handover: Long, val firstSound: Long, val tail: Beats?, val head: Beats?, val duration: Long,
-                    val tailKey: Key.Found? = null, val headKey: Key.Found? = null)
+                    val tailKey: Key.Found? = null, val headKey: Key.Found? = null,
+                    /** Its start's level (dBFS each 50 ms from 0), its end's (each 50 ms from tailFrom): the phone's. */
+                    val headLv: FloatArray = FloatArray(0), val tailLv: FloatArray = FloatArray(0), val tailFrom: Long = 0,
+                    /** When its intro's over (a second within 6 dB of its usual); where a fade-out in its recording begins. */
+                    val fullAt: Long = 0, val fading: Long? = null)
 
     /** A handover planned: the old song's time it begins at, the new one's start, how long, the old one's tempo then. */
     private data class Plan(
@@ -77,6 +81,10 @@ object Crossfade {
         val period: Double = 0.0, val bpmFrom: Double = 0.0,
         /** The filter fade (the phone's, 2026-11-08): the old one's top closing, the new one opening from thin. */
         val filter: Boolean = false,
+        /** The new one's intro quiet over this share of the fade: the old one held up longer, the new one in sooner. */
+        val hold: Double = 0.0,
+        /** The new one turned down this much (dB) to the old end's level, up to its own over the fade and 4 s. */
+        val rideDb: Double = 0.0,
     ) { val matched get() = speed != 1.0 || a0 != 0.0 }
 
     /**
@@ -174,7 +182,8 @@ object Crossfade {
         // not beats matched, in automix: the filter fade, short when their keys clash (both sure)
         val clash = Key.clash(es.tailKey, en.headKey)
         val fade = (es.lastSound - cut).coerceIn(2_000, 12_000).let { if (clash) it.coerceAtMost(5_000) else it }
-        return Plan(s.id, n.id, cut, en.firstSound, fade, filter = mode.value == AUTOMIX)
+        return Plan(s.id, n.id, cut, en.firstSound, fade, filter = mode.value == AUTOMIX,
+            hold = ((en.fullAt - en.firstSound).toDouble() / fade).coerceIn(0.0, .7))
     }
 
     /**
@@ -203,7 +212,11 @@ object Crossfade {
         val outro = a.bars.withIndex().filter { (i, br) ->
             i >= 4 && br.at in (e.lastSound - 36 * pa)..latest && br.loud < .67f * (i - 4 until i).map { a.bars[it].loud }.average()
         }.lastOrNull()?.value?.at
-        val a0 = outro ?: a.barNear(e.lastSound - 16 * pa).let { if (it > latest) it - 4 * a.period else it }
+        val a0 = (outro ?: a.barNear(e.lastSound - 16 * pa).let { if (it > latest) it - 4 * a.period else it }).let { o ->
+            // fading out in its own recording: out on the bar before the fade begins, the new one in over the music
+            val f = e.fading?.toDouble() ?: return@let o
+            if (o <= f - 500) o else a.barNear(f - 500).let { if (it > f - 500) it - 4 * a.period else it }
+        }
         val cut = (a0 - speed * b0).toLong()
         val fade = kotlin.math.min(16 * b.period, (e.lastSound - cut) / speed).toLong().coerceIn(4_000, 14_000)
         if (cut < e.duration - 25_000 + 500 || cut < a.first) return null
@@ -211,12 +224,41 @@ object Crossfade {
         val clash = Key.clash(e.tailKey, next.headKey)
         Log.d("crossfade: ${s.title} into ${n.title}: beats matched, %.1f into %.1f bpm, at %.3fx, out at %.2fs (%s), in on bar one at %.2fs, keys %s into %s%s".format(
             a.bpm, b.bpm, speed, a0 / 1000, if (outro != null) "its outro" else "a bar start", b0 / 1000, e.tailKey?.camelot, next.headKey?.camelot, if (clash) ", clashing" else ""))
-        return Plan(s.id, n.id, cut, 0, fade, speed, a0, b0, b.period, a.bpm, filter = clash)
+        return Plan(s.id, n.id, cut, 0, fade, speed, a0, b0, b.period, a.bpm, filter = clash,
+            hold = ((next.fullAt - b0) / fade).coerceIn(0.0, .7))
+    }
+
+    /**
+     * The fader ridden (the phone's, 2026-11-08, "still getting louder during mix"): the old end and the new start as they'll
+     * sound over the fade (each stretch's mean power, with its own even-volume gain), the new one turned down where it's
+     * louder, 6 dB at most. 0: none.
+     */
+    private fun ride(old: Ends, new: Ends, cut: Long, start: Long, fade: Long, a: Mpv, b: Mpv): Double {
+        fun mean(lv: FloatArray, from: Long, to: Long, at: Long): Double? {
+            val a = ((from - at) / 50).toInt().coerceAtLeast(0); val b = ((to - at) / 50).toInt().coerceAtMost(lv.size)
+            if (b - a < 10) return null
+            return 10 * log10((a until b).sumOf { Math.pow(10.0, lv[it] / 10.0) } / (b - a))
+        }
+        val o = mean(old.tailLv, cut, cut + fade, old.tailFrom) ?: return 0.0
+        val w = mean(new.headLv, start, start + fade, 0) ?: return 0.0
+        return ((o + gainOf(a)) - (w + gainOf(b))).coerceIn(-6.0, 0.0)
+    }
+
+    /** A deck's even-volume gain (dB) as mpv applies it: its tags' (album's first), else the untagged level; off, 0. */
+    private fun gainOf(m: Mpv): Double {
+        if (!Player.sound.value.even) return 0.0
+        return (m.get("current-tracks/audio/replaygain-album-gain") ?: m.get("current-tracks/audio/replaygain-track-gain"))?.toDoubleOrNull()
+            ?: Player.UNTAGGED.toDouble()
     }
 
     /** The handover: the new deck sounding, rising; the old one on to its end, falling away; the player the new one's. */
-    private fun go(a: Mpv, b: Mpv, p: Plan, nextAt: Int, from: Song) {
-        if (Player.queue.value.getOrNull(nextAt)?.id != p.into) return drop()
+    private fun go(a: Mpv, b: Mpv, planned: Plan, nextAt: Int, from: Song) {
+        if (Player.queue.value.getOrNull(nextAt)?.id != planned.into) return drop()
+        // the ride worked out now, both decks' songs open (their gains known)
+        val p = planned.copy(rideDb = run {
+            val eo = ends[planned.from]; val en = ends[planned.into]
+            if (eo == null || en == null) 0.0 else ride(eo, en, planned.cut, planned.start, planned.fade, a, b)
+        })
         fadingOut = a; fadingIn = b
         mixing.value = Mixing(from, p.into, System.currentTimeMillis(), p.fade,
             if (p.matched) p.bpmFrom else 0.0, if (p.matched && p.period > 0) 60_000 / p.period else 0.0,
@@ -228,19 +270,41 @@ object Crossfade {
         if (p.matched) a.set("speed", "%.4f".format(java.util.Locale.ROOT, p.speed))
         Player.become(b, nextAt)
         readied = null; readyFor = null; plan = null
-        Log.d("crossfade: into ${p.into} at ${p.cut / 1000.0}s over ${p.fade / 1000.0}s, from ${p.start} ms in" + if (p.matched) ", beats matched" else "")
+        Log.d("crossfade: into ${p.into} at ${p.cut / 1000.0}s over ${p.fade / 1000.0}s, from ${p.start} ms in" + (if (p.matched) ", beats matched" else "") +
+            (if (p.hold > .05) ", the old one held over ${"%.0f".format(p.hold * 100)}%" else "") + (if (p.rideDb < -.5) ", the new one ridden in ${"%.1f".format(p.rideDb)} dB" else ""))
         Thread({ fade(a, b, p) }, "crossfade-fade").apply { isDaemon = true; start() }
     }
 
     private fun fade(a: Mpv, b: Mpv, p: Plan) {
         val began = System.nanoTime()
         var bassAcross = false
+        val eo = ends[p.from]; val en = ends[p.into]
+        val ride0 = Math.pow(10.0, p.rideDb / 20)
         while (fadingOut === a) {
-            val t = ((System.nanoTime() - began) / 1e6 / p.fade).coerceIn(0.0, 1.0)
+            val ms = (System.nanoTime() - began) / 1e6
+            val t = (ms / p.fade).coerceIn(0.0, 1.0)
             val v = if (Player.muted.value) 0.0 else Player.volume.value.toDouble()
-            // equal power: the levels' squares sum to one; mpv's volume is the level's cube root
-            a.set("volume", "%.2f".format(java.util.Locale.ROOT, v * cbrt(cos(t * PI / 2))))
-            b.set("volume", "%.2f".format(java.util.Locale.ROOT, v * cbrt(sin(t * PI / 2))))
+            // equal power; a quiet intro coming in, the old one held at full over most of it, the new one rising sooner
+            val h = p.hold
+            val kOld = if (h > 0) ((t - .8 * h) / (1 - .8 * h)).coerceIn(0.0, 1.0) else t
+            val kNew = if (h > 0) (t / (1 - .5 * h)).coerceIn(0.0, 1.0) else t
+            val gOld = cos(kOld * PI / 2)
+            // the new one ridden up from the old end's level, over the fade and 4 s after
+            val ride = ride0 + (1 - ride0) * (ms / (p.fade + 4_000)).coerceIn(0.0, 1.0)
+            val gNew = sin(kNew * PI / 2) * ride
+            // kept level: the two as measured where each is now; where together they'd come out over the one handing to
+            // the other (old's level to new's as it goes) by more than 1 dB, both down by the difference
+            val keep = if (eo != null && en != null) {
+                fun at(lv: FloatArray, ms: Double) = lv.getOrNull((ms / 50).toInt())?.let { Math.pow(10.0, it / 10.0) }
+                val po = at(eo.tailLv, p.cut + ms * p.speed - eo.tailFrom); val pn = at(en.headLv, p.start + ms)
+                if (po == null || pn == null) 1.0 else {
+                    val sum = po * gOld * gOld + pn * gNew * gNew; val ref = po * (1 - t) + pn * ride * ride * t
+                    if (sum > ref * 1.26 && sum > 1e-9) sqrt(ref * 1.26 / sum) else 1.0
+                }
+            } else 1.0
+            // mpv's volume is the level's cube root
+            a.set("volume", "%.2f".format(java.util.Locale.ROOT, v * cbrt(gOld * keep)))
+            b.set("volume", "%.2f".format(java.util.Locale.ROOT, v * cbrt(gNew * keep)))
             if (p.matched) {
                 // the bass across at the middle: the new one's lows let in, the old one's held back
                 if (!bassAcross && t >= .5) {
@@ -263,17 +327,31 @@ object Crossfade {
             if (t >= 1.0) break
             Thread.sleep(25)
         }
-        finish(a, b)
+        finish(a, b, ride0 + (1 - ride0) * (p.fade.toDouble() / (p.fade + 4_000)))
+        // the ride's last seconds, on the new deck alone (unless something else has the volume by then)
+        if (p.rideDb < -.5) Thread({
+            val began2 = System.nanoTime()
+            while (!fading && Player.active() === b) {
+                val ms = p.fade + (System.nanoTime() - began2) / 1e6
+                val ride = ride0 + (1 - ride0) * (ms / (p.fade + 4_000)).coerceIn(0.0, 1.0)
+                val v = if (Player.muted.value) 0.0 else Player.volume.value.toDouble()
+                b.set("volume", "%.2f".format(java.util.Locale.ROOT, v * cbrt(ride)))
+                if (ride >= 1.0) break
+                Thread.sleep(25)
+            }
+        }, "crossfade-ride").apply { isDaemon = true; start() }
     }
 
-    @Synchronized private fun finish(a: Mpv, b: Mpv) {
+    /** The handover done: the old deck let go, the new one at the slider's volume (times what's left of a ride). */
+    @Synchronized private fun finish(a: Mpv, b: Mpv, level: Double = 1.0) {
         if (fadingOut !== a) return
         fadingOut = null; fadingIn = null
         mixing.value = null
         a.command("stop"); a.set("pause", "yes"); a.set("speed", "1")
         Player.chainOn(a)
         b.command("af-command", "ink", "f", "10", "highpass@bass"); b.command("af-command", "ink", "f", "20000", "lowpass@top")
-        b.set("volume", Player.volume.value.toString())
+        b.set("volume", if (level >= 1.0) Player.volume.value.toString()
+            else "%.2f".format(java.util.Locale.ROOT, (if (Player.muted.value) 0.0 else Player.volume.value.toDouble()) * cbrt(level)))
     }
 
     /** At once: a handover under way finished (the old song gone), one readied let go. Before a skip, a pause, a seek. */
@@ -315,13 +393,31 @@ object Crossfade {
         // an outro falling away: the first moment from which it stays 15 dB under the end's loudest
         val quietIdx = (0..lastIdx).firstOrNull { i -> (i..lastIdx).all { end[it] < loud - 15f } }
         val quiet = quietIdx?.let { start + it * window }
-        val handover = listOfNotNull(lastSound - FADE, quiet?.minus(1_000)).minOrNull()!!.coerceAtLeast(start)
+        // a fade-out in its own recording (the phone's): the first second from which it stays 4 dB under its usual (the loud
+        // fifth of the end's first 15 s) to the end, falling 10 at least; the handover half a second before it
+        val fading = run {
+            val pw = end.map { Math.pow(10.0, it / 10.0) }
+            if (lastIdx < 200) return@run null
+            val sec = (0..lastIdx - 20).map { i -> 10 * log10((i until i + 20).sumOf { pw[it] } / 20 + 1e-12) }
+            val body = sec.take(300).sorted().let { it[(it.size * .8).toInt().coerceAtMost(it.size - 1)] }
+            val from = sec.indices.firstOrNull { i -> (i until sec.size).all { sec[it] < body - 4 } } ?: return@run null
+            if (sec.last() > body - 10 || sec.size - from < 60) null else start + from * window
+        }
+        val handover = listOfNotNull(lastSound - FADE, quiet?.minus(1_000), fading?.minus(500)).minOrNull()!!.coerceAtLeast(start)
         val firstSound = head?.let { levels(it) }?.indexOfFirst { it > -50f }?.takeIf { it > 0 }?.let { it * window }?.takeIf { it >= 400 } ?: 0L
         val tail = beats(endPcm, start); val top = head?.let { beats(it, 0) }
         val tailKey = Key.find(endPcm, RATE); val headKey = head?.let { Key.find(it, RATE) }
-        Log.d("crossfade: ${s.title}: ${dur / 1000}s, sound to ${lastSound / 1000.0}s, quiet from ${quiet?.div(1000.0)}, hand over at ${handover / 1000.0}s, " +
+        Log.d("crossfade: ${s.title}: ${dur / 1000}s, sound to ${lastSound / 1000.0}s, quiet from ${quiet?.div(1000.0)}, ${fading?.let { "fading out from ${it / 1000.0}s, " } ?: ""}hand over at ${handover / 1000.0}s, " +
             "starts ${firstSound}ms in; beat at its end ${tail?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}, at its start ${top?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}")
-        return Ends(lastSound, handover, firstSound, tail, top, dur, tailKey, headKey)
+        val headLv = head?.let { levels(it) }.orEmpty()
+        // its intro: a second's level first within 6 dB of its usual (the loud tenth of its first 20 s)
+        val fullAt = if (headLv.size < 40) 0L else {
+            val lv = headLv.map { Math.pow(10.0, it / 10.0) }
+            val sec = (0..lv.size - 20).map { i -> 10 * log10((i until i + 20).sumOf { lv[it] } / 20 + 1e-12) }
+            val usual = sec.sorted()[(sec.size * .9).toInt().coerceAtMost(sec.size - 1)]
+            sec.indexOfFirst { it >= usual - 6 }.coerceAtLeast(0) * 50L
+        }
+        return Ends(lastSound, handover, firstSound, tail, top, dur, tailKey, headKey, headLv.toFloatArray(), end.toFloatArray(), start, fullAt, fading)
     }
 
     internal const val RATE = 22_050

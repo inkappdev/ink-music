@@ -518,7 +518,7 @@ class PlayerService : MediaLibraryService() {
         // float, the song's whole depth, and float goes to Android (Media3's default made every song 16 bit). Media3
         // can't change speed on float itself, so an episode's speed is Android's audio track's (1x for music: untouched)
         // the crossfade made in the player's own sound (Blend; Crossfade cuts the songs and hands it their ends)
-        val blend = Blend()
+        val blend = Blend().also { it.dumpDir = getExternalFilesDir("blends") }
         // and where the samples go: a USB DAC ink music holds itself (exact on: UsbDac), else Android's audio
         val usb = UsbOutputProvider(this, androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider.Builder(this).build()).also { usbOutput = it }
         // a DAC plugged in, out, or allowed: Media3 asks again where each format goes (one gone, let go of first)
@@ -533,7 +533,7 @@ class PlayerService : MediaLibraryService() {
                     .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
                     .setAudioOutputProvider(usb)
                     // every song at 48 kHz while transitions are on (exact off): a change of rate stopped the sound a moment
-                    .setAudioProcessors(arrayOf(blend, Resample { Crossfade.on(this@PlayerService) && !Exact.inUse(this@PlayerService) }))
+                    .setAudioProcessors(arrayOf(blend, Resample { Crossfade.on(this@PlayerService) && !Exact.inUse(this@PlayerService) }, Tap(blend)))
                     .build()
             // the decoder asked for float only for a file deeper than 16 bit: a 16 bit or lossy one stays 16 bit (as
             // exact: the same numbers), and goes Media3's 16 bit way, where its processors are (an episode's silence
@@ -575,12 +575,12 @@ class PlayerService : MediaLibraryService() {
         // the queue as it was left; stopped (stop pressed) it stays stopped, the mini player away till something's chosen
         // (it came back paused whenever ink music started again)
         crossfade = Crossfade(this, player, sources, { levelling }, { onSpeaker?.casting == true }, blend, { playNext = true },
-            { order -> player.setShuffleOrder(Shuffle(order, next = { playNext.also { playNext = false } })) }).also { it.onChange = { main.post { tell() } }; it.start() }
+            { order -> player.setShuffleOrder(Shuffle(order, next = { playNext.also { playNext = false } })) }).also { it.onChange = { main.post { levelling?.apply(); tell() } }; it.start() }
         // the song left playing cut where it hands over, as one chosen is (a restart's song never blended, 2026-11-08)
         kept()?.let { (items, index, at) -> player.setMediaItems(crossfade?.precut(items, index, at.coerceAtLeast(0)) ?: items, index, at); if (!prefs.getBoolean("stopped", false)) player.prepare() }
         player.shuffleModeEnabled = prefs.getBoolean("shuffle", false)
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
-        levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true) && !Exact.on(this); it.onApply = { tell() } }
+        levelling = Levelling(player, this, blend).also { it.measured = { id -> crossfade?.lufs(id) }; it.peakOf = { id -> crossfade?.peak(id) };  it.on = prefs.getBoolean("levelling", true) && !Exact.on(this); it.onApply = { tell() } }
         // a song ending goes into the next (settings, sound: crossfade)
         // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
