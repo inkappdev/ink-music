@@ -116,7 +116,8 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     }
     // what's said of them: its first sentence pulled out big, as a lyric is; the rest small under it, four lines, a click for the rest
     val about = @Composable {
-        i?.about?.takeIf { it.isNotEmpty() }?.let { about ->
+        // its source line ("From Wikipedia ... under Creative Commons") off, a quiet credit under it instead
+        i?.about?.let { Bio.of(it) }?.takeIf { it.first.isNotEmpty() }?.let { (about, from) ->
             val (said, rest) = remember(about) { Artists.pullQuote(about) }
             Column(Modifier.widthIn(max = 720.dp)) {
                 Label("about")
@@ -130,6 +131,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                     modifier = Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { aboutOpen = !aboutOpen }),
                 )
                 if (!aboutOpen && rest.isNotEmpty()) Word("more", pixel(12.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 8.dp) { aboutOpen = true }
+                from?.let { BasicText("from $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 10.dp)) }
                 Spacer(Modifier.height(22.dp))
             }
         }
@@ -172,6 +174,16 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
         }
         // their music videos (MusicVideos), newest first
         if (i != null && i.id.startsWith("UC")) item(key = "videos") { ArtistVideos(name, i.id, open) }
+        // the playlists they're on (YouTube Music's "featured on", and their own)
+        i?.featured?.takeIf { it.isNotEmpty() }?.let { lists ->
+            item(key = "featured") {
+                Label("on playlists")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    items(lists, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { open(Page.Tube(r)) } }
+                }
+                Spacer(Modifier.height(18.dp))
+            }
+        }
         i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
             item {
                 Label("fans also like")

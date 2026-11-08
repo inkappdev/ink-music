@@ -151,6 +151,10 @@ class InnerTube(
     data class Artist(
         val name: String, val photo: String?, val about: String, val audience: String,
         val top: List<Track>, val albums: List<Item>, val singles: List<Item>, val like: List<Item>,
+        /** The playlists they're on ("featured on": YouTube Music's own, mostly), 2026-11-08. */
+        val featured: List<Item> = emptyList(),
+        /** The shelves' titles as the page had them (for telling a new one apart). */
+        val shelves: List<String> = emptyList(),
     )
 
     /** An artist's page, one read: the header (photo, bio, monthly audience) and its shelves, told apart by their titles. */
@@ -174,6 +178,8 @@ class InnerTube(
             albums = records.filter { r -> singles.none { it.id == r.id } },
             singles = singles,
             like = shelf("fans might also like", "fans also like", "similar").filter { it.kind == Kind.ARTIST },
+            featured = shelf("featured on", "playlists").filter { it.kind == Kind.PLAYLIST },
+            shelves = shelves.map { it.first },
         )
     }
 

@@ -24,6 +24,8 @@ data class TubeArtist(val name: String, val face: String?, val id: String = "")
 data class ArtistInfo(
     val id: String, val name: String, val photo: String?, val about: String, val audience: String,
     val top: List<Song>, val albums: List<TubeAlbum>, val singles: List<TubeAlbum>, val like: List<TubeArtist>,
+    /** The playlists they're on (YouTube Music's "featured on", and their own), 2026-11-08. */
+    val featured: List<TubeAlbum> = emptyList(),
 )
 
 /**
@@ -68,7 +70,8 @@ object Artists {
         val who = a.name.ifEmpty { name }
         fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art)
         ArtistInfo(page, who, a.photo, a.about, a.audience, a.top.map { YouTube.song(it) }, a.albums.map(::record), a.singles.map(::record),
-            a.like.map { TubeArtist(it.title, it.art, it.id) })
+            a.like.map { TubeArtist(it.title, it.art, it.id) },
+            a.featured.map { TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, "youtube music", it.art) })
     }.onFailure { Log.d("artist $name: $it") }.getOrNull()
 
     /** An artist by name, with their photo and page id (a search). */
@@ -91,6 +94,7 @@ object Artists {
             albums("albums"), albums("singles"),
             o.getJSONArray("like").let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map {
                 TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) } },
+            if (o.has("featured")) albums("featured") else emptyList(),
         )
     }.getOrNull()
 
@@ -99,7 +103,8 @@ object Artists {
         dir.mkdirs()
         Home.write(File(dir, "$key.json"), JSONObject().put("id", a.id).put("name", a.name).put("photo", a.photo ?: "").put("about", a.about)
             .put("audience", a.audience).put("top", JSONArray(a.top.map { it.json() })).put("albums", albums(a.albums)).put("singles", albums(a.singles))
-            .put("like", JSONArray(a.like.map { JSONObject().put("name", it.name).put("face", it.face ?: "").put("id", it.id) })).toString())
+            .put("like", JSONArray(a.like.map { JSONObject().put("name", it.name).put("face", it.face ?: "").put("id", it.id) }))
+            .put("featured", albums(a.featured)).toString())
     }
 
     /** What's said of them, its first sentence pulled out (big, as a lyric is) when it's a fair length; the rest. */

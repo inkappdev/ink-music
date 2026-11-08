@@ -28,6 +28,8 @@ data class TubeList(val id: String, val name: String, val said: String, val art:
 data class ArtistInfo(
     val id: String, val name: String, val photo: String?, val about: String, val audience: String,
     val top: List<Song>, val albums: List<TubeAlbum>, val singles: List<TubeAlbum>, val like: List<TubeArtist>,
+    /** The playlists they're on (YouTube Music's "featured on", and their own), 2026-11-08. */
+    val featured: List<TubeList> = emptyList(),
 )
 
 /**

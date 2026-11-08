@@ -344,7 +344,7 @@ object YouTubeAccount {
             val who = a.name.ifEmpty { name }
             fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art)
             ArtistInfo(page, who, a.photo, a.about, a.audience, a.top.map(::song), a.albums.map(::record), a.singles.map(::record),
-                a.like.map { TubeArtist(it.title, it.art, it.id) })
+                a.like.map { TubeArtist(it.title, it.art, it.id) }, a.featured.map { TubeList(it.id.removePrefix("VL"), it.title, it.subtitle, it.art) })
         }.onFailure { android.util.Log.d("ink-youtube", "artist $name $id: $it") }.getOrNull()
         android.util.Log.d("ink-youtube", "artist $name: ${found?.top?.size} songs, ${found?.albums?.size} records in ${System.currentTimeMillis() - t0} ms")
         return found
@@ -450,6 +450,7 @@ object YouTubeAccount {
         .put("top", org.json.JSONArray(a.top.map { it.json() }))
         .put("albums", org.json.JSONArray((a.albums + a.singles).map { r -> JSONObject().put("url", r.url).put("title", r.title).put("art", r.art.orEmpty()).put("single", r in a.singles) }))
         .put("like", org.json.JSONArray(a.like.map { JSONObject().put("name", it.name).put("face", it.face.orEmpty()).put("id", it.id) }))
+        .put("featured", org.json.JSONArray(a.featured.map { JSONObject().put("id", it.id).put("name", it.name).put("said", it.said).put("art", it.art.orEmpty()) }))
         .toString()
 
     private fun artistFrom(text: String): ArtistInfo? = runCatching {
@@ -458,7 +459,8 @@ object YouTubeAccount {
         val records = list("albums").map { (TubeAlbum(it.getString("url"), it.getString("title"), o.getString("name"), it.optString("art").ifEmpty { null })) to it.optBoolean("single") }
         ArtistInfo(o.getString("id"), o.getString("name"), o.optString("photo").ifEmpty { null }, o.optString("about"), o.optString("audience"),
             list("top").map { songOf(it).also(YouTubeMusic::remember) }, records.filter { !it.second }.map { it.first }, records.filter { it.second }.map { it.first },
-            list("like").map { TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) })
+            list("like").map { TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) },
+            list("featured").map { TubeList(it.getString("id"), it.getString("name"), it.optString("said"), it.optString("art").ifEmpty { null }) })
     }.getOrNull()
 
     /**

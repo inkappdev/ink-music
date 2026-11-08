@@ -1350,8 +1350,8 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         // their music videos (MusicVideos: the full build's), newest first
         if (i != null && i.id.startsWith("UC")) item(key = "videos") { ArtistVideos(name, i.id, pages) }
         // what's said of them: four lines, a tap for the rest
-        i?.about?.takeIf { it.isNotEmpty() }?.let { about ->
-            // its first sentence pulled out big, as a lyric is; the rest small under it
+        i?.about?.let { Bio.of(it) }?.takeIf { it.first.isNotEmpty() }?.let { (about, from) ->
+            // its first sentence pulled out big, as a lyric is; the rest small under it; where it's from, quietly after
             item {
                 val (said, rest) = remember(about) { pullQuote(about) }
                 Label("about")
@@ -1366,7 +1366,18 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                         .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { aboutOpen = !aboutOpen }),
                 )
                 if (!aboutOpen && rest.isNotEmpty()) Word("more", pixel(12.sp, Ink.mid), Modifier.padding(start = 20.dp, top = 6.dp), touch = 8.dp) { aboutOpen = true }
+                from?.let { BasicText("from $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 20.dp, top = 10.dp)) }
                 Spacer(Modifier.height(22.dp))
+            }
+        }
+        // the playlists they're on (YouTube Music's "featured on", and their own), each opening as any list
+        i?.featured?.takeIf { it.isNotEmpty() }?.let { lists ->
+            item(key = "featured") {
+                Label("on playlists")
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    items(lists, key = { it.id }) { l -> Box(Modifier.width(130.dp)) { Tile(null, l.name, "youtube music", face = l.art, dither = true) { pages.open(Page.TubeList(l)) } } }
+                }
+                Spacer(Modifier.height(18.dp))
             }
         }
         i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
