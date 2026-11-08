@@ -158,6 +158,10 @@ class Crossfade(
                 val now = exo.currentMediaItem?.mediaId
                 val next = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId }
                 cutSongs.keys.filter { it != now && it != next }.forEach(::uncut)
+                // a song begun on is cut as put on for that once only: played again later in a queue, it's planned as
+                // any next song (kept, it had its old cut's tail stand in, the song not cut to it: no mark, no mix the
+                // second time round, a Reddit user's report, 2026-11-08)
+                precut.keys.removeAll { it != now }
                 letGo(now, next)
                 cut()
             }
@@ -182,6 +186,7 @@ class Crossfade(
         letGo(now, next)
         measure()
         cutSongs.keys.filter { it != now && it != next }.forEach(::uncut)
+        precut.keys.removeAll { it != now }
         cut()
     }
 
@@ -487,6 +492,8 @@ class Crossfade(
     /** A song cut as it was put on, its end now decoded: handed to the blend (or said, if it couldn't be). */
     private fun tailOfPrecut(id: String) {
         val p = precut[id] ?: return
+        // only while it's the song begun on, playing (cut as it was put on)
+        if (exo.currentMediaItem?.mediaId != id) return
         val b = blend ?: return
         if (b.tails.containsKey(id)) return
         val e = ends[id] ?: return   // not measured yet: handed over once it is
@@ -683,6 +690,7 @@ class Crossfade(
         if (exo.currentMediaItem?.mediaId == id) return
         cutSongs.remove(id)
         provisional.remove(id)
+        precut.remove(id)
         blend?.tails?.remove(id)
         val i = (0 until exo.mediaItemCount).firstOrNull { exo.getMediaItemAt(it).mediaId == id } ?: return
         swap(i, was)
