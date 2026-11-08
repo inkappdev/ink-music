@@ -102,6 +102,7 @@ fun main() {
     runCatching { Keep.recover(Home.dir); Keep.recover(java.io.File(Home.dir, "podcasts")) }
     Library.start()
     Server.start()
+    Covers.warm()
     Sorts.start()
     Lyrics.start()
     Keys.start()

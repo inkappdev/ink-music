@@ -54,6 +54,39 @@ object Covers {
 
     private val asking = kotlinx.coroutines.sync.Semaphore(4)
 
+    /**
+     * Every record's cover fetched ahead, at the grids' size, onto the disk (2026-11-08, "anyway to make albums load in
+     * quicker?"): the first look at a record waited on the server or YouTube, scroll by scroll. Once the library's in, each
+     * record not on the disk yet is fetched, two at a time, a moment apart, so the albums open from the disk. Only what's
+     * missing, so after the first time it's quick; a server turning it away, left for the next start.
+     */
+    fun warm() {
+        Thread({
+            runCatching {
+                // the library read first (and the server's synced: its songs come in a moment after)
+                Thread.sleep(20_000)
+                val records = Library.albums.value.mapNotNull { it.songs.firstOrNull() }
+                    .filter { it.art != null && (it.server || it.tube) && !onDisk(it.art, GRID) }
+                if (records.isEmpty()) return@runCatching
+                Log.d("covers: fetching ${records.size} ahead")
+                val pool = java.util.concurrent.Executors.newFixedThreadPool(2) { r -> Thread(r, "covers-ahead").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
+                records.forEach { song ->
+                    pool.execute {
+                        runCatching {
+                            val art = song.art ?: return@runCatching
+                            if (onDisk(art, GRID)) return@runCatching
+                            (if (song.server) Server.cover(art, GRID) else fetch(art, GRID))?.let { toDisk(art, GRID, it) }
+                            Thread.sleep(150)
+                        }
+                    }
+                }
+                pool.shutdown()
+            }
+        }, "covers-warm").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
+    }
+    /** The size the grids ask for (an album's tile, CoverOf's px there). */
+    const val GRID = 400
+
     private suspend fun fetchOf(song: Song, px: Int): Cover? {
         return withContext(Dispatchers.IO) {
             val bytes = try { remote(song, px) } catch (e: Server.Busy) {
