@@ -1017,7 +1017,9 @@ fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolea
                 label = "line",
             ) { i ->
                 val sung = lines.getOrNull(i)?.takeIf { it.words.isNotBlank() }
-                val before = (i - 1 downTo 0).asSequence().map { lines[it] }.firstOrNull { it.words.isNotBlank() }?.takeIf { sung != null }
+                // a line leaving is drawn with its own number over the next song's lyrics (a mix changes them under it): read
+                // as far as they go (line 80 of 28 crashed the computer, 2026-11-08)
+                val before = (i - 1 downTo 0).asSequence().mapNotNull { lines.getOrNull(it) }.firstOrNull { it.words.isNotBlank() }?.takeIf { sung != null }
                 val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(if (big) 6 else 3).toList()
                 Column(Modifier.fillMaxWidth()) {
                     before?.let {
