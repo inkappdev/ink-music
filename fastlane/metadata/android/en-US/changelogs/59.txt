@@ -1,0 +1,7 @@
+- Automix rides the fader: songs stay level all the way through a mix
+- No more clicks or static as one song becomes the next
+- Kicks pulled into step mid-mix when they drift
+- Even volume for YouTube songs, as loud as other apps play
+- Songs that fade out on their own are mixed before the fade
+- Tested by stomping a foot in time in the kitchen
+- Do something nice for someone today. Hand them the aux
