@@ -241,6 +241,7 @@ actual object Sound {
         if (s.kind == "episode") Podcasts.place(s.id).takeIf { it > 0 }?.let { player.seekToTime(CMTimeMakeWithSeconds(it / 1000.0, 600)) }
         player.play()
         tell()
+        if (s.kind != "station" && s.kind != "episode") Here.work.launch { runCatching { ListenBrainz.playingNow(Here.dir, said(s)) } }
         cover(s)
         ahead()
         topUp()
@@ -274,6 +275,8 @@ actual object Sound {
         if (s.kind == "episode" && player.rate > 0f && t - placeAt > 10_000) { placeAt = t; val p = position(); Here.work.launch { Podcasts.setPlace(s.id, p) } }
     }
 
+    private fun said(s: Song) = ListenBrainz.Said(s.title, s.artist, s.album, length(s), s.track, s.id.takeIf { s.kind == "youtube" })
+
     /** The song before is done with: a listen if it was heard long enough, the server told. */
     private fun done() {
         val s = heardOf ?: return
@@ -282,6 +285,11 @@ actual object Sound {
             Heard.add(s, heardAt, heardMs)
             if (s.kind == "server") scope.launch { Server.scrobble(s.id) }
             if (s.kind == "youtube") Here.work.launch { Tube.played(s.id) }
+        }
+        // ListenBrainz (its sign-in comes across from your computer): a listen at half the song, or four minutes
+        if (s.kind != "station" && s.kind != "episode" && heardMs >= minOf(length(s) / 2, 240_000L).coerceAtLeast(Heard.ENOUGH)) {
+            val at = heardAt
+            Here.work.launch { runCatching { ListenBrainz.listened(Here.dir, said(s), at) } }
         }
         if (s.kind == "episode") { val p = position(); Here.work.launch { if (Podcasts.place(s.id) != -1L) Podcasts.setPlace(s.id, p) } }
     }

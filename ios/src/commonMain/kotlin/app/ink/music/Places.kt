@@ -62,6 +62,8 @@ sealed class Page {
     data class Artist(val name: String, val id: String = "") : Page()
     data object Find : Page()
     data object Settings : Page()
+    /** One of settings' pages: music, look, sound, listening, about. */
+    data class SettingsPart(val part: String) : Page()
 }
 
 /** The pages pushed over the places (back closes the top one), the pairing page, the place shown. */
@@ -159,7 +161,8 @@ fun Places() {
                 is Page.Show -> ShowPage(p.show, foot) { Pages.close() }
                 is Page.Artist -> ArtistPage(p.name, p.id) { Pages.close() }
                 Page.Find -> Over("find") { FindPlace(HEAD, foot) }
-                Page.Settings -> Over("settings") { SettingsPlace(HEAD, foot) }
+                Page.Settings -> SettingsPage(null) { Pages.close() }
+                is Page.SettingsPart -> SettingsPage(p.part) { Pages.close() }
             }
         }
         if (Pages.pairing) Pairing { Pages.pairing = false }

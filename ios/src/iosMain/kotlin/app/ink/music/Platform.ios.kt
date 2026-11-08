@@ -128,3 +128,6 @@ actual fun imageOf(px: IntArray, n: Int): ImageBitmap {
 }
 
 actual fun openLink(url: String) { platform.Foundation.NSURL.URLWithString(url)?.let { platform.UIKit.UIApplication.sharedApplication.openURL(it, emptyMap<Any?, Any>(), null) } }
+
+actual fun appVersion(): String =
+    (platform.Foundation.NSBundle.mainBundle.infoDictionary?.get("CFBundleShortVersionString") as? String) ?: "1.0"

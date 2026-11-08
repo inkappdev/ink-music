@@ -22,3 +22,5 @@ expect fun browse(type: String, found: (String, String) -> Unit): () -> Unit
 expect fun deviceName(): String
 /** A web page opened in the browser (ink, made by). */
 expect fun openLink(url: String)
+/** The app's version, as its bundle says. */
+expect fun appVersion(): String

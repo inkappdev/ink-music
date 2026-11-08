@@ -59,6 +59,8 @@ fun Shooting(content: @Composable () -> Unit) {
                 step == "back" -> { Pages.player = false; Pages.close() }
                 step in PLACES -> { Pages.player = false; Pages.stack.clear(); Pages.place = step }
                 step == "find" -> { Pages.player = false; Pages.stack.clear(); Pages.open(Page.Find) }
+                step == "station" -> Radio.stations().firstOrNull()?.let { Sound.play(listOf(it.song), 0) }
+                step.startsWith("set-") -> { Pages.player = false; Pages.open(Page.SettingsPart(step.removePrefix("set-"))) }
                 step == "settings" -> { Pages.player = false; Pages.stack.clear(); Pages.open(Page.Settings) }
                 step.startsWith("wait") -> { delay(step.removePrefix("wait").toLongOrNull() ?: 3_000); continue }
             }

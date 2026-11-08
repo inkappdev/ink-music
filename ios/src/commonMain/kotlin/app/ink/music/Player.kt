@@ -358,7 +358,8 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
     val c = rememberCover(t.song.cover, 1200)
     val late by produceState(false, t.song.albumId) { delay(1_500); value = true }
     Box(modifier.size(side)) {
-        if (c != null) Image(c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.Low)
+        if (t.song.kind == "station" && t.song.cover == null) StationCover(t.song, Modifier.fillMaxSize(), moving = t.playing)
+        else if (c != null) Image(c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.Low)
         else if (late || t.song.cover == null) NameCover(t.song.album.ifEmpty { t.song.title }, side)
     }
 }

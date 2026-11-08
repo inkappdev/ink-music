@@ -223,8 +223,8 @@ fun ArtistPage(name: String, tubeId: String, onClose: () -> Unit) {
  * The dots drawn as dots: unfiltered.
  */
 @Composable
-fun Dithered(url: String, modifier: Modifier) {
-    val cover = rememberCover(url, 1080)
+fun Dithered(url: String, modifier: Modifier, px: Int = 1080) {
+    val cover = rememberCover(url, px)
     val density = LocalDensity.current
     BoxWithConstraints(modifier.background(Ink.black)) {
         val side = with(density) { maxWidth.toPx() }
