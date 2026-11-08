@@ -116,7 +116,7 @@ fun Player(n: Now, onClose: () -> Unit) {
     val scrub = remember { Scrub() }
     val pull = remember { Animatable(0f) }
     val pullScope = rememberCoroutineScope()
-    var queueUp by remember { mutableStateOf(false) }
+    var queueUp by Pages::queue
     Box(
         Modifier.fillMaxSize()
             .pointerInput(Unit) {
@@ -212,36 +212,16 @@ fun Player(n: Now, onClose: () -> Unit) {
                 }
                 Spacer(Modifier.height(12.dp))
                 // the artist's name, big
-                Marquee(n.song.artist, n.playing, Modifier.fillMaxWidth(), size = 120.sp)
+                // the artist's name, big, a way to their page too
+                Marquee(n.song.artist, n.playing, Modifier.fillMaxWidth()
+                    .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { openArtist(n.song) }), size = 120.sp)
             }
         }
         AnimatedVisibility(
             queueUp,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { QueuePage(n) { queueUp = false } }
-    }
-}
-
-/** What's up next: the queue from here, the playing one lit; a tap plays that one. */
-@Composable
-private fun QueuePage(n: Now, onClose: () -> Unit) {
-    val q = remember(n.index, n.count, n.shuffle) { Sound.queue() }
-    androidx.compose.foundation.lazy.LazyColumn(
-        Modifier.fillMaxSize().background(Ink.black).windowInsetsPadding(WindowInsets.safeDrawing),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 40.dp),
-        state = androidx.compose.foundation.lazy.rememberLazyListState((n.index - 1).coerceAtLeast(0)),
-    ) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText("UP NEXT", style = headline(40.sp), modifier = Modifier.weight(1f))
-                Pixel(CLOSE, "close", Ink.mid, onClick = onClose)
-            }
-        }
-        items(q.size) { i ->
-            val s = q[i]
-            Named(s.title, s.artist, lit = i == n.index) { if (i != n.index) Sound.play(q, i); onClose() }
-        }
+        ) { QueuePage { queueUp = false } }
     }
 }
 
@@ -296,6 +276,14 @@ private fun Scrubber(n: Now, accent: Color, scrub: Scrub, line: Dp = 1.dp) {
     }
 }
 
+/** The song's artist's page (the first named; none for a station or an episode), the player let down under it. */
+fun openArtist(s: Song) {
+    if (s.kind == "station" || s.kind == "episode") return
+    val name = s.artist.split(", ", " & ", " feat. ").first().trim().ifEmpty { return }
+    Pages.player = false
+    Pages.open(Page.Artist(name))
+}
+
 /** What's heard, between the times (the phone's says "flac 16/44.1"): YouTube's AAC, or the server's. */
 private fun quality(s: Song): String = when (s.kind) { "youtube" -> Tube.quality(s.id) ?: ""; "station" -> "live"; else -> "" }
 
@@ -326,7 +314,8 @@ private fun Song(n: Now, dir: Int, scrub: Scrub, room: Dp, small: Boolean = fals
                     Heart(t.song, 2.dp)
                 }
                 Spacer(Modifier.height(4.dp))
-                FadeText(t.song.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                FadeText(t.song.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { openArtist(t.song) }))
             }
         } else Column {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -353,7 +342,8 @@ private fun SongWords(t: Now) {
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth()) {
             Row(Modifier.weight(1f)) {
-                FadeText(t.song.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                FadeText(t.song.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)
+                    .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { openArtist(t.song) }))
                 if (t.song.album.isNotBlank() && t.song.kind != "episode") {
                     Spacer(Modifier.width(14.dp))
                     FadeText(t.song.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -501,6 +491,9 @@ fun MiniPlayer(n: Now, onOpen: () -> Unit) {
     var pos by remember { mutableLongStateOf(n.position) }
     LaunchedEffect(n) { val since = nowMs(); while (true) { pos = n.positionNow(0, since); if (!n.playing) break; delay(500) } }
     val frac = if (n.duration > 0) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
+    Column(Modifier.fillMaxWidth()) {
+    // what scrolls under it softens just above it
+    LocalFrost.current?.let { Box(Modifier.fillMaxWidth().height(BAND).softEdge(it, towardBottom = true)) }
     Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(WindowInsets.navigationBars).padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) { Box(Modifier.fillMaxWidth(frac).height(1.dp).background(cover?.accent ?: Ink.ink)) }
         Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onOpen)),
@@ -517,6 +510,7 @@ fun MiniPlayer(n: Now, onOpen: () -> Unit) {
             }
             Word(if (n.playing) "pause" else "play", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 12.dp) { Sound.toggle() }
         }
+    }
     }
 }
 

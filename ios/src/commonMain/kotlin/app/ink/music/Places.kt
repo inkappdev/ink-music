@@ -32,6 +32,10 @@ import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +58,8 @@ import kotlinx.coroutines.launch
 sealed class Page {
     data class Record(val album: Album) : Page()
     data class Show(val show: Podcasts.Show) : Page()
+    /** An artist: by name (your server's), with YouTube Music's id where it's known. */
+    data class Artist(val name: String, val id: String = "") : Page()
     data object Find : Page()
     data object Settings : Page()
 }
@@ -64,6 +70,10 @@ object Pages {
     var place by mutableStateOf("listen")
     var pairing by mutableStateOf(false)
     var player by mutableStateOf(false)
+    /** Up next, open over the player. */
+    var queue by mutableStateOf(false)
+    /** The top page's frost, for the mini player's soft edge over it. */
+    var frost by mutableStateOf<HazeState?>(null)
     fun open(p: Page) { stack += p }
     fun close() { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
 }
@@ -90,8 +100,9 @@ fun Places() {
         val i = PLACES.indexOf(Pages.place)
         if (i >= 0 && i != pager.currentPage) pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo))
     }
+    val frost = rememberHazeState()
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        Box(Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(WindowInsets.safeDrawing)) {
             HorizontalPager(pager, Modifier.fillMaxSize(), key = { PLACES[it] },
                 flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo))) { i ->
                 when (PLACES[i]) {
@@ -118,6 +129,8 @@ fun Places() {
                 }
                 Word("find", pixel(14.sp, Ink.mid), touch = 8.dp) { menu = false; Pages.open(Page.Find) }
             }
+            // what goes up behind the bar softens just under it
+            Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = false))
         }
         // the places, dropped down under the word: big, the one you're on lit, each arriving in turn; a tap goes there,
         // a tap anywhere else folds it away. Black, never a frosted panel
@@ -144,6 +157,7 @@ fun Places() {
             when (p) {
                 is Page.Record -> Record(p.album) { Pages.close() }
                 is Page.Show -> ShowPage(p.show, foot) { Pages.close() }
+                is Page.Artist -> ArtistPage(p.name, p.id) { Pages.close() }
                 Page.Find -> Over("find") { FindPlace(HEAD, foot) }
                 Page.Settings -> Over("settings") { SettingsPlace(HEAD, foot) }
             }
@@ -155,7 +169,7 @@ fun Places() {
         AnimatedVisibility(now != null, Modifier.align(Alignment.BottomCenter),
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 3 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 3 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
-            last?.let { n -> MiniPlayer(n) { Pages.player = true } }
+            last?.let { n -> CompositionLocalProvider(LocalFrost provides (Pages.frost ?: frost)) { MiniPlayer(n) { Pages.player = true } } }
         }
         AnimatedVisibility(Pages.player && now != null,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
@@ -168,13 +182,15 @@ fun Places() {
 /** A page over the places (find, settings): its word at the top as a place's, the close arrow at the right. */
 @Composable
 private fun Over(name: String, content: @Composable () -> Unit) {
+    val frost = rememberFrost()
     Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
-        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) { content() }
+        Box(Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(WindowInsets.safeDrawing)) { content() }
         Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(WindowInsets.statusBars)) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 BasicText(name.uppercase(), style = headline(26.sp), modifier = Modifier.weight(1f))
                 Pixel(CLOSE, "close", Ink.mid) { Pages.close() }
             }
+            Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = false))
         }
     }
 }

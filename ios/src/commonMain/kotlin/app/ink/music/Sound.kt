@@ -11,6 +11,8 @@ data class Now(val song: Song, val playing: Boolean, val position: Long, val dur
 /** The iPhone's player (AVFoundation): a queue of songs, the lock screen and Control Center kept to it. */
 expect object Sound {
     val now: StateFlow<Now?>
+    /** The queue, told as it changes (up next). */
+    val songs: StateFlow<List<Song>>
     fun play(songs: List<Song>, index: Int)
     fun toggle()
     fun next()
@@ -31,6 +33,15 @@ expect object Sound {
     fun playNext(s: Song)
     /** A song put at the queue's end. */
     fun add(s: Song)
+    /** The queue's song at `from` moved to `to`, the one playing kept playing. */
+    fun move(from: Int, to: Int)
+    /** The queue's song at `i` taken out (the one playing: on to the next). */
+    fun remove(i: Int)
+    /** The queue's song at `i` played. */
+    fun jump(i: Int)
+    /** Radio: on, the queue's end brings more like it (YouTube's radio from its last songs); kept. */
+    val radio: StateFlow<Boolean>
+    fun radio(on: Boolean)
     /** Silent from now on (pictures of the screens taken while it plays). */
     fun quiet()
 }

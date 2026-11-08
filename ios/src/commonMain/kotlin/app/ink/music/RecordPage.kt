@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -100,13 +101,15 @@ fun PageOver(onClose: () -> Unit, content: @Composable (Dp) -> Unit) {
     val bar = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
     Box(Modifier.fillMaxSize().onSizeChanged { tall = it.height }.nestedScroll(pulling).graphicsLayer { translationY = pull }.background(Ink.black)
         .combinedClickable(remember { MutableInteractionSource() }, indication = null) {}) {
-        content(bar + CLOSE_ROW)
+        val frost = rememberFrost()
+        Box(Modifier.fillMaxSize().hazeSource(frost)) { content(bar + CLOSE_ROW) }
         Column(Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(Ink.black))
             Row(Modifier.fillMaxWidth().height(CLOSE_ROW).background(Ink.black).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
                 Pixel(CLOSE, "close", Ink.mid, onClick = onClose)
             }
+            Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = false))
         }
     }
 }
@@ -155,7 +158,10 @@ fun Record(a: Album, onClose: () -> Unit) {
                     Spacer(Modifier.height(18.dp))
                     BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
-                    BasicText(a.artist.lowercase(), style = pixel(13.sp, Ink.mid), modifier = Modifier.padding(vertical = 6.dp))
+                    // whose: their page
+                    Word(a.artist.lowercase(), pixel(13.sp, Ink.mid), Modifier.padding(vertical = 6.dp)) {
+                        Pages.open(Page.Artist(a.artist.substringBefore(", ")))
+                    }
                     Spacer(Modifier.height(4.dp))
                     BasicText(
                         if (mine == null) "reading it" else listOfNotNull(a.year.takeIf { it > 0 }?.toString(), "${whole.size} ${if (whole.size == 1) "song" else "songs"}",

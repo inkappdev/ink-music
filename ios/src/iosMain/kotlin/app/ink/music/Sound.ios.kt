@@ -52,7 +52,11 @@ actual object Sound {
     private val _now = MutableStateFlow<Now?>(null)
     actual val now: StateFlow<Now?> = _now
     private val player = AVPlayer()
-    private var queue: List<Song> = emptyList()
+    private val _songs = MutableStateFlow<List<Song>>(emptyList())
+    actual val songs: StateFlow<List<Song>> = _songs
+    private var queue: List<Song>
+        get() = _songs.value
+        set(v) { _songs.value = v }
     private var index = 0
     private var started = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -100,6 +104,62 @@ actual object Sound {
         queue = queue + s; ordered = ordered?.let { it + s }
         tell()
     }
+
+    actual fun move(from: Int, to: Int) {
+        if (from !in queue.indices || to !in queue.indices || from == to) return
+        val q = queue.toMutableList(); val s = q.removeAt(from); q.add(to, s)
+        queue = q
+        index = when {
+            index == from -> to
+            from < index && to >= index -> index - 1
+            from > index && to <= index -> index + 1
+            else -> index
+        }
+        tell()
+    }
+
+    actual fun remove(i: Int) {
+        if (i !in queue.indices) return
+        val gone = queue[i]
+        queue = queue.toMutableList().also { it.removeAt(i) }
+        ordered = ordered?.let { o -> o.toMutableList().also { l -> l.indexOfFirst { it.id == gone.id }.takeIf { it >= 0 }?.let(l::removeAt) } }
+        when {
+            queue.isEmpty() -> stop()
+            i < index -> { index--; tell() }
+            i == index -> { index = index.coerceAtMost(queue.size - 1); load() }
+            else -> tell()
+        }
+    }
+
+    private val _radio = MutableStateFlow(Store.get("radio") != "off")
+    actual val radio: StateFlow<Boolean> = _radio
+    actual fun radio(on: Boolean) { _radio.value = on; Store.set("radio", if (on) "on" else "off"); if (on) topUp() }
+    private var toppingUp = false
+
+    /**
+     * Near the queue's end with radio on: more like it, YouTube's radio from the last song (found on YouTube if it's
+     * your server's), the ones already queued left out. Not for stations or episodes.
+     */
+    private fun topUp() {
+        if (!_radio.value || toppingUp || queue.isEmpty() || queue.size - index > 3) return
+        val seed = queue.last().takeIf { it.kind != "station" && it.kind != "episode" } ?: return
+        toppingUp = true
+        scope.launch {
+            val more = Here.off {
+                runCatching {
+                    val id = if (seed.kind == "youtube") seed.id else Tube.api.searchSongs("${seed.artist} ${seed.title}", 1).firstOrNull()?.videoId
+                    id?.let { Tube.api.queue("RDAMVM$it", 30, it) }.orEmpty().map { Tube.song(it) }
+                }.getOrDefault(emptyList())
+            }
+            toppingUp = false
+            if (!_radio.value || queue.isEmpty()) return@launch
+            val have = queue.mapTo(HashSet()) { it.id }
+            val fresh = more.filter { it.id !in have }
+            if (fresh.isNotEmpty()) { queue = queue + fresh; ordered = ordered?.let { it + fresh }; tell(); ahead() }
+        }
+    }
+
+    actual fun jump(i: Int) { if (i in queue.indices && i != index) { index = i; load() } }
 
     actual fun repeat() { repeating = (repeating + 1) % 3; tell() }
 
@@ -183,6 +243,7 @@ actual object Sound {
         tell()
         cover(s)
         ahead()
+        topUp()
     }
 
     /** The next song's YouTube link found while this one plays, so it starts at once. */

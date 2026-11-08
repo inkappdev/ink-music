@@ -20,6 +20,9 @@ kotlin {
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.ui)
+            // the soft edge where a list meets a bar, as the phone's (Haze, multiplatform)
+            implementation("dev.chrisbanes.haze:haze:2.0.1")
+            implementation("dev.chrisbanes.haze:haze-blur:2.0.1")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
         }

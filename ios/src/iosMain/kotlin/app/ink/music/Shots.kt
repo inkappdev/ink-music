@@ -43,7 +43,9 @@ fun Shooting(content: @Composable () -> Unit) {
                     val i = Here.off { liked.take(15).indexOfFirst { s -> Lyrics.of(s)?.isNotEmpty() == true } }
                     if (i >= 0) Sound.play(liked, i)
                 }
-                step == "player" -> Pages.player = true
+                step == "player" -> { Pages.queue = false; Pages.player = true }
+                step == "queue" -> { Pages.player = true; Pages.queue = true }
+                step == "artist" -> { Pages.queue = false; Sound.now.value?.song?.let { openArtist(it) } }
                 step == "lyrics" -> { if (!Lyrics.on.value) Lyrics.toggle(); Pages.player = true }
                 step == "words" -> { if (Lyrics.on.value) Lyrics.toggle() }
                 // the record of the song playing (YouTube's), else your server's newest
