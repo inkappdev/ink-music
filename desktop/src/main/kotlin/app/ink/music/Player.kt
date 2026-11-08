@@ -76,6 +76,33 @@ object Player {
         scope.launch { runCatching { Home.write(soundFile, JSONObject().put("device", to.device).put("exclusive", to.exclusive).put("even", to.even).toString()) } }
     }
 
+    /**
+     * The output played to: the one chosen, while it's there; unplugged (a USB DAC taken away), the computer's own, back
+     * to the chosen one once it's plugged in again (2026-11-08: the FiiO away, every song failed at once and the queue ran
+     * through a song a second). Looked at every 3 s.
+     */
+    private fun deviceNow(): String {
+        val chosen = sound.value.device
+        if (chosen == "auto") return chosen
+        val there = outputs()
+        return if (there.isEmpty() || there.any { it.first == chosen }) chosen else "auto"
+    }
+    private var deviceWatch: kotlinx.coroutines.Job? = null
+    private fun watchDevice() {
+        if (deviceWatch != null) return
+        deviceWatch = scope.launch {
+            // the first look soon after the first deck opens (it's opened before mpv can list what's there)
+            var wait = 300L
+            while (true) {
+                kotlinx.coroutines.delay(wait); wait = 3_000
+                runCatching {
+                    val want = deviceNow()
+                    decks.forEach { m -> if (m.get("audio-device") != want) { m.set("audio-device", want); Log.d("output: $want") } }
+                }
+            }
+        }
+    }
+
     /** The queue in its own order while shuffled (back to it when shuffle's off). */
     private var unshuffled: List<Song>? = null
 
@@ -166,7 +193,7 @@ object Player {
             "audio-client-name" to "ink music", "title" to "ink music",
             "ytdl" to "no", "cache" to "yes",
             "volume" to volume.value.toString(), "volume-max" to "100",
-            "audio-device" to sound.value.device, "audio-exclusive" to if (sound.value.exclusive) "yes" else "no",
+            "audio-device" to deviceNow().also { watchDevice() }, "audio-exclusive" to if (sound.value.exclusive) "yes" else "no",
             "loop-playlist" to if (repeat.value == 1) "inf" else "no", "loop-file" to if (repeat.value == 2) "inf" else "no",
             // the equalizer, automix's bass (ffmpeg's filters, steered as they change)
             "af" to chain(),
