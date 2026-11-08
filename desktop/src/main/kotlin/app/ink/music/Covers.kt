@@ -63,7 +63,12 @@ object Covers {
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
             if (img == null) {
                 kept.get(song.albumId)?.let { return@withContext it }
-                none += song.albumId; return@withContext null
+                // a picture there is a link to that didn't come (a timeout, a crowd of them at once): asked again a minute
+                // on, as a busy server's is (marked as having none, a lot of Linux's records stayed blank till a restart,
+                // 2026-11-08); none only where there's nothing to ask
+                if (song.art != null && (song.server || song.tube || song.episode)) missed[song.albumId] = System.currentTimeMillis()
+                else none += song.albumId
+                return@withContext null
             }
             val sq = square(img, px)
             if (sq.width < px * 9 / 10) whole += song.albumId

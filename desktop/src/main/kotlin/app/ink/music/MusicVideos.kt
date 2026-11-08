@@ -254,7 +254,7 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
     val volume by Player.volume.collectAsState()
     val video = remember(stream) {
         stream?.let { (pic, snd) ->
-            runCatching { Video(pic, 1280, 720, sound = Video.Sound(snd, Player.volume.value, Player.sound.value.device)) }
+            runCatching { Video(pic, 1280, 720, sound = Video.Sound(snd, Player.volume.value, Player.deviceNow())) }
                 .onFailure { Log.d("watch: $it"); said = "it wouldn't start" }.getOrNull()
         }
     }
@@ -292,6 +292,22 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
         }
     }
     val picture = video?.frame?.collectAsState()?.value
+    // full screen (2026-11-08): the window's (as the player's), the picture alone on black at its own shape; a click on it
+    // pauses; leaving the page leaves full screen too
+    var full by remember { mutableStateOf(false) }
+    LaunchedEffect(full) { Win.full(full) }
+    DisposableEffect(Unit) { onDispose { if (Win.full) Win.full(false) } }
+    if (full) {
+        Box(Modifier.fillMaxSize().background(Color.Black).clickable(remember { MutableInteractionSource() }, indication = null) { Watching.toggle?.invoke() }) {
+            picture?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
+            Row(Modifier.align(Alignment.BottomEnd).padding(20.dp), verticalAlignment = Alignment.Bottom) {
+                if (video != null) Word(if (paused) "play" else "pause", pixel(14.sp, Ink.mid), touch = 8.dp) { Watching.toggle?.invoke() }
+                Spacer(Modifier.size(20.dp))
+                Word("leave full screen", pixel(14.sp, Ink.mid), touch = 8.dp) { full = false }
+            }
+        }
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         BoxWithConstraints(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 12.dp, bottom = 28.dp)) {
@@ -331,6 +347,7 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
                         }
                     }
                     if (video != null) Word(if (paused) "play" else "pause", pixel(14.sp), touch = 8.dp) { Watching.toggle?.invoke() }
+                    if (video != null) { Spacer(Modifier.size(20.dp)); Word("full screen", pixel(14.sp, Ink.mid), touch = 8.dp) { full = true } }
                     clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)?.let { n ->
                         Spacer(Modifier.size(20.dp))
                         Word("next video", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back(); open(Page.Watch(n, clips)) }

@@ -81,7 +81,7 @@ object Player {
      * to the chosen one once it's plugged in again (2026-11-08: the FiiO away, every song failed at once and the queue ran
      * through a song a second). Looked at every 3 s.
      */
-    private fun deviceNow(): String {
+    internal fun deviceNow(): String {
         val chosen = sound.value.device
         if (chosen == "auto") return chosen
         val there = outputs()

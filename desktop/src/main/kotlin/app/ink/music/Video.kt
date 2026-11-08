@@ -48,7 +48,7 @@ import kotlin.math.roundToInt
  * frame as over any picture. The frames are `wide` by `high`, the clip scaled into them (`fill`: scaled to fill them,
  the overflow cut off evenly, as a canvas fills the window).
  */
-class Video(url: String, private val wide: Int, private val high: Int = wide, fill: Boolean = false, sound: Sound? = null) {
+class Video(url: String, private val wide: Int, private val high: Int = wide, fill: Boolean = false, private val sound: Sound? = null) {
     /** A video heard as well as seen (a music video): its sound apart when YouTube keeps it so, how loud, and where to. */
     class Sound(val audio: String?, val volume: Int, val device: String)
 
@@ -59,7 +59,6 @@ class Video(url: String, private val wide: Int, private val high: Int = wide, fi
     ) + (if (sound == null) mapOf("aid" to "no", "mute" to "yes", "loop-file" to "inf")
         else mapOf("volume" to sound.volume.toString(), "volume-max" to "100", "audio-device" to sound.device, "cache" to "yes",
             "audio-client-name" to "ink music", "media-controls" to "no", "input-media-keys" to "no") +
-            (sound.audio?.let { mapOf("audio-file" to it) } ?: emptyMap()) +
             // -Dink.ao=null: silent, as the player's
             listOfNotNull(System.getProperty("ink.ao")?.let { "ao" to it }))
         + (if (fill) mapOf("panscan" to "1.0") else emptyMap()))
@@ -91,8 +90,13 @@ class Video(url: String, private val wide: Int, private val high: Int = wide, fi
         val params = Memory(16L * 5)
         var n = 0
         while (alive) {
-            // its events let go of (no one waits on them), then a frame drawn if one's due
-            while (mpv.next(0.0) != null) Unit
+            // its events let go of (no one waits on them), then a frame drawn if one's due; its sound, where YouTube keeps
+            // it apart, added once the picture's open (mpv 0.41 has no "audio-file" option any more: the Mac's and Linux's
+            // videos played silent, 2026-11-08; audio-add is in every mpv)
+            while (true) {
+                val e = mpv.next(0.0) ?: break
+                if (e is Mpv.Loaded) sound?.audio?.let { mpv.commandAsync("audio-add", it, "select") }
+            }
             if (mpv.api.mpv_render_context_update(ctx) and 1L == 0L) { Thread.sleep(8); continue }
             val b = frames[n % frames.size]
             val pixels = b.peekPixels() ?: break
