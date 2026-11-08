@@ -54,13 +54,34 @@ object Player {
     private val soundFile = File(Home.dir, "sound.json")
     val sound = MutableStateFlow(runCatching { JSONObject(soundFile.readText()).let { Sound(it.optString("device", "auto"), it.optBoolean("exclusive"), it.optBoolean("even", true)) } }.getOrDefault(Sound()))
 
-    /** The outputs there are now, as mpv names them and as they're called ("auto" first). */
-    fun outputs(): List<Pair<String, String>> {
+    /** Every output mpv can reach, as it names them and as they're called ("auto" first). */
+    private fun everyOutput(): List<Pair<String, String>> {
         val list = mpv?.get("audio-device-list") ?: return emptyList()
         return runCatching {
             val a = JSONArray(list)
             (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("name") to it.optString("description") }
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * The outputs to choose from: each one once. Linux's mpv lists every device by every way to it (PipeWire, PulseAudio,
+     * each of ALSA's surround layouts, jack, openal, sdl: 28 for 4 outputs, "a ton of audio output options", 2026-11-08):
+     * PipeWire's where it's there, else PulseAudio's, else ALSA's own; the Mac's and Windows' as they are. The one chosen
+     * always among them.
+     */
+    fun outputs(): List<Pair<String, String>> {
+        val all = everyOutput()
+        val auto = all.filter { it.first == "auto" }
+        val pw = all.filter { it.first.startsWith("pipewire/") }
+        val pulse = all.filter { it.first.startsWith("pulse/") }
+        val layouts = Regex("""^alsa/(front|surround\d+|sysdefault|pipewire)\b|^alsa$""")
+        val shown = when {
+            pw.isNotEmpty() -> auto + pw
+            pulse.isNotEmpty() -> auto + pulse
+            else -> all.filter { it.first !in setOf("jack", "openal", "sdl") && !layouts.containsMatchIn(it.first) }
+        }
+        val chosen = sound.value.device
+        return shown + all.filter { it.first == chosen && shown.none { s -> s.first == chosen } }
     }
 
     fun sound(to: Sound) {
@@ -84,7 +105,7 @@ object Player {
     internal fun deviceNow(): String {
         val chosen = sound.value.device
         if (chosen == "auto") return chosen
-        val there = outputs()
+        val there = everyOutput()
         return if (there.isEmpty() || there.any { it.first == chosen }) chosen else "auto"
     }
     private var deviceWatch: kotlinx.coroutines.Job? = null
