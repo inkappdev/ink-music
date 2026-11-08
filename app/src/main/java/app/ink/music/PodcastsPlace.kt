@@ -202,7 +202,7 @@ fun ShowPage(feed: String, first: Podcasts.Show?, pages: Pages) {
     LaunchedEffect(now?.song?.id, now?.playing) { Pods.load(ctx) }
     var more by remember { mutableStateOf(false) }
     var shown by remember(feed) { mutableStateOf(60) }
-    val list = rememberLazyListState()
+    val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),

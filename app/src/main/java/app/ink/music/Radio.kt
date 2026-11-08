@@ -32,16 +32,37 @@ object Radio {
      * Songs to follow the seeds (blocking; the last song first): none already queued (`queued`: ids, and
      * title/artist keys, so the same song from another source counts too).
      */
-    fun after(c: Context, seeds: List<Seed>, queued: Set<String>): List<Song> {
+    fun after(c: Context, seeds: List<Seed>, queued: Set<String>, tempo: Double? = null): List<Song> {
         if (seeds.isEmpty()) return emptyList()
         val lists = seeds.take(WEIGHT.size).map { related(c, it) }
         val since = System.currentTimeMillis() - RECENT
         val heard = History.read(c).filter { it.at >= since }.flatMap { listOf(it.id, key(it.title, it.artist)) }.toHashSet()
-        return rank(seeds, lists, queued, heard)
+        if (tempo == null) return rank(seeds, lists, queued, heard)
+        return atTempo(c, rank(seeds, lists, queued, heard, batch = 30), tempo)
+    }
+
+    /**
+     * Radio after a mix (Mixes: the queue's first song the mix's), keeping to its tempo (2026-11-08): radio's songs read
+     * (Tempos, the kept first), those within 6% of it (half and double counted) taken, ten at most; fewer than three
+     * so near, the nearest ones measured. A minute or so of reading, minutes ahead of the queue's end.
+     */
+    private fun atTempo(c: Context, candidates: List<Song>, tempo: Double): List<Song> {
+        val read = ArrayList<Pair<Song, Tempos.Read>>()
+        for (s in candidates) {
+            val r = Tempos.of(c, s) ?: continue
+            if (!r.usable) continue
+            read += s to r
+            if (read.count { Tempos.fits(it.second.bpm, tempo, .06) } >= BATCH) break
+        }
+        Tempos.save(c)
+        val near = read.filter { Tempos.fits(it.second.bpm, tempo, .06) }
+        val picked = if (near.size >= 3) near else read.sortedBy { Tempos.apart(it.second.bpm, tempo) }.take(5)
+        android.util.Log.d("ink-radio", "keeping ${"%.0f".format(tempo)} bpm: ${near.size} near of ${read.size} read")
+        return picked.take(BATCH).map { it.first }
     }
 
     /** The seeds' lists (in the seeds' order) made one: scored, sifted, no artist twice running. */
-    fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>): List<Song> {
+    fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH): List<Song> {
         // a seed's own kind of version is fine (a slowed song's radio may be slowed songs)
         val seedVersions = seeds.any { versions.containsMatchIn(it.title) }
         val seedKeys = seeds.map { key(it.title, it.artist) }.toHashSet()
@@ -64,7 +85,7 @@ object Radio {
             if ((by[who] ?: 0) >= SAME_ARTIST) return@filter false
             by[who] = (by[who] ?: 0) + 1
             true
-        }.take(BATCH).map { it.value.song }
+        }.take(batch).map { it.value.song }
         return apart(picked, seeds.first().artist)
     }
 

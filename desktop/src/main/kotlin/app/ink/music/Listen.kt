@@ -82,7 +82,7 @@ fun ListenPage(open: (Page) -> Unit) {
     val mixScope = androidx.compose.runtime.rememberCoroutineScope()
     val tubeMixes by TubeAccount.mixes.collectAsState()
     LaunchedEffect(songs.isNotEmpty()) { Discover.start(songs) }
-    val list = rememberLazyListState()
+    val list = pageList()
     LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic(); Updates.check() }
     val update by Updates.offer.collectAsState()
     val shut by Server.shut.collectAsState()
@@ -210,7 +210,7 @@ private fun NewFromYours(list: List<Picks.Shown>, open: (Page) -> Unit) {
         Section("NEW FROM YOUR ARTISTS", "out this week or picked by critics, by artists you play")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             items(list, key = { it.pick.from + it.pick.artist + it.pick.title }) { s ->
-                val art by produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+                val art by produceState(s.art, s) { value = Picks.artOf(s, s.pick.record) }
                 Box(Modifier.width(176.dp)) { PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, open) }
             }
         }
@@ -258,7 +258,7 @@ fun ListsPage(open: (Page) -> Unit) {
     LaunchedEffect(account) { Server.readPlaylists() }
     val gridded by ListsGrid.on.collectAsState()
     if (gridded) return ListsTiles(open)
-    val list = rememberLazyListState()
+    val list = pageList()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
         item { ListsView() }
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
@@ -327,7 +327,7 @@ private fun ListsTiles(open: (Page) -> Unit) {
     val keptIds by Offline.kept.collectAsState()
     val kept by produceState(emptyList<Song>(), keptIds) { value = Offline.songs() }
     val tubeLists by TubeAccount.playlists.collectAsState()
-    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val grid = pageGrid()
     androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
         androidx.compose.foundation.lazy.grid.GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp),
@@ -368,7 +368,7 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
     val loved = lovedSongs()
     val keptNow by Offline.kept.collectAsState()
     val songs by produceState<List<Song>?>(null, id, loved, keptNow) { value = if (id == LOVED) loved else if (id == KEPT) Offline.songs() else Server.playlist(id) }
-    val list = rememberLazyListState()
+    val list = pageList()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
@@ -381,9 +381,11 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 if (!s.isNullOrEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                     Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
                     Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(s.shuffled()) }
+                    MixWord(name, s)
                     CoversWord()
                     KeepOffline(s)
                 }
+                MixProgress(name)
                 Spacer(Modifier.height(14.dp))
             }
             val s = songs.orEmpty()

@@ -458,7 +458,8 @@ object Player {
         val seeds = listOf(seed(last)) + chosen.map(::seed)
         val queued = q.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) }.toHashSet()
         scope.launch {
-            val more = Radio.after(seeds, queued)
+            // a mix's queue (its first song the mix's): radio keeps to its tempo
+            val more = Radio.after(seeds, queued, TempoMixes.keeping(q.firstOrNull()?.id))
             if (more.isEmpty() || !radio.value || _queue.value.lastOrNull()?.id != last.id) return@launch
             fromRadio += more.map { it.id }
             // on a speaker: to its queue
@@ -593,6 +594,18 @@ object Player {
         keep()
     }
 
+    /** Into the queue at `at` (a mix's arc, Mixes: each song read put where its tempo goes): appended, moved there. */
+    fun insert(s: Song, at: Int) {
+        if (casting) return Casting.extend(listOf(s))
+        val m = mpv ?: return
+        if (_queue.value.isEmpty() || index < 0) return play(listOf(s))
+        val i = at.coerceIn(index + 1, _queue.value.size)
+        _queue.value = _queue.value.toMutableList().apply { add(i, s) }
+        m.command("loadfile", where(s), "append")
+        if (i < _queue.value.size - 1) m.command("playlist-move", (_queue.value.size - 1).toString(), i.toString())
+        keep()
+    }
+
     /** At the queue's end (nothing playing: plays it). */
     fun add(s: Song) {
         if (casting) return Casting.extend(listOf(s))
@@ -710,7 +723,8 @@ object Player {
 
     private fun chain(): String {
         val parts = mutableListOf<String>()
-        if (Crossfade.mode.value == Crossfade.AUTOMIX) parts += "highpass@bass=f=10"
+        // automix: the bass held back or handed across (highpass@bass), and the filter fade's top closing (lowpass@top)
+        if (Crossfade.mode.value == Crossfade.AUTOMIX) { parts += "highpass@bass=f=10"; parts += "lowpass@top=f=20000" }
         val eq = Eq.state.value
         if (eq.on) parts += Eq.filters(eq.levels)
         return if (parts.isEmpty()) "" else "@ink:lavfi=[${parts.joinToString(",")}]"

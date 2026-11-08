@@ -325,7 +325,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     if (uFromYours.isNotEmpty()) sections["fromYours"] = {
         Heading("new from your artists")
         Shelf(uFromYours) { s ->
-            val art by androidx.compose.runtime.produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+            val art by androidx.compose.runtime.produceState(s.art, s) { value = Picks.artOf(s, s.pick.record) }
             PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, pages)
         }
     }
@@ -334,7 +334,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         Heading("picked for you", "by critics and djs")
         Shelf(uForYou) { p ->
             val s = p.item
-            val art by androidx.compose.runtime.produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+            val art by androidx.compose.runtime.produceState(s.art, s) { value = Picks.artOf(s, s.pick.record) }
             PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, pages, Fresh.reason(s, p.stretch, taste), near = !p.stretch)
         }
     }
@@ -554,7 +554,7 @@ fun InkRadioPage(pages: Pages) {
     val ctx = LocalContext.current
     val all = remember { Stations.curated(ctx) }
     val now by Playback.now.collectAsState()
-    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),

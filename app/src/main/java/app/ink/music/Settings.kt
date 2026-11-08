@@ -88,7 +88,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
     val syncing by Server.syncing.collectAsState()
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val list = pageList()
     FrostedPage { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost),
@@ -356,13 +356,34 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
                     val cross = mode != Crossfade.OFF
                     // said plainly when it's on but resting (it couldn't be told it wasn't crossfading: exact was on)
-                    if (cross && Exact.on(ctx)) {
+                    if (cross && Exact.inUse(ctx)) {
                         BasicText("resting while your usb dac is plugged in: exact is on (below)", style = pixel(12.sp, Ink.ink))
                         Spacer(Modifier.height(8.dp))
                     }
                     Row {
                         for (m in listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX))
                             Word(m, pixel(14.sp, if (mode == m) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { mode = m; Crossfade.set(ctx, m) }
+                    }
+                    // what the player last did with it: a song mixed into the next, or why one wasn't (2026-11-08:
+                    // a listener's "not working on any of my phones", and nothing on the phone to say why)
+                    if (cross) Crossfade.said(ctx)?.let { line ->
+                        Spacer(Modifier.height(10.dp))
+                        BasicText("last: $line", style = pixel(12.sp, Ink.mid))
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
+
+                // reading songs' tempos for the mixes (Tempos): anywhere, or on wifi only
+                Column(Modifier.cascade(5)) {
+                    BasicText("READING TEMPOS", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("the mixes read each new song's tempo once, about half a megabyte each. on wifi only, mobile data mixes the songs already read",
+                        style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    var wifi by remember { mutableStateOf(Tempos.wifiOnly(ctx)) }
+                    Row {
+                        Word("anywhere", pixel(14.sp, if (!wifi) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { wifi = false; Tempos.wifiOnly(ctx, false) }
+                        Word("on wifi only", pixel(14.sp, if (wifi) Ink.ink else Ink.dim), touch = 8.dp) { wifi = true; Tempos.wifiOnly(ctx, true) }
                     }
                     Spacer(Modifier.height(40.dp))
                 }

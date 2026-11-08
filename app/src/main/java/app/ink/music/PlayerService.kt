@@ -359,8 +359,11 @@ class PlayerService : MediaLibraryService() {
             .filter { it.mediaId !in fromRadio && !it.mediaId.startsWith("s") && it.mediaId != last.mediaId }
             .distinctBy { it.mediaId }.take(2)
         val seeds = listOf(seed(last)) + chosen.map(::seed)
+        val firstId = p.getMediaItemAt(0).mediaId
         net.execute {
-            val more = Radio.after(this, seeds, queued)
+            // a mix's queue (its first song the mix's): radio keeps to its tempo
+            val tempo = Mixes.keeping(this, firstId)
+            val more = Radio.after(this, seeds, queued, tempo)
             android.util.Log.d("ink-radio", "after ${seeds.joinToString(" + ") { it.title + " - " + it.artist }}: ${more.size} (${more.joinToString { it.title + " - " + it.artist }})")
             if (more.isEmpty()) return@execute
             main.post {
@@ -571,12 +574,14 @@ class PlayerService : MediaLibraryService() {
         // the queue as it was left: there, paused, ready to go on
         // the queue as it was left; stopped (stop pressed) it stays stopped, the mini player away till something's chosen
         // (it came back paused whenever ink music started again)
-        kept()?.let { (items, index, at) -> player.setMediaItems(items, index, at); if (!prefs.getBoolean("stopped", false)) player.prepare() }
+        crossfade = Crossfade(this, player, sources, { levelling }, { onSpeaker?.casting == true }, blend, { playNext = true },
+            { order -> player.setShuffleOrder(Shuffle(order, next = { playNext.also { playNext = false } })) }).also { it.onChange = { main.post { tell() } }; it.start() }
+        // the song left playing cut where it hands over, as one chosen is (a restart's song never blended, 2026-11-08)
+        kept()?.let { (items, index, at) -> player.setMediaItems(crossfade?.precut(items, index, at.coerceAtLeast(0)) ?: items, index, at); if (!prefs.getBoolean("stopped", false)) player.prepare() }
         player.shuffleModeEnabled = prefs.getBoolean("shuffle", false)
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
         levelling = Levelling(player, this).also { it.on = prefs.getBoolean("levelling", true) && !Exact.on(this); it.onApply = { tell() } }
         // a song ending goes into the next (settings, sound: crossfade)
-        crossfade = Crossfade(this, player, sources, { levelling }, { onSpeaker?.casting == true }, blend, { playNext = true }).also { it.onChange = { main.post { tell() } }; it.start() }
         // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
             override fun onAudioInputFormatChanged(
@@ -762,7 +767,11 @@ class PlayerService : MediaLibraryService() {
                         asked != null -> { Shelf.ready(this@PlayerService); Auto.found(asked).let { MediaSession.MediaItemsWithStartPosition(it.map(Playback::item), 0, 0) } }
                         tapped != null -> MediaSession.MediaItemsWithStartPosition(tapped.first.map(Playback::item), tapped.second, startPositionMs.coerceAtLeast(0))
                         // the song begun on cut where it was measured before, so it too goes into the next (Crossfade)
-                        else -> resolve(mediaItems).let { r -> MediaSession.MediaItemsWithStartPosition(crossfade?.precut(r, startIndex, startPositionMs.coerceAtLeast(0)) ?: r, startIndex, startPositionMs) }
+                        // (one never heard, on the phone, measured first: a moment at most)
+                        else -> resolve(mediaItems).let { r ->
+                            if (startPositionMs <= 5_000) crossfade?.measureFirst(r, startIndex.coerceAtLeast(0))
+                            MediaSession.MediaItemsWithStartPosition(crossfade?.precut(r, startIndex, startPositionMs.coerceAtLeast(0)) ?: r, startIndex, startPositionMs)
+                        }
                     }
                 }
 

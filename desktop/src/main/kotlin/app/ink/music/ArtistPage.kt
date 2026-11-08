@@ -79,7 +79,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     var patient by remember(name, id) { mutableStateOf(true) }
     LaunchedEffect(name, id) { delay(1_500); patient = false }
     val waiting = info == null && patient
-    val list = rememberLazyListState()
+    val list = pageList()
     // who they are: the photo in the dither (developing as it opens) with their name on it, the counts, play
     val head = @Composable { side: androidx.compose.ui.unit.Dp ->
         Column {

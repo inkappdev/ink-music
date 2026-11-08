@@ -212,7 +212,7 @@ fun FestivalPage(name: String, open: (Page) -> Unit, onClose: () -> Unit) {
     val f = remember(name) { Fests.all.firstOrNull { it.name == name } } ?: return Close(onClose)
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
-    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val grid = pageGrid()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         androidx.compose.foundation.lazy.grid.LazyVerticalGrid(androidx.compose.foundation.lazy.grid.GridCells.Adaptive(150.dp), Modifier.fillMaxSize().feather(grid), grid,

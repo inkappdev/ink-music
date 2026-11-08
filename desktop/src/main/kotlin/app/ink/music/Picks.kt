@@ -126,6 +126,16 @@ object Picks {
     /** A record's cover: the thread's own (when its link is one), else its Bandcamp or Apple Music page's, else iTunes', asked as its tile comes into sight, kept. */
     suspend fun art(r: Curation.Release): String? = art(r.title, r.artist, r.link, true)
 
+    /**
+     * A pick's cover that loads: its own, else looked for anew (2026-11-08: SWALLOW! blank, its link kept from an
+     * earlier read gone dead, and a tile only looked when it had none). Null only when there's none anywhere.
+     */
+    suspend fun artOf(s: Shown, record: Boolean = s.pick.record): String? {
+        val own = s.art
+        if (own != null && Covers.of(s.face) != null) return own
+        return art(s.pick.title, s.pick.artist, s.pick.link.takeIf { it != own }.orEmpty(), record)?.takeIf { it != own } ?: own
+    }
+
     suspend fun art(title: String, artist: String, link: String, record: Boolean): String? {
         if (Regex("\\.(jpe?g|png)$", RegexOption.IGNORE_CASE).containsMatchIn(link)) return link
         val k = (artist + "/" + title).lowercase()
@@ -189,6 +199,27 @@ object Picks {
 
     /** A picked song (or one on the air) found to play; null when YouTube Music hasn't it. */
     suspend fun song(title: String, artist: String): Song? = withContext(Dispatchers.IO) { YouTube.find(title, artist) }
+
+    /**
+     * A shelf played from a song (a genre page's: the phone's, 2026-11-08): all found side by side; it begins with the
+     * next five ready behind it (one alone, radio took it for the queue's end), the rest following as they're found.
+     */
+    suspend fun playFrom(list: List<Shown>): Boolean = kotlinx.coroutines.coroutineScope {
+        val finds = list.take(31).map { r -> async(Dispatchers.IO) { YouTube.find(r.pick.title, r.pick.artist) } }
+        val first = finds.firstOrNull()?.await() ?: return@coroutineScope false
+        val ahead = finds.drop(1).take(5).awaitAll().filterNotNull()
+        Player.play((listOf(first) + ahead).distinctBy { it.id })
+        Player.follow(first, finds.drop(6).awaitAll().filterNotNull().distinctBy { it.id })
+        true
+    }
+
+    /** A genre's songs from its editors' lists (GenreLists), kept half a day in memory. */
+    private val genres = HashMap<String, Pair<Long, List<Shown>>>()
+    suspend fun genre(g: String): List<Shown> = withContext(Dispatchers.IO) {
+        val k = g.lowercase(); val now = System.currentTimeMillis()
+        synchronized(genres) { genres[k] }?.takeIf { now - it.first < 12 * 3_600_000L }?.let { return@withContext it.second }
+        GenreLists.songs(k, now).map { Shown(it, it.art, listOf(it.from)) }.also { if (it.isNotEmpty()) synchronized(genres) { genres[k] = now to it } }
+    }
 
     /** A picked record's page on YouTube Music, its name and artist matched; null when it hasn't it. */
     suspend fun record(p: Curation.Pick): TubeAlbum? = withContext(Dispatchers.IO) {

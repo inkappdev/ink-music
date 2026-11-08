@@ -323,7 +323,7 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                 }
             }
             Spacer(Modifier.width(40.dp))
-            val list = rememberLazyListState()
+            val list = pageList()
             val s = songs.orEmpty()
             LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
                 itemsIndexed(s, key = { _, x -> x.id }) { i, x ->

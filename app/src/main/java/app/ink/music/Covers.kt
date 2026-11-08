@@ -62,7 +62,10 @@ object Covers {
 
     /** A file's record with no picture: found by name in the catalogs, kept on the phone as the network's are. */
     private fun found(ctx: Context, song: Song, px: Int): Bitmap? {
-        val url = FoundCovers.link(java.io.File(ctx.cacheDir, "covers"), song.album, song.albumArtist) ?: return null
+        val url = FoundCovers.link(java.io.File(ctx.cacheDir, "covers"), song.album, song.albumArtist) { a, by ->
+            // none in the catalogs: YouTube Music's record of that name (the full build; the play build has none)
+            kotlinx.coroutines.runBlocking { YouTubeMusic.findRecord(a, by)?.art }
+        } ?: return null
         val found = song.copy(art = url)
         return fromDisk(ctx, found, px) ?: fetch(url, px)?.also { toDisk(ctx, found, px, it) }
     }

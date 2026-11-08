@@ -130,8 +130,10 @@ private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: (
     Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
         Word("PLAY THE WEEK", headline(24.sp), touch = 8.dp) { Player.play(w.songs) }
         Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(w.songs.shuffled()) }
+        MixWord("ink weekly", w.songs)
         BasicText("${w.songs.size} songs  ·  ${w.songs.sumOf { it.duration } / 60_000} min", style = pixel(12.sp, Ink.mid))
     }
+    MixProgress("ink weekly")
 }
 
 /** Ink radio on INK: the stations we keep, a kind chosen in a row of words (all, the stars first), each what it's playing now. */

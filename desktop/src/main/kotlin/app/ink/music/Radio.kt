@@ -27,16 +27,26 @@ object Radio {
     private val versions = Regex("""\b(sped ?up|slowed|nightcore|karaoke|8d audio|bass ?boosted|reverb)\b""", RegexOption.IGNORE_CASE)
 
     /** Songs to follow the seeds (blocking; the last song first): none already queued (ids, and title/artist keys). */
-    fun after(seeds: List<Seed>, queued: Set<String>): List<Song> {
+    fun after(seeds: List<Seed>, queued: Set<String>, tempo: Double? = null): List<Song> {
         if (seeds.isEmpty()) return emptyList()
         val lists = seeds.take(WEIGHT.size).map { related(it) }
         val since = System.currentTimeMillis() - RECENT
         val heard = History.read().filter { it.at >= since }.flatMap { listOf(it.id, key(it.title, it.artist)) }.toHashSet()
-        return rank(seeds, lists, queued, heard)
+        if (tempo == null) return rank(seeds, lists, queued, heard)
+        // after a mix (Mixes), keeping to its tempo (the phone's): radio's songs read, those within 6% taken
+        val read = ArrayList<Pair<Song, Tempos.Read>>()
+        for (s in rank(seeds, lists, queued, heard, batch = 30)) {
+            val r = Tempos.of(s)?.takeIf { it.usable } ?: continue
+            read += s to r
+            if (read.count { Tempos.fits(it.second.bpm, tempo, .06) } >= BATCH) break
+        }
+        Tempos.save()
+        val near = read.filter { Tempos.fits(it.second.bpm, tempo, .06) }
+        return (if (near.size >= 3) near else read.sortedBy { Tempos.apart(it.second.bpm, tempo) }.take(5)).take(BATCH).map { it.first }
     }
 
     /** The seeds' lists (in the seeds' order) made one: scored, sifted, no artist twice running. */
-    fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>): List<Song> {
+    fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH): List<Song> {
         // a seed's own kind of version is fine (a slowed song's radio may be slowed songs)
         val seedVersions = seeds.any { versions.containsMatchIn(it.title) }
         val seedKeys = seeds.map { key(it.title, it.artist) }.toHashSet()
@@ -59,7 +69,7 @@ object Radio {
             if ((by[who] ?: 0) >= SAME_ARTIST) return@filter false
             by[who] = (by[who] ?: 0) + 1
             true
-        }.take(BATCH).map { it.value.song }
+        }.take(batch).map { it.value.song }
         return apart(picked, seeds.first().artist)
     }
 

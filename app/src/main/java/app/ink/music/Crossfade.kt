@@ -43,13 +43,15 @@ import kotlin.math.sqrt
 class Crossfade(
     private val c: Context, private val exo: ExoPlayer, private val sources: MediaSource.Factory,
     private val levelling: () -> Levelling?, private val casting: () -> Boolean,
-    private val blend: Blend? = null, private val inPlace: () -> Unit = {},
+    private val blend: Blend? = null, private val inPlace: () -> Unit = {}, private val reorder: (IntArray) -> Unit = {},
 ) {
     /** A song's beat over a stretch: its period (ms), one beat's time (ms into the song), and how sure (peak over mean). */
-    data class Beats(val period: Double, val first: Double, val sure: Double) {
+    data class Beats(val period: Double, val first: Double, val sure: Double, val downbeat: Double = first, val bars: List<Beat.Bar> = emptyList()) {
         val bpm get() = 60_000 / period
         fun nearest(t: Double) = first + Math.round((t - first) / period) * period
         fun after(t: Double) = first + Math.ceil((t - first) / period) * period
+        /** The bar start (bar one) nearest `t`. */
+        fun barNear(t: Double) = downbeat + Math.round((t - downbeat) / (4 * period)) * 4 * period
     }
 
     /** Where a song's sound ends (ms), where its handover begins, where its sound begins; its beat at its end and its start. */
@@ -57,6 +59,7 @@ class Crossfade(
         val lastSound: Long, val handover: Long, val firstSound: Long, val tail: Beats? = null, val head: Beats? = null,
         internal val end: Any? = null,   // its end decoded, every channel (a Pcm; none for a file deeper than 16 bit)
         val duration: Long = 0,
+        val tailKey: Key.Found? = null, val headKey: Key.Found? = null,   // its key at its end and at its start
     )
 
     /** A beat-matched handover: the old song's beat it lands on, the new one's beat it comes in on, its tempo there. */
@@ -82,9 +85,14 @@ class Crossfade(
         val id = exo.currentMediaItem?.mediaId
         val t = id?.let { blend?.tails?.get(it) }
         val m = mixing?.takeIf { SystemClock.elapsedRealtime() < it.start + it.length }
-        if (t == null && m == null) return null
+        // the song's own beat and key, for the beat counter (automix, sure of the beat)
+        val e = id?.let { ends[it] }?.takeIf { on(c) && mode(c) == AUTOMIX }
+        val head = e?.head?.takeIf { it.sure >= SURE }; val tail = e?.tail?.takeIf { it.sure >= SURE }
+        if (t == null && m == null && head == null && tail == null) return null
         return (m ?: app.ink.music.Mix()).copy(cutId = if (t != null) id!! else "", cutAt = t?.cutMs ?: 0, full = id?.let { ends[it]?.duration } ?: 0,
-            auto = t?.stretched != null)
+            auto = t?.stretched != null, songId = id.orEmpty(),
+            headDown = head?.downbeat ?: 0.0, headPeriod = head?.period ?: 0.0, tailDown = tail?.downbeat ?: 0.0, tailPeriod = tail?.period ?: 0.0,
+            tailFrom = (e?.end as? Pcm)?.start ?: (e?.lastSound?.minus(25_000) ?: 0), headKey = e?.headKey?.camelot.orEmpty(), tailKey = e?.tailKey?.camelot.orEmpty())
     }
 
     /** A song come in by a blend (the one before it cut for it): the blend said, and cleared once it's over. */
@@ -92,6 +100,7 @@ class Crossfade(
         val t = blend?.tails?.get(from) ?: return
         val st = t.stretched?.takeIf { it.into == into }
         val head = ends[into]?.head
+        tell("${titleOf(from)} into ${titleOf(into)}: mixed" + if (st != null) ", beats matched" else "")
         mixing = app.ink.music.Mix(from = from, start = SystemClock.elapsedRealtime(), length = t.fadeMs,
             bpmFrom = if (st != null) ends[from]?.tail?.bpm ?: 0.0 else 0.0, bpmTo = if (st != null) head?.bpm ?: 0.0 else 0.0,
             beatFirst = if (st != null) head?.first ?: 0.0 else 0.0, beatPeriod = if (st != null) head?.period ?: 0.0 else 0.0)
@@ -101,6 +110,8 @@ class Crossfade(
 
     companion object {
         const val FADE = 6_000L
+        /** How long play waits for a never-measured song's end, begun on (ms). */
+        const val FIRST_WAIT = 1_200L
         /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
         const val LEAD = 120L
         /** Beats matched: off till the mix is made in the player's own sound (sample by sample). */
@@ -112,9 +123,12 @@ class Crossfade(
         fun mode(c: Context): String = runCatching { File(c.filesDir, "crossfade").readText().trim() }.getOrNull()
             ?.let { if (it == AUTOMIX) AUTOMIX else CROSSFADE } ?: OFF
         fun set(c: Context, mode: String) { runCatching { File(c.filesDir, "crossfade").let { if (mode == OFF) it.delete() else it.writeText(mode) } } }
-        /** How sure a beat must be (its period's peak over the mean) to be matched. */
-        const val SURE = 1.6
+        /** How sure a beat must be to be matched (Beat's z-score). */
+        const val SURE = Beat.SURE
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
+        const val SAID = "crossfade-said"
+        /** The last song mixed into the next, or why the last one wasn't (for settings). */
+        fun said(c: Context): String? = runCatching { File(c.filesDir, SAID).readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
 
     }
 
@@ -138,17 +152,45 @@ class Crossfade(
                 val now = exo.currentMediaItem?.mediaId
                 val next = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId }
                 cutSongs.keys.filter { it != now && it != next }.forEach(::uncut)
-                // a song's end decoded is ~10 MB: kept only for this song, the next and the one after (measured again if
-                // they come round again)
-                val keep = setOfNotNull(now, next, exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
-                    ?.let { exo.currentTimeline.getNextWindowIndex(it, exo.repeatMode, exo.shuffleModeEnabled) }?.takeIf { it != C.INDEX_UNSET }
-                    ?.let { exo.getMediaItemAt(it).mediaId })
-                ends.keys.filter { it !in keep }.forEach { ends.remove(it); asked.remove(it) }
+                letGo(now, next)
                 cut()
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { if (!playWhenReady) end() }
+            // the queue changed under the song playing (songs added after it, moved, shuffle turned): another song may be
+            // next now, planned anew (2026-11-08: a genre's shelf added behind its first song with shuffle on, and the
+            // song that came next had been measured but never cut; only a song change planned)
+            // (never its own swaps: a cut swaps the song in, with shuffle on that moved the order, and planning anew
+            // cut another, and another, every few seconds, 2026-11-08: no song kept its cut)
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED && !swapping) replanSoon()
+            }
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { replanSoon() }
         })
     }
+
+    // once a burst of changes has settled (a swap is a removal and an addition; a shelf comes in pieces)
+    private val replan = Runnable {
+        if (!on(c)) return@Runnable
+        val now = exo.currentMediaItem?.mediaId
+        val next = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId }
+        letGo(now, next)
+        measure()
+        cutSongs.keys.filter { it != now && it != next }.forEach(::uncut)
+        cut()
+    }
+
+    /**
+     * Each song's end decoded is ~10 MB: kept only for this song, the next and the one after (measured again if they
+     * come round again). Let go at a song change and at a queue change too (2026-11-08: only the song change did, a
+     * shuffled shelf measured song after song, and the player ran out of memory measuring an 11-minute one).
+     */
+    private fun letGo(now: String?, next: String?) {
+        val keep = setOfNotNull(now, next, exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+            ?.let { exo.currentTimeline.getNextWindowIndex(it, exo.repeatMode, exo.shuffleModeEnabled) }?.takeIf { it != C.INDEX_UNSET }
+            ?.let { exo.getMediaItemAt(it).mediaId })
+        ends.keys.filter { it !in keep }.forEach { ends.remove(it); asked.remove(it) }
+    }
+    private fun replanSoon() { main.removeCallbacks(replan); main.postDelayed(replan, 300) }
 
     fun release() { main.removeCallbacks(tick); end(); work.shutdown() }
 
@@ -403,17 +445,51 @@ class Crossfade(
         return items.toMutableList().also { it[start] = item.buildUpon().setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(handover).build()).build() }
     }
 
+    /**
+     * A song begun on that's never been measured (it ended as it would: "the first song never mixes", the likeliest
+     * try of it, 2026-11-08): its end measured before it starts, a moment at most ([FIRST_WAIT]), so [precut] can cut
+     * it as any other. Only a song on the phone (a file, one kept offline): a stream's end takes seconds to read, and
+     * play would wait. Late, it's kept all the same (measured as it plays, the next time it's begun on).
+     */
+    fun measureFirst(items: List<MediaItem>, start: Int) {
+        if (!on(c) || Exact.inUse(c) || casting()) return
+        val item = items.getOrNull(start) ?: return
+        val next = items.getOrNull(start + 1) ?: return
+        // a record in order runs into itself as made: nothing to wait for
+        val record = item.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
+        if (record.isNotEmpty() && record == next.mediaMetadata.extras?.getString(Levelling.RECORD)) return
+        val id = item.mediaId
+        if (cuts.containsKey(id) || id.startsWith("e") || id.startsWith("s")) return
+        val uri = item.localConfiguration?.uri ?: item.requestMetadata.mediaUri ?: return
+        val onPhone = uri.scheme == "content" || uri.scheme == "file" ||
+            (uri.scheme == "ytm" && Offline.file(c, "y" + uri.host) != null) ||
+            (uri.path?.endsWith("/rest/stream") == true && uri.getQueryParameter("id")?.let { Offline.file(c, "n$it") } != null)
+        if (!onPhone) return
+        titles[id] = item.mediaMetadata.title?.toString().orEmpty()
+        val t0 = SystemClock.uptimeMillis()
+        val f = java.util.concurrent.CompletableFuture.supplyAsync { runCatching { ends(uri, id) }.getOrNull() }
+        val e = runCatching { f.get(FIRST_WAIT, java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull()
+        if (e != null) {
+            ends[id] = e; asked += id; keepCut(id, e)
+            android.util.Log.d("ink-crossfade", "$id: measured before it began, in ${SystemClock.uptimeMillis() - t0} ms")
+        } else {
+            android.util.Log.d("ink-crossfade", "$id: not measured in ${FIRST_WAIT} ms, begins uncut")
+            f.thenAccept { late -> if (late != null) keepCut(id, late) }
+        }
+    }
+
     /** A song cut as it was put on, its end now decoded: handed to the blend (or said, if it couldn't be). */
     private fun tailOfPrecut(id: String) {
         val p = precut[id] ?: return
         val b = blend ?: return
         if (b.tails.containsKey(id)) return
-        val pcm = ends[id]?.end as? Pcm
+        val e = ends[id] ?: return   // not measured yet: handed over once it is
+        val pcm = e.end as? Pcm
         val all = pcm?.all
         if (pcm == null || all == null) return why(id, "begun on, its end couldn't be kept: it ends at its cut")
         val pcmEnd = pcm.start + all.size / pcm.channels * 1000L / pcm.rate
         if (pcm.start > p[0] || pcmEnd < p[0] + p[1]) return why(id, "begun on, its end decoded doesn't hold the cut")
-        b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, p[0], p[1])
+        b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, p[0], p[1], filter = mode(c) == AUTOMIX)
         android.util.Log.d("ink-crossfade", "$id: its end ready to mix in at ${p[0] / 1000.0}s")
     }
 
@@ -426,9 +502,20 @@ class Crossfade(
         val b = blend ?: return
         if (!on(c) || Exact.inUse(c)) { if (on(c)) why("-", "exact to a usb dac is on, and the dac is plugged in"); cutSongs.keys.toList().forEach(::uncut); return }
         val n = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET } ?: return
-        val item = exo.getMediaItemAt(n)
+        var item = exo.getMediaItemAt(n)
         val id = item.mediaId
-        if (id in cutSongs || id.startsWith("e") || id.startsWith("s")) return
+        if (id.startsWith("e") || id.startsWith("s")) return
+        // cut already: done, unless it was cut plainly while the one after it was still being measured, and that one is
+        // measured now (its beats to match): whole again, and planned anew
+        if (id in cutSongs) {
+            val after = exo.currentTimeline.getNextWindowIndex(n, exo.repeatMode, exo.shuffleModeEnabled).takeIf { it != C.INDEX_UNSET }
+                ?.let { exo.getMediaItemAt(it).mediaId }
+            if (id !in provisional || after == null || !ends.containsKey(after) || id in planning) return
+            provisional -= id
+            val whole = cutSongs[id] ?: return
+            uncut(id)
+            item = whole
+        }
         val e = ends[id] ?: return
         val pcm = e.end as? Pcm ?: return why(id, "its end wasn't kept (deeper than 16 bit)")
         val all = pcm.all ?: return why(id, "its end has no samples kept")
@@ -440,35 +527,57 @@ class Crossfade(
         // the beats matched, where both are sure and their tempos near: worked out (and the end stretched) apart
         val pcmEnd = pcm.start + all.size / pcm.channels * 1000L / pcm.rate
         if (id in planning) return
-        // the one after it not measured yet (asked, on its way): planned once it is (each measuring asks again)
-        if (!ends.containsKey(following.mediaId) && following.mediaId in asked) return
+        // the one after it not measured yet (asked, on its way): cut plainly now, planned again once it is (2026-11-08: a
+        // song waited for the one after it, a few seconds, and one skipped to meanwhile had no cut at all; Brave waited
+        // on Cloudy Day, which ran out of memory twice, till it played)
+        val waiting = !ends.containsKey(following.mediaId) && following.mediaId in asked && following.mediaId !in unread
         planning += id
         work.execute {
             // the one after it as measured by now (measured on this same thread, so done if it was asked first)
-            val m = runCatching { matched(e, ends[following.mediaId], pcm, all, pcmEnd) }.onFailure { android.util.Log.d("ink-crossfade", "$id: beats: $it") }.getOrNull()
+            val m = if (waiting) null else runCatching { matched(e, ends[following.mediaId], pcm, all, pcmEnd) }.onFailure { android.util.Log.d("ink-crossfade", "$id: beats: $it") }.getOrNull()
             main.post {
                 planning -= id
                 if (exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId } != id || id in cutSongs) return@post
                 val at = m?.cut ?: e.handover
-                val fade = m?.fade ?: (e.lastSound - at).coerceIn(2_000, 12_000)
+                // not beats matched: the filter fade (Blend), and a short one when their keys clash (both sure)
+                val clash = Key.clash(e.tailKey, ends[following.mediaId]?.headKey)
+                val fade = m?.fade ?: (e.lastSound - at).coerceIn(2_000, 12_000).let { if (clash) it.coerceAtMost(5_000) else it }
                 if (pcm.start > at || pcmEnd < at + fade) return@post why(id, "its end decoded (${pcm.start / 1000.0}s to ${pcmEnd / 1000.0}s) doesn't hold the cut at ${at / 1000.0}s and its ${fade / 1000.0}s fade")
                 b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, at, fade,
-                    m?.let { Blend.Stretched(following.mediaId, it.stretched, it.from, it.speed, it.period) })
+                    m?.let { Blend.Stretched(following.mediaId, it.stretched, it.from, it.speed, it.period) }, filter = (m == null || m.clash) && mode(c) == AUTOMIX)
                 cutSongs[id] = item
+                // cut for now: and if the one after it was measured meanwhile (the planning waited behind its measuring on
+                // the same thread, so it nearly always is), planned again at once (2026-11-08: none ever was, no beats matched)
+                if (waiting) { provisional += id; if (ends.containsKey(following.mediaId)) main.post { cut() } }
                 swap(n, item.buildUpon().setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(at).build()).build())
                 android.util.Log.d("ink-crossfade", "$id cut at ${at / 1000.0}s of ${e.duration / 1000.0}s, its end to be mixed in over ${fade / 1000.0}s" +
-                    (m?.let { ", beats matched into ${following.mediaId}: its end at ${"%.3f".format(it.speed)}x (${"%.1f".format(60_000 / it.period)} bpm), the bass handed across" } ?: ""))
+                    (if (waiting) " (for now: the one after it still being measured)" else "") +
+                    (m?.let { ", beats matched into ${following.mediaId}: its end at ${"%.3f".format(it.speed)}x (${"%.1f".format(60_000 / it.period)} bpm), the bass handed across${if (it.clash) ", the old one filtered (keys clash)" else ""}" }
+                        ?: if (mode(c) == AUTOMIX) ", the filter fade${if (clash) " (keys clash: short)" else ""}" else ""))
             }
         }
     }
     private val planning = HashSet<String>()
+    private val tries = ConcurrentHashMap<String, Int>()
+    private val provisional = HashSet<String>()   // cut plainly while the song after it was being measured
+    private val unread = ConcurrentHashMap.newKeySet<String>()   // songs whose end couldn't be read (for now)
 
     /** Why a song won't blend into the next, said once a song (ink-crossfade): what a listener's log can tell us. */
-    private val said = HashSet<String>()
-    private fun why(id: String, reason: String) { if (said.add("$id $reason")) android.util.Log.d("ink-crossfade", "$id: no blend: $reason") }
+    private val said = ConcurrentHashMap.newKeySet<String>()   // told from the measuring thread too
+    private fun why(id: String, reason: String) {
+        if (!said.add("$id $reason")) return
+        android.util.Log.d("ink-crossfade", "$id: no blend: $reason")
+        tell("${titleOf(id)}: not mixed, $reason")
+    }
+
+    // what settings says under transitions (2026-11-08: "not working on any of my phones", and nothing to tell why):
+    // the last song mixed, or the last reason one wasn't, in files/crossfade-said (the screens read it)
+    private val titles = ConcurrentHashMap<String, String>()
+    private fun titleOf(id: String) = titles[id]?.takeIf { it.isNotBlank() } ?: "a song"
+    private fun tell(line: String) { runCatching { Keep.write(File(c.filesDir, SAID), line.lowercase()) } }
 
     /** A beat-matched blend's plan: where to cut, over how long, the old song's end stretched to the new one's tempo. */
-    private class Matched(val cut: Long, val fade: Long, val stretched: FloatArray, val from: Double, val speed: Double, val period: Double)
+    private class Matched(val cut: Long, val fade: Long, val stretched: FloatArray, val from: Double, val speed: Double, val period: Double, val clash: Boolean = false)
 
     /**
      * The old song's end conformed to the new one, which comes in untouched: its end stretched (Media3's Sonic, its
@@ -481,15 +590,37 @@ class Crossfade(
         if (!MATCH || mode(c) != AUTOMIX) return null
         val a = e.tail ?: return null
         val b = next?.head ?: return null
-        if (a.sure < SURE || b.sure < SURE) return null
         // the old one's beat in the new one's terms (its double or half if that's nearer)
-        val pa = listOf(1.0, 2.0, .5).map { a.period * it }.minByOrNull { kotlin.math.abs(it / b.period - 1) }!!
+        val mult = listOf(1.0, 2.0, .5).minByOrNull { kotlin.math.abs(a.period * it / b.period - 1) }!!
+        val pa = a.period * mult
         val speed = pa / b.period   // the old one's end played this much faster (or slower) to keep the new one's tempo
         if (kotlin.math.abs(speed - 1) > .08) return null
-        val b0 = b.after(0.0)                                        // the new one's first beat, from its start
-        val a0 = a.after(e.lastSound - 16 * pa)                      // a beat of the old one's, 16 before its sound ends
-        val cut = (a0 - speed * b0).toLong()                         // so that a0 sounds as b0 does
+        // sure of both beats; where the two tempos agree within 2%, a little less sure will do (148.7 into 150 was a
+        // crossfade at 3.4, 2026-11-08: the tempos agreeing is evidence too)
+        val needed = if (kotlin.math.abs(speed - 1) <= .02) Tempos.LOOSE else SURE
+        if (a.sure < needed || b.sure < needed) return null
+        // in on the new one's bar one (2026-11-08, after FireTheDJ: a handover on any beat could fall mid-phrase): its
+        // first bar start once its sound begins
+        val bar = 4 * b.period
+        var b0 = b.downbeat
+        while (b0 < next.firstSound - 60) b0 += bar
+        while (b0 - bar >= next.firstSound - 60) b0 -= bar
+        // out on one of the old one's bar starts: where its outro begins (a bar a third quieter than the four before it)
+        // in its last eight bars or so, else the bar four from where its sound ends
+        val oldBar = 4 * a.period
+        val latest = e.lastSound - 8 * pa
+        val outro = a.bars.withIndex().filter { (i, br) ->
+            i >= 4 && br.at in (e.lastSound - 36 * pa)..latest && br.loud < .67f * (i - 4 until i).map { a.bars[it].loud }.average()
+        }.lastOrNull()?.value?.at
+        val a0 = outro ?: a.barNear(e.lastSound - 16 * pa).let { if (it > latest) it - oldBar else it }
+        val cut = (a0 - speed * b0).toLong()   // so that a0 sounds as b0 does
+        // up to four bars over each other (as long as the old one's sound lasts); keys clashing (both sure), the same
+        // four, the old one sinking under the filter fade's low-pass (cut to two bars it rushed: the bass swapped in a
+        // third of a second, heard as a hitch, Obsidian into Think of You, 2026-11-08)
+        val clash = Key.clash(e.tailKey, next.headKey)
         val fade = kotlin.math.min(16 * b.period, (e.lastSound - cut) / speed).toLong().coerceIn(4_000, 14_000)
+        android.util.Log.d("ink-crossfade", "plan: out at ${"%.2f".format(a0 / 1000)}s (${if (outro != null) "its outro" else "a bar start"}), " +
+            "in on bar one at ${"%.2f".format(b0 / 1000)}s, keys ${e.tailKey?.camelot} into ${next.headKey?.camelot}${if (clash) ", clashing: the old one filtered" else ""}")
         if (cut < pcm.start + 500 || cut < a.first) return null
         // its end stretched, from a little before the cut to past the fade's end
         val from = (cut - 300).coerceAtLeast(pcm.start).toDouble()
@@ -497,7 +628,7 @@ class Crossfade(
         val i0 = ((from - pcm.start) * pcm.rate / 1000).toInt() * pcm.channels
         val i1 = ((to - pcm.start) * pcm.rate / 1000).toInt().coerceAtMost(all.size / pcm.channels) * pcm.channels
         val stretched = stretch(all.copyOfRange(i0, i1), pcm.channels, pcm.rate, speed) ?: return null
-        return Matched(cut, fade, stretched, from, speed, b.period)
+        return Matched(cut, fade, stretched, from, speed, b.period, clash)
     }
 
     /** Samples played `speed` times as fast, their pitch kept (Media3's Sonic, offline). */
@@ -528,6 +659,7 @@ class Crossfade(
         val was = cutSongs[id] ?: return
         if (exo.currentMediaItem?.mediaId == id) return
         cutSongs.remove(id)
+        provisional.remove(id)
         blend?.tails?.remove(id)
         val i = (0 until exo.mediaItemCount).firstOrNull { exo.getMediaItemAt(it).mediaId == id } ?: return
         swap(i, was)
@@ -539,10 +671,26 @@ class Crossfade(
      * the order, next if it was next (else it'd go last).
      */
     private fun swap(i: Int, item: MediaItem) {
-        if (i == exo.nextMediaItemIndex) inPlace()
-        exo.removeMediaItem(i)
-        exo.addMediaItem(i.coerceAtMost(exo.mediaItemCount), item)
+        swapping = true
+        try {
+            // shuffled: the order as it was, put back after (a song put in again went after its neighbour in the list,
+            // not where it was in the shuffle: the song cut stopped being next, another came next uncut, 2026-11-08)
+            val order = if (exo.shuffleModeEnabled) shuffled() else null
+            exo.removeMediaItem(i)
+            exo.addMediaItem(i.coerceAtMost(exo.mediaItemCount), item)
+            if (order != null && order.size == exo.mediaItemCount) reorder(order)
+        } finally { swapping = false }
     }
+
+    /** The queue's songs in the order shuffle plays them (their places in the list). */
+    private fun shuffled(): IntArray {
+        val tl = exo.currentTimeline
+        val out = ArrayList<Int>(tl.windowCount)
+        var w = tl.getFirstWindowIndex(true)
+        while (w != C.INDEX_UNSET && out.size < tl.windowCount) { out += w; w = tl.getNextWindowIndex(w, Player.REPEAT_MODE_OFF, true) }
+        return out.toIntArray()
+    }
+    private var swapping = false
 
     /** This song's end and the next one's start measured, if they aren't yet. */
     private fun measure() {
@@ -554,9 +702,25 @@ class Crossfade(
         for (item in items) {
             val id = item.mediaId
             if (id.startsWith("e") || id.startsWith("s") || !asked.add(id)) continue
+            titles[id] = item.mediaMetadata.title?.toString().orEmpty()
             val uri = item.localConfiguration?.uri ?: item.requestMetadata.mediaUri ?: continue
             work.execute {
-                runCatching { ends(uri) }.onFailure { android.util.Log.d("ink-crossfade", "$id: $it") }.getOrNull()?.let { ends[id] = it; keepCut(id, it); main.post { cut(); tailOfPrecut(id) } }
+                val e = runCatching { ends(uri, id) }.onFailure { android.util.Log.d("ink-crossfade", "$id: $it"); why(id, "its end couldn't be read ($it)") }.getOrNull()
+                if (e != null) main.post {
+                    ends[id] = e; keepCut(id, e); cut(); tailOfPrecut(id)
+                    if (id == exo.currentMediaItem?.mediaId) onChange()   // its beat, for the counter
+                    // the song begun on, heard for the first time: it can't be cut now it plays (from the next one on, they run together)
+                    if (id == exo.currentMediaItem?.mediaId && id !in cutSongs && !precut.containsKey(id) && exo.nextMediaItemIndex != C.INDEX_UNSET)
+                        why(id, "the first song is measured as it plays and ends as it would. the ones after it run together")
+                }
+                // not read (a stream that wouldn't open, a decode too slow): asked again a little later, twice at most
+                // (it was asked once and never again: that song never blended)
+                else {
+                    // the song before it planned without it meanwhile; asked again a little later
+                    unread += id
+                    main.post { cut() }
+                    if ((tries.merge(id, 1, Int::plus) ?: 1) < 3) main.postDelayed({ asked.remove(id); unread.remove(id); measure() }, 15_000)
+                }
             }
         }
     }
@@ -569,22 +733,40 @@ class Crossfade(
         else -> uri.toString()
     }
 
-    private fun ends(uri: android.net.Uri): Ends? {
-        val src = source(uri) ?: return null
+    private fun ends(uri: android.net.Uri, id: String): Ends? {
+        val src = source(uri) ?: return null.also { why(id, "its stream wasn't found") }
+        // a stream read through ink music's own requests, only the parts the decoder asks for (2026-11-08: YouTube's
+        // streams wouldn't open in Android's own reader, "Failed to instantiate extractor", so no YouTube song blended;
+        // a server's took 11 s): one reader for all three opens, so what's read once is read once
+        val ranged = (src as? String)?.takeIf { it.startsWith("http") }?.let { Ranged(it) }
         fun open(): MediaExtractor? = MediaExtractor().runCatching {
-            when (src) { is android.net.Uri -> setDataSource(c, src, null); is File -> setDataSource(src.path); else -> setDataSource(src.toString(), emptyMap()) }
+            when {
+                ranged != null -> setDataSource(ranged)
+                src is android.net.Uri -> setDataSource(c, src, null)
+                src is File -> setDataSource(src.path)
+                else -> setDataSource(src.toString(), emptyMap())
+            }
             this
-        }.getOrNull()
-        val x = open() ?: return null
-        val track = (0 until x.trackCount).firstOrNull { x.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true } ?: run { x.release(); return null }
+        }.onFailure { android.util.Log.d("ink-crossfade", "$id: won't open: $it") }.getOrNull()
+        val x = open() ?: return null.also { why(id, "its file wouldn't open to be measured") }
+        val track = (0 until x.trackCount).firstOrNull { x.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true } ?: run { x.release(); why(id, "no sound found in it"); return null }
         val format = x.getTrackFormat(track)
-        val dur = format.getLong(MediaFormat.KEY_DURATION) / 1000
+        // a stream that doesn't say its length (a server's transcode): the player's own, if this is the song playing
+        val dur = (if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) / 1000 else 0L)
         x.release()
-        if (dur < FADE * 3) return null
+        if (dur <= 0) return null.also { why(id, "it doesn't say how long it is") }
+        if (dur < FADE * 3) return null.also { why(id, "too short") }
+        // read over the network: given longer (a slower phone or line took more than 8 s for 25 s of a stream, and the
+        // end came back short: never mixed)
+        val wait = if (src is String) 30_000L else 12_000L
+        val t0 = SystemClock.uptimeMillis()
         // the last 25 s: where the sound ends, where an outro falls away, its beat; the first 20 s: its sound, its beat
-        val endPcm = decode(open() ?: return null, track, (dur - 25_000).coerceAtLeast(0), dur, keep = true) ?: return null
+        val endPcm = decode(open() ?: return null, track, (dur - 25_000).coerceAtLeast(0), dur, keep = true, wait = wait)
+            ?: return null.also { why(id, "its end couldn't be decoded") }
+        val endsAt = endPcm.start + endPcm.mono.size * 1000L / endPcm.rate
+        if (endsAt < dur - 3_000) android.util.Log.d("ink-crossfade", "$id: its end read short, to ${endsAt / 1000.0}s of ${dur / 1000.0}s, in ${SystemClock.uptimeMillis() - t0} ms")
         val deep = format.containsKey("bits-per-sample") && format.getInteger("bits-per-sample") > 16
-        val headPcm = decode(open() ?: return null, track, 0, 20_000)
+        val headPcm = decode(open() ?: return null, track, 0, 20_000, wait = wait)
         val end = levels(endPcm)
         val window = 50L
         val loud = end.maxOrNull() ?: return null
@@ -596,9 +778,14 @@ class Crossfade(
         val handover = listOfNotNull(lastSound - FADE, quiet?.minus(1_000)).minOrNull()!!.coerceAtLeast(dur - 25_000)
         val firstSound = headPcm?.let { levels(it) }?.indexOfFirst { it > -50f }?.takeIf { it > 0 }?.let { it * window }?.takeIf { it >= 400 } ?: 0L
         val tail = beats(endPcm); val head = headPcm?.let { beats(it) }
-        android.util.Log.d("ink-crossfade", "${uri.lastPathSegment}: ${dur / 1000}s, sound to ${lastSound / 1000.0}s, quiet from ${quiet?.div(1000.0)}, hand over at ${handover / 1000.0}s, starts ${firstSound}ms in; " +
+        val tailKey = Key.find(endPcm.mono, endPcm.rate); val headKey = headPcm?.let { Key.find(it.mono, it.rate) }
+        android.util.Log.d("ink-crossfade", "$id: ${dur / 1000}s, measured in ${SystemClock.uptimeMillis() - t0} ms, sound to ${lastSound / 1000.0}s, quiet from ${quiet?.div(1000.0)}, hand over at ${handover / 1000.0}s, starts ${firstSound}ms in; " +
             "beat at its end ${tail?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}, at its start ${head?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}")
-        return Ends(lastSound, handover, firstSound, tail, head, endPcm.takeIf { !deep || !Exact.inUse(c) }, dur)
+        android.util.Log.d("ink-crossfade", "$id: key at its end ${tailKey?.let { "${it.camelot} (%.2f sure)".format(it.sure) }}, at its start ${headKey?.let { "${it.camelot} (%.2f sure)".format(it.sure) }}" +
+            "; bar one at ${tail?.downbeat?.let { "%.2fs".format(it / 1000) }}, the last bars ${tail?.bars?.takeLast(8)?.joinToString(" ") { "%.1f".format(it.loud) }}")
+        // only its channels kept for the blend: its one-channel copy was for measuring (5 MB a song let go)
+        val kept = Pcm(endPcm.start, FloatArray(0), endPcm.rate, endPcm.channels, endPcm.all)
+        return Ends(lastSound, handover, firstSound, tail, head, kept.takeIf { !deep || !Exact.inUse(c) }, dur, tailKey, headKey)
     }
 
     /** A stretch of a song decoded: where it begins (ms), its samples made mono, their rate. */
@@ -610,50 +797,11 @@ class Crossfade(
         return (0 until p.mono.size / per).map { w -> var sum = 0.0; for (k in w * per until (w + 1) * per) sum += p.mono[k] * p.mono[k]; db(sum, per) }
     }
 
-    /**
-     * The beat: an onset curve from the low end (a kick's rise; 10 ms steps), its period the lag it most repeats at
-     * (with its double, so a half-tempo doesn't win), 60 to 180 bpm, refined between steps; the grid laid where the
-     * onsets fall most. How sure: the period's repeat over the average repeat.
-     */
-    private fun beats(p: Pcm): Beats? {
-        val hop = p.rate / 100
-        val n = p.mono.size / hop
-        if (n < 600) return null
-        // the low end: a one-pole low-pass at 150 Hz
-        val a = (1 - Math.exp(-2 * Math.PI * 150 / p.rate)).toFloat()
-        var y = 0f
-        val energy = DoubleArray(n)
-        for (k in 0 until n) { var e = 0.0; for (i in k * hop until (k + 1) * hop) { y += a * (p.mono[i] - y); e += y * y }; energy[k] = e / hop }
-        val onset = DoubleArray(n)
-        for (k in 1 until n) onset[k] = kotlin.math.max(0.0, Math.log(energy[k] + 1e-10) - Math.log(energy[k - 1] + 1e-10))
-        // less what's always there: the onset over its local average
-        val avg = DoubleArray(n); var run = 0.0
-        for (k in 0 until n) { run += onset[k]; if (k >= 50) run -= onset[k - 50]; avg[k] = run / kotlin.math.min(k + 1, 50) }
-        for (k in 0 until n) onset[k] = kotlin.math.max(0.0, onset[k] - avg[k])
-        fun ac(lag: Int): Double { var s = 0.0; for (k in 0 until n - lag) s += onset[k] * onset[k + lag]; return s / (n - lag) }
-        // 80 to 160 bpm: below it a song's half-time won (most read 64 to 66; 2026-11-01), double or half is matched anyway
-        val lags = (37..75)
-        val acs = lags.associateWith { ac(it) }
-        fun score(l: Int) = acs.getValue(l) + .5 * (if (2 * l <= n / 2) ac(2 * l) else 0.0)
-        val best = lags.maxByOrNull(::score) ?: return null
-        val mean = acs.values.average().takeIf { it > 0 } ?: return null
-        val sure = acs.getValue(best) / mean
-        // between steps: a parabola through the peak and its neighbours
-        val l0 = acs[best - 1] ?: acs.getValue(best); val l1 = acs.getValue(best); val l2 = acs[best + 1] ?: acs.getValue(best)
-        val shift = (l0 - l2) / (2 * (l0 - 2 * l1 + l2)).let { if (it == 0.0) 1e9 else it }
-        val lag = best + shift.coerceIn(-.5, .5)
-        // the grid: where onsets fall most, a beat apart
-        var bestO = 0; var bestS = -1.0
-        for (o in 0 until lag.toInt() + 1) {
-            var s = 0.0; var k = o.toDouble()
-            while (k < n) { s += onset[k.toInt()]; k += lag }
-            if (s > bestS) { bestS = s; bestO = o }
-        }
-        return Beats(lag * 10, p.start + bestO * 10.0, sure)
-    }
+    /** The beat over a stretch (Beat: Prism's way, 2026-11-08), as automix keeps it. */
+    private fun beats(p: Pcm): Beats? = Beat.find(p.mono, p.rate, p.start)?.let { Beats(it.period, it.first, it.sure, it.downbeat, it.bars) }
 
-    /** A stretch decoded, its channels averaged to one (blocking; 8 s at most). */
-    private fun decode(x: MediaExtractor, track: Int, fromMs: Long, toMs: Long, keep: Boolean = false): Pcm? {
+    /** A stretch decoded, its channels averaged to one (blocking; `wait` at most). */
+    private fun decode(x: MediaExtractor, track: Int, fromMs: Long, toMs: Long, keep: Boolean = false, wait: Long = 12_000): Pcm? {
         try {
             x.selectTrack(track)
             val format = x.getTrackFormat(track)
@@ -661,17 +809,24 @@ class Crossfade(
             val codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
             codec.configure(format, null, null, 0)
             codec.start()
-            val rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-            val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-            val out = FloatArray(((toMs - fromMs + 2_000) * rate / 1000).toInt())
+            // the decoder's own rate and channels once it says them: phones' decoders differ from the file (an HE-AAC
+            // stream decoded at twice its stated rate, a mono file given as two channels), and a blend read at the
+            // wrong rate or channels matched nothing
+            var rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            runCatching { codec.outputFormat }.getOrNull()?.let { f ->
+                if (f.containsKey(MediaFormat.KEY_SAMPLE_RATE)) rate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                if (f.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) channels = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+            }
+            var out = FloatArray(((toMs - fromMs + 2_000) * rate / 1000).toInt())
             // every channel too, when kept for the blend (the old song's end mixed back in: Blend)
-            val all = if (keep) FloatArray(out.size * channels) else null
+            var all = if (keep) FloatArray(out.size * channels) else null
             var allSize = 0
             var size = 0; var ch = 0; var acc = 0f
             var first = -1L
             val info = MediaCodec.BufferInfo()
             var inputDone = false
-            val deadline = SystemClock.uptimeMillis() + 8_000
+            val deadline = SystemClock.uptimeMillis() + wait
             loop@ while (SystemClock.uptimeMillis() < deadline) {
                 if (!inputDone) {
                     val i = codec.dequeueInputBuffer(5_000)
@@ -682,12 +837,23 @@ class Crossfade(
                     }
                 }
                 val o = codec.dequeueOutputBuffer(info, 5_000)
+                if (o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED && size == 0 && allSize == 0) {
+                    val f = codec.outputFormat
+                    val r = if (f.containsKey(MediaFormat.KEY_SAMPLE_RATE)) f.getInteger(MediaFormat.KEY_SAMPLE_RATE) else rate
+                    val n = if (f.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) f.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else channels
+                    if (r != rate || n != channels) {
+                        rate = r; channels = n
+                        out = FloatArray(((toMs - fromMs + 2_000) * rate / 1000).toInt())
+                        all = if (keep) FloatArray(out.size * channels) else null
+                    }
+                }
                 if (o >= 0) {
                     val at = info.presentationTimeUs / 1000
                     val b: ByteBuffer = codec.getOutputBuffer(o)!!.order(ByteOrder.LITTLE_ENDIAN)
                     val float = codec.outputFormat.let { it.containsKey(MediaFormat.KEY_PCM_ENCODING) && it.getInteger(MediaFormat.KEY_PCM_ENCODING) == android.media.AudioFormat.ENCODING_PCM_FLOAT }
                     if (at >= fromMs) {
                         if (first < 0) first = at
+                        val all = all
                         fun put(v: Float) {
                             if (all != null && allSize < all.size) all[allSize++] = v
                             acc += v; if (++ch == channels) { if (size < out.size) out[size++] = acc / channels; acc = 0f; ch = 0 }

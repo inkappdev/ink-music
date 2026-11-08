@@ -73,6 +73,10 @@ import java.io.File
 fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val ctx = LocalContext.current
     LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday(); Picks.startElectronic() }
+    // YouTube's cool lists read as INK opens (the shelf's far down: read only once it showed, it never was), once the
+    // critics' picks are in to score them by
+    val cooling by Picks.records.collectAsState()
+    LaunchedEffect(cooling.isNotEmpty()) { if (cooling.isNotEmpty()) CoolLists.read(ctx) }
     val electronic by Picks.electronic.collectAsState()
     val friday by Picks.friday.collectAsState()
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
@@ -121,6 +125,10 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: 2026-10-28)
         item(key = "inkmoods") { InkMoodsShelf() }
         moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
+        // YouTube Music's own lists, the cool ones only (CoolLists)
+        item(key = "coollists") { CoolListsShelf(pages) }
+        // your own music at a tempo (Mixes.yours)
+        item(key = "yourmix") { YourMix() }
         if (records.isNotEmpty()) item(key = "picked") {
             Heading("the critics' records")
             ShelfIndexed(rankedRecords) { _, p -> PickTile(p.item, pages, Fresh.reason(p.item, p.stretch, taste), near = !p.stretch && taste.of(p.item.pick.artist) >= .3) }
@@ -138,7 +146,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 val s = p.item
                 LaunchedEffect(s) { if (Fresh.ready) Fresh.seen.shown(Fresh.key(s.pick)) }
                 // a cover the read didn't find (it asks for forty), asked for as the tile comes into sight
-                val art by produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, false) }
+                val art by produceState(s.art, s) { value = Picks.artOf(s, false) }
                 Tile(remember(s, art) { if (art == s.art) s.face else s.copy(art = art).face }, s.pick.title, s.pick.artist.lowercase() + (Fresh.reason(s, p.stretch, taste)?.let { ", $it" } ?: "")) {
                     Fresh.tapped(Fresh.key(s.pick))
                     scope.launch { Picks.song(s.pick.title, s.pick.artist)?.let { Playback.play(listOf(it), 0) } }
@@ -330,7 +338,7 @@ private fun AiredTile(a: Curation.Aired) {
 /** A record or song someone picked: its cover, name, who picked it; a tap opens the record or plays the song. */
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-internal fun PickTile(s: Picks.Shown, pages: Pages, reason: String? = null, near: Boolean = false) {
+internal fun PickTile(s: Picks.Shown, pages: Pages, reason: String? = null, near: Boolean = false, from: List<Picks.Shown>? = null) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     var said by remember(s) { mutableStateOf<String?>(null) }
@@ -346,6 +354,11 @@ internal fun PickTile(s: Picks.Shown, pages: Pages, reason: String? = null, near
         // never out to the review (2026-10-29: The War on Drugs' "Who's That", a song, said "not streaming
         // yet" and sent you to Pitchfork while YouTube Music had it): a song picked plays; a record opens, and one
         // not there yet plays its song of the same name (its single) where there is one
+        // a shelf to play from (a genre page's songs): this one and the ones after it
+        else if (from != null && !s.pick.record) scope.launch {
+            said = "finding it"
+            said = if (Picks.playFrom(from)) null else "not on youtube music yet"
+        }
         else scope.launch {
             said = "finding it"
             val a = if (s.pick.record) Picks.record(s.pick) else null
@@ -356,7 +369,7 @@ internal fun PickTile(s: Picks.Shown, pages: Pages, reason: String? = null, near
     }) {
         // no cover found when the picks were read (forty are asked for a read, and a read is twice a day: #1's INK was
         // half gray): asked for as the tile comes into sight, three at a time, YouTube Music's the last place
-        val art by produceState(s.art, s) { if (value == null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, s.pick.record) }
+        val art by produceState(s.art, s) { value = Picks.artOf(s, s.pick.record) }
         CoverOf(remember(s, art) { if (art == s.art) s.face else s.copy(art = art).face }, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
         UnderCover(s.pick.title, s.pick.artist, pixel(12.sp, Ink.mid))
@@ -654,24 +667,35 @@ private fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
 fun MoodPage(m: TubeMood, pages: Pages) {
     val ctx = LocalContext.current
     val counts by Moods.counts.collectAsState()
-    val shelves by produceState<List<Pair<String, List<TubeList>>>?>(null, m.params) {
+    // kept this run (MoodShelves): come back to the page and it's whole at once, so it opens where you'd scrolled to
+    // (read again, it was short a moment and the place was lost, 2026-11-08)
+    val shelves by produceState(MoodShelves.kept[m.params], m.params) {
+        if (value != null) return@produceState
         val all = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.mood(m.params) }.getOrDefault(emptyList()) }
         val opened = counts.filterValues { it > 0 }.keys.joinToString(" ").lowercase()
-        value = all.sortedBy { (t, _) -> Moods.REGIONAL.any { w -> w in t.lowercase() && w !in opened } }
+        value = all.sortedBy { (t, _) -> Moods.REGIONAL.any { w -> w in t.lowercase() && w !in opened } }.also { if (it.isNotEmpty()) MoodShelves.kept[m.params] = it }
     }
-    // INK's picks in it, filling in as their artists' tags come
-    val ours = m.genre && Genres.known(m.title)
+    // the genre's editors' lists (GenreSongs, the full build: Spotify's and Apple Music's public ones, 2026-11-08, in
+    // place of Last.fm's tags, which put a folk song on dance & electronic); the critics' records by the lists' artists.
+    // The play build, and a genre with no lists: INK's picks by their artists' tags, as before
+    val listed = m.genre && GenreSongs.known(m.title)
+    val listSongs by produceState(if (listed) GenreSongs.now(ctx, m.title) else emptyList(), m.title) { if (listed) value = GenreSongs.of(ctx, m.title) }
+    val ours = !listed && m.genre && Genres.known(m.title)
     val tagged by GenrePicks.tagged.collectAsState()
     val records by Picks.records.collectAsState()
     val songs by Picks.songs.collectAsState()
     LaunchedEffect(ours, records.size + songs.size) { if (ours) GenrePicks.tag(ctx) }
     val picks = remember(ours, tagged, records, songs) { if (!ours) emptyList() else GenrePicks.all().filter { Genres.fits(it.pick.artist, m.title) } }
-    val pickedSongs = remember(picks) { Curation.fair(picks.filter { !it.pick.record }) { it.pick.from }.take(24) }
-    val pickedRecords = remember(picks) { Curation.fair(picks.filter { it.pick.record }) { it.pick.from }.take(16) }
-    val artists = remember(picks) { picks.map { it.pick.artist.substringBefore(", ").trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.take(30) }
-    val from = remember(picks) { picks.flatMap { it.by }.distinct() }
+    val listArtists = remember(listSongs) { listSongs.flatMap { it.pick.artist.split(", ") }.map { Curation.folded(it.trim()) }.filter { it.length >= 2 }.toSet() }
+    val pickedSongs = remember(picks, listSongs) { if (listed) listSongs.take(40) else Curation.fair(picks.filter { !it.pick.record }) { it.pick.from }.take(24) }
+    val pickedRecords = remember(picks, listArtists, records) {
+        if (listed) records.filter { r -> r.pick.artist.split(", ").any { Curation.folded(it.trim()) in listArtists } }.take(16)
+        else Curation.fair(picks.filter { it.pick.record }) { it.pick.from }.take(16)
+    }
+    val artists = remember(picks, listSongs) { (if (listed) listSongs else picks).map { it.pick.artist.substringBefore(", ").trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.take(30) }
+    val from = remember(picks, listSongs) { (if (listed) listSongs else picks).flatMap { it.by }.distinct() }
     val scope = rememberCoroutineScope()
-    val list = rememberLazyListState()
+    val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
@@ -683,7 +707,8 @@ fun MoodPage(m: TubeMood, pages: Pages) {
                 Spacer(Modifier.height(6.dp))
                 BasicText(
                     listOfNotNull(
-                        picks.size.takeIf { it > 0 }?.let { "$it picked by ${from.size} ${if (from.size == 1) "critic or curator" else "critics and curators"}" },
+                        if (listed) listSongs.size.takeIf { it > 0 }?.let { "$it from ${from.size} editors' ${if (from.size == 1) "list" else "lists"}" }
+                        else picks.size.takeIf { it > 0 }?.let { "$it picked by ${from.size} ${if (from.size == 1) "critic or curator" else "critics and curators"}" },
                         shelves?.let { "${it.size} flavors on youtube music" },
                     ).joinToString("   ").ifEmpty { "reading youtube music" },
                     style = pixel(12.sp, Ink.mid),
@@ -693,9 +718,31 @@ fun MoodPage(m: TubeMood, pages: Pages) {
                 Spacer(Modifier.height(6.dp))
             }
         }
+        // a genre at a tempo, mixed (Mixes): its songs at the tempo chosen, one into the next on the beat
+        if (listed && YouTubeMusic.available) item(key = "mix") {
+            val mix by Mixes.state.collectAsState()
+            val ours = mix?.takeIf { it.title.equals(m.title, true) }
+            var bpm by remember(m.title) { mutableStateOf(ours?.bpm ?: 125) }
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                Spacer(Modifier.height(22.dp))
+                BasicText("MIX IT", style = headline(24.sp))
+                Spacer(Modifier.height(6.dp))
+                BasicText("a tempo, and its songs at it, each into the next on the beat", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(10.dp))
+                Row {
+                    for (t in Mixes.TEMPOS)
+                        Word("$t", pixel(14.sp, if (bpm == t) Ink.ink else Ink.dim), Modifier.padding(end = 18.dp), touch = 8.dp) { bpm = t }
+                }
+                Spacer(Modifier.height(12.dp))
+                Word(if (ours != null && !ours.done && ours.bpm == bpm) "MIXING" else "START THE MIX", headline(28.sp), touch = 8.dp) { Mixes.genre(ctx, m.title, bpm) }
+                ours?.let { st -> Spacer(Modifier.height(14.dp)); MixFinding(st) }
+                Spacer(Modifier.height(10.dp))
+            }
+        }
         if (pickedSongs.isNotEmpty()) item(key = "songs") {
-            Heading("picked for ${m.title.lowercase()}", "the critics' and curators' songs, the newest first")
-            Shelf(pickedSongs) { s -> PickTile(s, pages) }
+            Heading("picked for ${m.title.lowercase()}", if (listed) from.take(4).joinToString(", ") + if (from.size > 4) " and more" else "" else "the critics' and curators' songs, the newest first")
+            // a song tapped plays the shelf from there, so what follows is the genre's too
+            ShelfIndexed(pickedSongs) { i, s -> PickTile(s, pages, from = if (listed) pickedSongs.drop(i) else null) }
         }
         if (pickedRecords.isNotEmpty()) item(key = "records") {
             Heading("new records", "the ones the critics wrote about")
@@ -926,7 +973,7 @@ fun FestivalPage(name: String, pages: Pages) {
     val f = remember(name) { Fests.all(ctx).firstOrNull { it.name == name } } ?: return
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
-    val list = rememberLazyListState()
+    val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
@@ -965,4 +1012,124 @@ private fun LineupTile(name: String, pages: Pages) {
         Spacer(Modifier.height(6.dp))
         BasicText(name.uppercase(), style = headline(13.sp), maxLines = 2)
     }
+}
+
+
+/**
+ * A mix being found (Mixes): its tempo big, beating at itself (the four squares stepping under it, bar one the
+ * brightest), and the songs found dropping in as small covers, the newest first; how far it's read, small. Less motion:
+ * still.
+ */
+@Composable
+internal fun MixFinding(st: Mixes.State) {
+    val less by Moves.less.collectAsState()
+    // a list in order has no tempo of its own: it beats at 120 while its songs are read
+    val period = 60_000.0 / (if (st.bpm > 0) st.bpm else 120)
+    var t by remember { mutableStateOf(0L) }
+    LaunchedEffect(st.bpm, less, st.done) {
+        if (less) return@LaunchedEffect
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        while (true) androidx.compose.runtime.withFrameMillis { t = android.os.SystemClock.elapsedRealtime() - t0 }
+    }
+    val beats = t / period
+    val step = (Math.floor(beats).toLong() % 4).toInt()
+    val within = (beats - Math.floor(beats)).toFloat()
+    val pulse = if (less) 0f else 1f - within
+    Row(verticalAlignment = Alignment.Bottom) {
+        BasicText(if (st.bpm > 0) "${st.bpm}" else "MIX", style = headline(64.sp, androidx.compose.ui.graphics.lerp(Ink.mid, Ink.ink, pulse)).copy(lineHeight = 64.sp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.padding(bottom = 10.dp)) {
+            androidx.compose.foundation.Canvas(Modifier.width(52.dp).height(7.dp)) {
+                val sq = 7.dp.toPx(); val gap = (size.width - 4 * sq) / 3
+                for (i in 0 until 4) {
+                    val lit = if (less) 0f else if (i == step) 1f - within * .7f else 0f
+                    drawRect(androidx.compose.ui.graphics.lerp(if (i == 0) Ink.mid else Ink.dim, Ink.ink, lit),
+                        androidx.compose.ui.geometry.Offset(i * (sq + gap), 0f), androidx.compose.ui.geometry.Size(sq, sq))
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            BasicText(if (st.bpm > 0) "BPM" else "IN STEP", style = pixel(12.sp, Ink.mid))
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    // the songs found, the newest coming in at the front
+    if (st.songs.isNotEmpty()) {
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), userScrollEnabled = false) {
+            items(st.songs.reversed().take(12), key = { it.id }) { s ->
+                Box(Modifier.size(44.dp).then(if (less) Modifier else Modifier.animateItem())) { CoverOf(s, s.title, Modifier.fillMaxSize(), px = 160) }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+    }
+    BasicText(
+        when {
+            st.bpm == 0 && st.done -> "${st.found} of ${st.of} in step, slowest to fastest, playing"
+            st.bpm == 0 -> if (st.playing) "playing, building the set: ${st.read} of ${st.of} read" else "reading tempos: ${st.read} of ${st.of}"
+            st.done && st.found == 0 -> "none at ${st.bpm} bpm here. another tempo?"
+            st.done -> "${st.found} songs at ${st.bpm} bpm, mixing"
+            st.playing -> "${st.found} found, playing. reading ${st.read} of ${st.of}"
+            else -> "listening for ${st.bpm}: ${st.read} of ${st.of} read"
+        },
+        style = pixel(12.sp, Ink.mid),
+    )
+}
+
+/** "mix" beside play and shuffle (a list, your loved songs): played in a DJ's order by tempo and key (Mixes.list). */
+@Composable
+internal fun MixWord(title: String, songs: List<Song>?, modifier: Modifier = Modifier) {
+    if (songs.isNullOrEmpty() || songs.size < 3) return
+    val ctx = LocalContext.current
+    val st by Mixes.state.collectAsState()
+    val going = st?.let { it.title == title && it.bpm == 0 && !it.done } == true
+    Word(if (going) "mixing" else "mix", pixel(14.sp, if (going) Ink.ink else Ink.mid), modifier, touch = 8.dp) { Mixes.list(ctx, title, songs) }
+}
+
+/** Under the words while a list is being mixed: the songs read so far, in step (MixFinding). */
+@Composable
+internal fun MixProgress(title: String) {
+    val st by Mixes.state.collectAsState()
+    val s = st?.takeIf { it.title == title && it.bpm == 0 } ?: return
+    Column(Modifier.padding(top = 14.dp)) { MixFinding(s) }
+}
+
+
+/** Your own music at a tempo (Mixes.yours): a tempo chosen, your songs at it, each into the next on the beat. */
+@Composable
+private fun YourMix() {
+    val ctx = LocalContext.current
+    // everything you've touched (Mixes.yours): shown once there's enough of it
+    val songs by Library.songs.collectAsState()
+    val liked by YouTubeAccount.liked.collectAsState()
+    val listened by Listened.now.collectAsState()
+    if (remember(songs.size, liked.size, listened) { Mixes.yoursSize() } < 20) return
+    val st by Mixes.state.collectAsState()
+    val ours = st?.takeIf { it.title == "your music" }
+    var bpm by remember { mutableStateOf(ours?.bpm ?: 120) }
+    Heading("mix your music", "what you play, love and keep, at a tempo, each into the next on the beat")
+    Column(Modifier.padding(horizontal = 20.dp)) {
+        Row {
+            for (t in Mixes.TEMPOS)
+                Word("$t", pixel(14.sp, if (bpm == t) Ink.ink else Ink.dim), Modifier.padding(end = 18.dp), touch = 8.dp) { bpm = t }
+        }
+        Spacer(Modifier.height(12.dp))
+        Word(if (ours != null && !ours.done && ours.bpm == bpm) "MIXING" else "START THE MIX", headline(28.sp), touch = 8.dp) { Mixes.yours(ctx, bpm) }
+        ours?.let { Spacer(Modifier.height(14.dp)); MixFinding(it) }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+
+/** Each genre's and mood's shelves of YouTube Music's lists, kept while ink music runs (the page whole when come back to). */
+private object MoodShelves { val kept = java.util.concurrent.ConcurrentHashMap<String, List<Pair<String, List<TubeList>>>>() }
+
+
+/** YouTube Music's own playlists with your artists, or the critics', in them, not the charts' (CoolLists); each says why. */
+@Composable
+private fun CoolListsShelf(pages: Pages) {
+    val ctx = LocalContext.current
+    val lists by CoolLists.lists.collectAsState()
+    if (lists.isEmpty()) return
+    Heading("playlists", "youtube music's own, the ones with your artists in them")
+    Shelf(lists) { l -> Tile(null, l.list.name, l.why, face = l.list.art, dither = true) { pages.open(Page.TubeList(l.list)) } }
+    Spacer(Modifier.height(12.dp))
 }

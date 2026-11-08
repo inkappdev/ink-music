@@ -22,22 +22,23 @@ object SpotifyLists {
 
     /** Every list's songs, taken in turn (a list each, so no one list fills a shelf); one that won't answer passed over. */
     fun picks(now: Long, log: (String) -> Unit = {}): List<Curation.Pick> {
-        val each = ALL.map { l ->
-            runCatching {
-                // once more if it won't answer (one list said 404 to the phone, then answered)
-                val page = runCatching { get(l.id) }.getOrElse { get(l.id) }
-                val data = Regex("""<script id="__NEXT_DATA__" type="application/json">(.*?)</script>""", RegexOption.DOT_MATCHES_ALL).find(page)!!.groupValues[1]
-                val list = JSONObject(data).getJSONObject("props").getJSONObject("pageProps").getJSONObject("state").getJSONObject("data")
-                    .getJSONObject("entity").getJSONArray("trackList")
-                (0 until minOf(list.length(), l.max)).map { list.getJSONObject(it) }.map { t ->
-                    // "sunandmoon, Ogi, Anoop": the artists as ink music writes them
-                    val artist = t.optString("subtitle").replace(' ', ' ').split(",").map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")
-                    Curation.Pick(false, t.optString("title").replace(Regex("\\s+-\\s+(From|Remaster).*$", RegexOption.IGNORE_CASE), ""), artist, l.from, "", "", now, null)
-                }.filter { it.title.isNotBlank() && it.artist.isNotBlank() }
-            }.onFailure { log("spotify ${l.id}: $it") }.getOrDefault(emptyList())
-        }
+        val each = ALL.map { l -> runCatching { list(l.id, l.from, l.max, now) }.onFailure { log("spotify ${l.id}: $it") }.getOrDefault(emptyList()) }
         return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }.distinctBy { Curation.key(it) }
             .also { log("spotify: ${it.size} songs from ${each.count { l -> l.isNotEmpty() }} lists") }
+    }
+
+    /** One public list's songs, in its order, the first `max` (blocking; throws when it won't answer twice). */
+    fun list(id: String, from: String, max: Int, now: Long): List<Curation.Pick> {
+        // once more if it won't answer (one list said 404 to the phone, then answered)
+        val page = runCatching { get(id) }.getOrElse { get(id) }
+        val data = Regex("""<script id="__NEXT_DATA__" type="application/json">(.*?)</script>""", RegexOption.DOT_MATCHES_ALL).find(page)!!.groupValues[1]
+        val list = JSONObject(data).getJSONObject("props").getJSONObject("pageProps").getJSONObject("state").getJSONObject("data")
+            .getJSONObject("entity").getJSONArray("trackList")
+        return (0 until minOf(list.length(), max)).map { list.getJSONObject(it) }.map { t ->
+            // "sunandmoon, Ogi, Anoop": the artists as ink music writes them
+            val artist = t.optString("subtitle").replace(' ', ' ').split(",").map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")
+            Curation.Pick(false, t.optString("title").replace(Regex("\\s+-\\s+(From|Remaster).*$", RegexOption.IGNORE_CASE), ""), artist, from, "", "", now, null)
+        }.filter { it.title.isNotBlank() && it.artist.isNotBlank() }
     }
 
     private fun get(id: String): String {

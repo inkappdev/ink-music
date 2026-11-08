@@ -74,7 +74,7 @@ fun PodcastsTab(open: (Page) -> Unit) {
         delay(450)
         value = withContext(Dispatchers.IO) { if (q.startsWith("http")) listOfNotNull(Podcasts.fetch(q)?.first) else Podcasts.search(q) }
     }
-    val grid = rememberLazyGridState()
+    val grid = pageGrid()
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp),
@@ -212,7 +212,7 @@ fun ShowPage(feed: String, first: Podcasts.Show?, open: (Page) -> Unit, onClose:
                     modifier = Modifier.padding(top = 18.dp, bottom = 32.dp))
             }
             Spacer(Modifier.width(40.dp))
-            val list = rememberLazyListState()
+            val list = pageList()
             LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (failed) item { BasicText("couldn't read this show's feed", style = pixel(12.sp, Ink.mid)) }

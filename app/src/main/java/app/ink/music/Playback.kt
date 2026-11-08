@@ -434,6 +434,13 @@ object Playback {
         c.addMediaItems(songs.filter { it.id !in there }.map(::item))
     }
 
+    /** Into the queue at `index` (a mix's arc, Mixes: each song read put where its tempo goes). */
+    fun insert(s: Song, index: Int) {
+        val c = controller ?: return
+        if (casting) return add(s)
+        c.addMediaItem(index.coerceIn(0, c.mediaItemCount), item(s))
+    }
+
     /** At the queue's end (nothing playing: it plays). */
     fun add(s: Song) {
         val c = controller ?: return

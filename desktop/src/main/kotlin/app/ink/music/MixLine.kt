@@ -16,6 +16,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.layout.width
 import kotlinx.coroutines.delay
 
 /** How far through the handover now, ticking while there is one (null: none). The phone's rememberMixing. */
@@ -78,5 +81,45 @@ fun MixPointBar(frac: Float, cutFrac: Float, accent: Color, line: Dp, modifier: 
         while (dx < w) { drawRect(Ink.dim, Offset(dx, y), Size(dot, line.toPx())); dx += dot * 3 }
         // the mix point
         drawRect(lerp(Ink.mid, Ink.ink, .5f), Offset(cut - 1.dp.toPx() / 2, y - 5.dp.toPx()), Size(1.dp.toPx(), 5.dp.toPx() + line.toPx()))
+    }
+}
+
+
+/**
+ * The song's beat over the line (the phone's BeatCounter, 2026-11-08): four squares, a bar, the one lit stepping on with
+ * each beat and fading over it, bar one's the brightest; the tempo and the key beside. Automix, a sure beat only; the
+ * start's beat early on, the end's near the end. The position between the player's fifths of a second carried on by
+ * the clock while it plays.
+ */
+@Composable
+fun BeatCounter(songId: String, playing: Boolean, modifier: Modifier = Modifier) {
+    val e by androidx.compose.runtime.produceState(Crossfade.endsOf(songId), songId) { while (true) { value = Crossfade.endsOf(songId); delay(1_000) } }
+    val ends = e ?: return
+    val head = ends.head?.takeIf { it.sure >= Beat.SURE }; val tail = ends.tail?.takeIf { it.sure >= Beat.SURE }
+    if (head == null && tail == null) return
+    val pos by Player.position.collectAsState()
+    var base by remember { mutableLongStateOf(pos) }
+    var baseAt by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(pos) { base = pos; baseAt = System.currentTimeMillis() }
+    var t by remember { mutableLongStateOf(pos) }
+    LaunchedEffect(playing) {
+        while (true) { androidx.compose.runtime.withFrameMillis { t = if (playing) base + (System.currentTimeMillis() - baseAt) else base }; if (!playing) break }
+    }
+    val late = tail != null && t >= ends.duration - 45_000
+    val b = (if (late) tail else head) ?: tail ?: head!!
+    val key = (if (late) ends.tailKey else ends.headKey) ?: ends.headKey ?: ends.tailKey
+    val beats = (t - b.downbeat) / b.period
+    val step = Math.floorMod(Math.floor(beats).toLong(), 4L).toInt()
+    val within = (beats - Math.floor(beats)).toFloat()
+    androidx.compose.foundation.layout.Row(modifier, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Canvas(Modifier.width(40.dp).height(6.dp)) {
+            val sq = 6.dp.toPx(); val gap = (size.width - 4 * sq) / 3
+            for (i in 0 until 4) {
+                val lit = if (!playing) 0f else if (i == step) 1f - within * .7f else 0f
+                drawRect(lerp(if (i == 0) Ink.mid else Ink.dim, Ink.ink, lit), Offset(i * (sq + gap), 0f), Size(sq, sq))
+            }
+        }
+        androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+        androidx.compose.foundation.text.BasicText("${Math.round(b.bpm)} BPM" + (key?.let { "  ·  ${it.camelot}" } ?: ""), style = pixel(12.sp, Ink.mid))
     }
 }

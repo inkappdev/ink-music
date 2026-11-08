@@ -43,7 +43,7 @@ fun RadioTab() {
     }
     val shown = if (genre == null) ink.map { it.song to "${it.city.lowercase()} · ${it.line.lowercase()}" }
         else theirs.orEmpty().map { it to it.artist.lowercase() }
-    val grid = rememberLazyGridState()
+    val grid = pageGrid()
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp),

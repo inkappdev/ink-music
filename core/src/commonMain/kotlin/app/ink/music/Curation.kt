@@ -77,10 +77,15 @@ object Curation {
     /** The artist from Pitchfork's link (".../reviews/albums/the-olivia-tremor-control-the-same-place/"), the title's slug taken off its end. */
     private fun slugArtist(link: String, title: String): String {
         val slug = link.trimEnd('/').substringAfterLast('/')
-        // as Pitchfork makes its slugs: apostrophes gone ("It’s" its), "&" and, a version in brackets left off
-        val t = title.lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").replace(Regex("[’']"), "").replace("&", "and")
-            .replace(Regex("[^a-z0-9]+"), "-").trim('-')
-        return slug.removeSuffix(t).trim('-').split('-').joinToString(" ")
+        // as Pitchfork makes its slugs: apostrophes gone ("It’s" its), "&" and; what's in brackets sometimes left off,
+        // sometimes kept as words (2026-11-08: "untitled (halo)" by "untitled halo untitled halo", "Drukqs (25th
+        // Anniversary Edition)" by "aphex twin drukqs 25th anniversary edition": the record's name read as the artist's)
+        fun slugOf(t: String) = t.lowercase().replace(Regex("[’']"), "").replace("&", "and").replace(Regex("[^a-z0-9]+"), "-").trim('-')
+        val names = listOf(slugOf(title), slugOf(title.replace(Regex("\\s*[(\\[].*?[)\\]]"), ""))).filter { it.isNotEmpty() }.distinct()
+        val artist = names.firstNotNullOfOrNull { t -> slug.takeIf { it.endsWith("-$t") }?.removeSuffix("-$t") }
+            ?: names.firstNotNullOfOrNull { t -> slug.takeIf { it.contains("-$t-") }?.substringBefore("-$t-") }
+            ?: slug.removeSuffix(names.last())
+        return artist.trim('-').split('-').joinToString(" ")
     }
 
     private fun pitchforkRecords() = items("https://pitchfork.com/feed/feed-album-reviews/rss").map { i ->
@@ -438,7 +443,27 @@ object Curation {
      * A record's or song's cover, from the catalogs in turn: iTunes, then Deezer (2026-10-29: covers missing
      * on the new shelves; iTunes knows little that's small or brand new, and turns a crowd of asks away).
      */
-    fun cover(title: String, artist: String, record: Boolean): String? = itunes(title, artist, record) ?: deezer(title, artist, record)
+    fun cover(title: String, artist: String, record: Boolean): String? = runCatching { coverOrThrow(title, artist, record) }.getOrNull()
+
+    /**
+     * The names a record or song is looked for by, in turn (2026-11-08, Bronson: "if albums have parentheses or odd
+     * characters it breaks them. Make sure an album always has art"): as it's written; without what's in brackets
+     * and who's featured, by its first artist alone ("Be Still (The Beach Boys)", "Drukqs (25th Anniversary
+     * Edition)"); a self-titled record by the artist's name ("S/T"); its Latin words alone ("Yutori ゆとり(Medusa)").
+     */
+    private fun namesOf(title: String, artist: String): List<Pair<String, String>> {
+        val who = artist.substringBefore(",").substringBefore(" & ").replace(Regex("\\s+(feat\\.?|ft\\.?|with)\\s.*$", RegexOption.IGNORE_CASE), "").trim()
+        val plain = title.replace(Regex("\\s*[(\\[][^)\\]]*[)\\]]"), "").replace(Regex("\\s+(feat\\.?|ft\\.?|with)\\s.*$", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+-\\s+.*(edition|remaster|deluxe|version|anniversary).*$", RegexOption.IGNORE_CASE), "").trim()
+        val self = title.trim().lowercase().replace(".", "") in setOf("s/t", "st", "self-titled", "self titled")
+        val latin = plain.map { if (it.code < 0x250 || it == '’') it else ' ' }.joinToString("").replace(Regex("\\s+"), " ").trim()
+        return listOfNotNull(
+            if (self) who to who else null,
+            title to artist,
+            (plain to who).takeIf { plain.isNotEmpty() },
+            (latin to who).takeIf { latin.length >= 2 },
+        ).distinct()
+    }
 
     /**
      * As [cover], but throws when neither iTunes nor Deezer could be asked (offline, or turned away for asking too
@@ -446,11 +471,14 @@ object Curation {
      * kept as "none").
      */
     fun coverOrThrow(title: String, artist: String, record: Boolean): String? {
-        val i = runCatching { itunesOrThrow(title, artist, record) }
-        i.getOrNull()?.let { return it }
-        val d = runCatching { deezerOrThrow(title, artist, record) }
-        d.getOrNull()?.let { return it }
-        if (i.isFailure && d.isFailure) throw i.exceptionOrNull()!!
+        var asked = 0; var failed: Throwable? = null; var fails = 0
+        for ((t, a) in namesOf(title, artist)) for (ask in listOf(::itunesOrThrow, ::deezerOrThrow)) {
+            asked++
+            val r = runCatching { ask(t, a, record) }
+            r.getOrNull()?.let { return it }
+            r.exceptionOrNull()?.let { failed = failed ?: it; fails++ }
+        }
+        if (asked > 0 && fails == asked) throw failed!!
         return null
     }
 
@@ -459,7 +487,8 @@ object Curation {
 
     private fun deezerOrThrow(title: String, artist: String, record: Boolean): String? {
         fun plainName(s: String) = folded(s).replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
-        val q = urlEncode("artist:\"${artist.substringBefore(",").trim()}\" ${if (record) "album" else "track"}:\"$title\"")
+            .ifEmpty { folded(s).filter { it.isLetterOrDigit() } }
+        val q = urlEncode("artist:\"${artist.substringBefore(",").trim().replace("\"", "")}\" ${if (record) "album" else "track"}:\"${title.replace("\"", "")}\"")
         val o = JSONObject(get("https://api.deezer.com/search/${if (record) "album" else "track"}?q=$q&limit=8"))
         val results = o.optJSONArray("data") ?: return null
         val want = plainName(artist.substringBefore(",")); val wt = plainName(title)
@@ -483,6 +512,7 @@ object Curation {
 
     private fun itunesOrThrow(title: String, artist: String, record: Boolean): String? {
         fun plainName(s: String) = folded(s).replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
+            .ifEmpty { folded(s).filter { it.isLetterOrDigit() } }
         val term = urlEncode("$artist $title")
         val o = JSONObject(get("https://itunes.apple.com/search?term=$term&entity=${if (record) "album" else "song"}&limit=8"))
         val results = o.optJSONArray("results") ?: return null

@@ -52,24 +52,31 @@ object Crossfade {
 
     private const val FADE = 6_000L
     /** How sure a beat must be (its period's peak over the mean) to be matched. */
-    private const val SURE = 1.6
+    private const val SURE = Beat.SURE
+    /** The looser bar where two tempos agree within 2% (the phone's Tempos.LOOSE). */
+    private const val LOOSE = 2.8
     /** The new deck started this far ahead of the handover: it's heard a moment after it's told to play. */
     private const val LEAD = 90L
 
     /** A song's beat over a stretch: its period (ms), one beat's time (ms into the song), how sure (peak over mean). */
-    data class Beats(val period: Double, val first: Double, val sure: Double) {
+    data class Beats(val period: Double, val first: Double, val sure: Double, val downbeat: Double = first, val bars: List<Beat.Bar> = emptyList()) {
         val bpm get() = 60_000 / period
         fun after(t: Double) = first + Math.ceil((t - first) / period) * period
+        /** The bar start (bar one) nearest `t`. */
+        fun barNear(t: Double) = downbeat + Math.round((t - downbeat) / (4 * period)) * 4 * period
     }
 
     /** Where a song's sound ends (ms), where its handover begins, where its sound begins; its beat at its end and start. */
-    data class Ends(val lastSound: Long, val handover: Long, val firstSound: Long, val tail: Beats?, val head: Beats?, val duration: Long)
+    data class Ends(val lastSound: Long, val handover: Long, val firstSound: Long, val tail: Beats?, val head: Beats?, val duration: Long,
+                    val tailKey: Key.Found? = null, val headKey: Key.Found? = null)
 
     /** A handover planned: the old song's time it begins at, the new one's start, how long, the old one's tempo then. */
     private data class Plan(
         val from: String, val into: String, val cut: Long, val start: Long, val fade: Long,
         val speed: Double = 1.0, val a0: Double = 0.0, val b0: Double = 0.0,
         val period: Double = 0.0, val bpmFrom: Double = 0.0,
+        /** The filter fade (the phone's, 2026-11-08): the old one's top closing, the new one opening from thin. */
+        val filter: Boolean = false,
     ) { val matched get() = speed != 1.0 || a0 != 0.0 }
 
     /**
@@ -85,6 +92,9 @@ object Crossfade {
             if (length <= 0 || now < start || now >= start + length) null else (now - start).toFloat() / length
     }
     val mixing = MutableStateFlow<Mixing?>(null)
+
+    /** A song's measured ends (its beat and key at its start and end), in automix, for the beat counter over the line. */
+    fun endsOf(id: String): Ends? = ends[id]?.takeIf { mode.value == AUTOMIX }
     /** The playing song's mix point, once planned: its id, where the next comes in (ms). Past it, heard under the next. */
     val point = MutableStateFlow<Pair<String, Long>?>(null)
 
@@ -113,6 +123,7 @@ object Crossfade {
         val p = plan
         if (p != null && p.start > 0) m.command("seek", "%.3f".format(java.util.Locale.ROOT, p.start / 1000.0), "absolute", "exact")
         if (p?.matched == true) m.command("af-command", "ink", "f", "200", "highpass@bass")
+        else if (p?.filter == true) m.command("af-command", "ink", "f", "160", "highpass@bass")
         Thread { Thread.sleep(250); if (readied === m) loaded = true }.start()
     }
 
@@ -160,7 +171,10 @@ object Crossfade {
     private fun plan(s: Song, n: Song, es: Ends, en: Ends): Plan? {
         if (mode.value == AUTOMIX) matched(s, n, es, en)?.let { return it }
         val cut = es.handover
-        return Plan(s.id, n.id, cut, en.firstSound, (es.lastSound - cut).coerceIn(2_000, 12_000))
+        // not beats matched, in automix: the filter fade, short when their keys clash (both sure)
+        val clash = Key.clash(es.tailKey, en.headKey)
+        val fade = (es.lastSound - cut).coerceIn(2_000, 12_000).let { if (clash) it.coerceAtMost(5_000) else it }
+        return Plan(s.id, n.id, cut, en.firstSound, fade, filter = mode.value == AUTOMIX)
     }
 
     /**
@@ -172,17 +186,32 @@ object Crossfade {
     private fun matched(s: Song, n: Song, e: Ends, next: Ends): Plan? {
         val a = e.tail ?: return null
         val b = next.head ?: return null
-        if (a.sure < SURE || b.sure < SURE) return null
         val pa = listOf(1.0, 2.0, .5).map { a.period * it }.minByOrNull { abs(it / b.period - 1) }!!
         val speed = pa / b.period
         if (abs(speed - 1) > .08) return null
-        val b0 = b.after(0.0)
-        val a0 = a.after(e.lastSound - 16 * pa)
+        // sure of both beats; where the tempos agree within 2%, a little less sure will do (the phone's)
+        val needed = if (abs(speed - 1) <= .02) LOOSE else SURE
+        if (a.sure < needed || b.sure < needed) return null
+        // in on the new one's bar one (its first bar start once its sound begins); out on one of the old one's bar
+        // starts, where its outro begins (a bar a third quieter than the four before, in its last ~8 bars), else the bar
+        // four from where its sound ends (the phone's, after FireTheDJ)
+        val bar = 4 * b.period
+        var b0 = b.downbeat
+        while (b0 < next.firstSound - 60) b0 += bar
+        while (b0 - bar >= next.firstSound - 60) b0 -= bar
+        val latest = e.lastSound - 8 * pa
+        val outro = a.bars.withIndex().filter { (i, br) ->
+            i >= 4 && br.at in (e.lastSound - 36 * pa)..latest && br.loud < .67f * (i - 4 until i).map { a.bars[it].loud }.average()
+        }.lastOrNull()?.value?.at
+        val a0 = outro ?: a.barNear(e.lastSound - 16 * pa).let { if (it > latest) it - 4 * a.period else it }
         val cut = (a0 - speed * b0).toLong()
         val fade = kotlin.math.min(16 * b.period, (e.lastSound - cut) / speed).toLong().coerceIn(4_000, 14_000)
         if (cut < e.duration - 25_000 + 500 || cut < a.first) return null
-        Log.d("crossfade: ${s.title} into ${n.title}: beats matched, %.1f into %.1f bpm, at %.3fx".format(a.bpm, b.bpm, speed))
-        return Plan(s.id, n.id, cut, 0, fade, speed, a0, b0, b.period, a.bpm)
+        // keys clashing (both sure): the same four bars, the old one sinking under the filter fade's low-pass
+        val clash = Key.clash(e.tailKey, next.headKey)
+        Log.d("crossfade: ${s.title} into ${n.title}: beats matched, %.1f into %.1f bpm, at %.3fx, out at %.2fs (%s), in on bar one at %.2fs, keys %s into %s%s".format(
+            a.bpm, b.bpm, speed, a0 / 1000, if (outro != null) "its outro" else "a bar start", b0 / 1000, e.tailKey?.camelot, next.headKey?.camelot, if (clash) ", clashing" else ""))
+        return Plan(s.id, n.id, cut, 0, fade, speed, a0, b0, b.period, a.bpm, filter = clash)
     }
 
     /** The handover: the new deck sounding, rising; the old one on to its end, falling away; the player the new one's. */
@@ -222,6 +251,15 @@ object Crossfade {
                 // and a speed set again and again makes its stretching jump (both measured off its output: held at one
                 // speed the beats stayed within ~10 ms, nudged they swung by 30)
             }
+            // the filter fade: the old one's top closing over the whole of it (20 kHz to 300 Hz); not matched, the new
+            // one opening from 160 Hz to all of it by the middle, the basses swapped there
+            if (p.filter) {
+                a.command("af-command", "ink", "f", "%.0f".format(java.util.Locale.ROOT, 20_000.0 * Math.pow(300.0 / 20_000.0, t)), "lowpass@top")
+                if (!p.matched) {
+                    b.command("af-command", "ink", "f", "%.0f".format(java.util.Locale.ROOT, 20.0 * Math.pow(8.0, (1 - t / .5).coerceIn(0.0, 1.0))), "highpass@bass")
+                    if (!bassAcross && t >= .5) { bassAcross = true; a.command("af-command", "ink", "f", "200", "highpass@bass") }
+                }
+            }
             if (t >= 1.0) break
             Thread.sleep(25)
         }
@@ -234,7 +272,7 @@ object Crossfade {
         mixing.value = null
         a.command("stop"); a.set("pause", "yes"); a.set("speed", "1")
         Player.chainOn(a)
-        b.command("af-command", "ink", "f", "10", "highpass@bass")
+        b.command("af-command", "ink", "f", "10", "highpass@bass"); b.command("af-command", "ink", "f", "20000", "lowpass@top")
         b.set("volume", Player.volume.value.toString())
     }
 
@@ -280,15 +318,16 @@ object Crossfade {
         val handover = listOfNotNull(lastSound - FADE, quiet?.minus(1_000)).minOrNull()!!.coerceAtLeast(start)
         val firstSound = head?.let { levels(it) }?.indexOfFirst { it > -50f }?.takeIf { it > 0 }?.let { it * window }?.takeIf { it >= 400 } ?: 0L
         val tail = beats(endPcm, start); val top = head?.let { beats(it, 0) }
+        val tailKey = Key.find(endPcm, RATE); val headKey = head?.let { Key.find(it, RATE) }
         Log.d("crossfade: ${s.title}: ${dur / 1000}s, sound to ${lastSound / 1000.0}s, quiet from ${quiet?.div(1000.0)}, hand over at ${handover / 1000.0}s, " +
             "starts ${firstSound}ms in; beat at its end ${tail?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}, at its start ${top?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}")
-        return Ends(lastSound, handover, firstSound, tail, top, dur)
+        return Ends(lastSound, handover, firstSound, tail, top, dur, tailKey, headKey)
     }
 
-    private const val RATE = 22_050
+    internal const val RATE = 22_050
 
     /** A stretch decoded to mono floats at [RATE] (blocking; 20 s at most), and the song's length (ms). */
-    private fun decode(url: String, from: Double, length: Double): Pair<FloatArray, Long>? {
+    internal fun decode(url: String, from: Double, length: Double): Pair<FloatArray, Long>? {
         val out = File.createTempFile("ink-ends", ".raw")
         try {
             val m = Mpv(mapOf(
@@ -325,40 +364,6 @@ object Crossfade {
         return (0 until p.size / per).map { w -> var sum = 0.0; for (k in w * per until (w + 1) * per) sum += p[k] * p[k]; (20 * log10(sqrt(sum / per).coerceAtLeast(1e-9))).toFloat() }
     }
 
-    /**
-     * The beat (the phone's): an onset curve from the low end (a kick's rise; 10 ms steps), its period the lag it most
-     * repeats at (with its double, so a half-tempo doesn't win), 80 to 160 bpm, refined between steps; the grid laid
-     * where the onsets fall most. How sure: the period's repeat over the average repeat.
-     */
-    private fun beats(p: FloatArray, startMs: Long): Beats? {
-        val hop = RATE / 100
-        val n = p.size / hop
-        if (n < 600) return null
-        val a = (1 - Math.exp(-2 * PI * 150 / RATE)).toFloat()
-        var y = 0f
-        val energy = DoubleArray(n)
-        for (k in 0 until n) { var e = 0.0; for (i in k * hop until (k + 1) * hop) { y += a * (p[i] - y); e += y * y }; energy[k] = e / hop }
-        val onset = DoubleArray(n)
-        for (k in 1 until n) onset[k] = kotlin.math.max(0.0, Math.log(energy[k] + 1e-10) - Math.log(energy[k - 1] + 1e-10))
-        val avg = DoubleArray(n); var run = 0.0
-        for (k in 0 until n) { run += onset[k]; if (k >= 50) run -= onset[k - 50]; avg[k] = run / kotlin.math.min(k + 1, 50) }
-        for (k in 0 until n) onset[k] = kotlin.math.max(0.0, onset[k] - avg[k])
-        fun ac(lag: Int): Double { var s = 0.0; for (k in 0 until n - lag) s += onset[k] * onset[k + lag]; return s / (n - lag) }
-        val lags = (37..75)
-        val acs = lags.associateWith { ac(it) }
-        fun score(l: Int) = acs.getValue(l) + .5 * (if (2 * l <= n / 2) ac(2 * l) else 0.0)
-        val best = lags.maxByOrNull(::score) ?: return null
-        val mean = acs.values.average().takeIf { it > 0 } ?: return null
-        val sure = acs.getValue(best) / mean
-        val l0 = acs[best - 1] ?: acs.getValue(best); val l1 = acs.getValue(best); val l2 = acs[best + 1] ?: acs.getValue(best)
-        val shift = (l0 - l2) / (2 * (l0 - 2 * l1 + l2)).let { if (it == 0.0) 1e9 else it }
-        val lag = best + shift.coerceIn(-.5, .5)
-        var bestO = 0; var bestS = -1.0
-        for (o in 0 until lag.toInt() + 1) {
-            var s = 0.0; var k = o.toDouble()
-            while (k < n) { s += onset[k.toInt()]; k += lag }
-            if (s > bestS) { bestS = s; bestO = o }
-        }
-        return Beats(lag * 10, startMs + bestO * 10.0, sure)
-    }
+    /** The beat over a stretch (Beat, shared with the phone: Prism's way, 2026-11-08). */
+    private fun beats(p: FloatArray, startMs: Long): Beats? = Beat.find(p, RATE, startMs)?.let { Beats(it.period, it.first, it.sure, it.downbeat, it.bars) }
 }

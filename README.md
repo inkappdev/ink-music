@@ -205,6 +205,10 @@ the computer, with what the two share in `core/`.
   can be done well on Android.
 - [yt-dlp's challenge solver](https://github.com/yt-dlp/ejs) (Unlicense, with meriyah and astring), which
   works out a signed-in stream's link from YouTube's own player.
+- [Prism](https://github.com/Yigder/Prism) (GPL-3.0), whose tempo reading automix's beat matching is
+  adapted from.
+- [FireTheDJ](https://github.com/suryablaze02-byte/FireTheDJ) (GPL-3.0), whose bar, key and filter-fade ideas
+  automix's handovers are adapted from.
 - [AutoEq](https://github.com/jaakkopasanen/AutoEq) (MIT), for the headphone tunings, from measurements by
   oratory1990, crinacle, Rtings and others.
 - [Media3](https://github.com/androidx/media) and [Haze](https://github.com/chrisbanes/haze) (Apache-2.0).

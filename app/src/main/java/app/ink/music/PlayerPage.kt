@@ -596,6 +596,9 @@ private fun Scrubber(
             }
             .padding(top = REACH),
     ) {
+        // automix: the song's beat over it all (BeatCounter), not in a blend (the line is the crossfader then)
+        if (k == null && mix != null && mix.songId == n.song?.id && (mix.headPeriod > 0 || mix.tailPeriod > 0))
+            BeatCounter(mix, n, Modifier.fillMaxWidth().padding(bottom = 8.dp))
         // the times at the ends, and dead centre between them what's heard; in a blend, the tempos and MIXING
         Box(Modifier.fillMaxWidth().padding(bottom = if (mix != null && (k != null || point != null)) 0.dp else 8.dp)) {
             if (k != null && mix != null) {

@@ -1,5 +1,7 @@
 package app.ink.music
 
+import androidx.compose.ui.graphics.graphicsLayer
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
@@ -363,6 +365,7 @@ private fun App() {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 // the player's over the whole window: under it, the page it was opened from
                 val top = pages.lastOrNull().let { if (it == Page.Playing) pages.dropLast(1).lastOrNull() else it }
+                LaunchedEffect(pages.toList()) { PageScroll.stack(pages.toList()) }
                 AnimatedContent(
                     top,
                     transitionSpec = {
@@ -371,6 +374,10 @@ private fun App() {
                     },
                     label = "page",
                 ) { page ->
+                    // each page's place kept while it's under another, and each of the library's places while another's shown
+                    // (the phone's, 2026-11-08: back from a genre's page went to INK's top)
+                    val at = if (page == null) -1 else pages.indexOf(page)
+                    androidx.compose.runtime.CompositionLocalProvider(LocalPageKey provides (if (page == null) "place:$place" else if (at >= 0) "$at:${page.hashCode()}" else null)) {
                     when (page) {
                         null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
                         is Page.Record -> RecordPage(page.id, { pages += it }) { Nav.close() }
@@ -389,6 +396,7 @@ private fun App() {
                         is Page.Show -> ShowPage(page.feed, page.first, { pages += it }) { Nav.close() }
                         // done, back where it was added from; closed, only itself (not the trail under it)
                         is Page.AddTo -> AddToPage(page.song, { Nav.back() }) { Nav.back() }
+                    }
                     }
                 }
             }
@@ -518,7 +526,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
 
 @Composable
 private fun Records(albums: List<Album>, open: (Page) -> Unit, header: (@Composable () -> Unit)? = null) {
-    val grid = rememberLazyGridState()
+    val grid = pageGrid()
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp),
@@ -543,7 +551,7 @@ private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
     // a grid of faces, as the records are (2026-10-29: one thin list down a wide page)
     val albums by Library.albums.collectAsState()
     val covers = remember(albums) { albums.groupBy { it.artist }.mapValues { it.value.first().songs.first() } }
-    val grid = rememberLazyGridState()
+    val grid = pageGrid()
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp),
@@ -587,7 +595,7 @@ fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
 
 @Composable
 private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
-    val list = rememberLazyListState()
+    val list = pageList()
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
         itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(songs, i) } }
     }
@@ -697,9 +705,16 @@ fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, moving
     // 1-bit mode (the Konami code): every cover in the dither, its own colour
     if (OneBit.on.collectAsState().value && song != null && rememberCover(song, px) != null) return Dithered(song, modifier, px)
     val cover = rememberCover(song, px)
+    // a cover come from the network or the disk develops in over the name cover, as a print does (the phone's, 2026-11-08:
+    // "loading in can feel abrupt"); one already in memory (scrolled back to) is there at once
+    val there = androidx.compose.runtime.remember(song?.albumId) { cover != null }
+    val shown = androidx.compose.runtime.remember(song?.albumId) { androidx.compose.animation.core.Animatable(if (there) 1f else 0f) }
+    androidx.compose.runtime.LaunchedEffect(cover != null) {
+        if (cover != null && shown.value < 1f) shown.animateTo(1f, androidx.compose.animation.core.tween(600, easing = Motion.expo))
+    }
     BoxWithConstraints(modifier) {
-        if (cover != null) Image(cover.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else NameCover(name, maxWidth)
+        if (cover == null || shown.value < 1f) NameCover(name, maxWidth)
+        if (cover != null) Image(cover.image, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop)
     }
 }
 
@@ -752,7 +767,7 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                 }
             }
             Spacer(Modifier.width(40.dp))
-            val list = rememberLazyListState()
+            val list = pageList()
             val discs = a.songs.map { it.disc }.distinct().size > 1
             LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
                 itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s ->
@@ -1085,4 +1100,36 @@ private fun Around(a: Album, albums: List<Album>, open: (Page) -> Unit) {
 fun CoversWord(modifier: Modifier = Modifier) {
     val on by ListCovers.on.collectAsState()
     Word("covers", pixel(14.sp, if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { ListCovers.set(!on) }
+}
+
+
+/** The page being drawn's place ("index:page", or "place:<name>" for the library's places), for what it keeps. */
+val LocalPageKey = androidx.compose.runtime.compositionLocalOf<String?> { null }
+
+/** Each page's scroll (its item and how far into it), kept while it's under another; a closed page's let go. */
+object PageScroll {
+    val kept = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Int>>()
+    /** The stack changed: what's no longer in it let go (the places kept). */
+    fun stack(pages: kotlin.collections.List<Page>) {
+        val now = pages.mapIndexed { i, p -> "$i:${p.hashCode()}" }.toSet()
+        kept.keys.removeIf { !it.startsWith("place:") && it.substringBefore("#") !in now }
+    }
+}
+
+/** A page's list, begun where it was left when it's come back to (the phone's pageList). */
+@Composable
+fun pageList(part: String = ""): androidx.compose.foundation.lazy.LazyListState {
+    val k = LocalPageKey.current?.let { "$it#list$part" }
+    val state = remember(k) { k?.let { PageScroll.kept[it] }.let { androidx.compose.foundation.lazy.LazyListState(it?.first ?: 0, it?.second ?: 0) } }
+    if (k != null) androidx.compose.runtime.DisposableEffect(k, state) { onDispose { PageScroll.kept[k] = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset } }
+    return state
+}
+
+/** A page's grid, the same. */
+@Composable
+fun pageGrid(part: String = ""): androidx.compose.foundation.lazy.grid.LazyGridState {
+    val k = LocalPageKey.current?.let { "$it#grid$part" }
+    val state = remember(k) { k?.let { PageScroll.kept[it] }.let { androidx.compose.foundation.lazy.grid.LazyGridState(it?.first ?: 0, it?.second ?: 0) } }
+    if (k != null) androidx.compose.runtime.DisposableEffect(k, state) { onDispose { PageScroll.kept[k] = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset } }
+    return state
 }

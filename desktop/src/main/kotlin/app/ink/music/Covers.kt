@@ -137,7 +137,10 @@ object Covers {
 
     /** A file's record with no picture of its own (none in its tags or folder): found by name in the catalogs. */
     private fun found(song: Song, px: Int): ByteArray? {
-        val url = FoundCovers.link(File(Home.cache, "covers"), song.album, song.albumArtist) ?: return null
+        val url = FoundCovers.link(File(Home.cache, "covers"), song.album, song.albumArtist) { a, by ->
+            // none in the catalogs: YouTube Music's record of that name
+            kotlinx.coroutines.runBlocking { YouTube.search("$by $a")?.let { (_, records) -> records.firstOrNull { Pipe.same(it.title, it.artist, a, by) }?.art } }
+        } ?: return null
         return fromDisk(url, px) ?: fetch(url, px)?.also { toDisk(url, px, it) }
     }
 

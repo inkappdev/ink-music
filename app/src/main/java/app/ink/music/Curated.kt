@@ -44,6 +44,7 @@ object Picks {
      * on any visit, not only the first: an app left open for days kept its first (2026-10-30).
      */
     fun start(c: Context) {
+        app = c.applicationContext
         val file = File(c.cacheDir, "picks.json")
         if (readAt == 0L) {
             val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
@@ -116,6 +117,19 @@ object Picks {
 
     /** A record's cover: the thread's own (when its link is one), else its Bandcamp or Apple Music page's, else iTunes', asked as its tile comes into sight, kept. */
     suspend fun art(r: Curation.Release): String? = art(r.title, r.artist, r.link, true)
+
+    private var app: Context? = null
+
+    /**
+     * A pick's cover that loads: its own, else looked for anew (2026-11-08: SWALLOW! blank on a genre page, its link
+     * kept from an earlier read gone dead, and a tile only looked when it had none). Null only when there's none anywhere.
+     */
+    suspend fun artOf(s: Shown, record: Boolean = s.pick.record): String? {
+        val own = s.art
+        val c = app
+        if (own != null && (c == null || Covers.of(c, s.face) != null)) return own
+        return art(s.pick.title, s.pick.artist, s.pick.link.takeIf { it != own }.orEmpty(), record)?.takeIf { it != own } ?: own
+    }
 
     suspend fun art(title: String, artist: String, link: String, record: Boolean): String? {
         if (Regex("\\.(jpe?g|png)$", RegexOption.IGNORE_CASE).containsMatchIn(link)) return link
@@ -193,6 +207,22 @@ object Picks {
 
     suspend fun song(title: String, artist: String): Song? = withContext(Dispatchers.IO) { YouTubeMusic.find(title, artist) }
     suspend fun record(p: Curation.Pick): TubeAlbum? = withContext(Dispatchers.IO) { YouTubeMusic.findRecord(p.title, p.artist) }
+
+    /**
+     * A shelf played from a song (a genre page's, 2026-11-08: a song tapped there played alone, then radio went on from
+     * it and your taste, and nothing after sounded like the genre): all found at once, side by side; it begins with the
+     * next five ready behind it (one alone, radio took it for the queue's end and put ten of its own first), the rest
+     * following as they're found. False when the first isn't on YouTube Music.
+     */
+    suspend fun playFrom(list: List<Shown>): Boolean = coroutineScope {
+        val finds = list.take(31).map { r -> async(Dispatchers.IO) { YouTubeMusic.find(r.pick.title, r.pick.artist) } }
+        val first = finds.firstOrNull()?.await() ?: return@coroutineScope false
+        val ahead = finds.drop(1).take(5).awaitAll().filterNotNull()
+        Playback.play((listOf(first) + ahead).distinctBy { it.id }, 0)
+        val rest = finds.drop(6).awaitAll().filterNotNull()
+        Playback.follow(first, rest.distinctBy { it.id })
+        true
+    }
 
     suspend fun playSongs(list: List<Shown>) {
         val found = withContext(Dispatchers.IO) { coroutineScope { list.take(25).map { s -> async { YouTubeMusic.find(s.pick.title, s.pick.artist) } }.awaitAll().filterNotNull() } }
