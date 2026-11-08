@@ -49,7 +49,7 @@ object Picks {
             val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
             kept?.let(::show)
             // a day kept before it was checked against YouTube Music, or before the editors' lists (v2): read again now
-            readAt = kept?.takeIf { it.optBoolean("checked") && it.optInt("v") >= 3 }?.optLong("at") ?: 1L
+            readAt = kept?.takeIf { it.optBoolean("checked") && it.optInt("v") >= 7 }?.optLong("at") ?: 1L
         }
         if (Curation.stale(readAt) && reading?.isActive != true) reading = scope.launch { read(file) }
     }
@@ -79,7 +79,7 @@ object Picks {
         today.value = day
         readAt = System.currentTimeMillis()
         runCatching {
-            file.writeText(JSONObject().put("at", readAt).put("v", 3).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
+            file.writeText(JSONObject().put("at", readAt).put("v", 7).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
                 .put("songs", JSONArray(songs.value.map(::json))).toString())
         }
     }

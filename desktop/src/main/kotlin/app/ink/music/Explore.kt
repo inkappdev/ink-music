@@ -60,6 +60,9 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun ExplorePage(open: (Page) -> Unit) {
+    // the picks' artists tagged ahead, so a genre's page has its picks when it opens (GenrePicks)
+    val picked by Picks.records.collectAsState()
+    LaunchedEffect(picked.size) { if (picked.isNotEmpty()) GenrePicks.tag() }
     val chart by produceState<List<IndieChart.Entry>?>(null) { value = IndieChart.week() }
     val before = remember(chart) { IndieChart.before() }
     val who by TubeAccount.who.collectAsState()
@@ -585,6 +588,12 @@ private fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
 }
 
 /** A mood's page: its flavors, each a row of YouTube Music's playlists for it; a station from all of it. */
+/**
+ * A genre's page (made over 2026-11-07, as the phone's: "a little bare", only YouTube Music's playlists): INK's picks
+ * in it first (the critics' and curators' songs and records whose artists Last.fm's listeners tag so: [GenrePicks]),
+ * the artists on those lists as words, then YouTube Music's own flavors; a station from all of it. A mood, or a genre
+ * ink has no tags for, keeps YouTube's alone.
+ */
 @Composable
 fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
     val counts by Moods.counts.collectAsState()
@@ -594,18 +603,58 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
         val opened = counts.filterValues { it > 0 }.keys.joinToString(" ").lowercase()
         value = all.sortedBy { s -> Moods.REGIONAL.any { w -> w in s.title.lowercase() && w !in opened } }
     }
+    val ours = m.genre && Genres.known(m.title)
+    val tagged by GenrePicks.tagged.collectAsState()
+    val records by Picks.records.collectAsState()
+    val songs by Picks.songs.collectAsState()
+    LaunchedEffect(ours, records.size + songs.size) { if (ours) GenrePicks.tag() }
+    val picks = remember(ours, tagged, records, songs) { if (!ours) emptyList() else GenrePicks.all().filter { Genres.fits(it.pick.artist, m.title) } }
+    val pickedSongs = remember(picks) { Curation.fair(picks.filter { !it.pick.record }) { it.pick.from }.take(30) }
+    val pickedRecords = remember(picks) { Curation.fair(picks.filter { it.pick.record }) { it.pick.from }.take(20) }
+    val artists = remember(picks) { picks.map { it.pick.artist.substringBefore(", ").trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.take(40) }
+    val from = remember(picks) { picks.flatMap { it.by }.distinct() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val list = rememberLazyListState()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 10.dp, bottom = 32.dp)) {
             item {
-                BasicText(m.title.uppercase(), style = headline(64.sp))
+                BasicText(m.title.uppercase(), style = headline(80.sp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    BasicText(shelves?.let { "${it.size} flavors on youtube music" } ?: "reading youtube music", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+                    BasicText(
+                        listOfNotNull(
+                            picks.size.takeIf { it > 0 }?.let { "$it picked by ${from.size} ${if (from.size == 1) "critic or curator" else "critics and curators"}" },
+                            shelves?.let { "${it.size} flavors on youtube music" },
+                        ).joinToString("   ").ifEmpty { "reading youtube music" },
+                        style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f),
+                    )
                     Word("start station", pixel(14.sp), touch = 8.dp) { scope.launch { Moods.station(m) } }
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(GAP / 2))
+            }
+            if (pickedSongs.isNotEmpty()) item(key = "songs") {
+                Section("PICKED FOR ${m.title.uppercase()}", "the critics' and curators' songs, the newest first")
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    items(pickedSongs, key = { Curation.key(it.pick) }) { s -> Box(Modifier.width(170.dp)) { PickTile(s, open) } }
+                }
+                Spacer(Modifier.height(GAP / 2))
+            }
+            if (pickedRecords.isNotEmpty()) item(key = "records") {
+                Section("NEW RECORDS", "the ones the critics wrote about")
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    items(pickedRecords, key = { Curation.key(it.pick) }) { s -> Box(Modifier.width(200.dp)) { PickTile(s, open) } }
+                }
+                Spacer(Modifier.height(GAP / 2))
+            }
+            if (artists.isNotEmpty()) item(key = "artists") {
+                Section("ON THEIR LISTS", "the artists they picked")
+                // the artists as words, big: each opens their page
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    artists.forEachIndexed { i, a ->
+                        Word(a.uppercase(), headline(if (i < 8) 34.sp else 22.sp, if (i < 8) Ink.ink else Ink.mid), touch = 4.dp) { open(Page.Artist(a)) }
+                    }
+                }
+                Spacer(Modifier.height(GAP / 2))
             }
             shelves.orEmpty().forEach { shelf ->
                 item(key = shelf.title) {

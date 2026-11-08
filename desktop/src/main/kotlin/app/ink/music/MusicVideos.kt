@@ -72,7 +72,32 @@ object MusicVideos {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var started = false
     // each artist's channels, found once (none: asked again in a week)
-    private val channels = HashMap<String, Pair<List<TubeVideos.Channel>, Long>>()
+    private val channels = java.util.concurrent.ConcurrentHashMap<String, Pair<List<TubeVideos.Channel>, Long>>()
+    // an artist's videos, for their page: read once a run
+    private val byArtist = java.util.concurrent.ConcurrentHashMap<String, List<Clip>>()
+
+    /** An artist's music videos, newest first, of any age (a dozen at most): their page's shelf. */
+    suspend fun of(name: String, browseId: String = ""): List<Clip> = withContext(Dispatchers.IO) {
+        byArtist[name.lowercase()]?.let { return@withContext it }
+        val now = System.currentTimeMillis()
+        val theirs = channelsFor(name, browseId, now)
+        val videos = theirs.flatMap { ch -> TubeVideos.uploads(ch.id).filter { TubeVideos.isVideo(it, name, ch) } }
+            .distinctBy { it.id }.sortedBy { it.days }.take(12).map { clip(it, name, now) }
+        videos.also { if (theirs.isNotEmpty()) byArtist[name.lowercase()] = it }
+    }
+
+    private suspend fun channelsFor(name: String, browseId: String, now: Long): List<TubeVideos.Channel> {
+        channels[name.lowercase()]?.takeIf { it.first.isNotEmpty() || now - it.second < 7 * 86_400_000L }?.let { return it.first }
+        val id = browseId.takeIf { it.startsWith("UC") }
+            ?: withTimeoutOrNull(10_000) { Artists.of(name, "").firstOrNull { it != null } }?.id.orEmpty()
+        return (if (id.startsWith("UC")) TubeVideos.channelsOf(name, id) else emptyList()).also { channels[name.lowercase()] = it to now }
+    }
+
+    private fun clip(u: TubeVideos.Upload, name: String, now: Long): Clip {
+        val (title, _) = Pipe.tidy(u.title, name)
+        // "Motive", in its quotes: without them
+        return Clip(u.id, title.trim().removeSurrounding("\"").removeSurrounding("\u201c", "\u201d").ifEmpty { u.title }, name, now - u.days * 86_400_000L)
+    }
 
     fun start() {
         if (started) return
@@ -88,7 +113,7 @@ object MusicVideos {
     /** How long ago, as a person says it. */
     fun ago(at: Long): String {
         val d = ((System.currentTimeMillis() - at) / 86_400_000).toInt()
-        return when { d < 1 -> "today"; d == 1 -> "yesterday"; d < 7 -> "$d days ago"; d < 14 -> "a week ago"; else -> "${d / 7} weeks ago" }
+        return when { d < 1 -> "today"; d == 1 -> "yesterday"; d < 7 -> "$d days ago"; d < 14 -> "a week ago"; d < 60 -> "${d / 7} weeks ago"; d < 365 -> "${d / 30} months ago"; d < 730 -> "a year ago"; else -> "${d / 365} years ago" }
     }
 
     // whom you follow, then whom you've played most these three months
@@ -106,19 +131,11 @@ object MusicVideos {
         val found = ArrayList<Clip>()
         for (name in artists()) {
             if (!scope.isActive) return
-            val known = channels[name.lowercase()]?.takeIf { it.first.isNotEmpty() || now - it.second < 7 * 86_400_000L }
-            val theirChannels = known?.first ?: run {
-                val id = withTimeoutOrNull(10_000) { Artists.of(name, "").firstOrNull { it != null } }?.id.orEmpty()
-                (if (id.startsWith("UC")) TubeVideos.channelsOf(name, id) else emptyList()).also { channels[name.lowercase()] = it to now }
-            }
+            val theirChannels = channelsFor(name, "", now)
             val theirs = theirChannels.flatMap { ch -> TubeVideos.uploads(ch.id).filter { it.days <= 35 && TubeVideos.isVideo(it, name, ch) } }
                 .distinctBy { it.id }.sortedBy { it.days }
             // an album's week: its videos, the newest two (the rest are its visualizers' kin)
-            found += theirs.take(2).map { u ->
-                val (title, _) = Pipe.tidy(u.title, name)
-                // "Motive", in its quotes: without them
-                Clip(u.id, title.trim().removeSurrounding("\"").removeSurrounding("“", "”").ifEmpty { u.title }, name, now - u.days * 86_400_000L)
-            }
+            found += theirs.take(2).map { clip(it, name, now) }
             Log.d("videos: $name, ${theirChannels.joinToString { it.name }}: ${theirs.size}")
         }
         val clips = found.sortedByDescending { it.at }.take(16)
@@ -200,7 +217,7 @@ fun NewVideos(open: (Page) -> Unit) {
         Section("NEW VIDEOS", "from the artists you play")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             items(clips, key = { it.id }) { c ->
-                Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c)) })) {
+                Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))
                     UnderCover(c.title, "${c.artist}  ·  ${MusicVideos.ago(c.at)}")
@@ -223,8 +240,10 @@ private fun VideoFrame(c: MusicVideos.Clip, modifier: Modifier) {
  * song and artist under it, pause and the next one. The music pauses for it, and it for the music.
  */
 @Composable
-fun WatchPage(c: MusicVideos.Clip, open: (Page) -> Unit, onClose: () -> Unit) {
-    val clips by MusicVideos.clips.collectAsState()
+fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) -> Unit, onClose: () -> Unit) {
+    val newest by MusicVideos.clips.collectAsState()
+    // the videos it was opened among (the shelf's, an artist's): next is the next of them
+    val clips = list.ifEmpty { newest }
     val frame by produceState<MusicVideos.Frame?>(null, c.id) { value = MusicVideos.frame(c.id) }
     val accent = frame?.accent ?: Ink.mid
     var said by remember(c.id) { mutableStateOf("finding it") }
@@ -266,7 +285,7 @@ fun WatchPage(c: MusicVideos.Clip, open: (Page) -> Unit, onClose: () -> Unit) {
             at = v.at(); length = v.length()
             if (length > 0 && v.ended()) {
                 // played out: the next one, if there is one
-                clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)?.let { Nav.back(); open(Page.Watch(it)) } ?: break
+                clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)?.let { Nav.back(); open(Page.Watch(it, clips)) } ?: break
                 break
             }
             delay(250)
@@ -314,7 +333,7 @@ fun WatchPage(c: MusicVideos.Clip, open: (Page) -> Unit, onClose: () -> Unit) {
                     if (video != null) Word(if (paused) "play" else "pause", pixel(14.sp), touch = 8.dp) { Watching.toggle?.invoke() }
                     clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)?.let { n ->
                         Spacer(Modifier.size(20.dp))
-                        Word("next video", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back(); open(Page.Watch(n)) }
+                        Word("next video", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back(); open(Page.Watch(n, clips)) }
                     }
                 }
             }
@@ -323,3 +342,25 @@ fun WatchPage(c: MusicVideos.Clip, open: (Page) -> Unit, onClose: () -> Unit) {
 }
 
 private fun time(ms: Long): String { val s = ms / 1000; return "%d:%02d".format(s / 60, s % 60) }
+
+/** An artist's music videos on their page, newest first: each frame wide, its song and how long ago. */
+@Composable
+fun ArtistVideos(name: String, browseId: String, open: (Page) -> Unit) {
+    val videos by produceState(emptyList<MusicVideos.Clip>(), name, browseId) {
+        value = runCatching { MusicVideos.of(name, browseId) }.getOrDefault(emptyList())
+    }
+    if (videos.isEmpty()) return
+    Column {
+        Label("videos")
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            items(videos, key = { it.id }) { c ->
+                Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, videos)) })) {
+                    VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
+                    Spacer(Modifier.height(8.dp))
+                    UnderCover(c.title, MusicVideos.ago(c.at))
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+    }
+}

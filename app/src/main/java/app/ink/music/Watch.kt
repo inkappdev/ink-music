@@ -24,6 +24,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
@@ -104,19 +107,34 @@ private fun trim(b: Bitmap): Bitmap {
 /** How long ago, as a person says it. */
 fun agoOf(at: Long): String {
     val d = ((System.currentTimeMillis() - at) / 86_400_000).toInt()
-    return when { d < 1 -> "today"; d == 1 -> "yesterday"; d < 7 -> "$d days ago"; d < 14 -> "a week ago"; else -> "${d / 7} weeks ago" }
+    return when { d < 1 -> "today"; d == 1 -> "yesterday"; d < 7 -> "$d days ago"; d < 14 -> "a week ago"; d < 60 -> "${d / 7} weeks ago"; d < 365 -> "${d / 30} months ago"; d < 730 -> "a year ago"; else -> "${d / 365} years ago" }
 }
 
 /** Listen's shelf of new videos from your artists: each frame wide, its song, the artist and how long ago. */
 @Composable
 fun NewVideosShelf(clips: List<MusicVideos.Clip>, pages: Pages) {
     Heading("new videos", "from the artists you play")
-    Shelf(clips) { c ->
-        Column(Modifier.width(240.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Watch(c)) })) {
-            ClipFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
-            Spacer(Modifier.height(8.dp))
-            UnderCover(c.title, "${c.artist}  ·  ${agoOf(c.at)}", pixel(12.sp, Ink.mid))
-        }
+    Shelf(clips) { c -> VideoTile(c, "${c.artist}  ·  ${agoOf(c.at)}") { pages.open(Page.Watch(c, clips)) } }
+}
+
+/** An artist's music videos on their page, newest first: each frame wide, its song and how long ago. */
+@Composable
+fun ArtistVideos(name: String, browseId: String, pages: Pages) {
+    val videos by produceState(emptyList<MusicVideos.Clip>(), name, browseId) {
+        value = runCatching { MusicVideos.of(name, browseId) }.getOrDefault(emptyList())
+    }
+    if (videos.isEmpty()) return
+    Label("videos")
+    Shelf(videos) { c -> VideoTile(c, agoOf(c.at)) { pages.open(Page.Watch(c, videos)) } }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun VideoTile(c: MusicVideos.Clip, said: String, onClick: () -> Unit) {
+    Column(Modifier.width(240.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        ClipFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
+        Spacer(Modifier.height(8.dp))
+        UnderCover(c.title, said, pixel(12.sp, Ink.mid))
     }
 }
 
@@ -135,14 +153,17 @@ private fun ClipFrame(c: MusicVideos.Clip, modifier: Modifier) {
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun WatchPage(c: MusicVideos.Clip, pages: Pages) {
+fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, pages: Pages) {
     val ctx = LocalContext.current
-    val clips by MusicVideos.clips.collectAsState()
+    val newest by MusicVideos.clips.collectAsState()
+    // the videos it was opened among (the shelf's, an artist's): up next is the rest of them
+    val clips = list.ifEmpty { newest }
     val frame by produceState<VideoFrame?>(frames.get(c.id), c.id) { if (value == null) value = frameOf(c.id) }
     val accent = frame?.accent ?: Ink.mid
     var said by remember(c.id) { mutableStateOf("finding it") }
     val stream by produceState<Pair<String, String?>?>(null, c.id) {
-        value = withContext(Dispatchers.IO) { runCatching { MusicVideos.stream(c.id) }.getOrNull() }
+        // 1080p on wifi (the screen's 1440 across, 3120 sideways), 720p on someone's data
+        value = withContext(Dispatchers.IO) { runCatching { MusicVideos.stream(c.id, if (Quality.metered(ctx)) 720 else 1080) }.getOrNull() }
         android.util.Log.d("ink-youtube", "watch ${c.id}: ${if (value == null) "no stream" else if (value?.second == null) "one stream" else "picture and sound"}")
         if (value == null) said = "youtube wouldn't play this one"
     }
@@ -150,10 +171,18 @@ fun WatchPage(c: MusicVideos.Clip, pages: Pages) {
         stream?.let { (pic, snd) ->
             // as the player opens YouTube's songs (a browser's name on them, they never came: a link is for the client that asked)
             val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
-            val source = ProgressiveMediaSource.Factory(http)
+            // each read asked for to the file's end (its size is in the link, clen): asked open-ended, googlevideo sends it
+            // at about twice its speed, and it stopped to load (as kept songs found: Offline)
+            val whole = androidx.media3.datasource.ResolvingDataSource.Factory(http) { spec ->
+                val size = Regex("[?&]clen=(\\d+)").find(spec.uri.toString())?.groupValues?.get(1)?.toLongOrNull()
+                if (spec.length == C.LENGTH_UNSET.toLong() && size != null && size > spec.position) spec.subrange(0, size - spec.position) else spec
+            }
+            val source = ProgressiveMediaSource.Factory(whole)
             val media = if (snd == null) source.createMediaSource(MediaItem.fromUri(pic))
                 else MergingMediaSource(source.createMediaSource(MediaItem.fromUri(pic)), source.createMediaSource(MediaItem.fromUri(snd)))
-            ExoPlayer.Builder(ctx).build().apply {
+            // playing after a second and a half loaded (not two and a half), two minutes kept ahead
+            val load = androidx.media3.exoplayer.DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 120_000, 1_500, 3_000).build()
+            ExoPlayer.Builder(ctx).setLoadControl(load).build().apply {
                 setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
                 setMediaSource(media); prepare(); playWhenReady = true
             }
@@ -163,16 +192,20 @@ fun WatchPage(c: MusicVideos.Clip, pages: Pages) {
     var at by remember(player) { mutableLongStateOf(0L) }
     var length by remember(player) { mutableLongStateOf(0L) }
     var shape by remember(player) { mutableFloatStateOf(16 / 9f) }
+    // its first frame drawn: YouTube's still under it put away (a still another shape showed round the picture: Japan's)
+    var drawn by remember(player) { mutableStateOf(false) }
     val next = clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)
+    fun watch(n: MusicVideos.Clip, among: List<MusicVideos.Clip> = clips) { pages.back(); pages.open(Page.Watch(n, among)) }
     DisposableEffect(player) {
         val p = player
         val listen = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = p?.playWhenReady == true }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { playing = playWhenReady }
+            override fun onRenderedFirstFrame() { drawn = true }
             override fun onVideoSizeChanged(v: VideoSize) { if (v.width > 0 && v.height > 0) shape = v.width * v.pixelWidthHeightRatio / v.height }
             override fun onPlaybackStateChanged(state: Int) {
                 // played out: the next one, if there is one
-                if (state == Player.STATE_ENDED) next?.let { pages.back(); pages.open(Page.Watch(it)) }
+                if (state == Player.STATE_ENDED) next?.let { watch(it) }
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 android.util.Log.d("ink-youtube", "watch ${c.id}: $error ${error.cause}")
@@ -197,8 +230,9 @@ fun WatchPage(c: MusicVideos.Clip, pages: Pages) {
         val p = player ?: return@LaunchedEffect
         while (isActive) { at = p.currentPosition; length = p.duration.takeIf { it > 0 } ?: 0L; delay(250) }
     }
-    // the frame's shape, its bars cut off; else the video's own
-    val seen = frame?.image?.let { (it.width.toFloat() / it.height).coerceIn(1.2f, 2.8f) } ?: shape
+    // the picture's shape: the frame's with its bars cut off (a wide film's baked into the video too), else the video's,
+    // whichever's wider, so neither YouTube's still nor a bar shows round it
+    val seen = maxOf(frame?.image?.let { (it.width.toFloat() / it.height).coerceIn(1.2f, 2.8f) } ?: shape, shape)
     fun toggle() { player?.let { if (it.playWhenReady) it.pause() else it.play() } }
     // sideways (2026-11-07): the phone follows itself round while a video's open (ink music is upright everywhere
     // else); full screen turns it over whatever the rotation lock says, exit (or back) stands it up again. Kept from one
@@ -273,7 +307,7 @@ fun WatchPage(c: MusicVideos.Clip, pages: Pages) {
                         if (player != null) Word(if (playing) "PAUSE" else "PLAY", headline(16.sp), touch = 8.dp) { toggle() }
                         next?.let { n ->
                             Spacer(Modifier.width(20.dp))
-                            Word("NEXT", headline(16.sp, Ink.mid), touch = 8.dp) { pages.back(); pages.open(Page.Watch(n)) }
+                            Word("NEXT", headline(16.sp, Ink.mid), touch = 8.dp) { watch(n) }
                         }
                         Spacer(Modifier.width(20.dp))
                         Word("EXIT", headline(16.sp, Ink.mid), touch = 8.dp) { Wide.turn = Wide.Turn.UPRIGHT }
@@ -283,54 +317,81 @@ fun WatchPage(c: MusicVideos.Clip, pages: Pages) {
         }
         return
     }
+    // more of theirs, under up next (the ones up next already left out)
+    val more by produceState(emptyList<MusicVideos.Clip>(), c.artist) { value = runCatching { MusicVideos.of(c.artist) }.getOrDefault(emptyList()) }
+    val upNext = remember(clips, c.id) { clips.indexOfFirst { it.id == c.id }.let { i -> if (i < 0) clips else clips.drop(i + 1) + clips.take(i) } }
+    val theirs = remember(more, upNext, c.id) { more.filter { m -> m.id != c.id && upNext.none { it.id == m.id } } }
     FrostedPage(onClose = { pages.close() }) { frost, top ->
-        Column(
-            Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal))
-                .verticalScroll(rememberScrollState()).padding(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+        LazyColumn(
+            Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+            contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
         ) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 4.dp)) {
-                BasicText(time(at), style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.weight(1f))
-                BasicText(if (length > 0) time(length) else "", style = pixel(12.sp, Ink.mid))
-            }
-            // the line, along its top edge: where it is in its colour; a tap goes there
-            Box(Modifier.fillMaxWidth().height(14.dp).pointerInput(player, length) {
-                detectTapGestures { o -> if (length > 0) player?.seekTo((o.x / size.width * length).toLong()) }
-            }, contentAlignment = Alignment.BottomStart) {
-                Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line))
-                Box(Modifier.fillMaxWidth(if (length > 0) (at.toFloat() / length).coerceIn(0f, 1f) else 0f).height(2.dp).background(accent))
-            }
-            BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(seen).background(Color.Black).clipToBounds()
-                .clickable(remember { MutableInteractionSource() }, indication = null) { toggle() }) {
-                frame?.let { Image(it.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                // the video in its own shape, as wide as the frame, its bars past the frame's edges cut off
-                if (player != null) AndroidView(
-                    factory = { TextureView(it).apply { keepScreenOn = true; player.setVideoTextureView(this) } },
-                    modifier = Modifier.align(Alignment.Center).requiredSize(maxWidth, maxWidth / shape),
-                ) else BasicText(said, style = pixel(12.sp, Ink.ink), modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
-            }
-            Column(Modifier.padding(horizontal = 20.dp)) {
-                Spacer(Modifier.height(14.dp))
-                BasicText(c.title.uppercase(), style = headline(30.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(4.dp))
-                Row {
-                    Word(c.artist.lowercase(), pixel(14.sp), touch = 8.dp) { pages.open(Page.Artist(c.artist)) }
-                    BasicText("  ·  ${agoOf(c.at)}", style = pixel(14.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp))
+            item(key = "video") { Column {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 4.dp)) {
+                    BasicText(time(at), style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.weight(1f))
+                    BasicText(if (length > 0) time(length) else "", style = pixel(12.sp, Ink.mid))
                 }
-                Spacer(Modifier.height(18.dp))
-                Row {
-                    if (player != null) Word(if (playing) "PAUSE" else "PLAY", headline(18.sp), touch = 8.dp) {
-                        if (player.playWhenReady) player.pause() else player.play()
+                // the line, along its top edge: where it is in its colour; a tap goes there
+                Box(Modifier.fillMaxWidth().height(14.dp).pointerInput(player, length) {
+                    detectTapGestures { o -> if (length > 0) player?.seekTo((o.x / size.width * length).toLong()) }
+                }, contentAlignment = Alignment.BottomStart) {
+                    Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line))
+                    Box(Modifier.fillMaxWidth(if (length > 0) (at.toFloat() / length).coerceIn(0f, 1f) else 0f).height(2.dp).background(accent))
+                }
+                BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(seen).background(Color.Black).clipToBounds()
+                    .clickable(remember { MutableInteractionSource() }, indication = null) { toggle() }) {
+                    if (!drawn) frame?.let { Image(it.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                    // the video in its own shape, as wide as the frame, its bars past the frame's edges cut off
+                    if (player != null) AndroidView(
+                        factory = { TextureView(it).apply { keepScreenOn = true; player.setVideoTextureView(this) } },
+                        modifier = Modifier.align(Alignment.Center).requiredSize(maxWidth, maxWidth / shape),
+                    ) else BasicText(said, style = pixel(12.sp, Ink.ink), modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
+                }
+                Column(Modifier.padding(horizontal = 20.dp)) {
+                    Spacer(Modifier.height(18.dp))
+                    BasicText(c.title.uppercase(), style = headline(40.sp).copy(lineHeight = 42.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Word(c.artist.lowercase(), pixel(14.sp), touch = 8.dp) { pages.open(Page.Artist(c.artist)) }
+                        BasicText("  ·  ${agoOf(c.at)}", style = pixel(14.sp, Ink.mid))
                     }
-                    next?.let { n ->
+                    Spacer(Modifier.height(14.dp))
+                    Row {
+                        if (player != null) Word(if (playing) "PAUSE" else "PLAY", headline(18.sp), touch = 8.dp) { toggle() }
                         Spacer(Modifier.width(24.dp))
-                        Word("NEXT VIDEO", headline(18.sp, Ink.mid), touch = 8.dp) { pages.back(); pages.open(Page.Watch(n)) }
+                        Word("FULL SCREEN", headline(18.sp, Ink.mid), touch = 8.dp) { Wide.turn = Wide.Turn.SIDEWAYS }
                     }
-                    Spacer(Modifier.width(24.dp))
-                    Word("FULL SCREEN", headline(18.sp, Ink.mid), touch = 8.dp) { Wide.turn = Wide.Turn.SIDEWAYS }
+                    if (player != null && said.startsWith("it wouldn't")) BasicText(said, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 12.dp))
                 }
-                if (player != null && said.startsWith("it wouldn't")) BasicText(said, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 12.dp))
+                // their name as the player has it: giant, running off both edges while it plays, still while it's paused
+                Spacer(Modifier.height(10.dp))
+                Marquee(c.artist, playing && Marquees.on.collectAsState().value, Modifier.fillMaxWidth().bleedPastCutout()
+                    .clickable(remember { MutableInteractionSource() }, indication = null) { pages.open(Page.Artist(c.artist)) }, size = 120.sp)
+            } }
+            if (upNext.isNotEmpty()) {
+                item(key = "next") { Label("up next") }
+                items(upNext, key = { "n" + it.id }) { n -> ClipRow(n) { watch(n) } }
             }
+            if (theirs.isNotEmpty()) {
+                item(key = "more") { Label("more from ${c.artist.lowercase()}") }
+                items(theirs, key = { "m" + it.id }) { m -> ClipRow(m) { watch(m, more) } }
+            }
+        }
+    }
+}
+
+/** A video as a row: its frame, its song, the artist and how long ago. */
+@Composable
+private fun ClipRow(c: MusicVideos.Clip, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))
+        .padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        ClipFrame(c, Modifier.width(144.dp).aspectRatio(16 / 9f))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            BasicText(c.title.uppercase(), style = headline(16.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(3.dp))
+            BasicText("${c.artist}  ·  ${agoOf(c.at)}".lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

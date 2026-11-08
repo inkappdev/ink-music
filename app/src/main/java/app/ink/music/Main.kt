@@ -256,7 +256,7 @@ sealed interface Page {
     data class Tube(val album: TubeAlbum) : Page
     data class AddTo(val song: Song) : Page
     /** A music video, watched ([WatchPage]). */
-    data class Watch(val clip: MusicVideos.Clip) : Page
+    data class Watch(val clip: MusicVideos.Clip, val list: List<MusicVideos.Clip> = emptyList()) : Page
     /** A YouTube song's version chosen by hand ([VersionPage]). */
     data class Version(val song: Song) : Page
     data class Path(val song: Song) : Page
@@ -410,7 +410,7 @@ private fun App() {
                         is Page.Playlist -> PlaylistPage(p.id, p.name, pages)
                         is Page.Tube -> TubeAlbumPage(p.album, pages)
                         is Page.AddTo -> AddToPage(p.song, pages)
-                        is Page.Watch -> WatchPage(p.clip, pages)
+                        is Page.Watch -> WatchPage(p.clip, p.list, pages)
                         is Page.Version -> VersionPage(p.song, pages)
                         is Page.Path -> PathPage(p.song, pages)
                         Page.Loved -> LovedPage(pages)
@@ -1335,6 +1335,8 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 Spacer(Modifier.height(18.dp))
             }
         }
+        // their music videos (MusicVideos: the full build's), newest first
+        if (i != null && i.id.startsWith("UC")) item(key = "videos") { ArtistVideos(name, i.id, pages) }
         // what's said of them: four lines, a tap for the rest
         i?.about?.takeIf { it.isNotEmpty() }?.let { about ->
             // its first sentence pulled out big, as a lyric is; the rest small under it

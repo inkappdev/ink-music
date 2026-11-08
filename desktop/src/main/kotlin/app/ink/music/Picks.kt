@@ -52,7 +52,17 @@ object Picks {
     private var reading: kotlinx.coroutines.Job? = null
 
     private suspend fun read() = coroutineScope {
-        val all = Curation.picks()
+        // the critics' feeds, and BIRP!'s monthly playlist (Birp): the newest first
+        val all = (Curation.picks() + runCatching {
+            val d = java.time.LocalDate.now()
+            Birp.picks(System.currentTimeMillis(), d.monthValue, d.year).also { Log.d("picks: birp! ${it.size} songs") }
+        }.getOrDefault(emptyList()) + runCatching {
+            // triple j's New Music Hitlist, alexrainbirdMusic's New Indie Music (TubeCurators)
+            TubeCurators.picks(System.currentTimeMillis(), java.time.LocalDate.now().year)
+        }.getOrDefault(emptyList()) + runCatching {
+            // Spotify's editorial lists, The Line of Best Fit's and DIY's (SpotifyLists: song data from their embed pages)
+            SpotifyLists.picks(System.currentTimeMillis()) { Log.d("picks: $it") }
+        }.getOrDefault(emptyList())).sortedByDescending { it.at }
         if (all.isEmpty()) return@coroutineScope
         // one of each (a record several named shows once, with all who named it), its cover found
         val firsts = all.groupBy(Curation::key).values.map { group -> group.first() to group.map { it.from }.distinct() }

@@ -198,7 +198,7 @@ sealed interface Page {
     data class Tube(val album: TubeAlbum) : Page
     data class List(val id: String, val name: String) : Page
     /** A music video, watched. */
-    data class Watch(val clip: MusicVideos.Clip) : Page
+    data class Watch(val clip: MusicVideos.Clip, val list: kotlin.collections.List<MusicVideos.Clip> = emptyList()) : Page
     /** A song into one of your playlists. */
     data class AddTo(val song: Song) : Page
     /** A podcast: by its feed (the show as found, shown at once till its feed's read). One page a feed. */
@@ -375,7 +375,7 @@ private fun App() {
                         null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
                         is Page.Record -> RecordPage(page.id, { pages += it }) { Nav.close() }
                         is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { Nav.close() }
-                        is Page.Watch -> WatchPage(page.clip, { pages += it }) { Nav.close() }
+                        is Page.Watch -> WatchPage(page.clip, page.list, { pages += it }) { Nav.close() }
                         Page.Find -> Column(Modifier.fillMaxSize()) { Close { Nav.close() }; FindTab { pages += it } }
                         Page.Playing -> {}
                         Page.Settings -> SettingsPage { Nav.close() }

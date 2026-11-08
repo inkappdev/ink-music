@@ -170,6 +170,8 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                 Spacer(Modifier.height(18.dp))
             }
         }
+        // their music videos (MusicVideos), newest first
+        if (i != null && i.id.startsWith("UC")) item(key = "videos") { ArtistVideos(name, i.id, open) }
         i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
             item {
                 Label("fans also like")

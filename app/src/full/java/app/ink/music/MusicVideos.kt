@@ -25,7 +25,9 @@ object MusicVideos {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var started = false
     // each artist's channels, found once (none: asked again in a week)
-    private val channels = HashMap<String, Pair<List<TubeVideos.Channel>, Long>>()
+    private val channels = java.util.concurrent.ConcurrentHashMap<String, Pair<List<TubeVideos.Channel>, Long>>()
+    // an artist's videos, for their page and more from them: read once a run
+    private val byArtist = java.util.concurrent.ConcurrentHashMap<String, List<Clip>>()
 
     fun start(ctx: Context) {
         if (started) return
@@ -41,8 +43,34 @@ object MusicVideos {
         }
     }
 
+    /**
+     * An artist's music videos, newest first (a dozen at most; their page, more from them): their channels from their
+     * YouTube Music page ([browseId], else found by name), the real videos picked out as for the shelf, of any age.
+     */
+    suspend fun of(name: String, browseId: String = ""): List<Clip> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        byArtist[name.lowercase()]?.let { return@withContext it }
+        val now = System.currentTimeMillis()
+        val theirs = runCatching { channelsFor(name, browseId, now) }.getOrDefault(emptyList())
+        val videos = theirs.flatMap { ch -> TubeVideos.uploads(ch.id).filter { TubeVideos.isVideo(it, name, ch) } }
+            .distinctBy { it.id }.sortedBy { it.days }.take(12).map { clip(it, name, now) }
+        videos.also { if (theirs.isNotEmpty()) byArtist[name.lowercase()] = it }
+    }
+
+    private fun channelsFor(name: String, browseId: String, now: Long): List<TubeVideos.Channel> {
+        channels[name.lowercase()]?.takeIf { it.first.isNotEmpty() || now - it.second < 7 * 86_400_000L }?.let { return it.first }
+        val id = browseId.takeIf { it.startsWith("UC") } ?: runCatching { InnerTube().searchItems(name, InnerTube.Kind.ARTIST, 3) }.getOrNull()
+            ?.firstOrNull { plain(it.title).let { t -> t.isNotEmpty() && (t.contains(plain(name)) || plain(name).contains(t)) } }?.id.orEmpty()
+        return (if (id.startsWith("UC")) TubeVideos.channelsOf(name, id) else emptyList()).also { channels[name.lowercase()] = it to now }
+    }
+
+    private fun clip(u: TubeVideos.Upload, name: String, now: Long): Clip {
+        val (title, _) = Pipe.tidy(u.title, name)
+        // "Motive", in its quotes: without them
+        return Clip(u.id, title.trim().removeSurrounding("\"").removeSurrounding("“", "”").ifEmpty { u.title }, name, now - u.days * 86_400_000L)
+    }
+
     /** What it plays from: the picture and its sound apart (or one with both), found as it's opened (they expire). */
-    fun stream(id: String): Pair<String, String?>? = Pipe.streamInfo(id)?.let { Pipe.video(it) }
+    fun stream(id: String, high: Int = 720): Pair<String, String?>? = Pipe.streamInfo(id)?.let { Pipe.video(it, high) }
 
     // the artists you chose, then whom you've played most these three months
     private fun artists(ctx: Context): List<String> {
@@ -56,23 +84,14 @@ object MusicVideos {
 
     private fun find(ctx: Context, file: File) {
         val now = System.currentTimeMillis()
-        val yt = InnerTube()
         val found = ArrayList<Clip>()
         for (name in artists(ctx)) {
             if (Quality.metered(ctx)) break
-            val known = channels[name.lowercase()]?.takeIf { it.first.isNotEmpty() || now - it.second < 7 * 86_400_000L }
-            val theirs = known?.first ?: run {
-                val id = runCatching { yt.searchItems(name, InnerTube.Kind.ARTIST, 3) }.getOrNull()
-                    ?.firstOrNull { plain(it.title).let { t -> t.isNotEmpty() && (t.contains(plain(name)) || plain(name).contains(t)) } }?.id.orEmpty()
-                (if (id.startsWith("UC")) TubeVideos.channelsOf(name, id) else emptyList()).also { channels[name.lowercase()] = it to now }
-            }
+            val theirs = channelsFor(name, "", now)
             val videos = theirs.flatMap { ch -> TubeVideos.uploads(ch.id).filter { it.days <= 35 && TubeVideos.isVideo(it, name, ch) } }
                 .distinctBy { it.id }.sortedBy { it.days }
             // an album's week: the newest two
-            found += videos.take(2).map { u ->
-                val (title, _) = Pipe.tidy(u.title, name)
-                Clip(u.id, title.trim().removeSurrounding("\"").removeSurrounding("“", "”").ifEmpty { u.title }, name, now - u.days * 86_400_000L)
-            }
+            found += videos.take(2).map { clip(it, name, now) }
             android.util.Log.d("ink-youtube", "videos: $name, ${theirs.joinToString { it.name }}: ${videos.size}")
         }
         val clips = found.sortedByDescending { it.at }.take(16)
