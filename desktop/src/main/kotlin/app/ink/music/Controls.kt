@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 
 /** Close, wherever there's one: the down chevron, as the phone's (PlayerPage's CLOSE). */
 private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
+/** Back: close's chevron turned to the left. */
+val BACK_ARROW = listOf("...#", "..##", ".##.", "##..", ".##.", "..##", "...#")
 
 /** The player's controls as pixels, the phone's: play and pause nine high, back and next seven (at 3 dp). */
 val BACK = listOf("#...#", "#..##", "#.###", "#####", "#.###", "#..##", "#...#")

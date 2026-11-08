@@ -51,6 +51,18 @@ object Pipe {
         return Triple(pick.content, pick.format?.mimeType ?: "audio/mp4", if (b > 10_000) b / 1000 else b)
     }
 
+    /**
+     * A music video to watch: the picture (H.264, every computer decodes it; the tallest up to [high]) and its sound
+     * apart, as YouTube keeps them past 360p; else the one stream with both (null sound).
+     */
+    fun video(info: StreamInfo, high: Int = 720): Pair<String, String?>? {
+        val direct = { s: org.schabi.newpipe.extractor.stream.Stream -> s.isUrl && s.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
+        val pictures = info.videoOnlyStreams.filter { direct(it) && it.format == MediaFormat.MPEG_4 && it.height in 1..high }
+        val sound = audio(info, forSpeaker = true, small = false)?.first
+        pictures.maxByOrNull { it.height }?.let { if (sound != null) return it.content to sound }
+        return info.videoStreams.filter { direct(it) }.maxByOrNull { it.height }?.let { it.content to null }
+    }
+
     /** A video's id from its link. */
     fun videoId(url: String) = Regex("[?&]v=([^&]+)").find(url)?.groupValues?.get(1) ?: url.substringAfterLast('/')
 

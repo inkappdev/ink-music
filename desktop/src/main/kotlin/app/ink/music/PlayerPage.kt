@@ -210,6 +210,8 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             for (w in words)
                                 Word(w, pixel(14.sp, if (w == panel) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 10.dp) { shows = w }
                             Spacer(Modifier.weight(1f))
+                            // into one of your playlists (the phone's player's word), its page over the player
+                            if (canAddToList(n.song)) Word("playlist", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 10.dp) { open(Page.AddTo(n.song)) }
                             Word("stop", pixel(14.sp, if (n.playing) Ink.mid else Ink.dim), touch = 10.dp) { Player.stop(); onClose() }
                         }
                         Spacer(Modifier.height(14.dp))
@@ -274,11 +276,21 @@ fun Scrubber(n: Player.Now, accent: Color, modifier: Modifier = Modifier, middle
     val live = !n.song.station && n.duration > 0
     val shown = at ?: pos
     val times by animateColorAsState(if (at != null) Ink.ink else Ink.mid, tween(Motion.FADE), label = "times")
+    // a handover into this song (transitions): the tempos, or said it's the crossfade, and MIXING, where the times are
+    val mixing by Crossfade.mixing.collectAsState()
+    val mix = mixing?.takeIf { it.into == n.song.id }
+    val k = rememberMixing(mix)
     Column(modifier) {
         Box(Modifier.fillMaxWidth()) {
-            BasicText(if (n.song.station) "live" else clock(shown), style = pixel(12.sp, times), modifier = Modifier.align(Alignment.CenterStart))
-            Box(Modifier.align(Alignment.Center)) { middle() }
-            if (live) BasicText("-" + clock((n.duration - shown).coerceAtLeast(0)), style = pixel(12.sp, times), modifier = Modifier.align(Alignment.CenterEnd))
+            if (k != null && mix != null) {
+                BasicText(if (mix.bpmTo > 0) "${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM" else "CROSSFADE", style = pixel(12.sp, Ink.ink),
+                    modifier = Modifier.align(Alignment.CenterStart))
+                BasicText("MIXING", style = pixel(12.sp, Ink.ink), modifier = Modifier.align(Alignment.CenterEnd))
+            } else {
+                BasicText(if (n.song.station) "live" else clock(shown), style = pixel(12.sp, times), modifier = Modifier.align(Alignment.CenterStart))
+                Box(Modifier.align(Alignment.Center)) { middle() }
+                if (live) BasicText("-" + clock((n.duration - shown).coerceAtLeast(0)), style = pixel(12.sp, times), modifier = Modifier.align(Alignment.CenterEnd))
+            }
         }
         SeekLine(n, accent, held = held)
     }
@@ -301,6 +313,14 @@ fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: 
     val frac = if (live) ((at ?: pos).toFloat() / n.duration).coerceIn(0f, 1f) else 0f
     val thick by animateDpAsState(if (live && (hover != null || at != null)) 3.dp else 1.dp, tween(Motion.FADE), label = "thick")
     fun where(x: Float) = ((x / width).coerceIn(0f, 1f) * n.duration).toLong()
+    // transitions on the line, the phone's: blending into this song, a crossfader (the old song's accent giving way to
+    // this one's, a knob across, automix's beats ticking); before that, this song's mix point, past it dotted
+    val mixing by Crossfade.mixing.collectAsState()
+    val mix = mixing?.takeIf { it.into == n.song.id }
+    val k = rememberMixing(mix)
+    val old = rememberCover(mix?.from, 300)?.accent ?: Ink.mid
+    val point by Crossfade.point.collectAsState()
+    val cut = point?.takeIf { k == null && live && it.first == n.song.id && it.second in 1 until n.duration }?.second
     Box(
         modifier.fillMaxWidth().height(24.dp).onSizeChanged { width = it.width.coerceAtLeast(1) }
             .then(if (live) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier)
@@ -329,7 +349,9 @@ fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: 
                 modifier = Modifier.align(Alignment.TopStart).onSizeChanged { label = it.width }
                     .offset { IntOffset((h * width - label / 2f).toInt().coerceIn(0, (width - label).coerceAtLeast(0)), 0) })
         }
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(thick).background(Ink.line)) {
+        if (k != null && mix != null) MixBar(mix, k, old, accent, thick, Modifier.align(Alignment.BottomStart))
+        else if (cut != null) MixPointBar(frac, cut.toFloat() / n.duration, accent, thick, Modifier.align(Alignment.BottomStart))
+        else Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(thick).background(Ink.line)) {
             Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(accent))
         }
     }

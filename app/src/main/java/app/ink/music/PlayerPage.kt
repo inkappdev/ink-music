@@ -748,6 +748,8 @@ private val REPEAT = listOf("..#........", ".##########", "#.#.......#", "#.....
 private val REPEAT_ONE = listOf("..#........", ".##########", "#.#.......#", "#....#....#", "#.......#.#", "##########.", "........#..")
 /** close: the player goes down, as it's pulled. */
 private val CLOSE = listOf("##...##", ".##.##.", "..###..", "...#...")
+/** back: close's chevron turned to the left. */
+internal val BACK_ARROW = listOf("...#", "..##", ".##.", "##..", ".##.", "..##", "...#")
 
 /** An episode's show, as a page to open. */
 private fun showOf(s: Song): Page? = Pods.showOf(s)?.let { Page.Show(it.feed, it) }

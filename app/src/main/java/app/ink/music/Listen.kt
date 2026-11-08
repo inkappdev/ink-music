@@ -72,7 +72,7 @@ private fun Modifier.moving(scope: androidx.compose.foundation.lazy.LazyItemScop
     else with(scope) { this@moving.animateItem(fadeInSpec = null, placementSpec = tween(Motion.ENTER, easing = Motion.expo), fadeOutSpec = null) }
 
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment). */
-val LISTEN_SHELVES = listOf("fromYours", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "because", "newToYou",
+val LISTEN_SHELVES = listOf("fromYours", "videos", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "because", "newToYou",
     "onRepeat", "fresh", "inkRadio", "indie", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours",
     "stations", "radio")
 
@@ -317,6 +317,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val uUploads = one<Song>("uploads"); val uFresh = one<TubeAlbum>("fresh"); val uTubeRecords = one<TubeAlbum>("tubeRecords")
     val uRecords = one<TubeAlbum>("records"); val uNewest = one<Album>("newest"); val uYours = one<Album>("yours")
     val sections = LinkedHashMap<String, @Composable () -> Unit>()
+    // their new music videos (MusicVideos, the full build's), once some are found
+    val videos by MusicVideos.clips.collectAsState()
+    LaunchedEffect(Unit) { MusicVideos.start(ctx) }
+    if (videos.isNotEmpty()) sections["videos"] = { NewVideosShelf(videos, pages) }
     // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: it's INK's cover now)
     if (uFromYours.isNotEmpty()) sections["fromYours"] = {
         Heading("new from your artists")

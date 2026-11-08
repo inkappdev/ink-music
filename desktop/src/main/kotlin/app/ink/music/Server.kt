@@ -253,6 +253,42 @@ object Server {
         (0 until entries.length()).mapNotNull { entries.optJSONObject(it) }.map { o -> Library.song("n" + o.optString("id")) ?: song(a, o, emptyMap()) }
     }
 
+    /**
+     * The id a song goes into a playlist by: the server's own; a song from elsewhere (your folder's, YouTube's) found
+     * there by its title and artist; null when the server hasn't it (blocking).
+     */
+    fun idOf(s: Song): String? {
+        if (s.server) return s.id.removePrefix("n")
+        val a = _account.value ?: return null
+        return runCatching {
+            val found = call(a, "search3", "query" to s.title, "songCount" to 10, "artistCount" to 0, "albumCount" to 0)
+                ?.optJSONObject("searchResult3")?.optJSONArray("song") ?: return null
+            val who = s.artist.lowercase().substringBefore(",").trim()
+            (0 until found.length()).mapNotNull { found.optJSONObject(it) }
+                .firstOrNull { it.optString("title").equals(s.title, true) && it.optString("artist").lowercase().contains(who) }
+                ?.optString("id")?.ifEmpty { null }
+        }.getOrNull()
+    }
+
+    /** A new playlist with `songs` in it, in order; false when the server said no. */
+    suspend fun makePlaylist(name: String, songs: List<Song>): Boolean = change { a ->
+        val params = listOf<Pair<String, Any>>("name" to name) + songs.mapNotNull(::idOf).map { id -> "songId" to id }
+        call(a, "createPlaylist", *params.toTypedArray())
+    }
+
+    /** `song` at the end of a playlist; false when the server hasn't the song, or said no. */
+    suspend fun addTo(playlist: String, song: Song): Boolean = change { a ->
+        call(a, "updatePlaylist", "playlistId" to playlist, "songIdToAdd" to (idOf(song) ?: return@change null))
+    }
+
+    /** A change to the server's playlists: made, then the list read again (its counts); true if the server said ok. */
+    private suspend fun change(ask: (Account) -> JSONObject?): Boolean = withContext(Dispatchers.IO) {
+        val a = _account.value ?: return@withContext false
+        val ok = runCatching { ask(a)?.optString("status") == "ok" }.getOrDefault(false)
+        if (ok) readPlaylists()
+        ok
+    }
+
     /** Tells the server a song was heard (`done`: played enough to count, else "playing now"). A miss is let go. */
     fun scrobble(songId: String, done: Boolean) {
         val a = _account.value ?: return

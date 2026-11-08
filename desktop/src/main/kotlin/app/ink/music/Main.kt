@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -196,6 +197,10 @@ sealed interface Page {
     data object PlayOn : Page
     data class Tube(val album: TubeAlbum) : Page
     data class List(val id: String, val name: String) : Page
+    /** A music video, watched. */
+    data class Watch(val clip: MusicVideos.Clip) : Page
+    /** A song into one of your playlists. */
+    data class AddTo(val song: Song) : Page
     /** A podcast: by its feed (the show as found, shown at once till its feed's read). One page a feed. */
     class Show(val feed: String, val first: Podcasts.Show? = null) : Page {
         override fun equals(other: Any?) = other is Show && other.feed == feed
@@ -333,7 +338,7 @@ private fun App() {
                     if (done) return@onKeyEvent true
                 }
                 when {
-                    k.key == Key.Spacebar -> { Player.toggle(); true }
+                    k.key == Key.Spacebar -> { Watching.toggle?.invoke() ?: Player.toggle(); true }
                     k.key == Key.DirectionRight -> { Player.seek(Player.position.value + 10_000); true }
                     k.key == Key.DirectionLeft -> { Player.seek((Player.position.value - 10_000).coerceAtLeast(0)); true }
                     k.key == Key.DirectionUp -> { Player.volume(Player.volume.value + 5); true }
@@ -370,6 +375,7 @@ private fun App() {
                         null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
                         is Page.Record -> RecordPage(page.id, { pages += it }) { Nav.close() }
                         is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { Nav.close() }
+                        is Page.Watch -> WatchPage(page.clip, { pages += it }) { Nav.close() }
                         Page.Find -> Column(Modifier.fillMaxSize()) { Close { Nav.close() }; FindTab { pages += it } }
                         Page.Playing -> {}
                         Page.Settings -> SettingsPage { Nav.close() }
@@ -381,6 +387,8 @@ private fun App() {
                         is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { Nav.close() }
                         is Page.List -> ListPage(page.id, page.name, { pages += it }) { Nav.close() }
                         is Page.Show -> ShowPage(page.feed, page.first, { pages += it }) { Nav.close() }
+                        // done, back where it was added from; closed, only itself (not the trail under it)
+                        is Page.AddTo -> AddToPage(page.song, { Nav.back() }) { Nav.back() }
                     }
                 }
             }
@@ -640,6 +648,8 @@ fun SongRow(
             if (open != null && s.episode) Pods.page(s)?.let { p -> Word("show", o, touch = 6.dp) { options = false; open(p) } }
             if (open != null && s.album.isNotEmpty() && !s.episode) Word("record", o, touch = 6.dp) { options = false; open(Page.Record(s.albumId)) }
             if (open != null && !s.episode) Word("artist", o, touch = 6.dp) { options = false; open(Page.Artist(s.albumArtist)) }
+            // into one of your playlists (the server's, YouTube Music's)
+            if (canAddToList(s)) Word("add to a playlist", o, touch = 6.dp) { options = false; (open ?: Nav::open)(Page.AddTo(s)) }
             // kept on the computer, to play with no signal (your server's, YouTube's)
             if (Offline.keepable(s)) {
                 val kept by Offline.kept.collectAsState()
@@ -702,9 +712,19 @@ fun said(n: Player.Now): Pair<String, String> {
     return if (s.station && a != null) a.title to (a.artist ?: s.title) else s.title to s.artist
 }
 
-/** Close: the down arrow, as the phone's, top left (clear of the traffic lights). */
+/**
+ * Close: the down arrow, as the phone's, top left (clear of the traffic lights): the whole trail. With a page under this
+ * one (an artist, then one their fans also like), back beside it, a page at a time (2026-11-07: only the arrow, and it
+ * went all the way out; esc and ⌘[ did, unseen).
+ */
 @Composable
-fun Close(onClose: () -> Unit) = CloseArrow(Modifier.padding(start = SIDE - 8.dp, top = TOP), onClick = onClose)
+fun Close(onClose: () -> Unit) {
+    val under = Nav.pages.count { it != Page.Playing } > 1
+    Row(Modifier.padding(start = SIDE - 8.dp, top = TOP).height(32.dp), verticalAlignment = Alignment.CenterVertically) {
+        CloseArrow(onClick = onClose)
+        if (under) Pixel(BACK_ARROW, "back", Ink.mid, Modifier.wrapContentHeight(unbounded = true)) { Nav.back() }
+    }
+}
 
 @Composable
 private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {

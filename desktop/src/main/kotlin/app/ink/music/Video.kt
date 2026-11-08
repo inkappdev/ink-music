@@ -48,12 +48,21 @@ import kotlin.math.roundToInt
  * frame as over any picture. The frames are `wide` by `high`, the clip scaled into them (`fill`: scaled to fill them,
  the overflow cut off evenly, as a canvas fills the window).
  */
-class Video(url: String, private val wide: Int, private val high: Int = wide, fill: Boolean = false) {
+class Video(url: String, private val wide: Int, private val high: Int = wide, fill: Boolean = false, sound: Sound? = null) {
+    /** A video heard as well as seen (a music video): its sound apart when YouTube keeps it so, how loud, and where to. */
+    class Sound(val audio: String?, val volume: Int, val device: String)
+
     private val mpv = Mpv(mapOf(
-        "vo" to "libmpv", "aid" to "no", "mute" to "yes", "loop-file" to "inf", "hwdec" to "no",
+        "vo" to "libmpv", "hwdec" to "no",
         "terminal" to "no", "config" to "no", "load-scripts" to "no", "ytdl" to "no", "osc" to "no",
         "input-default-bindings" to "no", "keep-open" to "yes",
-    ) + (if (fill) mapOf("panscan" to "1.0") else emptyMap()))
+    ) + (if (sound == null) mapOf("aid" to "no", "mute" to "yes", "loop-file" to "inf")
+        else mapOf("volume" to sound.volume.toString(), "volume-max" to "100", "audio-device" to sound.device, "cache" to "yes",
+            "audio-client-name" to "ink music", "media-controls" to "no", "input-media-keys" to "no") +
+            (sound.audio?.let { mapOf("audio-file" to it) } ?: emptyMap()) +
+            // -Dink.ao=null: silent, as the player's
+            listOfNotNull(System.getProperty("ink.ao")?.let { "ao" to it }))
+        + (if (fill) mapOf("panscan" to "1.0") else emptyMap()))
     private val ctx: Pointer
     // three frames in turn: one drawn into while the window shows another; mpv's "rgb0" leaves the fourth byte 0, read
     // as see-through by any effect over it (all of them came out black): Skia's 888X, that byte not read
@@ -105,6 +114,14 @@ class Video(url: String, private val wide: Int, private val high: Int = wide, fi
     fun speed(v: Float) {
         if (v < .05f) mpv.set("pause", "yes") else { mpv.set("speed", "%.3f".format(java.util.Locale.ROOT, v)); mpv.set("pause", "no") }
     }
+
+    /** Where it is and how long it is, in ms (0 till known); whether it's played to its end. */
+    fun at(): Long = ((mpv.get("time-pos")?.toDoubleOrNull() ?: 0.0) * 1000).toLong()
+    fun length(): Long = ((mpv.get("duration")?.toDoubleOrNull() ?: 0.0) * 1000).toLong()
+    fun ended(): Boolean = mpv.get("eof-reached") == "yes"
+    fun seek(ms: Long) { mpv.commandAsync("seek", "%.3f".format(java.util.Locale.ROOT, ms / 1000.0), "absolute") }
+    fun pause(on: Boolean) { mpv.set("pause", if (on) "yes" else "no") }
+    fun volume(v: Int) { mpv.set("volume", v.toString()) }
 
     fun close() {
         alive = false

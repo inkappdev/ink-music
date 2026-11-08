@@ -255,6 +255,8 @@ sealed interface Page {
     data class Playlist(val id: String, val name: String) : Page
     data class Tube(val album: TubeAlbum) : Page
     data class AddTo(val song: Song) : Page
+    /** A music video, watched ([WatchPage]). */
+    data class Watch(val clip: MusicVideos.Clip) : Page
     /** A YouTube song's version chosen by hand ([VersionPage]). */
     data class Version(val song: Song) : Page
     data class Path(val song: Song) : Page
@@ -394,7 +396,11 @@ private fun App() {
                     label = "pages",
                 ) { p ->
                     val opened = remember(p) { if (pages.forward) android.os.SystemClock.uptimeMillis() else 0L }
-                    CompositionLocalProvider(LocalOpened provides opened, LocalShared provides shared, LocalPageScope provides this) {
+                    // back, one page, where close would take more: a page of browsing over another (2026-11-07: an
+                    // artist's fans also like, then another, and only the down arrow, all the way out)
+                    val at = pages.stack.indexOf(p)
+                    val back: (() -> Unit)? = if (p != null && p.browsing() && at > 0 && pages.stack[at - 1].browsing()) ({ pages.back() }) else null
+                    CompositionLocalProvider(LocalOpened provides opened, LocalShared provides shared, LocalPageScope provides this, LocalBack provides back) {
                     when (p) {
                         null -> Box(Modifier.fillMaxSize())
                         is Page.Record -> RecordPage(p.id, pages, p.tube)
@@ -404,6 +410,7 @@ private fun App() {
                         is Page.Playlist -> PlaylistPage(p.id, p.name, pages)
                         is Page.Tube -> TubeAlbumPage(p.album, pages)
                         is Page.AddTo -> AddToPage(p.song, pages)
+                        is Page.Watch -> WatchPage(p.clip, pages)
                         is Page.Version -> VersionPage(p.song, pages)
                         is Page.Path -> PathPage(p.song, pages)
                         Page.Loved -> LovedPage(pages)
@@ -2309,6 +2316,8 @@ fun FrostedPage(onClose: (() -> Unit)? = null, content: @Composable (HazeState, 
                     .padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // back beside it (a TV's remote has its own)
+                LocalBack.current?.takeIf { !Device.tv }?.let { b -> Pixel(BACK_ARROW, "back", Ink.mid, Modifier.offset(x = (-8).dp), onClick = b) }
                 Spacer(Modifier.weight(1f))
                 CloseArrow(onClick = onClose)
             }
@@ -2319,6 +2328,8 @@ fun FrostedPage(onClose: (() -> Unit)? = null, content: @Composable (HazeState, 
 
 /** When the page on top was opened (uptime ms), going forward; 0 going back, or for the library under them. */
 val LocalOpened = androidx.compose.runtime.compositionLocalOf { 0L }
+/** One page back, where close would close more than this one (a trail of browsing); null where close is back. */
+val LocalBack = androidx.compose.runtime.compositionLocalOf<(() -> Unit)?> { null }
 /** The shared-element scope round the pages, and the page's own, for a word carried into the next page ([carried]). */
 val LocalShared = androidx.compose.runtime.compositionLocalOf<androidx.compose.animation.SharedTransitionScope?> { null }
 val LocalPageScope = androidx.compose.runtime.compositionLocalOf<androidx.compose.animation.AnimatedVisibilityScope?> { null }

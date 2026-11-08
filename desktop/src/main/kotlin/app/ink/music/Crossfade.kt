@@ -69,7 +69,24 @@ object Crossfade {
     private data class Plan(
         val from: String, val into: String, val cut: Long, val start: Long, val fade: Long,
         val speed: Double = 1.0, val a0: Double = 0.0, val b0: Double = 0.0,
+        val period: Double = 0.0, val bpmFrom: Double = 0.0,
     ) { val matched get() = speed != 1.0 || a0 != 0.0 }
+
+    /**
+     * A handover under way, for the line (the phone's MixBar): the song leaving, when it began (wall clock), how long;
+     * matched, the two tempos and the new song's beat (its first in the handover's time, its period).
+     */
+    data class Mixing(
+        val from: Song, val into: String, val start: Long, val length: Long,
+        val bpmFrom: Double = 0.0, val bpmTo: Double = 0.0, val beatFirst: Double = 0.0, val beatPeriod: Double = 0.0,
+    ) {
+        /** How far through, 0 to 1; null outside it. */
+        fun through(now: Long = System.currentTimeMillis()): Float? =
+            if (length <= 0 || now < start || now >= start + length) null else (now - start).toFloat() / length
+    }
+    val mixing = MutableStateFlow<Mixing?>(null)
+    /** The playing song's mix point, once planned: its id, where the next comes in (ms). Past it, heard under the next. */
+    val point = MutableStateFlow<Pair<String, Long>?>(null)
 
     private val ends = ConcurrentHashMap<String, Ends>()
     private val asked = ConcurrentHashMap.newKeySet<String>()
@@ -115,7 +132,8 @@ object Crossfade {
         val p = plan?.takeIf { it.from == s.id && it.into == n.id } ?: plan(s, n, es, en).also { drop(); plan = it } ?: return
         // where the old deck is, as heard, to the millisecond (the player's own clock moves in fifths of a second)
         val pos = a.get("time-pos")?.toDoubleOrNull()?.times(1000)?.toLong() ?: Player.position()
-        if (pos > p.cut + 1_500) return   // past it (a seek): ends as it would
+        if (pos > p.cut + 1_500) { point.value = null; return }   // past it (a seek): ends as it would
+        if (point.value != (s.id to p.cut)) point.value = s.id to p.cut
         val spare = Player.spare() ?: return
         // readied twelve seconds ahead (a YouTube song's stream found meanwhile)
         if (pos >= p.cut - 12_000 && readyFor != n.id) {
@@ -126,7 +144,7 @@ object Crossfade {
             Player.chainOn(spare)
             spare.command("loadfile", Player.where(n))
         }
-        if (readyFor == n.id && loaded && pos >= p.cut - LEAD && !Player.isPaused()) go(a, spare, p, nextAt)
+        if (readyFor == n.id && loaded && pos >= p.cut - LEAD && !Player.isPaused()) go(a, spare, p, nextAt, s)
     }
 
     /** This song into that one: may it? */
@@ -164,13 +182,17 @@ object Crossfade {
         val fade = kotlin.math.min(16 * b.period, (e.lastSound - cut) / speed).toLong().coerceIn(4_000, 14_000)
         if (cut < e.duration - 25_000 + 500 || cut < a.first) return null
         Log.d("crossfade: ${s.title} into ${n.title}: beats matched, %.1f into %.1f bpm, at %.3fx".format(a.bpm, b.bpm, speed))
-        return Plan(s.id, n.id, cut, 0, fade, speed, a0, b0)
+        return Plan(s.id, n.id, cut, 0, fade, speed, a0, b0, b.period, a.bpm)
     }
 
     /** The handover: the new deck sounding, rising; the old one on to its end, falling away; the player the new one's. */
-    private fun go(a: Mpv, b: Mpv, p: Plan, nextAt: Int) {
+    private fun go(a: Mpv, b: Mpv, p: Plan, nextAt: Int, from: Song) {
         if (Player.queue.value.getOrNull(nextAt)?.id != p.into) return drop()
         fadingOut = a; fadingIn = b
+        mixing.value = Mixing(from, p.into, System.currentTimeMillis(), p.fade,
+            if (p.matched) p.bpmFrom else 0.0, if (p.matched && p.period > 0) 60_000 / p.period else 0.0,
+            if (p.matched) p.b0 - p.start else 0.0, if (p.matched) p.period else 0.0)
+        point.value = null
         b.set("pause", "no")
         // the old deck plays its song out and stops there: nothing after it, no repeat
         a.command("playlist-clear"); a.set("loop-file", "no"); a.set("loop-playlist", "no")
@@ -209,6 +231,7 @@ object Crossfade {
     @Synchronized private fun finish(a: Mpv, b: Mpv) {
         if (fadingOut !== a) return
         fadingOut = null; fadingIn = null
+        mixing.value = null
         a.command("stop"); a.set("pause", "yes"); a.set("speed", "1")
         Player.chainOn(a)
         b.command("af-command", "ink", "f", "10", "highpass@bass")
@@ -225,6 +248,7 @@ object Crossfade {
     private fun drop() {
         val r = readied
         readied = null; readyFor = null; loaded = false; plan = null
+        if (point.value != null) point.value = null
         if (r != null && r !== Player.active()) runCatching { r.command("stop") }
     }
 

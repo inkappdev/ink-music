@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -72,6 +73,27 @@ object TubeAccount {
             val ok = runCatching { t.like(s.id.removePrefix("y"), on) }.getOrDefault(false)
             if (!ok) { Log.d("youtube: like ${s.id} $on refused"); liked.value = before }
         }
+    }
+
+    /** A song's id there: its own, or one from elsewhere found there by its words (blocking). */
+    private fun videoOf(s: Song): String? = (if (s.tube) s.id else YouTube.find(s.title, s.artist)?.id)?.removePrefix("y")
+
+    /** The playlist's id in a list's link (…/playlist?list=PL…). */
+    fun listId(a: TubeAlbum): String = a.url.substringAfter("list=").substringBefore("&")
+
+    /** A song added to one of your playlists there; false if it isn't there or YouTube said no. */
+    suspend fun addTo(list: TubeAlbum, s: Song): Boolean = withContext(Dispatchers.IO) {
+        val t = tube() ?: return@withContext false
+        val vid = videoOf(s) ?: return@withContext false
+        runCatching { t.addTo(listId(list), vid) }.getOrDefault(false)
+    }
+
+    /** A new playlist of yours there (private), with this song in it. */
+    suspend fun makePlaylist(name: String, s: Song): Boolean = withContext(Dispatchers.IO) {
+        val t = tube() ?: return@withContext false
+        val id = runCatching { t.makePlaylist(name, listOfNotNull(videoOf(s))) }.getOrNull() ?: return@withContext false
+        playlists.value = listOf(TubeAlbum("${InnerTube.BASE}/playlist?list=$id", name, "", s.art?.takeIf { s.tube })) + playlists.value
+        true
     }
 
     /** A YouTube song played here, told to your history there. */

@@ -112,6 +112,8 @@ fun ListenPage(open: (Page) -> Unit) {
         firstHeard?.takeIf { Eggs.anniversary(it.at) > 0 }?.let { f -> item(key = "anniversary") { Anniversary(f) } }
         // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: that's INK's)
         if (fromYours.isNotEmpty()) item { NewFromYours(fromYours, open) }
+        // their new music videos (MusicVideos.kt), shown once some are found
+        item(key = "videos") { NewVideos(open) }
         if (first.isNotEmpty()) item {
             Column {
             val play = hourSongs.ifEmpty { first.flatMap { it.songs } }
