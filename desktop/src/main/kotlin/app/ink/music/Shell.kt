@@ -163,6 +163,8 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
             // the lyrics are the player's (2026-10-28)
             for (w in listOf("up next", "play on")) Word(w, pixel(13.sp, if (w == shows) Ink.ink else Ink.dim), touch = 6.dp) { shows = w }
+            // stop: the music over, the queue let go, this column gone (the phone's)
+            Word("stop", pixel(13.sp, Ink.dim), touch = 6.dp) { Player.stop() }
             Spacer(Modifier.weight(1f))
             // the player, the whole screen
             // the mini player, over every window; the player, the whole screen

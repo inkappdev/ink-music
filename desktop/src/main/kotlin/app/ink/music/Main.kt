@@ -852,6 +852,8 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
             Times(n, Modifier.widthIn(min = 96.dp))
             Volume(line = 80.dp)
             Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
+            // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
+            Word("stop", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp) { Player.stop() }
             // where it plays: lit while on a speaker
             val on by Casting.on.collectAsState()
             Word("play on", pixel(14.sp, if (on != null) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onPlayOn)

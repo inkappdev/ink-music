@@ -707,6 +707,8 @@ object Player {
         mpv?.command("stop")
         _queue.value = emptyList()
         heard.value = null
+        // remembered: the next start opens with nothing playing, as the phone does
+        keep()
     }
 
     // ---- the two decks, for Crossfade ----
