@@ -1,0 +1,9 @@
+- Music videos play with their sound on the Mac and Linux, and go full screen
+- Stop on the computer's mini player, like the phone's
+- Unplug your DAC and the music carries on through the speakers
+- Covers load ahead on the computer, so albums open at once
+- Listen and INK sized better on big screens
+- Fixed a crash with lyrics showing during a mix
+- Linux lists each sound output once
+- The covers were shy, now they arrive early
+- Do something nice for someone today. Lend them your headphones
