@@ -150,36 +150,3 @@ fun RecordTile(a: Album, modifier: Modifier) {
         BasicText(a.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
-
-/** A record: its cover across, its name, play, its songs; back closes it. */
-@Composable
-fun Record(a: Album, onClose: () -> Unit) {
-    val songs by produceState<List<Song>?>(null, a.id) {
-        value = runCatching { if (a.youtube) Here.off { Tube.songs(a) } else Server.songs(a.id) }.getOrDefault(emptyList())
-    }
-    val now by Sound.now.collectAsState()
-    LazyColumn(Modifier.fillMaxSize().background(Ink.black).windowInsetsPadding(WindowInsets.safeDrawing),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = if (now != null) 110.dp else 30.dp)) {
-        item {
-            Word("back", pixel(14.sp, Ink.mid)) { onClose() }
-            Cover(a.cover, 900, a.title, Modifier.fillMaxWidth().aspectRatio(1f).padding(top = 8.dp))
-            BasicText(a.title.uppercase(), style = headline(36.sp), modifier = Modifier.padding(top = 16.dp))
-            BasicText((a.artist + if (a.year > 0) "   ${a.year}" else "").lowercase(), style = pixel(14.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
-            songs?.takeIf { it.isNotEmpty() }?.let { all ->
-                Row(Modifier.padding(top = 12.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                    Word("play", pixel(16.sp)) { Sound.play(all, 0) }
-                    Word("shuffle", pixel(16.sp, Ink.mid)) { Sound.play(all.shuffled(), 0) }
-                }
-            }
-        }
-        itemsIndexed(songs.orEmpty()) { i, s ->
-            val on = now?.song?.id == s.id
-            Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null) { Sound.play(songs!!, i) }.padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                BasicText("${s.track}", style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(32.dp))
-                BasicText(s.title.uppercase(), style = headline(16.sp, if (on) Ink.ink else Ink.ink.copy(alpha = .9f)), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                BasicText(clock(s.duration), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 10.dp))
-            }
-        }
-    }
-}

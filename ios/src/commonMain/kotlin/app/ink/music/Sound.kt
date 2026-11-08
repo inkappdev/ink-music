@@ -27,6 +27,10 @@ expect object Sound {
     fun repeat()
     /** Stopped: nothing playing, the queue let go. */
     fun stop()
+    /** A song put after the one playing. */
+    fun playNext(s: Song)
+    /** A song put at the queue's end. */
+    fun add(s: Song)
     /** Silent from now on (pictures of the screens taken while it plays). */
     fun quiet()
 }

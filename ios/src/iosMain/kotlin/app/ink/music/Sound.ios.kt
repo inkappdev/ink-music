@@ -88,6 +88,19 @@ actual object Sound {
         tell()
     }
 
+    actual fun playNext(s: Song) {
+        if (queue.isEmpty()) { play(listOf(s), 0); return }
+        queue = queue.take(index + 1) + s + queue.drop(index + 1)
+        ordered = ordered?.let { it + s }
+        tell()
+    }
+
+    actual fun add(s: Song) {
+        if (queue.isEmpty()) { play(listOf(s), 0); return }
+        queue = queue + s; ordered = ordered?.let { it + s }
+        tell()
+    }
+
     actual fun repeat() { repeating = (repeating + 1) % 3; tell() }
 
     actual fun stop() {
