@@ -20,3 +20,5 @@ expect fun bundleText(name: String, ext: String): String?
 expect fun browse(type: String, found: (String, String) -> Unit): () -> Unit
 /** This iPhone's name, as it calls itself ("Bronson's iPhone"). */
 expect fun deviceName(): String
+/** A web page opened in the browser (ink, made by). */
+expect fun openLink(url: String)

@@ -1,42 +1,61 @@
 package app.ink.music
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
-/** What's pushed over the places: a record, a show. */
+/** What's pushed over the places: a record, a show, find, settings. */
 sealed class Page {
     data class Record(val album: Album) : Page()
     data class Show(val show: Podcasts.Show) : Page()
+    data object Find : Page()
+    data object Settings : Page()
 }
 
 /** The pages pushed over the places (back closes the top one), the pairing page, the place shown. */
@@ -49,36 +68,75 @@ object Pages {
     fun close() { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
 }
 
-val PLACES = listOf("listen", "records", "find", "ink", "podcasts", "radio", "settings")
+/** The places, as the phone's (its albums are your server's records); find and settings open over them, as there. */
+val PLACES = listOf("listen", "ink", "albums", "radio", "podcasts")
 
-/** The places under one big word: pressed, the others drop down under it (as the phone's). The player at the foot. */
+/** How far down a place's own words start: under the bar with the place's word. */
+private val HEAD = 64.dp
+
+/**
+ * The places, as the phone's: one swiped to the next; the place you're on one big word at the top with its chevron (a
+ * tap drops every place down as big words, ink's menu), find at the right. The mini player at the foot, the player over all.
+ */
 @Composable
 fun Places() {
     val now by Sound.now.collectAsState()
     var menu by remember { mutableStateOf(false) }
-    val top = 86.dp
-    val foot = if (now != null) 110.dp else 30.dp
+    val foot = if (now != null) 120.dp else 30.dp
+    val pager = rememberPagerState(PLACES.indexOf(Pages.place).coerceAtLeast(0)) { PLACES.size }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(pager) { snapshotFlow { pager.currentPage }.collect { Pages.place = PLACES[it]; menu = false } }
+    LaunchedEffect(Pages.place) {
+        val i = PLACES.indexOf(Pages.place)
+        if (i >= 0 && i != pager.currentPage) pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo))
+    }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            when (Pages.place) {
-                "listen" -> ListenPlace(top, foot)
-                "records" -> RecordsPlace(top, foot)
-                "find" -> FindPlace(top, foot)
-                "ink" -> InkPlace(top, foot)
-                "podcasts" -> PodcastsPlace(top, foot)
-                "radio" -> RadioPlace(top, foot)
-                "settings" -> SettingsPlace(top, foot)
+            HorizontalPager(pager, Modifier.fillMaxSize(), key = { PLACES[it] },
+                flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo))) { i ->
+                when (PLACES[i]) {
+                    "listen" -> ListenPlace(HEAD, foot)
+                    "albums" -> RecordsPlace(HEAD, foot)
+                    "ink" -> InkPlace(HEAD, foot)
+                    "podcasts" -> PodcastsPlace(HEAD, foot)
+                    "radio" -> RadioPlace(HEAD, foot)
+                }
             }
-            // the place's word, over a black bar
-            Column(Modifier.fillMaxWidth().background(Ink.black).padding(horizontal = 20.dp).padding(top = 10.dp)) {
-                Word(Pages.place.uppercase(), headline(48.sp)) { menu = !menu }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(if (menu) Ink.line else Ink.black))
+        }
+        // the bar on black: the place's word and its chevron, find
+        Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(WindowInsets.statusBars)) {
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu }),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    AnimatedContent(Pages.place, label = "place",
+                        transitionSpec = { fadeIn(tween(Motion.ENTER, easing = Motion.expo)) togetherWith fadeOut(tween(Motion.EXIT)) },
+                    ) { t -> BasicText(t.uppercase(), style = headline(26.sp)) }
+                    Spacer(Modifier.width(10.dp))
+                    // the menu's chevron: down while shut, up while open
+                    val turn by animateFloatAsState(if (menu) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "chevron")
+                    Sprite(CLOSE, Ink.mid, 2.dp, Modifier.graphicsLayer { rotationZ = turn })
+                }
+                Word("find", pixel(14.sp, Ink.mid), touch = 8.dp) { menu = false; Pages.open(Page.Find) }
             }
-            AnimatedVisibility(menu, enter = fadeIn(tween(220)) + slideInVertically(tween(260)) { -it / 6 },
-                exit = fadeOut(tween(140)) + slideOutVertically(tween(150)) { -it / 6 }, modifier = Modifier.padding(top = top - 14.dp)) {
-                Column(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) { menu = false }
-                    .padding(horizontal = 20.dp).padding(top = 8.dp)) {
-                    for (p in PLACES) if (p != Pages.place) Word(p.uppercase(), headline(40.sp, Ink.mid)) { Pages.place = p; menu = false }
+        }
+        // the places, dropped down under the word: big, the one you're on lit, each arriving in turn; a tap goes there,
+        // a tap anywhere else folds it away. Black, never a frosted panel
+        AnimatedVisibility(menu, modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars).padding(top = 52.dp),
+            enter = expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
+            Column(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) { menu = false }
+                .padding(start = 20.dp, end = 20.dp, top = 10.dp)) {
+                PLACES.forEachIndexed { i, p ->
+                    Word(p.uppercase(), headline(48.sp, if (p == Pages.place) Ink.ink else Ink.mid), Modifier.arrive(i, menu), touch = 4.dp) {
+                        menu = false
+                        scope.launch { pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+                Word("settings", pixel(14.sp, Ink.mid), Modifier.arrive(PLACES.size, menu), touch = 8.dp) { menu = false; Pages.open(Page.Settings) }
+                Row(Modifier.arrive(PLACES.size + 1, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText("made by ", style = pixel(12.sp, Ink.dim))
+                    Word("ink", pixel(12.sp, Ink.mid), touch = 8.dp) { openLink("https://inkhome.app") }
                 }
             }
         }
@@ -86,11 +144,38 @@ fun Places() {
             when (p) {
                 is Page.Record -> Record(p.album) { Pages.close() }
                 is Page.Show -> ShowPage(p.show, foot) { Pages.close() }
+                Page.Find -> Over("find") { FindPlace(HEAD, foot) }
+                Page.Settings -> Over("settings") { SettingsPlace(HEAD, foot) }
             }
         }
         if (Pages.pairing) Pairing { Pages.pairing = false }
-        now?.let { n -> Box(Modifier.align(Alignment.BottomCenter)) { MiniPlayer(n) { Pages.player = true } } }
-        if (Pages.player) now?.let { n -> Player(n) { Pages.player = false } }
+        // the mini player rises in; the player slides up over everything
+        var last by remember { mutableStateOf(now) }
+        if (now != null) last = now
+        AnimatedVisibility(now != null, Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 3 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 3 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
+            last?.let { n -> MiniPlayer(n) { Pages.player = true } }
+        }
+        AnimatedVisibility(Pages.player && now != null,
+            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it } + fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
+            last?.let { n -> Player(now ?: n) { Pages.player = false } }
+        }
+    }
+}
+
+/** A page over the places (find, settings): its word at the top as a place's, the close arrow at the right. */
+@Composable
+private fun Over(name: String, content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) { content() }
+        Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(WindowInsets.statusBars)) {
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText(name.uppercase(), style = headline(26.sp), modifier = Modifier.weight(1f))
+                Pixel(CLOSE, "close", Ink.mid) { Pages.close() }
+            }
+        }
     }
 }
 
@@ -103,7 +188,7 @@ fun Label(text: String, modifier: Modifier = Modifier) {
 /** A name and whose under it, as in a list. */
 @Composable
 fun Named(title: String, by: String, lit: Boolean = false, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick).padding(vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 8.dp)) {
         BasicText(title.uppercase(), style = headline(18.sp, if (lit) Ink.ink else Ink.ink.copy(alpha = .92f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (by.isNotEmpty()) BasicText(by.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
@@ -113,6 +198,6 @@ fun Named(title: String, by: String, lit: Boolean = false, onClick: () -> Unit) 
 @Composable
 fun Choose(options: List<String>, chosen: String, onPick: (String) -> Unit) {
     Row(Modifier.padding(top = 4.dp)) {
-        for (o in options) Word(o, pixel(14.sp, if (o == chosen) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp)) { onPick(o) }
+        for (o in options) Word(o, pixel(14.sp, if (o == chosen) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { onPick(o) }
     }
 }

@@ -130,4 +130,6 @@ object Server {
 
     /** Told the server it was heard (its play counts, its "recent"; a ListenBrainz link there too). */
     suspend fun scrobble(id: String) { runCatching { call("scrobble", "id" to id, "submission" to true) } }
+    /** A song starred (loved) on the server, or not. */
+    suspend fun star(id: String, on: Boolean) { runCatching { call(if (on) "star" else "unstar", "id" to id) } }
 }

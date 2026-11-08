@@ -4,6 +4,7 @@ package app.ink.music
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.asSkiaBitmap
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.usePinned
@@ -100,3 +101,30 @@ actual fun browse(type: String, found: (String, String) -> Unit): () -> Unit {
     browsers += b
     return { b.browser.stop(); b.resolving.forEach { it.stop() }; browsers -= b }
 }
+
+actual fun pixelsOf(img: ImageBitmap, n: Int): IntArray {
+    val src = org.jetbrains.skia.Image.makeFromBitmap(img.asSkiaBitmap())
+    val info = org.jetbrains.skia.ImageInfo(n, n, org.jetbrains.skia.ColorType.BGRA_8888, org.jetbrains.skia.ColorAlphaType.OPAQUE)
+    val s = org.jetbrains.skia.Surface.makeRaster(info)
+    val side = minOf(src.width, src.height).toFloat()
+    val from = org.jetbrains.skia.Rect.makeXYWH((src.width - side) / 2, (src.height - side) / 2, side, side)
+    s.canvas.drawImageRect(src, from, org.jetbrains.skia.Rect.makeWH(n.toFloat(), n.toFloat()),
+        org.jetbrains.skia.SamplingMode.LINEAR, org.jetbrains.skia.Paint(), true)
+    val b = org.jetbrains.skia.Bitmap().apply { allocPixels(info) }
+    s.readPixels(b, 0, 0)
+    val bytes = b.readPixels() ?: return IntArray(n * n)
+    // BGRA bytes, little-endian: an ARGB int each
+    return IntArray(n * n) { i ->
+        val o = i * 4
+        (bytes[o].toInt() and 255) or ((bytes[o + 1].toInt() and 255) shl 8) or ((bytes[o + 2].toInt() and 255) shl 16) or ((bytes[o + 3].toInt() and 255) shl 24)
+    }
+}
+
+actual fun imageOf(px: IntArray, n: Int): ImageBitmap {
+    val bytes = ByteArray(px.size * 4)
+    for (i in px.indices) { val p = px[i]; val o = i * 4; bytes[o] = p.toByte(); bytes[o + 1] = (p shr 8).toByte(); bytes[o + 2] = (p shr 16).toByte(); bytes[o + 3] = (p ushr 24).toByte() }
+    return org.jetbrains.skia.Image.makeRaster(org.jetbrains.skia.ImageInfo(n, n, org.jetbrains.skia.ColorType.BGRA_8888, org.jetbrains.skia.ColorAlphaType.OPAQUE), bytes, n * 4)
+        .toComposeImageBitmap()
+}
+
+actual fun openLink(url: String) { platform.Foundation.NSURL.URLWithString(url)?.let { platform.UIKit.UIApplication.sharedApplication.openURL(it, emptyMap<Any?, Any>(), null) } }

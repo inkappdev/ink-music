@@ -24,6 +24,7 @@ import platform.AVFoundation.play
 import platform.AVFoundation.rate
 import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.seekToTime
+import platform.AVFoundation.volume
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSNotificationCenter
@@ -68,7 +69,37 @@ actual object Sound {
     private var placeAt = 0L
 
     actual fun queue(): List<Song> = queue
+    private var shuffled = false
+    private var repeating = Now.REPEAT_OFF
+    private var ordered: List<Song>? = null
+
+    actual fun shuffle() {
+        val cur = queue.getOrNull(index)
+        if (!shuffled) {
+            ordered = queue
+            queue = queue.take(index + 1) + queue.drop(index + 1).shuffled()
+        } else {
+            val back = ordered ?: queue
+            queue = back
+            index = cur?.let { c -> back.indexOfFirst { it.id == c.id } }?.takeIf { it >= 0 } ?: index
+            ordered = null
+        }
+        shuffled = !shuffled
+        tell()
+    }
+
+    actual fun repeat() { repeating = (repeating + 1) % 3; tell() }
+
+    actual fun stop() {
+        player.pause()
+        done()
+        player.replaceCurrentItemWithPlayerItem(null)
+        queue = emptyList(); index = 0; ordered = null
+        _now.value = null
+        MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
+    }
     actual fun pause() { player.pause(); tell() }
+    actual fun quiet() { player.volume = 0f }
 
     private fun start() {
         if (started) return
@@ -95,6 +126,7 @@ actual object Sound {
         if (songs.isEmpty()) return
         start()
         queue = songs; this.index = index.coerceIn(0, songs.size - 1)
+        shuffled = false; ordered = null
         load()
     }
 
@@ -106,7 +138,7 @@ actual object Sound {
         if (s.kind == "youtube") {
             // YouTube's link found as it starts (off the main thread: the player, its challenges, its tokens)
             val at = index
-            _now.value = Now(s, false, 0, s.duration, index, queue.size)
+            _now.value = Now(s, false, 0, s.duration, index, queue.size, shuffled, repeating)
             scope.launch {
                 val link = Here.off { Tube.stream(s.id) }
                 if (index != at || queue.getOrNull(index)?.id != s.id) return@launch
@@ -124,7 +156,12 @@ actual object Sound {
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         endObserver = NSNotificationCenter.defaultCenter.addObserverForName(AVPlayerItemDidPlayToEndTimeNotification, item, NSOperationQueue.mainQueue) { _ ->
             if (s.kind == "episode") Podcasts.setPlace(s.id, -1)
-            if (index + 1 < queue.size) { index++; load() } else { player.pause(); done(); tell() }
+            when {
+                repeating == Now.REPEAT_ONE -> { done(); heardOf = s; heardAt = nowMs(); heardMs = 0; seek(0); player.play() }
+                index + 1 < queue.size -> { index++; load() }
+                repeating == Now.REPEAT_ALL && queue.isNotEmpty() -> { index = 0; load() }
+                else -> { player.pause(); done(); tell() }
+            }
         }
         player.replaceCurrentItemWithPlayerItem(item)
         // an episode carries on where it was left
@@ -142,7 +179,7 @@ actual object Sound {
     }
 
     actual fun toggle() { if (player.rate > 0f) player.pause() else { player.play(); resumed = nowMs() }; tell() }
-    actual fun next() { if (index + 1 < queue.size) { index++; load() } }
+    actual fun next() { if (index + 1 < queue.size) { index++; load() } else if (repeating == Now.REPEAT_ALL && queue.isNotEmpty()) { index = 0; load() } }
     actual fun previous() {
         if (position() > 3_000 || index == 0) seek(0) else { index--; load() }
     }
@@ -181,7 +218,7 @@ actual object Sound {
         val playing = player.rate > 0f
         val pos = position()
         val len = length(s)
-        _now.value = Now(s, playing, pos, len, index, queue.size)
+        _now.value = Now(s, playing, pos, len, index, queue.size, shuffled, repeating)
         val info = mutableMapOf<Any?, Any?>(
             MPMediaItemPropertyTitle to s.title, MPMediaItemPropertyArtist to s.artist, MPMediaItemPropertyAlbumTitle to s.album,
             MPMediaItemPropertyPlaybackDuration to len / 1000.0, MPNowPlayingInfoPropertyElapsedPlaybackTime to pos / 1000.0,

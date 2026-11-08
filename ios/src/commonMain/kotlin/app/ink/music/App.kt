@@ -70,12 +70,6 @@ fun App() {
     }
 }
 
-/** A word to press: no button, no frame, as ink does. */
-@Composable
-fun Word(text: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    BasicText(text, style = style, modifier = modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick).padding(vertical = 6.dp))
-}
-
 @Composable
 fun Field(name: String, value: String, onValue: (String) -> Unit, secret: Boolean = false, type: KeyboardType = KeyboardType.Text) {
     Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
@@ -186,64 +180,6 @@ fun Record(a: Album, onClose: () -> Unit) {
                 BasicText(s.title.uppercase(), style = headline(16.sp, if (on) Ink.ink else Ink.ink.copy(alpha = .9f)), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 BasicText(clock(s.duration), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 10.dp))
             }
-        }
-    }
-}
-
-/** At the foot: the line with the song, its cover, its name, play or pause; a tap opens the player. */
-@Composable
-fun MiniPlayer(n: Now, onOpen: () -> Unit) {
-    val frac = if (n.duration > 0) (n.position.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
-    Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 20.dp).padding(bottom = 6.dp)) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) { Box(Modifier.fillMaxWidth(frac).height(1.dp).background(Ink.ink)) }
-        Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = onOpen).padding(top = 10.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Cover(n.song.cover, 200, n.song.album, Modifier.size(52.dp))
-            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                BasicText(n.song.title.uppercase(), style = headline(16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                BasicText(n.song.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Word(if (n.playing) "pause" else "play", pixel(14.sp)) { Sound.toggle() }
-        }
-    }
-}
-
-/** The player: the times over the line on the cover's top edge (a tap or a drag along it goes there), the song, its words. */
-@Composable
-fun Player(n: Now, onClose: () -> Unit) {
-    var held by remember { mutableStateOf<Long?>(null) }
-    val shown = held ?: n.position
-    val frac = if (n.duration > 0) (shown.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
-    LaunchedEffect(n.song.id) { held = null }
-    Column(Modifier.fillMaxSize().background(Ink.black).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 20.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-            BasicText("${n.index + 1} of ${n.count}", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f).padding(top = 6.dp))
-            Word("close", pixel(14.sp, Ink.mid)) { onClose() }
-        }
-        Spacer(Modifier.height(30.dp))
-        Row(Modifier.fillMaxWidth()) {
-            BasicText(clock(shown), style = pixel(12.sp, if (held != null) Ink.ink else Ink.mid), modifier = Modifier.weight(1f))
-            BasicText("-" + clock((n.duration - shown).coerceAtLeast(0)), style = pixel(12.sp, if (held != null) Ink.ink else Ink.mid))
-        }
-        Box(Modifier.fillMaxWidth().height(24.dp)
-            .pointerInput(n.song.id, n.duration) { detectTapGestures { o -> if (n.duration > 0) Sound.seek((o.x / size.width * n.duration).toLong()) } }
-            .pointerInput(n.song.id, n.duration) {
-                detectHorizontalDragGestures(
-                    onDragStart = { o -> held = (o.x / size.width).coerceIn(0f, 1f).times(n.duration).toLong() },
-                    onDragEnd = { held?.let(Sound::seek); held = null },
-                    onDragCancel = { held = null },
-                ) { c, _ -> c.consume(); held = (c.position.x / size.width).coerceIn(0f, 1f).times(n.duration).toLong() }
-            }, contentAlignment = Alignment.BottomStart) {
-            Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line)) { Box(Modifier.fillMaxWidth(frac).height(2.dp).background(Ink.ink)) }
-        }
-        Cover(n.song.cover, 1200, n.song.album, Modifier.fillMaxWidth().aspectRatio(1f))
-        BasicText(n.song.title.uppercase(), style = headline(34.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 18.dp))
-        BasicText("${n.song.artist}   ${n.song.album}".lowercase(), style = pixel(14.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-        Spacer(Modifier.weight(1f))
-        Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Word("back", pixel(16.sp, Ink.mid)) { Sound.previous() }
-            Word(if (n.playing) "PAUSE" else "PLAY", headline(40.sp)) { Sound.toggle() }
-            Word("next", pixel(16.sp, Ink.mid)) { Sound.next() }
         }
     }
 }

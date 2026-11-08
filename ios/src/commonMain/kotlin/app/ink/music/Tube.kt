@@ -66,6 +66,7 @@ object Tube {
         val lists = runCatching { t.items("FEmusic_liked_playlists", 200) }.getOrDefault(emptyList())
             .filter { it.kind == InnerTube.Kind.PLAYLIST && it.id != "VLLM" && it.id != "VLSE" }.map(::list)
         val liked = runCatching { t.tracks("VLLM", 500) }.getOrDefault(emptyList()).map { song(it) }
+        Loved.liked(liked)
         val shelves = home.filter { s -> s.items.any { it.kind == InnerTube.Kind.RECORD } }
             .map { s -> s.title to s.items.filter { it.kind == InnerTube.Kind.RECORD }.map(::record) }.filter { it.second.isNotEmpty() }
         return Library(mixes, lists, liked, shelves).also { library.value = it }
@@ -92,9 +93,13 @@ object Tube {
     fun stream(id: String): String? {
         guard.run { found[id]?.takeIf { nowMs() - it.second < 4 * 3_600_000L }?.first }?.let { return it }
         val s = streams.stream(id) ?: return null
-        guard.run { found[id] = s.url to nowMs() }
+        guard.run { found[id] = s.url to nowMs(); rates[id] = s.kbps }
         return s.url
     }
+
+    private val rates = HashMap<String, Int>()
+    /** What's heard of a song found (the player's, between its times): "aac 256" on Premium. */
+    fun quality(id: String): String? = guard.run { rates[id] }?.let { "aac $it" }
 
     /** A record's songs, in order; a playlist's; a mix's first page (a mix never ends). */
     fun songs(a: Album): List<Song> = when {
