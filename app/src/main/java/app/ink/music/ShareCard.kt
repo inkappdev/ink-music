@@ -54,9 +54,37 @@ object ShareCard {
         return "https://inkhome.app/song/$words?" + params.joinToString("&")
     }
 
-    /** Share the song's link (a tap on share); the poster where it has none. */
+    /**
+     * The song's short link (2026-11-09): inkhome.app/s/<its Apple id> where Apple has it (found here, by its artist and
+     * title, a few seconds at most), else /s/y/<its YouTube id> for a YouTube song, else the long link. The site reads
+     * the rest from the id; the same song is always the same link.
+     */
+    suspend fun short(n: Now): String? = withContext(Dispatchers.IO) {
+        val long = link(n) ?: return@withContext null
+        val artist = n.artist.substringBefore(", ")
+        fun fold(v: String) = java.text.Normalizer.normalize(v, java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+            .lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").replace(Regex("[^a-z0-9]+"), " ").trim()
+        fun same(a: String, b: String) = fold(a).let { x -> fold(b).let { y -> x.isNotEmpty() && (x == y || x.startsWith("$y ") || y.startsWith("$x ")) } }
+        val apple = runCatching {
+            val shop = java.util.Locale.getDefault().country.lowercase().takeIf { it.length == 2 } ?: "us"
+            val term = java.net.URLEncoder.encode("$artist ${n.title}", "UTF-8")
+            val c = java.net.URL("https://itunes.apple.com/search?term=$term&entity=song&limit=10&country=$shop").openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 2_500; c.readTimeout = 3_000
+            val text = try { if (c.responseCode == 200) c.inputStream.bufferedReader().readText() else null } finally { c.disconnect() }
+            val r = org.json.JSONObject(text ?: return@runCatching null).optJSONArray("results") ?: return@runCatching null
+            (0 until r.length()).map { r.getJSONObject(it) }
+                .firstOrNull { same(it.optString("artistName"), artist) && same(it.optString("trackName"), n.title) }?.optLong("trackId")?.takeIf { it > 0 }
+        }.getOrNull()
+        when {
+            apple != null -> "https://inkhome.app/s/$apple"
+            n.song?.tube == true -> "https://inkhome.app/s/y/" + n.song.id.removePrefix("y")
+            else -> long
+        }
+    }
+
+    /** Share the song's link (a tap on share), short where it can be; the poster where it has none. */
     suspend fun shareLink(ctx: Context, n: Now, look: Look) {
-        val url = link(n) ?: return share(ctx, n, look)
+        val url = short(n) ?: return share(ctx, n, look)
         val send = Intent(Intent.ACTION_SEND).setType("text/plain")
             .putExtra(Intent.EXTRA_TEXT, "${n.title}, ${n.artist.substringBefore(", ")} $url")
             .putExtra(Intent.EXTRA_TITLE, "${n.title}, ${n.artist}")
