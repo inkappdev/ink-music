@@ -77,6 +77,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
@@ -244,7 +245,9 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         LaunchedEffect(artist) { artist?.let { YouTubeAccount.warm(ctx, it) } }
         val look by Looks.on.collectAsState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
-        val share = { scope.launch { ShareCard.share(ctx, n, look) }; Unit }
+        // share: a tap sends the song's link (its page on inkhome.app); held, the poster for a story
+        val share = { scope.launch { Hints.did(Hints.SHARED); ShareCard.shareLink(ctx, n, look) }; Unit }
+        val poster = { scope.launch { Hints.did(Hints.POSTER); ShareCard.share(ctx, n, look) }; Unit }
         // an episode's notes where a song's lyrics go, shown by the same word
         val episode = n.song?.episode == true
         val notes = if (episode && sing) remember(n.song?.id) { Pods.notes(n.song!!.id) }.takeIf { it.isNotBlank() } else null
@@ -317,7 +320,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                         else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
                         // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
                         Scrubber(line, accent, scrub, line = 2.dp, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
-                        Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true })
+                        Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster)
                     } else {
                         // the cover as big as the width allows, unless the song's words under it would then run
                         // under the controls (Android's own display size, a short phone): then it gives up just
@@ -326,7 +329,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                             androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
                                 Column {
                                     Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
-                                    Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }) { t -> Moment(t) { typing = it } }
+                                    Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster) { t -> Moment(t) { typing = it } }
                                 }
                             }
                         }
@@ -410,7 +413,7 @@ private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit
  */
 @Composable
 private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) -> Unit, onShare: () -> Unit, onHeard: () -> Unit = {},
-                 words: Boolean = true, over: @Composable (Now) -> Unit = {}) {
+                 words: Boolean = true, onPoster: () -> Unit = {}, over: @Composable (Now) -> Unit = {}) {
     AnimatedContent(
         targetState = n,
         // a station's new song pushes in too
@@ -437,7 +440,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                     FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null,
                             onClick = felt { artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
-                    Word("share", pixel(SMALL, SAID), Modifier.padding(start = 12.dp), onClick = onShare)
+                    ShareWord(Modifier.padding(start = 12.dp), onShare, onPoster)
                 }
             }
         } else Column {
@@ -451,13 +454,15 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 // (Hints); one line in the gap's own 20 dp, so the cover keeps its size (on its own line, it shrank)
                 Box(Modifier.fillMaxWidth().height(20.dp), contentAlignment = androidx.compose.ui.Alignment.CenterStart) {
                     val hinted by Hints.done.collectAsState()
-                    if (!onTv()) when (Hints.next(hinted, Hints.WHEEL, Hints.FLICK, Hints.NAME)) {
+                    val shareHint = if (Hints.SHARED in hinted && Hints.POSTER !in hinted) Hints.POSTER else null
+                    if (!onTv()) when (Hints.next(hinted, Hints.WHEEL, Hints.FLICK, Hints.NAME) ?: shareHint) {
                         Hints.WHEEL -> Typed("circle your thumb round the cover", pixel(12.sp, Ink.mid), lines = 1)
                         Hints.FLICK -> Typed("flick the cover for the next song", pixel(12.sp, Ink.mid), lines = 1)
                         Hints.NAME -> Typed("tap the artist for their page", pixel(12.sp, Ink.mid), lines = 1)
+                        Hints.POSTER -> Typed("hold share for a poster for your story", pixel(12.sp, Ink.mid), lines = 1)
                     }
                 }
-                SongWords(t, onOpen, onShare, onHeard)
+                SongWords(t, onOpen, onShare, onHeard, onPoster = onPoster)
             }
         }
     }
@@ -468,7 +473,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
  * where it plays, the artist and the record (each a way to its page), share. Beside the cover on a TV ([TvPlayer]).
  */
 @Composable
-private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHeard: () -> Unit, title: androidx.compose.ui.unit.TextUnit = 32.sp) {
+private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHeard: () -> Unit, title: androidx.compose.ui.unit.TextUnit = 32.sp, onPoster: () -> Unit = {}) {
     Column {
         // the title, and beside it the desktop's heart
         Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
@@ -504,8 +509,8 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
                         onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Record(it.albumId)) } }))
             }
           }
-            // the song as a poster, for a story or a message
-            Word("share", pixel(SMALL, SAID), Modifier.padding(start = 12.dp).tvLit(), onClick = onShare)
+            // the song's link to send; held, its poster for a story
+            ShareWord(Modifier.padding(start = 12.dp).tvLit(), onShare, onPoster)
         }
     }
 }
@@ -742,6 +747,20 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = compos
             }
         }
     }
+}
+
+/**
+ * Share as a word: a tap sends the song's link, a hold its poster (felt both ways). On a TV the remote's OK is the tap.
+ */
+@Composable
+private fun ShareWord(modifier: Modifier, onShare: () -> Unit, onPoster: () -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    BasicText("share", style = pixel(SMALL, if (pressed) Ink.ink else SAID), modifier = modifier
+        .then(Modifier.combinedClickable(src, indication = null, hapticFeedbackEnabled = false,
+            onLongClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onPoster() },
+            onClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick); onShare() })))
 }
 
 /** An angle's change, the short way round (-π to π). */

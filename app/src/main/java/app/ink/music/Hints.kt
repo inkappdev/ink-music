@@ -24,7 +24,8 @@ import kotlinx.coroutines.flow.StateFlow
  *  - the library's top: pull down to find, the place's word for every place, swiping across; then the tab's own: the
  *    albums turned sideways, a tab's order; on listen, after a few days, the look, and after two weeks, the computer
  *    (those two pointers once: tapped, or a day after first shown);
- *  - the player: circle a thumb round the cover, flick it for the next song, the artist's name for their page;
+ *  - the player: circle a thumb round the cover, flick it for the next song, the artist's name for their page; once a
+ *    song's been shared, holding share for the poster;
  *  - a record's songs: swipe one for next or the queue's end, hold it for more; the queue: hold one to move it.
  */
 object Hints {
@@ -33,9 +34,10 @@ object Hints {
     const val SWIPE = "swipe"
     const val ACROSS = "across"; const val TURN = "turn"; const val ORDER = "order"; const val NAME = "name"; const val QUEUE = "queue"
     const val LOOK = "look"; const val COMPUTER = "computer"
+    const val SHARED = "shared"; const val POSTER = "poster"
 
     private var prefs: SharedPreferences? = null
-    private val _done = MutableStateFlow<Set<String>>(setOf(PULL, PLACES, WHEEL, FLICK, CLOSE, SWIPE, ACROSS, TURN, ORDER, NAME, QUEUE, LOOK, COMPUTER))
+    private val _done = MutableStateFlow<Set<String>>(setOf(PULL, PLACES, WHEEL, FLICK, CLOSE, SWIPE, ACROSS, TURN, ORDER, NAME, QUEUE, LOOK, COMPUTER, SHARED, POSTER))
     private var first = 0L
     val done: StateFlow<Set<String>> = _done
 

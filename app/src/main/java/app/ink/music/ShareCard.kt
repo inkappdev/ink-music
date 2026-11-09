@@ -32,6 +32,37 @@ object ShareCard {
     private const val H = 1920
     private const val M = 72f   // the side margin
 
+    /**
+     * The song as a link (2026-11-09): inkhome.app/song/<artist-title>, the page in ink's look with where to hear it
+     * (Apple, Deezer and YouTube exact, the rest a search) and, in a chat, its dithered card. The link says the song and
+     * the YouTube id where it is one; the site finds the rest. A station's song or an episode has none: the poster.
+     */
+    fun link(n: Now): String? {
+        val s = n.song
+        if (s?.station == true || s?.episode == true || n.title.isBlank() || n.artist.isBlank()) return null
+        val artist = n.artist.substringBefore(", ")
+        val words = java.text.Normalizer.normalize("$artist ${n.title}", java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "").lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "")
+            .replace(Regex("[^a-z0-9]+"), "-").trim('-').take(80).ifEmpty { "song" }
+        fun q(v: String) = java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20")
+        val params = buildList {
+            add("t=" + q(n.title)); add("a=" + q(artist))
+            if (n.album.isNotBlank()) add("r=" + q(n.album))
+            if (n.duration > 0) add("d=${n.duration / 1000}")
+            if (s?.tube == true) add("y=" + q(s.id.removePrefix("y")))
+        }
+        return "https://inkhome.app/song/$words?" + params.joinToString("&")
+    }
+
+    /** Share the song's link (a tap on share); the poster where it has none. */
+    suspend fun shareLink(ctx: Context, n: Now, look: Look) {
+        val url = link(n) ?: return share(ctx, n, look)
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_TEXT, "${n.title}, ${n.artist.substringBefore(", ")} $url")
+            .putExtra(Intent.EXTRA_TITLE, "${n.title}, ${n.artist}")
+        ctx.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
     suspend fun share(ctx: Context, n: Now, look: Look) {
         val png = withContext(Dispatchers.Default) {
             val cover = n.song?.let { runCatching { Covers.of(ctx, it, 1080) }.getOrNull() }
