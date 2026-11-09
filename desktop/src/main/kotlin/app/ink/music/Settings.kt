@@ -670,6 +670,23 @@ private fun LookSetting() {
         Word("off", pixel(14.sp, if (!moving) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(on = false) }
     }
     Spacer(Modifier.height(36.dp))
+    val artistVideo by Moving.artistVideo.collectAsState()
+    val artistDither by Moving.artistDither.collectAsState()
+    BasicText("ARTIST PAGES", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("the picture an artist's page opens on: their photo, or their moving one where apple music has one, in the dither or as it is",
+        style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    Row {
+        Word("video", pixel(14.sp, if (artistVideo) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistVideo = true) }
+        Word("photo", pixel(14.sp, if (!artistVideo) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(artistVideo = false) }
+    }
+    Spacer(Modifier.height(8.dp))
+    Row {
+        Word("dithered", pixel(14.sp, if (artistDither) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistDither = true) }
+        Word("as it is", pixel(14.sp, if (!artistDither) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(artistDither = false) }
+    }
+    Spacer(Modifier.height(36.dp))
     BasicText("THE NAME", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     BasicText("the big artist names along the player's foot and on their pages", style = pixel(12.sp, Ink.mid))

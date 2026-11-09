@@ -346,6 +346,7 @@ private fun App() {
                     k.key == Key.DirectionLeft -> { Player.seek((Player.position.value - 10_000).coerceAtLeast(0)); true }
                     k.key == Key.DirectionUp -> { Player.volume(Player.volume.value + 5); true }
                     k.key == Key.DirectionDown -> { Player.volume(Player.volume.value - 5); true }
+                    k.key == Key.Escape && Reading.close != null -> { Reading.close?.invoke(); true }
                     k.key == Key.Escape && pages.isNotEmpty() -> { Nav.back(); true }
                     else -> false
                 }
@@ -729,16 +730,17 @@ fun said(n: Player.Now): Pair<String, String> {
 }
 
 /**
- * Close: the down arrow, as the phone's, top left (clear of the traffic lights): the whole trail. With a page under this
- * one (an artist, then one their fans also like), back beside it, a page at a time (2026-11-07: only the arrow, and it
- * went all the way out; esc and ⌘[ did, unseen).
+ * Close: with a page under this one (an artist, then one their fans also like), back at the top left, a page at a time;
+ * the down arrow, as the phone's, at the top right: the whole trail (2026-11-09: the two side by side looked and worked
+ * oddly, two ways out in one place; 2026-11-07: only the arrow, and it went all the way out; esc and ⌘[ did, unseen).
  */
 @Composable
 fun Close(onClose: () -> Unit) {
     val under = Nav.pages.count { it != Page.Playing } > 1
-    Row(Modifier.padding(start = SIDE - 8.dp, top = TOP).height(32.dp), verticalAlignment = Alignment.CenterVertically) {
-        CloseArrow(onClick = onClose)
+    Row(Modifier.fillMaxWidth().padding(start = SIDE - 8.dp, end = SIDE - 8.dp, top = TOP).height(32.dp), verticalAlignment = Alignment.CenterVertically) {
         if (under) Pixel(BACK_ARROW, "back", Ink.mid, Modifier.wrapContentHeight(unbounded = true)) { Nav.back() }
+        Spacer(Modifier.weight(1f))
+        CloseArrow(onClick = onClose)
     }
 }
 
@@ -1073,7 +1075,7 @@ private fun Around(a: Album, albums: List<Album>, open: (Page) -> Unit) {
     Column(Modifier.padding(top = 28.dp)) {
         if (mine.isNotEmpty() || tube.isNotEmpty()) {
             Label("more by them")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 items(mine, key = { it.id }) { r -> RecordTile(r, Modifier.width(150.dp)) { open(Page.Record(r.id)) } }
                 items(tube, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { open(Page.Tube(r)) } }
             }
@@ -1081,12 +1083,12 @@ private fun Around(a: Album, albums: List<Album>, open: (Page) -> Unit) {
         }
         if (near.isNotEmpty()) {
             Label("records like it")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 items(near, key = { it.id }) { r -> RecordTile(r, Modifier.width(150.dp)) { open(Page.Record(r.id)) } }
             }
         } else if (like.isNotEmpty()) {
             Label("fans also like")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 items(like, key = { it.id.ifEmpty { it.name } }) { who ->
                     Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null,
                         onClick = felt { open(Page.Artist(who.name, who.id)) })) {

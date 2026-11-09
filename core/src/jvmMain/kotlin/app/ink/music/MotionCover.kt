@@ -53,6 +53,47 @@ object MotionCover {
         return url
     }
 
+    /**
+     * An artist's moving photo: the looping clip Apple Music's artist pages open with (the artist's `editorialVideo`),
+     * the square one first, or null (most artists have none). Kept as a record's is, under "artist:".
+     */
+    @Synchronized fun ofArtist(artist: String): String? {
+        if (artist.isBlank()) return null
+        load()
+        val key = "artist:" + Search.fold(artist)
+        known[key]?.let { (url, at) -> if (url != null || System.currentTimeMillis() - at < 7 * 86_400_000L) return url }
+        var asked: Result<String?> = Result.failure(IllegalStateException("no pass"))
+        for (n in 0 until 4) {
+            val bearer = pass() ?: return null
+            asked = runCatching { askArtist(artist, bearer) }
+            if (bearer !in refused) break
+        }
+        if (asked.isFailure) return null
+        val url = asked.getOrNull()
+        known[key] = url to System.currentTimeMillis()
+        save()
+        return url
+    }
+
+    /** The keys an artist's clips come under, the square first (a page's photo is square). */
+    val artistShapes = listOf("motionArtistSquare1x1", "motionArtistFullscreen16x9", "motionArtistWide16x9")
+
+    private fun askArtist(artist: String, bearer: String): String? {
+        val shop = java.util.Locale.getDefault().country.lowercase().takeIf { it.length == 2 } ?: "us"
+        val term = URLEncoder.encode(artist, "UTF-8")
+        val hits = JSONObject(get("$CATALOG/$shop/search?term=$term&types=artists&limit=5&extend=editorialVideo", bearer))
+            .optJSONObject("results")?.optJSONObject("artists")?.optJSONArray("data") ?: return null
+        val a = Search.fold(artist)
+        for (i in 0 until hits.length()) {
+            val at = hits.optJSONObject(i)?.optJSONObject("attributes") ?: continue
+            // only the same name: a search for a small artist finds a bigger one
+            if (Search.fold(at.optString("name")) != a) continue
+            val v = at.optJSONObject("editorialVideo") ?: return null
+            return artistShapes.firstNotNullOfOrNull { v.optJSONObject(it)?.optString("video")?.takeIf { u -> u.startsWith("http") } }
+        }
+        return null
+    }
+
     private val records = HashMap<String, String?>()
 
     /**

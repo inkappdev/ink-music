@@ -66,6 +66,12 @@ object Moving {
     private val _canvas = MutableStateFlow<Look?>(null)
     /** The canvas's effect, or null: as it is. */
     val canvas: StateFlow<Look?> = _canvas
+    private val _artistVideo = MutableStateFlow(true)
+    /** An artist's page opens on their moving photo (Apple Music's clip) where they have one, else their photo. */
+    val artistVideo: StateFlow<Boolean> = _artistVideo
+    private val _artistDither = MutableStateFlow(true)
+    /** An artist's photo and clip in the dither (the player's), or as they are. */
+    val artistDither: StateFlow<Boolean> = _artistDither
 
     private fun file(c: Context) = File(c.filesDir, "moving-covers")
 
@@ -85,12 +91,22 @@ object Moving {
             "canvas" -> look.takeIf { it in canvasLooks }
             else -> canvasLooks.firstOrNull { "canvas ${it.name}" == canvas }
         }
+        // the artist page's lines, added 2026-11-09 (before: the photo, dithered)
+        _artistVideo.value = said.getOrNull(3) != "artist photo"
+        _artistDither.value = said.getOrNull(4) != "artist as it is"
     }
 
-    fun set(c: Context, whenOn: String = _when.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value, canvas: Look? = _canvas.value) {
+    fun set(
+        c: Context, whenOn: String = _when.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value, canvas: Look? = _canvas.value,
+        artistVideo: Boolean = _artistVideo.value, artistDither: Boolean = _artistDither.value,
+    ) {
         _when.value = whenOn; _cover.value = cover; _canvasOn.value = canvasOn; _canvas.value = canvas
+        _artistVideo.value = artistVideo; _artistDither.value = artistDither
         val said = if (!canvasOn) "no canvas" else canvas?.let { "canvas ${it.name}" } ?: "canvas as it is"
-        runCatching { file(c).writeText(listOf(whenOn, cover?.name ?: "as it is", said).joinToString("\n")) }
+        runCatching { file(c).writeText(listOf(
+            whenOn, cover?.name ?: "as it is", said,
+            if (artistVideo) "artist video" else "artist photo", if (artistDither) "artist dithered" else "artist as it is",
+        ).joinToString("\n")) }
     }
 
     /** Whether to show them on the network the phone is on now. */
@@ -113,6 +129,24 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
     }
     val u = url ?: return
     Loop(u, playing, shape, accent, 1f, crop = false, modifier)
+}
+
+/**
+ * An artist's moving photo (Apple Music's clip, the full build's, as moving covers are: on wifi unless said) over their
+ * still one, filling its square, dithered in `accent` or as it is; nothing where they have none or it's off.
+ */
+@Composable
+fun ArtistVideo(name: String, accent: Color, dithered: Boolean, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val whenOn by Moving.whenOn.collectAsState()
+    val on by Moving.artistVideo.collectAsState()
+    val url by produceState<String?>(null, name, whenOn, on) {
+        value = if (on && Moving.wanted(ctx)) withContext(Dispatchers.IO) { MotionCover.ofArtist(name) } else null
+        android.util.Log.i("ink-moving", "artist $name: ${if (value != null) "found" else "none"}")
+    }
+    val u = url ?: return
+    // always moving: the page's picture, not the record's (it doesn't settle with a pause)
+    Loop(u, true, if (dithered) Look.DITHER else null, accent, 1f, crop = true, modifier)
 }
 
 /**

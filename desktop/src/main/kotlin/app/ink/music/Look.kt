@@ -39,10 +39,19 @@ object Moving {
     private val _canvasOn = MutableStateFlow(true)
     /** A song's Spotify canvas behind the player (handed over by the phone), or none. */
     val canvasOn: StateFlow<Boolean> = _canvasOn
-    fun set(on: Boolean = _on.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value) {
-        _on.value = on; _cover.value = cover; _canvasOn.value = canvasOn; LookFile.save()
+    private val _artistVideo = MutableStateFlow(true)
+    /** An artist's page opens on their moving photo (Apple Music's clip) where they have one, else their photo. */
+    val artistVideo: StateFlow<Boolean> = _artistVideo
+    private val _artistDither = MutableStateFlow(true)
+    /** An artist's photo and clip in the dither (the player's), or as they are. */
+    val artistDither: StateFlow<Boolean> = _artistDither
+    fun set(on: Boolean = _on.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value,
+            artistVideo: Boolean = _artistVideo.value, artistDither: Boolean = _artistDither.value) {
+        put(on, cover, canvasOn, artistVideo, artistDither); LookFile.save()
     }
-    internal fun put(on: Boolean, cover: Look?, canvasOn: Boolean) { _on.value = on; _cover.value = cover; _canvasOn.value = canvasOn }
+    internal fun put(on: Boolean, cover: Look?, canvasOn: Boolean, artistVideo: Boolean, artistDither: Boolean) {
+        _on.value = on; _cover.value = cover; _canvasOn.value = canvasOn; _artistVideo.value = artistVideo; _artistDither.value = artistDither
+    }
 }
 
 /** Whether the big names (the player's artist along the foot, ink weekly's, a long one on an artist's page) move. */
@@ -78,7 +87,8 @@ internal object LookFile {
         SpotifyHanded.start()
         val o = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
         Looks.put(Look.entries.firstOrNull { it.name == o.optString("behind") } ?: Look.PLAIN)
-        Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true))
+        Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true),
+            o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true))
         Marquees.put(o.optBoolean("marquee", true))
         ListCovers.put(o.optBoolean("listCovers", false))
         ListsGrid.put(o.optBoolean("listsGrid", false))
@@ -87,7 +97,8 @@ internal object LookFile {
     fun save() {
         runCatching {
             file.writeText(JSONObject().put("behind", Looks.on.value.name).put("moving", Moving.on.value)
-                .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).toString())
+                .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value)
+                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).toString())
         }
     }
 }

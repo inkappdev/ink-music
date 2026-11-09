@@ -171,6 +171,22 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
 }
 
 /**
+ * An artist's moving photo (Apple Music's clip) over their still one, filling its square, dithered in `accent` or as it
+ * is; nothing where they have none, or moving covers or artist videos are off. Always moving: it's the page's picture.
+ */
+@Composable
+fun ArtistVideo(name: String, accent: Color, dithered: Boolean, modifier: Modifier = Modifier) {
+    val on by Moving.on.collectAsState()
+    val wanted by Moving.artistVideo.collectAsState()
+    val url by produceState<String?>(null, name, on, wanted) {
+        value = if (on && wanted) withContext(Dispatchers.IO) { MotionCover.ofArtist(name) } else null
+        Log.d("moving artist $name: ${if (value != null) "found" else "none"}")
+    }
+    val u = url ?: return
+    Loop(u, true, if (dithered) Look.DITHER else null, accent, 1f, crop = true, modifier)
+}
+
+/**
  * Behind the player, a song's Spotify canvas (its tall looping clip) across the whole window, in the background's
  * effect, in the still cover's place: one background, the canvas where a song has one. The computer can't sign in to
  * Spotify: the phone, paired and signed in, hands it the passes ([SpotifyHanded]).

@@ -568,6 +568,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     LaunchedEffect(sc, seed) { songList.scrollToItem(0) }
     val tabsFrost = rememberHazeState()
     var head by remember { mutableStateOf(0.dp) }
+    // pull a list down past its top to find (Pull.kt), as ink's launcher does
+    val (pull, pulling) = rememberPull { menu = false; pages.open(Page.Find) }
     val density = LocalDensity.current
     val foot = LocalFoot.current
     val sides = bars.only(WindowInsetsSides.Horizontal)
@@ -704,10 +706,14 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
        }
       }
       if (tv) place(tabs.indexOf(tab).coerceAtLeast(0))
-      else HorizontalPager(
-        pager, Modifier.fillMaxSize(), key = { tabs[it] },
-        flingBehavior = stillOnItsPage(pager, PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo))),
-      ) { page -> place(page) }
+      else {
+        // pulled, the page follows the finger down and the words under the tab row say what letting go does
+        PullHint(pull, Modifier.padding(top = (head - BAND).coerceAtLeast(0.dp)))
+        HorizontalPager(
+          pager, Modifier.fillMaxSize().nestedScroll(pulling).graphicsLayer { translationY = pull.px }, key = { tabs[it] },
+          flingBehavior = stillOnItsPage(pager, PagerDefaults.flingBehavior(pager, snapAnimationSpec = tween(Motion.ENTER, easing = Motion.expo))),
+        ) { page -> place(page) }
+      }
     }
     // the tab row on black; what scrolls up toward it softens just under it
     Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
@@ -1267,11 +1273,24 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         contentPadding = PaddingValues(top = top0, bottom = LocalFoot.current + 24.dp),
     ) {
         item { Column(Modifier.cascade(0)) {
-            // their photo across the page in the dither (the player's), developing as it opens, their name on it
+            // their photo across the page, in the dither (the player's) developing as it opens or as it is (settings,
+            // the look), their moving one over it where Apple Music has one, their name on it
             val photo = i?.photo
             if (photo != null || waiting) BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
                 val side = minOf(maxWidth, 560.dp)
-                if (photo != null) Dithered(remember(photo) { photoSong(name, photo) }, Modifier.size(side).align(Alignment.Center))
+                val dithered by Moving.artistDither.collectAsState()
+                if (photo != null) Box(Modifier.size(side).align(Alignment.Center)) {
+                    val still = remember(photo) { photoSong(name, photo) }
+                    if (dithered) Dithered(still, Modifier.fillMaxSize()) else AsItIs(still, Modifier.fillMaxSize())
+                    val c = rememberCover(still, 1080)
+                    val accent = c?.accent ?: Ink.ink
+                    ArtistVideo(i.name.ifBlank { name }, accent, dithered, Modifier.fillMaxSize())
+                    // as it is, a light photo held down so the name on it reads (nameDim)
+                    if (!dithered && c != null) {
+                        val dim = remember(c) { nameDim(c.image) }
+                        if (dim < 1f) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 1f - dim)))
+                    }
+                }
                 else Box(Modifier.size(side).align(Alignment.Center))
                 NameOn(i?.name ?: name, Modifier.fillMaxWidth().padding(bottom = 6.dp))
             } else Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
@@ -1732,6 +1751,15 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
             Image(f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)], null, Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
         }
+    }
+}
+
+/** A picture as it is, filling its space (an artist's photo with the dither off). */
+@Composable
+private fun AsItIs(photo: Song, modifier: Modifier, px: Int = 1080) {
+    val cover = rememberCover(photo, px)
+    Box(modifier.background(androidx.compose.ui.graphics.Color.Black)) {
+        cover?.let { Image(it.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
     }
 }
 
@@ -2651,4 +2679,30 @@ fun pageList(): androidx.compose.foundation.lazy.LazyListState {
         onDispose { PageScroll.kept[k] = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
     }
     return state
+}
+
+/**
+ * How far to dim an artist's photo shown as it is so their white name reads over its foot (2026-11-09: Yard Act's light
+ * photo took the name): the part the name covers (the foot of the square cut from the middle, as it's drawn) judged by
+ * its light parts, the brightest tenth (by the average, Yard Act's black shirts hid the cream wall the letters cross),
+ * brought down to .4 at most, evenly, never below .4 of itself; a dark photo stays as it is (1). As the canvas behind
+ * the player is held down: evenly, no gradient.
+ */
+fun nameDim(image: androidx.compose.ui.graphics.ImageBitmap): Float {
+    val w = image.width; val h = image.height
+    val side = minOf(w, h); val left = (w - side) / 2; val top = (h - side) / 2
+    val from = top + side * 7 / 10
+    val rows = top + side - from
+    val px = IntArray(side * rows)
+    runCatching { image.readPixels(px, left, from, side, rows) }.onFailure { return 1f }
+    val step = maxOf(1, side / 96)
+    val lights = ArrayList<Float>()
+    for (y in 0 until rows step step) for (x in 0 until side step step) {
+        val c = px[y * side + x]
+        lights += (.299f * (c shr 16 and 255) + .587f * (c shr 8 and 255) + .114f * (c and 255)) / 255f
+    }
+    if (lights.isEmpty()) return 1f
+    lights.sort()
+    val light = lights[lights.size * 9 / 10]
+    return if (light <= .4f) 1f else (.4f / light).coerceAtLeast(.4f)
 }
