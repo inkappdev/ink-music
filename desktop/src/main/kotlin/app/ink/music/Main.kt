@@ -1,5 +1,6 @@
 package app.ink.music
 
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.graphics.graphicsLayer
 
 import androidx.compose.animation.AnimatedContent
@@ -1128,6 +1129,15 @@ object PageScroll {
 fun pageList(part: String = ""): androidx.compose.foundation.lazy.LazyListState {
     val k = LocalPageKey.current?.let { "$it#list$part" }
     val state = remember(k) { k?.let { PageScroll.kept[it] }.let { androidx.compose.foundation.lazy.LazyListState(it?.first ?: 0, it?.second ?: 0) } }
+    // the place kept, gone back to once the page is long enough to have it: an artist's page draws short first (while
+    // YouTube Music's part is read back), and a place further down than that began at the top (2026-11-09)
+    val back = remember(k) { k?.let { PageScroll.kept[it] } }
+    if (back != null && back.first > 0) androidx.compose.runtime.LaunchedEffect(state) {
+        kotlinx.coroutines.withTimeoutOrNull(4_000) {
+            androidx.compose.runtime.snapshotFlow { state.layoutInfo.totalItemsCount }.first { it > back.first }
+        } ?: return@LaunchedEffect
+        if (!state.isScrollInProgress && state.firstVisibleItemIndex < back.first) state.scrollToItem(back.first, back.second)
+    }
     if (k != null) androidx.compose.runtime.DisposableEffect(k, state) { onDispose { PageScroll.kept[k] = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset } }
     return state
 }
