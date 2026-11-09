@@ -1,0 +1,3 @@
+- Covers no longer stop halfway: a slow download used to leave half a picture (or none), and it stayed that way. Now a cover shows only once it's all there, and the broken ones fetch again by themselves
+- Our covers were showing a bit of leg. They're fully dressed now
+- Do something nice for someone today. Hold the door a second longer
