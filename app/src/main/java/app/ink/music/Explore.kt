@@ -105,7 +105,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val rankedSongs = ranked.second
     LazyColumn(state = state, contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding())) {
         // the day's issue: its number and a note on what's in it, turning at six each morning
-        item(key = "issue") { Issue(records, chart, friday) }
+        item(key = "issue") { Issue(records, chart, friday, air) }
         // ink weekly, the cover: ours, new each Friday
         item(key = "weekly") { InkWeeklyCover(pages) }
         today?.let { d -> item(key = "today") { RecordOfTheDay(d, pages) } }
@@ -186,9 +186,14 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
  * on something that wasn't there yesterday.
  */
 @Composable
-private fun Issue(records: List<Picks.Shown>, chart: List<IndieChart.Entry>, friday: Curation.Week?) {
+private fun Issue(records: List<Picks.Shown>, chart: List<IndieChart.Entry>, friday: Curation.Week?, air: List<Curation.Aired>) {
+    val ctx = LocalContext.current
     val taste by Fresh.taste.collectAsState()
-    val note = remember(records, chart, friday, taste) { Fresh.note(records, chart, friday, taste) }
+    val since by Fresh.since.collectAsState()
+    // the day's line (DayNote): yours, then the world's, kept all day once the picks are in
+    val note by produceState<String?>(null, records, chart, friday, taste, air.isNotEmpty()) {
+        value = withContext(Dispatchers.IO) { runCatching { DayNote.of(ctx, records, chart, friday, air, Fests.all(ctx), since, taste) }.getOrNull() }
+    }
     val day = remember { java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM", java.util.Locale.ENGLISH).format(Moment.issueDay().toJavaLocalDate()).lowercase() }
     Column(Modifier.padding(horizontal = 20.dp).padding(top = 2.dp, bottom = 18.dp)) {
         BasicText("no. ${Moment.issue()}   $day", style = pixel(12.sp, Ink.mid))

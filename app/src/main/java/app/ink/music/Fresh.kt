@@ -192,22 +192,6 @@ object Fresh {
         runCatching { f.writeText(o.put(kind, picked).toString()) }
         return picked
     }
-
-    /**
-     * INK's note for the day, from what's there: critics agreeing, what the indie chart's top is, a Friday's count.
-     * Plain words, lower case, a sentence or two.
-     */
-    fun note(records: List<Picks.Shown>, chart: List<IndieChart.Entry>, friday: Curation.Week?, t: Taste = taste.value): String? {
-        val parts = ArrayList<String>()
-        records.filter { it.by.size >= 2 }.maxByOrNull { it.by.size * 10 + t.of(it.pick.artist) }?.let {
-            parts += "${it.by.size} critics agree on ${it.pick.artist.lowercase()}'s ${it.pick.title.lowercase()}"
-        }
-        if (Moment.now().friday) friday?.releases?.size?.takeIf { it > 0 }?.let { parts += "$it records out today" }
-        chart.firstOrNull()?.let { parts += "kexp, kcrw and wxpn can't stop playing ${it.title.lowercase()}" }
-        // a near one of yours in the critics' picks
-        records.firstOrNull { t.of(it.pick.artist) >= .5 && it.by.isNotEmpty() }?.let { parts += "new from ${it.pick.artist.lowercase()}, and ${it.by.first()} likes it" }
-        return parts.take(2).joinToString(". ").ifEmpty { null }?.let { "$it." }
-    }
 }
 
 /** A shelf counted: shown (once a day), and opened when something in it is tapped (seen first, never taken from it). */
