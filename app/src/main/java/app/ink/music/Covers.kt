@@ -78,12 +78,32 @@ object Covers {
 
     /** A network picture fetched and kept on the phone only (read ahead: not held in memory, where it'd push out what's on screen). */
     fun keepOnDisk(ctx: Context, song: Song, px: Int) {
+        cleared(ctx)
         if (diskFile(ctx, song, px).exists()) return
         song.art?.let { runCatching { fetch(it, px) }.getOrNull() }?.let { toDisk(ctx, song, px, it) }
     }
 
-    private fun fromDisk(ctx: Context, song: Song, px: Int): Bitmap? =
-        diskFile(ctx, song, px).takeIf { it.exists() }?.let { android.graphics.BitmapFactory.decodeFile(it.path) }
+    private fun fromDisk(ctx: Context, song: Song, px: Int): Bitmap? {
+        cleared(ctx)
+        return diskFile(ctx, song, px).takeIf { it.exists() }?.let { android.graphics.BitmapFactory.decodeFile(it.path) }
+    }
+
+    @Volatile private var clean = false
+
+    /** The covers kept before pictures were read whole (some only half there) cleared once, to be fetched again. */
+    private fun cleared(ctx: Context) {
+        if (clean) return
+        synchronized(this) {
+            if (clean) return
+            val dir = java.io.File(ctx.cacheDir, "covers")
+            val mark = java.io.File(dir, ".whole")
+            if (!mark.exists()) {
+                dir.listFiles { f -> f.name.endsWith(".jpg") }?.forEach { it.delete() }
+                dir.mkdirs(); mark.createNewFile()
+            }
+            clean = true
+        }
+    }
 
     @Volatile private var trimmed = false
 
@@ -126,8 +146,19 @@ object Covers {
     private fun get(url: String): Bitmap? {
         val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         c.connectTimeout = 10_000; c.readTimeout = 15_000
-        return try { if (c.responseCode != 200) null else c.inputStream.use { android.graphics.BitmapFactory.decodeStream(it) } }
+        return try { if (c.responseCode != 200) null else whole(c) }
         catch (e: java.io.IOException) { null } finally { c.disconnect() }
+    }
+
+    /**
+     * A picture read to its last byte before it's drawn. Decoding the stream as it came let a read that
+     * timed out halfway become half a cover (the rest grey), kept on disk so; now a short one is none.
+     */
+    fun whole(c: java.net.HttpURLConnection): Bitmap? {
+        val bytes = c.inputStream.use { it.readBytes() }
+        val length = c.contentLengthLong
+        if (bytes.isEmpty() || (length > 0 && bytes.size.toLong() != length)) return null
+        return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }
 
     /** Its centre square, no bigger than `px`. */

@@ -241,7 +241,7 @@ object Server {
         c.connectTimeout = 10_000; c.readTimeout = 15_000
         return try {
             if (c.responseCode != 200 || c.contentType?.startsWith("image") != true) null
-            else c.inputStream.use { BitmapFactory.decodeStream(it) }
+            else Covers.whole(c)
         } finally { c.disconnect() }
     }
 
