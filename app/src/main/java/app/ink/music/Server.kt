@@ -237,7 +237,13 @@ object Server {
     /** A record's cover from the server, at about `px` a side; null if there's none. */
     fun cover(art: String, px: Int): Bitmap? {
         val a = _account.value ?: app?.let(::read) ?: return null
-        val c = URL(url(a, "getCoverArt", "id" to art, "size" to px)).openConnection() as HttpURLConnection
+        // at its size, else whole (made smaller here): Navidrome's own smaller copy of a cover can be broken, cut short or
+        // never coming, while the picture itself comes at once (2026-11-09: The Marías' Clueless, 2000 px)
+        return runCatching { coverAt(a, art, px) }.getOrNull() ?: runCatching { coverAt(a, art, null) }.getOrNull()
+    }
+
+    private fun coverAt(a: Account, art: String, px: Int?): Bitmap? {
+        val c = URL(if (px != null) url(a, "getCoverArt", "id" to art, "size" to px) else url(a, "getCoverArt", "id" to art)).openConnection() as HttpURLConnection
         c.connectTimeout = 10_000; c.readTimeout = 15_000
         return try {
             if (c.responseCode != 200 || c.contentType?.startsWith("image") != true) null

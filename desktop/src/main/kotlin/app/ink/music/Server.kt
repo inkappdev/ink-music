@@ -208,12 +208,25 @@ object Server {
                     return if (code != 200 || c.contentType?.startsWith("image") != true) null else c.inputStream.use { it.readBytes() }
                 } catch (e: java.io.IOException) {
                     failed(e)
-                    if (i >= 1) throw Busy()
+                    // its smaller copy broken (cut short, never coming) while the picture itself comes at once, as The
+                    // Marías' Clueless (2026-11-09): the whole picture, made smaller here (Covers.square)
+                    if (i >= 1) return whole(a, art) ?: throw Busy()
                 } finally { c.disconnect() }
             }
             throw Busy()
         } finally { covering.release() }
     }
+
+    /** A cover at its own size, read to its last byte, or null. */
+    private fun whole(a: Account, art: String): ByteArray? = runCatching {
+        val c = URL(url(a, "getCoverArt", "id" to art)).openConnection() as HttpURLConnection
+        c.connectTimeout = 10_000; c.readTimeout = 20_000
+        c.setRequestProperty("User-Agent", AGENT)
+        try {
+            if (c.responseCode != 200 || c.contentType?.startsWith("image") != true) null
+            else c.inputStream.use { it.readBytes() }.takeIf { b -> b.isNotEmpty() && (c.contentLengthLong <= 0 || b.size.toLong() == c.contentLengthLong) }
+        } finally { c.disconnect() }
+    }.getOrNull()
 
     /** The server couldn't say whether there's a cover: asked again later. */
     class Busy : java.io.IOException("the server's busy or away")

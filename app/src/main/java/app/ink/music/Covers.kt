@@ -14,6 +14,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withPermit
 
 /** A record's cover, made ready to draw, and its colour (the only colour on screen). */
 class Cover(val image: ImageBitmap, val accent: Color)
@@ -28,14 +29,27 @@ object Covers {
         override fun sizeOf(key: String, c: Cover) = c.image.width * c.image.height * 4
     }
     private val none = java.util.Collections.synchronizedSet(HashSet<String>())   // records with no picture, not asked again
+    // a picture there's a link to that didn't come (the server turning a crowd away, a timeout): when, asked again a
+    // minute on (2026-11-09: marked as none, The Marías' Clueless stayed ink's sleeve till the app was restarted)
+    private val missed = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    // the server's asked a few at a time, as the computer does: an artist's page asked for all its records at once
+    private val asking = kotlinx.coroutines.sync.Semaphore(4)
     private val largest = java.util.concurrent.ConcurrentHashMap<String, Int>()   // a record whose picture is smaller than asked: as big as it gets
 
     fun kept(album: String): Cover? = kept.get(album)
+    /** Whether a picture with a link didn't come, so it's to be asked again. */
+    fun waiting(album: String) = missed.containsKey(album)
 
     suspend fun of(ctx: Context, song: Song, px: Int = 640): Cover? {
         // the kept one, unless it's smaller than asked (a share card's cover is bigger than the screens')
         kept.get(song.albumId)?.takeIf { it.image.width >= px * 9 / 10 || it.image.width >= (largest[song.albumId] ?: Int.MAX_VALUE) }?.let { return it }
         if (song.albumId in none) return null
+        missed[song.albumId]?.let { if (System.currentTimeMillis() - it < 60_000) return kept.get(song.albumId) }
+        if (song.server && song.art != null) return asking.withPermit { read(ctx, song, px) }
+        return read(ctx, song, px)
+    }
+
+    private suspend fun read(ctx: Context, song: Song, px: Int): Cover? {
         return withContext(Dispatchers.IO) {
             // one from the network (YouTube's, the server's, a station's) is kept on the phone too: the next start has it at once
             val remote = (song.server || song.tube || song.station || song.episode) && song.art != null
@@ -50,10 +64,14 @@ object Covers {
                     )?.also { if (remote) { android.util.Log.d("ink-covers", "${song.title}: fetched ${System.currentTimeMillis() - t0} ms"); toDisk(ctx, song, px, it) } }
             } catch (e: Exception) { null }
             if (bmp == null) {
-                // none at all only when there was none before; a bigger one failing keeps the smaller
+                // a link that didn't come: asked again a minute on; none only where there's nothing to ask
+                if (remote) missed[song.albumId] = System.currentTimeMillis()
+                // a bigger one failing keeps the smaller
                 kept.get(song.albumId)?.let { return@withContext it }
-                none += song.albumId; return@withContext null
+                if (!remote) none += song.albumId
+                return@withContext null
             }
+            missed -= song.albumId
             if (bmp.width < px * 9 / 10) largest[song.albumId] = bmp.width
             bmp.prepareToDraw()
             Cover(bmp.asImageBitmap(), accentOf(bmp)).also { kept.put(song.albumId, it) }
@@ -189,6 +207,11 @@ fun rememberCover(song: Song?, px: Int = 640): Cover? {
     return produceState(song?.let { Covers.kept(it.albumId) }, song?.albumId, px) {
         // a new record: its own cover (kept, or none while it's read), never the last one's
         value = song?.let { Covers.kept(it.albumId) }
-        if (song != null && (value?.image?.width ?: 0) < px * 9 / 10) value = Covers.of(ctx, song, px) ?: value
+        // one that didn't come (the server busy, a timeout): asked again each minute while it's on screen
+        while (song != null && (value?.image?.width ?: 0) < px * 9 / 10) {
+            value = Covers.of(ctx, song, px) ?: value
+            if (!Covers.waiting(song.albumId)) break
+            kotlinx.coroutines.delay(61_000)
+        }
     }.value
 }
