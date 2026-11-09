@@ -139,7 +139,7 @@ val HEART = listOf(
 )
 
 /** The heart's red, the desktop's: shown only a moment after loving, the one colour that isn't the art. */
-private val RED = Color(0xFFE8302A)
+val HeartRed = Color(0xFFE8302A)
 
 /**
  * A song's heart, as on the desktop: 17% while not loved; loving it, red with a soft red glow for
@@ -154,7 +154,7 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     LaunchedEffect(lovedAt) { if (lovedAt > 0) { red = true; delay(2_000); red = false } }
     LaunchedEffect(on) { if (!on) red = false }
     val colour by animateColorAsState(
-        when { red -> RED; song != null && song.id in EggsNow.golden.collectAsState().value -> GOLD; on -> Ink.ink; else -> Ink.dim },
+        when { red -> HeartRed; song != null && song.id in EggsNow.golden.collectAsState().value -> GOLD; on -> Ink.ink; else -> Ink.dim },
         tween(if (red) Motion.FADE else Motion.ENTER, easing = Motion.expo), label = "heart",
     )
     val glow by animateFloatAsState(if (red) .55f else 0f, tween(if (red) Motion.FADE else 600), label = "glow")
@@ -170,7 +170,7 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     ) {
         // the glow: the heart again, red and blurred, under it (Android 12's blur)
         if (glow > 0f && Build.VERSION.SDK_INT >= 31)
-            Box(Modifier.graphicsLayer { alpha = glow }.blur(cell, BlurredEdgeTreatment.Unbounded)) { Sprite(HEART, RED, cell) }
+            Box(Modifier.graphicsLayer { alpha = glow }.blur(cell, BlurredEdgeTreatment.Unbounded)) { Sprite(HEART, HeartRed, cell) }
         Sprite(HEART, colour, cell)
     }
 }

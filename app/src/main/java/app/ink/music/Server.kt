@@ -256,6 +256,13 @@ object Server {
 
     private val _playlists = MutableStateFlow<List<Playlist>>(emptyList())
     val playlists: StateFlow<List<Playlist>> = _playlists
+    @Volatile private var rawLists: List<Playlist> = emptyList()   // the server's own counts, last read
+    // songs added (+) or removed (-) here, not yet reflected by the server; shown on top at once, cleared once it catches up
+    private val pending = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private fun publishLists() {
+        _playlists.value = rawLists.map { pl -> (pending[pl.id] ?: 0).let { d -> if (d == 0) pl else pl.copy(count = (pl.count + d).coerceAtLeast(0)) } }
+    }
+    private fun bump(id: String, by: Int) { pending[id] = (pending[id] ?: 0) + by; publishLists() }
     /** Bumped on every change made here: a playlist's page reads it again. */
     val edited = MutableStateFlow(0)
 
@@ -267,10 +274,17 @@ object Server {
 
     private fun readPlaylistsNow(a: Account) {
         val list = runCatching { call(a, "getPlaylists")?.optJSONObject("playlists")?.optJSONArray("playlist") }.getOrNull() ?: return
-        _playlists.value = (0 until list.length()).mapNotNull { list.optJSONObject(it) }
+        val fresh = (0 until list.length()).mapNotNull { list.optJSONObject(it) }
             .map { Playlist(it.optString("id"), it.optString("name").ifEmpty { "untitled" }, it.optInt("songCount"),
                 it.optString("owner").let { o -> o.isEmpty() || o == a.user }, it.optString("coverArt").ifEmpty { null }) }
             .sortedBy { Library.sortName(it.name) }
+        // where the server now reports what we'd already added/removed here, drop the optimistic delta
+        val shown = _playlists.value.associate { it.id to it.count }
+        fresh.forEach { pl -> val d = pending[pl.id] ?: return@forEach; val t = shown[pl.id] ?: pl.count
+            if ((d > 0 && pl.count >= t) || (d < 0 && pl.count <= t)) pending.remove(pl.id) }
+        pending.keys.retainAll(fresh.mapTo(HashSet()) { it.id })   // a deleted playlist's delta forgotten
+        rawLists = fresh
+        publishLists()
     }
 
     /** The server's playlists, asked now (blocking; the car's lists), else as last read. */
@@ -303,12 +317,12 @@ object Server {
     /** `song` at the end of a playlist. */
     suspend fun addTo(playlist: String, song: Song): Boolean = change {
         call(it, "updatePlaylist", "playlistId" to playlist, "songIdToAdd" to (idOf(song) ?: return@change null))
-    }
+    }.also { if (it) bump(playlist, +1) }
 
     /** The song at `index` (from 0) out of a playlist. */
     suspend fun removeFrom(playlist: String, index: Int): Boolean = change {
         call(it, "updatePlaylist", "playlistId" to playlist, "songIndexToRemove" to index)
-    }
+    }.also { if (it) bump(playlist, -1) }
 
     suspend fun deletePlaylist(playlist: String): Boolean = change { call(it, "deletePlaylist", "id" to playlist) }
 

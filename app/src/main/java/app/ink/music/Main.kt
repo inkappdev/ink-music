@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -663,17 +664,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                 LazyColumn(state = listsList, contentPadding = pad) {
                     item { ListsView() }
                     item {
-                        if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}") { pages.open(Page.Loved) }
-                        // youtube music's liked songs by their own name: they're among the loved (no list of their own), and
-                        // someone looking for "liked music" found nothing called that (a Reddit tester, 2026-10-30)
-                        val tubeWho by YouTubeAccount.who.collectAsState()
-                        val liked by YouTubeAccount.liked.collectAsState()
-                        val readingTube by YouTubeAccount.reading.collectAsState()
-                        if (tubeWho != null) ListRow("liked on youtube music", when {
-                            liked.isNotEmpty() -> "${liked.size} ${if (liked.size == 1) "song" else "songs"}, with your loved"
-                            readingTube -> "reading them"
-                            else -> "none read yet: tap to read them again"
-                        }) { if (liked.isEmpty() && !readingTube) YouTubeAccount.sync() else pages.open(Page.Loved) }
+                        if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", heart = true) { pages.open(Page.Loved) }
                         ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
                         // what's on the phone to play with no signal (your server's, YouTube's)
                         val keptIds by Offline.kept.collectAsState()
@@ -1123,11 +1114,25 @@ fun TvBeside(frost: HazeState, top: Dp, list: androidx.compose.foundation.lazy.L
     }
 }
 
-/** A row in "lists": its name big, a word on it small. */
+/** A subtle heartbeat: a quick double-thump every 1.5 s, gently scaling its content; still where the phone moves less. */
 @Composable
-private fun ListRow(name: String, said: String, onClick: () -> Unit) {
+private fun Heartbeat(content: @Composable () -> Unit) {
+    val less by Moves.less.collectAsState()
+    if (less) { content(); return }
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "beat")
+    val scale by t.animateFloat(1f, 1f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.keyframes { durationMillis = 1500; 1f at 0; 1.07f at 120; 1f at 250; 1.04f at 360; 1f at 520 }), label = "beat")
+    Box(Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) { content() }
+}
+
+/** A row in "lists": its name big, a word on it small; `heart` sets ink's red pixel heart before the name (loved). */
+@Composable
+private fun ListRow(name: String, said: String, heart: Boolean = false, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
-        BasicText(name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (heart) { Sprite(HEART, HeartRed, 3.dp); Spacer(Modifier.width(10.dp)) }
+            BasicText(name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
         if (said.isNotEmpty()) BasicText(said, style = pixel(12.sp, Ink.mid))
     }
 }
@@ -1145,11 +1150,16 @@ private fun LovedPage(pages: Pages) {
     val tube by Loved.tube.collectAsState()
     val liked by YouTubeAccount.liked.collectAsState()
     val recent by Loved.recent.collectAsState()
-    val theirs = remember(songs, lovedIds, tube, liked, recent) {
-        val all = (liked + tube + songs.filter { it.id in lovedIds }).distinctBy { it.id }
+    val who by YouTubeAccount.who.collectAsState()
+    // your youtube likes live inside loved; this narrows to just them, so it's one list and not a redundant twin
+    var onlyLiked by remember { mutableStateOf(false) }
+    val only = onlyLiked && who != null && liked.isNotEmpty()
+    val theirs = remember(songs, lovedIds, tube, liked, recent, only) {
+        val all = if (only) liked else (liked + tube + songs.filter { it.id in lovedIds }).distinctBy { it.id }
         if (recent) all.sortedByDescending { Loved.lovedAt(it) ?: Long.MIN_VALUE }   // stable: the undated keep their order
         else all.sortedBy { Library.sortName(it.title) }
     }
+    val mixKey = if (only) "liked" else "loved"
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
@@ -1157,7 +1167,10 @@ private fun LovedPage(pages: Pages) {
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
         item { Column(Modifier.cascade(0)) {
-            BasicText("LOVED", style = headline(44.sp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicText("LOVED", style = headline(44.sp))
+                Spacer(Modifier.width(14.dp)); Heartbeat { Sprite(HEART, HeartRed, 5.dp) }
+            }
             Spacer(Modifier.height(8.dp))
             BasicText("${theirs.size} ${if (theirs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(16.dp))
@@ -1170,9 +1183,17 @@ private fun LovedPage(pages: Pages) {
                 Word("latest", pixel(14.sp, if (recent) Ink.ink else Ink.dim), Modifier.padding(end = 20.dp), touch = 8.dp) { Loved.order(true) }
                 Word("a to z", pixel(14.sp, if (recent) Ink.dim else Ink.ink), touch = 8.dp) { Loved.order(false) }
             }
+            // narrow to just your youtube likes — they live in loved, so there's one list, not two that look alike
+            if (who != null && liked.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Row {
+                    Word("everything", pixel(14.sp, if (!only) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { onlyLiked = false }
+                    Word("youtube likes", pixel(14.sp, if (only) Ink.ink else Ink.dim), touch = 8.dp) { onlyLiked = true }
+                }
+            }
             // mixed by tempo and key: its own line (the row has the order's words too, and ran off the screen)
-            if (theirs.size >= 3) { Spacer(Modifier.height(6.dp)); MixWord("loved", theirs) }
-            MixProgress("loved")
+            if (theirs.size >= 3) { Spacer(Modifier.height(6.dp)); MixWord(mixKey, theirs) }
+            MixProgress(mixKey)
             Spacer(Modifier.height(14.dp))
         }}
         itemsIndexed(theirs, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, pages = pages, cover = covers) { Playback.play(theirs, i) } }}
@@ -2591,9 +2612,13 @@ private fun ListsView() {
 
 /** A list as a tile: its art square, its name and what it holds under it. */
 @Composable
-private fun ListTile(name: String, said: String, onClick: () -> Unit, art: @Composable () -> Unit) {
+private fun ListTile(name: String, said: String, onClick: () -> Unit, heart: Boolean = false, art: @Composable () -> Unit) {
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) { art() }
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) {
+            art()
+            // loved: ink's red heart in the corner (the one colour that isn't the art)
+            if (heart) Box(Modifier.align(Alignment.TopStart).background(Ink.black).padding(7.dp)) { Sprite(HEART, HeartRed, 3.dp) }
+        }
         Spacer(Modifier.height(8.dp))
         UnderCover(name, said, pixel(12.sp, Ink.mid), gap = 3.dp)
     }
@@ -2639,11 +2664,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
     ) {
         item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "view") { ListsView() }
         if (lovedIds.isNotEmpty()) item(key = "loved") {
-            ListTile("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", { pages.open(Page.Loved) }) { Mosaic(loved, "loved") }
-        }
-        if (tubeWho != null) item(key = "liked") {
-            ListTile("liked on youtube music", if (liked.isEmpty()) "none read yet" else "${liked.size} ${if (liked.size == 1) "song" else "songs"}",
-                { if (liked.isEmpty()) YouTubeAccount.sync() else pages.open(Page.Loved) }) { Mosaic(liked, "liked") }
+            ListTile("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", { pages.open(Page.Loved) }, heart = true) { Mosaic(loved, "loved") }
         }
         item(key = "year") {
             ListTile("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "", { pages.open(Page.Year) }) {
