@@ -35,6 +35,17 @@
 
 ---
 
+## Artist pages that move
+
+<p align="center">
+  <img src=".github/shots/artist-as-it-is.gif" width="34%" alt="An artist's page on the phone opening on their own moving photo, as it is" />
+  &nbsp;&nbsp;
+  <img src=".github/shots/artist-dithered.gif" width="34%" alt="The same page with the moving photo in the dither, in the artist's own color" />
+</p>
+
+An artist's page opens on their own moving photo where Apple Music has one: as it is, or in the dither, in their
+own color. New in 2.1.11, with songs you share getting a page of their own and pull down to find anything.
+
 ## New in 2.1
 
 <p align="center">
