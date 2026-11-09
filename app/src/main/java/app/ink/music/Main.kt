@@ -1,5 +1,6 @@
 package app.ink.music
 
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -168,6 +169,7 @@ class Main : ComponentActivity() {
         Order.start(this)
         Seeds.start(this)
         Fresh.start(this)
+        Hints.start(this)
         Stations.curated(this)
         setContent { TvFocus { App() } }
         // casting: the volume buttons, while ink music is open, go to the player's session, which turns the speaker
@@ -569,7 +571,10 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     val tabsFrost = rememberHazeState()
     var head by remember { mutableStateOf(0.dp) }
     // pull a list down past its top to find (Pull.kt), as ink's launcher does
-    val (pull, pulling) = rememberPull { menu = false; pages.open(Page.Find) }
+    val (pull, pulling) = rememberPull { menu = false; Hints.did(Hints.PULL); pages.open(Page.Find) }
+    // a place swiped to: the hint for swiping across is done
+    val swiping by pager.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(swiping) { if (swiping) Hints.did(Hints.ACROSS) }
     val density = LocalDensity.current
     val foot = LocalFoot.current
     val sides = bars.only(WindowInsetsSides.Horizontal)
@@ -723,7 +728,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
         // (on a TV, while the menu is down, the remote is on the menu: back folds it)
         Row(Modifier.fillMaxWidth().then(if (tv) Modifier.covered(menu) else Modifier).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             // the whole row a tap on the phone; on a TV the word alone, so the remote's lit place is the word
-            Row(Modifier.weight(1f).then(if (tv) Modifier.tvFirst() else Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu })),
+            Row(Modifier.weight(1f).then(if (tv) Modifier.tvFirst() else Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu; Hints.did(Hints.PLACES) })),
                 verticalAlignment = Alignment.CenterVertically) {
               Row(if (tv) Modifier.topRow(0).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { menu = !menu }) else Modifier,
                 verticalAlignment = Alignment.CenterVertically) {
@@ -739,6 +744,34 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             // a TV: what's playing a word away at the top, not a scroll down to the mini player at the foot
             if (tv && Playback.now.collectAsState().value != null) Word("now playing", pixel(14.sp, Ink.mid), Modifier.padding(end = 28.dp).topRow(1), touch = 8.dp, onClick = onPlayer)
             Word("find", pixel(14.sp, Ink.mid), Modifier.topRow(2), touch = 8.dp) { menu = false; pages.open(Page.Find) }
+        }
+        // the first days: how to find, then the places, typed under the place's word till each is used (Hints)
+        if (!tv) {
+            val hinted by Hints.done.collectAsState()
+            val hint = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp)
+            // the gestures first, everywhere; then the tab's own; then, on listen, the two pointers (once each)
+            val key = Hints.next(hinted, Hints.PULL, Hints.PLACES, Hints.ACROSS) ?: when (tab) {
+                "albums" -> Hints.next(hinted, Hints.TURN, Hints.ORDER)
+                "artists", "songs" -> Hints.next(hinted, Hints.ORDER)
+                "listen" -> remember(hinted) { when {
+                    Hints.due(hinted, Hints.LOOK, 3) -> Hints.LOOK
+                    Hints.due(hinted, Hints.COMPUTER, 14) -> Hints.COMPUTER
+                    else -> null
+                } }
+                else -> null
+            }
+            when (key) {
+                Hints.PULL -> Typed("pull down to find anything", pixel(12.sp, Ink.mid), hint)
+                Hints.PLACES -> Typed("tap ${tab.lowercase()} for every place", pixel(12.sp, Ink.mid), hint)
+                Hints.ACROSS -> Typed("swipe across for the place beside", pixel(12.sp, Ink.mid), hint)
+                Hints.TURN -> Typed("turn your phone sideways for a wall of covers", pixel(12.sp, Ink.mid), hint)
+                Hints.ORDER -> Typed("tap an order to change it: year, color, lately", pixel(12.sp, Ink.mid), hint)
+                // the pointers, a tap away from what they say
+                Hints.LOOK -> Typed("make it yours: settings, the look", pixel(12.sp, Ink.mid), hint.clickable(remember { MutableInteractionSource() }, indication = null,
+                    onClick = felt { Hints.did(Hints.LOOK); pages.open(Page.SettingsPart("look")) }))
+                Hints.COMPUTER -> Typed("ink music for your computer, in step with this one", pixel(12.sp, Ink.mid), hint.clickable(remember { MutableInteractionSource() }, indication = null,
+                    onClick = felt { Hints.did(Hints.COMPUTER); pages.open(Page.HandOver) }))
+            }
         }
       }
       Box(Modifier.fillMaxWidth().height(BAND).softEdge(tabsFrost, towardBottom = false))
@@ -794,7 +827,10 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         onDispose { activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
     }
-    if (onRecords && sideways()) RecordFlow(records) { pages.open(Page.Record(it.id)) }
+    if (onRecords && sideways()) {
+        LaunchedEffect(Unit) { Hints.did(Hints.TURN) }
+        RecordFlow(records) { pages.open(Page.Record(it.id)) }
+    }
     }
 }
 
@@ -922,14 +958,14 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
         Modifier.fillMaxWidth().offset { IntOffset(slid.value.roundToInt(), 0) }.background(Ink.black)
             // a tap and a hold the remote gives too (OK, OK held): a finger-only gesture left a TV's songs unreachable
             .combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
-                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); open = !open },
+                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); open = !open; Hints.did(Hints.SWIPE) },
                 onClick = { if (open) open = false else tap() })
             .then(if (!swipe) Modifier else Modifier.pointerInput(s.id) {
             var pulled = 0f
             fun letGo(act: Boolean) {
                 if (act) when (armed) {
-                    1 -> { Playback.playNext(s); done = "next" }
-                    -1 -> { Playback.add(s); done = "queued" }
+                    1 -> { Playback.playNext(s); done = "next"; Hints.did(Hints.SWIPE) }
+                    -1 -> { Playback.add(s); done = "queued"; Hints.did(Hints.SWIPE) }
                 }
                 armed = 0; pulled = 0f
                 scope.launch { slid.animateTo(0f, tween(Motion.EXIT, easing = Motion.expo)) }
@@ -1040,6 +1076,12 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
             Spacer(Modifier.height(14.dp))
         } }
     val songs: LazyListScope.() -> Unit = {
+        // the first records opened: what a song does besides play, till a song's been swiped or held (Hints)
+        item(key = "hint") {
+            val hinted by Hints.done.collectAsState()
+            if (Hints.SWIPE !in hinted && !onTv()) Typed("swipe a song right to play it next, left for the end of the queue. hold it for more",
+                pixel(12.sp, Ink.mid), Modifier.padding(bottom = 12.dp))
+        }
         itemsIndexed(whole, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) {
             // numbered by place on the whole record; a song you don't have a step dimmer
             val number = if (whole.size > a.songs.size) "${i + 1}" else s.track.takeIf { it > 0 }?.toString() ?: "${i + 1}"

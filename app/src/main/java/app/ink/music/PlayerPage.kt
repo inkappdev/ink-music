@@ -1,5 +1,8 @@
 package app.ink.music
 
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
@@ -171,6 +174,29 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     // back (it had closed on a pull without moving, and a tester found no pull at all)
     val pull = remember { androidx.compose.animation.core.Animatable(0f) }
     val pullScope = androidx.compose.runtime.rememberCoroutineScope()
+    val tall = with(LocalDensity.current) { androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val reach = tall / 5f
+    // let go: past a fifth (or flung down) it goes on down off the screen at the finger's speed, one movement, and only
+    // then is closed (2026-11-09: it stopped where the thumb left it and faded there, two goings); else it settles back
+    fun letGo(vy: Float) {
+        if (pull.value > reach || (vy > 1_800f && pull.value > 0f)) {
+            Hints.did(Hints.CLOSE)
+            pullScope.launch {
+                pull.animateTo(tall, tween(Motion.ENTER, easing = Motion.expo), initialVelocity = vy.coerceAtLeast(0f))
+                close()
+            }
+        } else pullScope.launch { pull.animateTo(0f, tween(Motion.ENTER, easing = Motion.expo), initialVelocity = vy) }
+    }
+    fun settle() { pullScope.launch { pull.animateTo(0f, tween(Motion.EXIT, easing = Motion.expo)) } }
+    // a light tick crossing the point where letting go closes it, each way (as pulling down to find)
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    LaunchedEffect(Unit) {
+        snapshotFlow { pull.value > reach }.distinctUntilChanged().drop(1).collect {
+            if (pull.isRunning) return@collect   // its own going and settling say nothing
+            haptic.performHapticFeedback(if (it) androidx.compose.ui.hapticfeedback.HapticFeedbackType.GestureThresholdActivate
+                else androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentFrequentTick)
+        }
+    }
     Box(
         // read before the layer that moves, so the finger's place is the screen's, not the sliding page's
         Modifier.fillMaxSize()
@@ -178,18 +204,15 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 val speed = androidx.compose.ui.input.pointer.util.VelocityTracker()
                 detectVerticalDragGestures(
                     onDragStart = { speed.resetTracking() },
-                    onDragEnd = {
-                        val flung = speed.calculateVelocity().y > 1_800f
-                        if (pull.value > size.height / 5f || (flung && pull.value > 0f)) close()
-                        else pullScope.launch { pull.animateTo(0f, tween(Motion.EXIT, easing = Motion.expo)) }
-                    },
-                    onDragCancel = { pullScope.launch { pull.animateTo(0f, tween(Motion.EXIT, easing = Motion.expo)) } },
+                    onDragEnd = { letGo(speed.calculateVelocity().y) },
+                    onDragCancel = { settle() },
                 ) { c, dy ->
                     c.consume()
                     speed.addPosition(c.uptimeMillis, c.position)
                     pullScope.launch { pull.snapTo((pull.value + dy).coerceAtLeast(0f)) }
                 }
             }
+            // pulled, it comes down with the finger, solid (thinned as it came, the library showed through it doubled)
             .graphicsLayer { translationY = pull.value }
             .background(Ink.black)
             .noFocus().clickable(remember { MutableInteractionSource() }, indication = null) {},   // nothing under it takes a tap
@@ -424,7 +447,16 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 Box(Modifier.size(side)) { over(t) }
             }
             if (words) {
-                Spacer(Modifier.height(20.dp))
+                // the first plays: the cover's own gestures, then closing, typed in the gap under it till each is used
+                // (Hints); one line in the gap's own 20 dp, so the cover keeps its size (on its own line, it shrank)
+                Box(Modifier.fillMaxWidth().height(20.dp), contentAlignment = androidx.compose.ui.Alignment.CenterStart) {
+                    val hinted by Hints.done.collectAsState()
+                    if (!onTv()) when (Hints.next(hinted, Hints.WHEEL, Hints.FLICK, Hints.NAME)) {
+                        Hints.WHEEL -> Typed("circle your thumb round the cover", pixel(12.sp, Ink.mid), lines = 1)
+                        Hints.FLICK -> Typed("flick the cover for the next song", pixel(12.sp, Ink.mid), lines = 1)
+                        Hints.NAME -> Typed("tap the artist for their page", pixel(12.sp, Ink.mid), lines = 1)
+                    }
+                }
                 SongWords(t, onOpen, onShare, onHeard)
             }
         }
@@ -464,7 +496,7 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
             val song = t.song
             FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false).tvLit().clickable(remember { MutableInteractionSource() }, indication = null,
-                    onClick = felt { if (song?.episode == true) showOf(song)?.let(onOpen) else artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
+                    onClick = felt { Hints.did(Hints.NAME); if (song?.episode == true) showOf(song)?.let(onOpen) else artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
             if (t.album.isNotBlank() && song?.episode != true) {
                 Spacer(Modifier.width(14.dp))
                 FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -673,7 +705,6 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = compos
                 change.consume()
                 at = change.position
                 travel += (change.position - change.previousPosition).getDistance()
-                if (!wheel) continue
                 val step = change.position - mark
                 if (step.getDistance() >= stride) {
                     val w = atan2(step.y, step.x)
@@ -681,10 +712,12 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = compos
                     way = w; mark = change.position
                 }
                 val v = change.position - centre
-                if (v.getDistance() < hub) { last = null; continue }
-                val a = atan2(v.y, v.x)   // screen y runs down, so clockwise is positive
-                last?.let { turned += wrap(a - it) }
-                last = a
+                if (v.getDistance() >= hub) {
+                    val a = atan2(v.y, v.x)   // screen y runs down, so clockwise is positive
+                    last?.let { turned += wrap(a - it) }
+                    last = a
+                } else last = null
+                if (!wheel || last == null) continue
                 // three turns backwards: 1-bit mode, over (an easter egg), once a gesture
                 if (!flipped && turned <= -6 * PI.toFloat()) { flipped = true; OneBit.on.value = !OneBit.on.value; view.performHapticFeedback(HapticFeedbackConstants.CONFIRM) }
                 // circling: its way bending, round the centre the same way it goes
@@ -699,9 +732,10 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = compos
             }
             val moved = at - down.position
             when {
-                scrub.at != null -> { scrub.at?.let(Playback::seek); scrub.at = null }
+                scrub.at != null -> { scrub.at?.let(Playback::seek); scrub.at = null; Hints.did(Hints.WHEEL) }
                 engaged == null && kotlin.math.abs(moved.x) > flick && kotlin.math.abs(moved.x) > kotlin.math.abs(moved.y) * 1.5f -> {
                     view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    Hints.did(Hints.FLICK)
                     if (moved.x < 0) Playback.next() else Playback.previous()
                 }
                 travel < viewConfiguration.touchSlop -> Playback.toggle()

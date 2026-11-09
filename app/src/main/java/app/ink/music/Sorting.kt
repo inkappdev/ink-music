@@ -245,7 +245,7 @@ fun SortRow(tab: String, sorts: List<Sort>, modifier: Modifier = Modifier, end: 
             val on = s == c.sort
             val word = if (s == Sort.AZ && on && c.turned) "z-a" else s.word
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Word(word, pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Sorts.tap(tab, s) }
+                Word(word, pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Sorts.tap(tab, s); Hints.did(Hints.ORDER) }
                 if (on && s.turns && s != Sort.AZ) Sprite(if (c.turned) UP else DOWN, Ink.ink, 2.dp, Modifier.padding(start = 2.dp))
             }
         }

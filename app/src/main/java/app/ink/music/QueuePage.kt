@@ -83,8 +83,10 @@ fun QueuePage(onClose: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 BasicText("UP NEXT", style = headline(40.sp))
                 Spacer(Modifier.height(6.dp))
+                // how to move one, till one has been moved (Hints)
+                val hinted by Hints.done.collectAsState()
                 BasicText(
-                    if (queue.isEmpty()) "nothing queued" else "${queue.size} songs   hold one to move it",
+                    if (queue.isEmpty()) "nothing queued" else "${queue.size} songs" + if (Hints.QUEUE in hinted) "" else "   hold one to move it",
                     style = pixel(12.sp, Ink.mid),
                 )
                 // radio: lit, the queue's end brings more like it
@@ -130,7 +132,7 @@ fun QueuePage(onClose: () -> Unit) {
                                 },
                                 onDragEnd = {
                                     val to = target
-                                    if (to != null && to != i) Playback.move(i, to)
+                                    if (to != null && to != i) { Playback.move(i, to); Hints.did(Hints.QUEUE) }
                                     else if (kotlin.math.abs(drag) < rowPx / 3) options = i   // held still: its options
                                     lifted = null; drag = 0f
                                 },
