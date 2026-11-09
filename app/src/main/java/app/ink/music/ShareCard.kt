@@ -19,6 +19,8 @@ import androidx.core.content.FileProvider
 import androidx.core.content.res.ResourcesCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import java.io.File
 
 /**
@@ -55,16 +57,30 @@ object ShareCard {
     }
 
     /**
-     * The song's short link (2026-11-09): inkhome.app/s/<its Apple id> where Apple has it (found here, by its artist and
-     * title, a few seconds at most), else /s/y/<its YouTube id> for a YouTube song, else the long link. The site reads
-     * the rest from the id; the same song is always the same link.
+     * The song's short link (2026-11-09): inkhome.app/s/<its Apple id>.<its Deezer id> (found here by its artist and
+     * title, at once, a few seconds at most; either alone where only one has it: /s/<apple>, /s/d/<deezer>), else
+     * /s/y/<its YouTube id> for a YouTube song, else the long link. Two ids, so the site still finds the song when one
+     * service turns it away (Apple did, from Cloudflare); the same song is always the same link.
      */
-    suspend fun short(n: Now): String? = withContext(Dispatchers.IO) {
-        val long = link(n) ?: return@withContext null
+    suspend fun short(n: Now): String? = withContext(Dispatchers.IO) { coroutineScope {
+        val long = link(n) ?: return@coroutineScope null
         val artist = n.artist.substringBefore(", ")
         fun fold(v: String) = java.text.Normalizer.normalize(v, java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
             .lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").replace(Regex("[^a-z0-9]+"), " ").trim()
         fun same(a: String, b: String) = fold(a).let { x -> fold(b).let { y -> x.isNotEmpty() && (x == y || x.startsWith("$y ") || y.startsWith("$x ")) } }
+        fun get(url: String): String? {
+            val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 2_500; c.readTimeout = 3_000
+            return try { if (c.responseCode == 200) c.inputStream.bufferedReader().readText() else null } finally { c.disconnect() }
+        }
+        val deezer = async {
+            runCatching {
+                val term = java.net.URLEncoder.encode("$artist ${n.title}", "UTF-8")
+                val r = org.json.JSONObject(get("https://api.deezer.com/search?q=$term&limit=10") ?: return@runCatching null).optJSONArray("data") ?: return@runCatching null
+                (0 until r.length()).map { r.getJSONObject(it) }
+                    .firstOrNull { same(it.optJSONObject("artist")?.optString("name").orEmpty(), artist) && same(it.optString("title"), n.title) }?.optLong("id")?.takeIf { it > 0 }
+            }.getOrNull()
+        }
         val apple = runCatching {
             val shop = java.util.Locale.getDefault().country.lowercase().takeIf { it.length == 2 } ?: "us"
             val term = java.net.URLEncoder.encode("$artist ${n.title}", "UTF-8")
@@ -75,19 +91,25 @@ object ShareCard {
             (0 until r.length()).map { r.getJSONObject(it) }
                 .firstOrNull { same(it.optString("artistName"), artist) && same(it.optString("trackName"), n.title) }?.optLong("trackId")?.takeIf { it > 0 }
         }.getOrNull()
+        val dz = deezer.await()
         when {
-            apple != null -> "https://inkhome.app/s/$apple"
+            // never Apple's id alone: Apple turns the site away (403 from Cloudflare, 2026-11-09), so a link with only
+            // its id found nothing; Deezer's id always goes with it
+            apple != null && dz != null -> "https://inkhome.app/s/$apple.$dz"
+            dz != null -> "https://inkhome.app/s/d/$dz"
             n.song?.tube == true -> "https://inkhome.app/s/y/" + n.song.id.removePrefix("y")
             else -> long
         }
-    }
+    } }
 
     /** Share the song's link (a tap on share), short where it can be; the poster where it has none. */
     suspend fun shareLink(ctx: Context, n: Now, look: Look) {
         val url = short(n) ?: return share(ctx, n, look)
+        // the link alone: a message that's only a link is the one a phone shows as its card (iMessage left the song's
+        // name and its link as plain text); the song's name goes as the share's title
         val send = Intent(Intent.ACTION_SEND).setType("text/plain")
-            .putExtra(Intent.EXTRA_TEXT, "${n.title}, ${n.artist.substringBefore(", ")} $url")
-            .putExtra(Intent.EXTRA_TITLE, "${n.title}, ${n.artist}")
+            .putExtra(Intent.EXTRA_TEXT, url)
+            .putExtra(Intent.EXTRA_TITLE, "${n.title}, ${n.artist.substringBefore(", ")}")
         ctx.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
