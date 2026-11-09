@@ -312,7 +312,7 @@ fun BecauseYouLoved(open: (Page) -> Unit) {
         Section("BECAUSE YOU LOVED ${seed.title.uppercase()}", "${seed.artist.lowercase()} · songs from its radio you've never played") {
             Word("play all", pixel(14.sp), touch = 8.dp) { Player.play(songs) }
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf {
             itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
                 Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(songs, i) })) {
                     CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
@@ -333,7 +333,7 @@ fun NewToYou(open: (Page) -> Unit) {
         Section("NEW TO YOU", "close to what you play, and you haven't played them yet") {
             Word("discovery station", pixel(14.sp), touch = 8.dp) { Discover.station() }
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf {
             itemsIndexed(list, key = { _, n -> n.artist.name }) { _, n ->
                 Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null,
                     onClick = felt { open(Page.Artist(n.artist.name, n.artist.id)) })) {

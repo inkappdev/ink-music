@@ -98,7 +98,7 @@ fun InkWeekly() {
             if (before.isNotEmpty()) {
                 Spacer(Modifier.height(26.dp))
                 Label(if (latest) "the volumes before" else "every volume")
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Shelf(gap = 16.dp) {
                     items(before, key = { it.week }) { b ->
                         Column(Modifier.width(120.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { chosen = b.week })) {
                             Mosaic(b.songs, Modifier.fillMaxWidth().aspectRatio(1f))
@@ -145,12 +145,12 @@ fun InkRadio(air: List<Curation.Aired>) {
     val stations = remember(kind) { Stations.curated().filter { kind == null || kindOf(it) == kind }.sortedByDescending { it.star } }
     Column {
         Section("INK RADIO", "the stations we keep: real djs, picked by people")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(bottom = 14.dp)) {
+        Shelf(Modifier.padding(bottom = 14.dp)) {
             item { Word("all", pixel(13.sp, if (kind == null) Ink.ink else Ink.dim), touch = 8.dp) { kind = null } }
             items(RADIO_KINDS, key = { it.key }) { k -> Word(k.name.lowercase(), pixel(13.sp, if (kind == k.key) Ink.ink else Ink.dim), touch = 8.dp) { kind = k.key } }
         }
         androidx.compose.runtime.key(kind) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 items(stations, key = { it.song.id }) { c -> StationTile(c, air.firstOrNull { it.station == c.song.id }) { Player.play(stations.dropWhile { it != c }.map { it.song }) } }
             }
         }

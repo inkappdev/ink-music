@@ -158,7 +158,7 @@ fun FindTab(open: (Page) -> Unit) {
         }
     }
     val records = @Composable { rs: List<Album>, ts: List<TubeAlbum> ->
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf {
             items(rs, key = { it.id }) { a -> RecordTile(a, Modifier.width(160.dp)) { open(Page.Record(a.id)) } }
             items(ts, key = { "ta" + it.url }) { a -> TubeTile(a, Modifier.width(160.dp)) { open(Page.Tube(a)) } }
         }
@@ -166,7 +166,7 @@ fun FindTab(open: (Page) -> Unit) {
     }
     // YouTube Music's artists: their faces in a row, each opening their page
     val faces = @Composable {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf {
             items(tubeArtists, key = { "f" + it.id.ifEmpty { it.name } }) { a ->
                 androidx.compose.foundation.layout.Column(Modifier.width(130.dp).clickable(
                     remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,

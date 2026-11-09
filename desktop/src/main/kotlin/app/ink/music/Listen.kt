@@ -148,7 +148,7 @@ fun ListenPage(open: (Page) -> Unit) {
         if (tubeMixes.isNotEmpty()) item {
             Column {
             Section("YOUR MIXES", "youtube music's, made for you")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 items(tubeMixes, key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp)) { open(Page.Tube(a)) } }
             }
             }
@@ -156,7 +156,7 @@ fun ListenPage(open: (Page) -> Unit) {
         if (episodes.isNotEmpty()) item {
             Column {
             Section("NEW EPISODES", "from the shows you follow") { Word("podcasts", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("podcasts") } }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 items(episodes.take(16), key = { it.id }) { e ->
                     Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(listOf(e)) })) {
                         CoverOf(e, e.album, Modifier.fillMaxWidth().aspectRatio(1f), px = 340)
@@ -170,7 +170,7 @@ fun ListenPage(open: (Page) -> Unit) {
         if (mixes.isNotEmpty()) item {
             Column {
             Section("YOUR ARTISTS' MIXES", "who you play most, and more like them")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 itemsIndexed(mixes, key = { _, m -> m.name }) { _, m ->
                     Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { mixScope.launch { Mixes.play(m) } })) {
                         Dithered(m.face, Modifier.fillMaxWidth().aspectRatio(1f), px = 340)
@@ -189,7 +189,7 @@ fun ListenPage(open: (Page) -> Unit) {
         if (stars.isNotEmpty()) item {
             Column {
             Section("INK RADIO", "the stations we keep") { Word("all of them", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("ink") } }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 itemsIndexed(stars, key = { _, c -> c.song.id }) { i, c ->
                     Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null,
                         onClick = felt { Player.play(stars.drop(i).map { it.song }) })) {
@@ -215,7 +215,7 @@ fun ListenPage(open: (Page) -> Unit) {
 private fun NewFromYours(list: List<Picks.Shown>, open: (Page) -> Unit) {
     Column {
         Section("NEW FROM YOUR ARTISTS", "out this week or picked by critics, by artists you play")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf {
             items(list, key = { it.pick.from + it.pick.artist + it.pick.title }) { s ->
                 val art by produceState(s.art, s) { value = Picks.artOf(s, s.pick.record) }
                 Box(Modifier.width(176.dp)) { PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, open) }
@@ -230,7 +230,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.records(label: String
     item {
         Column {
             Section(label.uppercase(), line)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 items(albums, key = { it.id }) { a -> RecordTile(a, Modifier.width(176.dp)) { open(Page.Record(a.id)) } }
             }
         }

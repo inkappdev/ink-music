@@ -121,7 +121,7 @@ fun InkMoodsShelf() {
     Column {
         Section("RIGHT NOW", said ?: "moods for ${Moods.said()}, then the rest")
         val now = remember { InkMoods.now() }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.Bottom) {
+        Shelf(verticalAlignment = Alignment.Bottom) {
             items(now, key = { "now" + it.key }) { m -> MoodTile(m, kept[m.key]?.art, 250.dp) { go(m) } }
             items(InkMoods.ALL.filter { it !in now }, key = { it.key }) { m -> MoodTile(m, kept[m.key]?.art) { go(m) } }
         }
@@ -175,7 +175,7 @@ fun FestivalsShelf(open: (Page) -> Unit) {
     if (soon.isEmpty()) return
     Column {
         Section("FESTIVALS SOON", "who's playing, to know before you go")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Shelf(gap = 16.dp) {
             items(soon, key = { it.name }) { f -> FestivalPoster(f, Modifier.width(250.dp)) { open(Page.Festival(f.name)) } }
         }
     }

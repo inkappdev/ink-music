@@ -148,7 +148,7 @@ fun ExplorePage(open: (Page) -> Unit) {
                 item(key = "s$title") {
                     Column {
                         Section(title.uppercase(), "on youtube music, for you")
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                        Shelf {
                             items(items.take(16), key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp)) { open(Page.Tube(a)) } }
                         }
                     }
@@ -231,7 +231,7 @@ private fun OnTheAir(air: List<Curation.Aired>) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column {
         Section("ON THE AIR NOW", "what the djs are playing this minute: a click tunes in")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf {
             items(air, key = { it.station }) { a ->
                 var said by remember(a) { mutableStateOf<String?>(null) }
                 Column(Modifier.width(170.dp)) {
@@ -268,7 +268,7 @@ private fun OutThisFriday(w: Curation.Week, open: (Page) -> Unit) {
         Section("OUT THIS FRIDAY", "every record out ${w.day}, ${w.releases.size} of them, from r/indieheads") {
             Word("the thread", pixel(14.sp, Ink.mid), touch = 8.dp) { browse(w.thread) }
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(bottom = 14.dp)) {
+        Shelf(Modifier.padding(bottom = 14.dp)) {
             item { Word("all", pixel(13.sp, if (kind == null) Ink.ink else Ink.dim), touch = 8.dp) { kind = null } }
             items(kinds, key = { it.first }) { (k, l) -> Word("$k ${l.size}", pixel(13.sp, if (kind == k) Ink.ink else Ink.dim), touch = 8.dp) { kind = k } }
         }
@@ -296,7 +296,7 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
     val tracks = remember(all) { all.filter { !it.record }.take(8) }
     Column {
         Section("ELECTRONIC", said ?: "picked by bandcamp daily, a closer listen, igloo and headphone commute")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf {
             items(records, key = { it.from + it.artist + it.title }) { p ->
                 val art by produceState<String?>(null, p) { value = Picks.art(p.title, p.artist, p.link, true) }
                 Box(Modifier.width(170.dp)) { PickTile(remember(p, art) { Picks.Shown(p.copy(art = art), art, listOf(p.from)) }, open) }
@@ -664,7 +664,7 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
             }
             if (pickedSongs.isNotEmpty()) item(key = "songs") {
                 Section("PICKED FOR ${m.title.uppercase()}", if (listed) from.take(4).joinToString(", ") + if (from.size > 4) " and more" else "" else "the critics' and curators' songs, the newest first")
-                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Shelf {
                     // a song clicked plays the shelf from there, so what follows is the genre's too
                     itemsIndexed(pickedSongs, key = { _, it -> Curation.key(it.pick) }) { i, s -> Box(Modifier.width(170.dp)) { PickTile(s, open, from = if (listed) pickedSongs.drop(i) else null) } }
                 }
@@ -672,7 +672,7 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
             }
             if (pickedRecords.isNotEmpty()) item(key = "records") {
                 Section("NEW RECORDS", "the ones the critics wrote about")
-                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Shelf {
                     items(pickedRecords, key = { Curation.key(it.pick) }) { s -> Box(Modifier.width(200.dp)) { PickTile(s, open) } }
                 }
                 Spacer(Modifier.height(GAP / 2))
@@ -690,7 +690,7 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
             shelves.orEmpty().forEach { shelf ->
                 item(key = shelf.title) {
                     Label(shelf.title.lowercase())
-                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Shelf {
                         items(shelf.items.mapNotNull(::tubeAlbum), key = { it.url }) { a -> TubeTile(a, Modifier.width(160.dp)) { open(Page.Tube(a)) } }
                     }
                     Spacer(Modifier.height(14.dp))

@@ -215,7 +215,7 @@ fun NewVideos(open: (Page) -> Unit) {
     if (clips.isEmpty()) return
     Column {
         Section("NEW VIDEOS", "from the artists you play")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf(cover = 16 / 9f) {
             items(clips, key = { it.id }) { c ->
                 Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
@@ -304,6 +304,8 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
                 if (video != null) Word(if (paused) "play" else "pause", pixel(14.sp, Ink.mid), touch = 8.dp) { Watching.toggle?.invoke() }
                 Spacer(Modifier.size(20.dp))
                 Word("leave full screen", pixel(14.sp, Ink.mid), touch = 8.dp) { full = false }
+                Spacer(Modifier.size(20.dp))
+                Word("stop", pixel(14.sp, Ink.mid), touch = 8.dp) { full = false; Nav.back() }
             }
         }
         return
@@ -348,6 +350,8 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
                     }
                     if (video != null) Word(if (paused) "play" else "pause", pixel(14.sp), touch = 8.dp) { Watching.toggle?.invoke() }
                     if (video != null) { Spacer(Modifier.size(20.dp)); Word("full screen", pixel(14.sp, Ink.mid), touch = 8.dp) { full = true } }
+                    // stop: the video gone, back where it was opened from
+                    Spacer(Modifier.size(20.dp)); Word("stop", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back() }
                     clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)?.let { n ->
                         Spacer(Modifier.size(20.dp))
                         Word("next video", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back(); open(Page.Watch(n, clips)) }
@@ -369,7 +373,7 @@ fun ArtistVideos(name: String, browseId: String, open: (Page) -> Unit) {
     if (videos.isEmpty()) return
     Column {
         Label("videos")
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Shelf(cover = 16 / 9f) {
             items(videos, key = { it.id }) { c ->
                 Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, videos)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))

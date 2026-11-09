@@ -53,7 +53,7 @@ fun RadioTab() {
         item(span = { GridItemSpan(maxLineSpan) }) { RadioHead() }
         item(span = { GridItemSpan(maxLineSpan) }) {
             // one row, slid through (it wrapped onto a second line)
-            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Shelf {
                 item { Word("ink radio", pixel(13.sp, if (genre == null) Ink.ink else Ink.dim), touch = 8.dp) { genre = null } }
                 Stations.genres.forEach { (word, _) ->
                     item { Word(word, pixel(13.sp, if (genre == word) Ink.ink else Ink.dim), touch = 8.dp) { genre = word } }
