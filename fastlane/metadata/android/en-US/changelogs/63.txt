@@ -1,7 +1,7 @@
-- The computer: its own title bar on Windows, ink's black to the top. Media keys show the song and its cover
+- The computer: its own title bar on Windows. Media keys show the song and its cover
 - Up next opens with the player, the song playing filling in its cover's colour
-- Right click a song: a small menu where you clicked. Copy its link, show it in its folder
-- What you hear, as a band across the player. Upright screens and narrow windows fit
+- Right click a song: a small menu where you clicked. Copy its link
+- What you hear, as a band across the player. Upright screens fit
 - Moods, faces and the record of the day load quicker
-- Fixed: Windows wouldn't start for some ("Failed to launch JVM")
+- Fixed: Windows wouldn't start for some
 - Your song is now legally required to glow
