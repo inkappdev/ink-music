@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Linux's deb and rpm, built here in an Ubuntu 24.04 container (podman) as desktop.yml builds them on GitHub's runner,
-# for when Actions can't (GitHub suspended ink's account 2026-11-01). With the JDK the PC builds with (Temurin 21, its
+# Linux's deb and rpm, built here in an Ubuntu 24.04 container (podman), as GitHub's runner once built them (its
+# Actions retired with the mac repo, 2026-11-10). With the JDK the PC builds with (Temurin 21, its
 # runtime bundled in the app as the runner's was), copied in: SELinux keeps a container out of the home folder's.
 # jpackage lists a library as needed only when it's installed where it builds, so the runner's are installed (sound,
 # OpenGL, X) and libjpeg taken out: Java's jpeg and splash screen link it, ink music uses neither (Skia draws), and

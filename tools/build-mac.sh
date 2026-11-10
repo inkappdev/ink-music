@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The Mac's dmg, built on a Mac (Apple Silicon) as mac.yml builds it on GitHub's runner, for when Actions can't
-# (GitHub suspended ink's account 2026-11-01): libmpv bundled beside the app, the dmg, then every piece of code in
+# The Mac's dmg, built on a Mac (Apple Silicon), as GitHub's runner once built it (its Actions retired 2026-11-10):
+# libmpv bundled beside the app, the dmg, then every piece of code in
 # it signed as "ink music" (ink's own certificate, not Apple's: the first open is still Open Anyway, but each build
 # is the same app to macOS, which keeps what it was allowed, Local Network above all).
 # Needs Homebrew, a JDK 21 (JAVA_HOME, or brew's temurin@21), and beside the checkout: keystore.properties (Last.fm's

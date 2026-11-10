@@ -190,9 +190,10 @@ tools/release.sh                      # both phone builds, signed, with SHA256SU
 ./gradlew :desktop:run -PdesktopOnly  # the computer's app, without the Android SDK
 ```
 
-The computer's installers are each made on their own system (`.github/workflows/`): the Mac's `.dmg`
-on macOS, the `.msi` on Windows (`:desktop:packageInkMsi`, ink's own installer pages), the `.deb` and
-`.rpm` on Linux.
+The computer's installers are each made on their own system, by a script in `tools/`: the Mac's `.dmg`
+on macOS (`build-mac.sh`), the `.msi` on Windows (`build-windows.sh`, `:desktop:packageInkMsi`, ink's own
+installer pages), the `.deb` and `.rpm` in an Ubuntu container (`build-linux.sh`) and the AppImage
+(`build-appimage.sh`).
 
 Release builds are signed with the key named in `keystore.properties` beside `settings.gradle.kts`
 (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`; never committed). Without it they're
