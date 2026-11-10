@@ -65,12 +65,16 @@ object Covers {
                     else runCatching { ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null) }.getOrNull() ?: found(ctx, song, px)
                     )?.also { if (remote) { android.util.Log.d("ink-covers", "${song.title}: fetched ${System.currentTimeMillis() - t0} ms"); toDisk(ctx, song, px, it) } }
             } catch (e: Exception) { null }
+                // a cover always comes (2026-11-10, as the computer's): a server's or YouTube's song with no link, or
+                // one that didn't come, from the catalogs by its record's name; else a YouTube song's own video picture
+                ?: (if (song.server || song.tube) runCatching { found(ctx, song, px) }.getOrNull() else null)
+                ?: (if (song.tube) runCatching { frame(ctx, song, px) }.getOrNull() else null)
             if (bmp == null) {
                 // a link that didn't come: asked again a minute on; none only where there's nothing to ask
-                if (remote) missed[song.albumId] = System.currentTimeMillis()
+                if (remote || song.server || song.tube) missed[song.albumId] = System.currentTimeMillis()
                 // a bigger one failing keeps the smaller
                 kept.get(song.albumId)?.let { return@withContext it }
-                if (!remote) none += song.albumId
+                if (!remote && !song.server && !song.tube) none += song.albumId
                 return@withContext null
             }
             missed -= song.albumId
@@ -80,14 +84,26 @@ object Covers {
         }
     }
 
-    /** A file's record with no picture: found by name in the catalogs, kept on the phone as the network's are. */
+    /**
+     * A record with no picture of its own (a file's, or a song with no link to one): found by name in the catalogs,
+     * kept on the phone as the network's are; a song with no record named, by its own name.
+     */
     private fun found(ctx: Context, song: Song, px: Int): Bitmap? {
-        val url = FoundCovers.link(java.io.File(ctx.cacheDir, "covers"), song.album, song.albumArtist) { a, by ->
+        val record = song.album.ifBlank { song.title }
+        val whose = song.albumArtist.ifBlank { song.artist }.substringBefore(", ")
+        if (record.isBlank()) return null
+        val url = FoundCovers.link(java.io.File(ctx.cacheDir, "covers"), record, whose) { a, by ->
             // none in the catalogs: YouTube Music's record of that name (the full build; the play build has none)
             kotlinx.coroutines.runBlocking { YouTubeMusic.findRecord(a, by)?.art }
         } ?: return null
         val found = song.copy(art = url)
         return fromDisk(ctx, found, px) ?: fetch(url, px)?.also { toDisk(ctx, found, px, it) }
+    }
+
+    /** A YouTube song's own video picture (its largest, its centre square): there's one for every video. */
+    private fun frame(ctx: Context, song: Song, px: Int): Bitmap? {
+        val framed = song.copy(art = "https://i.ytimg.com/vi/${song.id.removePrefix("y")}/hqdefault.jpg")
+        return fromDisk(ctx, framed, px) ?: fetch(framed.art!!, px)?.also { toDisk(ctx, framed, px, it) }
     }
 
     // covers from the network, as JPEGs in the cache (the system may clear it; trimmed to 150 MB, oldest first)

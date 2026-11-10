@@ -997,6 +997,10 @@ fun FestivalPage(name: String, pages: Pages) {
                 if (f.link.isNotBlank()) Word("the lineup", pixel(14.sp, Ink.mid), touch = 8.dp) {
                     runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 }
+                // where to buy them, the festival's own site (the festivals file says where; plain links, as the computer's)
+                if (f.tickets.isNotBlank()) Word("tickets", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                    runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.tickets)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                }
             }
             said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp)) }
             Spacer(Modifier.height(16.dp))
