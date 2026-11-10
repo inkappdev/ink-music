@@ -250,7 +250,10 @@ object Mini {
     }
 
     /** Only with something to show (with nothing playing it was a small black window, the main one gone to the Dock). */
-    fun open() { if (Player.now.value == null) return; on.value = true; Win.state?.isMinimized = true }
+    // the main window goes to the Dock once the mini player's up (MiniWindow), not here: both at once, on a Mac, the
+    // main one's minimise waited on AppKit while AppKit waited on Java to move the new window, and the app froze for
+    // good (2026-11-09, the mini player placed where it was left and sized to ink's size as it opened)
+    fun open() { if (Player.now.value == null) return; on.value = true }
     fun close() { on.value = false; Win.state?.isMinimized = false; if (Tucked.away.value) Tucked.back() }
 }
 
@@ -258,7 +261,8 @@ object Mini {
 fun MiniWindow() {
     val on by Mini.on.collectAsState()
     if (!on) return
-    val state = rememberWindowState(size = DpSize(440.dp, 128.dp), position = Mini.at())
+    // made at ink's size from the start: a resize as it first shows was half of the Mac's freeze (Mini.open)
+    val state = rememberWindowState(size = DpSize(440.dp, 128.dp) * Size.of(Size.chosen.value), position = Mini.at())
     Window(
         onCloseRequest = { Mini.close() }, state = state, title = "ink music", icon = inkIcon, undecorated = true,
         alwaysOnTop = true, resizable = false,
@@ -267,7 +271,9 @@ fun MiniWindow() {
         // ink's size (settings, Ctrl = and -): the window and all in it, as the main one's content is (it stayed small)
         val chosen by Size.chosen.collectAsState()
         val k = Size.of(chosen)
-        androidx.compose.runtime.LaunchedEffect(k) { state.size = DpSize(440.dp * k, 128.dp * k) }
+        androidx.compose.runtime.LaunchedEffect(k) { if (state.size != DpSize(440.dp * k, 128.dp * k)) state.size = DpSize(440.dp * k, 128.dp * k) }
+        // the main window to the Dock, once this one has shown and settled
+        androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(350); Win.state?.isMinimized = true }
         // where it's dragged to, kept for next time (a moment after it stops)
         androidx.compose.runtime.LaunchedEffect(Unit) {
             androidx.compose.runtime.snapshotFlow { state.position }.collect { kotlinx.coroutines.delay(600); Mini.keep(it) }
