@@ -790,6 +790,50 @@ private fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?, 
 }
 
 /**
+ * The bar's "more": a menu as a song's right click is (black, a hairline round it, its words following one another),
+ * rising out of the word, over it, the bar being at the window's foot. Away by a click anywhere else, esc, or a word
+ * chosen. The last kind is dim (stop, as remove is in a song's).
+ */
+@Composable
+private fun BarMenu(groups: List<List<Pair<String, () -> Unit>>>, accent: Color, onClose: () -> Unit) {
+    val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+    fun close(then: () -> Unit = {}) { then(); shown.targetState = false }
+    LaunchedEffect(shown.currentState, shown.isIdle) { if (shown.isIdle && !shown.currentState) onClose() }
+    val gap = with(androidx.compose.ui.platform.LocalDensity.current) { 6.dp.roundToPx() }
+    androidx.compose.ui.window.Popup(
+        popupPositionProvider = object : androidx.compose.ui.window.PopupPositionProvider {
+            override fun calculatePosition(anchorBounds: androidx.compose.ui.unit.IntRect, windowSize: androidx.compose.ui.unit.IntSize,
+                layoutDirection: androidx.compose.ui.unit.LayoutDirection, popupContentSize: androidx.compose.ui.unit.IntSize): androidx.compose.ui.unit.IntOffset {
+                // over the word, its right edge at the word's (kept inside the window)
+                val x = (anchorBounds.right - popupContentSize.width).coerceIn(gap, (windowSize.width - popupContentSize.width - gap).coerceAtLeast(gap))
+                val y = (anchorBounds.top - popupContentSize.height - gap).coerceAtLeast(gap)
+                return androidx.compose.ui.unit.IntOffset(x, y)
+            }
+        },
+        onDismissRequest = { close() },
+        properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+        onKeyEvent = { k -> if (k.type == KeyEventType.KeyDown && k.key == Key.Escape) { close(); true } else false },
+    ) {
+        androidx.compose.animation.AnimatedVisibility(
+            shown,
+            enter = fadeIn(tween(Motion.ENTER, easing = Motion.expo)) + slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 14 } +
+                androidx.compose.animation.scaleIn(tween(Motion.ENTER, easing = Motion.expo), initialScale = .96f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)),
+            exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) {
+            Column(Modifier.width(androidx.compose.foundation.layout.IntrinsicSize.Max).widthIn(min = 160.dp)
+                .background(Ink.black).border(1.dp, Ink.line).padding(horizontal = 18.dp, vertical = 12.dp)) {
+                var n = 0
+                groups.forEachIndexed { g, words ->
+                    if (g > 0) Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(Ink.line))
+                    val last = g == groups.lastIndex && g > 0
+                    words.forEach { (word, act) -> MenuWord(word, if (last) Ink.mid else Ink.ink, accent, n++) { close(act) } }
+                }
+            }
+        }
+    }
+}
+
+/**
  * A word in a menu, coming in after the one before it (ink's stagger). Under the mouse it takes on the song's cover
  * colour, gently (2026-11-09), and dims a moment while pressed.
  */
@@ -1047,14 +1091,27 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
             if (volume) { Spacer(Modifier.width(12.dp)); Volume(line = 80.dp) }
             if (words) {
                 Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
-                // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
-                Word("stop", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp) { Player.stop() }
-                // where it plays: lit while on a speaker
+                // the rest in one word (2026-11-09: stop, play on and the mini player and full screen pixels made the bar
+                // crowded): its menu over it, as a song's right click is. Lit while on a speaker, as play on was
                 val on by Casting.on.collectAsState()
-                Word("play on", pixel(14.sp, if (on != null) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onPlayOn)
-                // the mini player, over every window (till 2026-11-09 only the now column had its way in, and the keys)
-                Pixel(SHRINK, "mini player", Ink.mid, Modifier.padding(start = 4.dp)) { Mini.open() }
-                Pixel(FULL, "full screen", Ink.mid) { Win.full(true); onOpen() }
+                var more by remember { mutableStateOf(false) }
+                Box {
+                    Word("more", pixel(14.sp, if (on != null || more) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp) { more = !more }
+                    if (more) BarMenu(
+                        listOf(
+                            listOf(
+                                // where it plays, the speaker's name while on one
+                                (on?.let { "play on ${it.name.lowercase()}" } ?: "play on") to onPlayOn,
+                                // the mini player, over every window
+                                "mini player" to { Mini.open() },
+                                "full screen" to { Win.full(true); onOpen() },
+                            ),
+                            // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
+                            listOf("stop" to { Player.stop() }),
+                        ),
+                        cover?.accent ?: Ink.ink,
+                    ) { more = false }
+                }
             }
             // the now column, brought back out
             onUntuck?.let { Pixel(UNTUCK, "show what's playing beside", Ink.mid, onClick = it) }
