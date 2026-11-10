@@ -2918,24 +2918,41 @@ private fun SongFilters(counts: Map<String, Int>, genres: List<Pair<String, Int>
 @Composable
 private fun DropWord(word: String, lit: Boolean, rows: List<Triple<String, Int?, Boolean>>, onPick: (Int) -> Unit) {
     var down by remember { mutableStateOf(false) }
+    // the list there while it's down or still folding away (2026-11-10: it unfolds from under the word, its rows rising
+    // in one after another as the places menu's do, and folds back up)
+    val open = remember { androidx.compose.animation.core.MutableTransitionState(false) }
+    open.targetState = down
+    val less by Moves.less.collectAsState()
     Box {
         Row(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { down = !down })
             .padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicText(word, style = pixel(14.sp, if (lit || down) Ink.ink else Ink.mid))
-            Sprite(if (down) GENRES_UP else GENRES_DOWN, if (lit || down) Ink.ink else Ink.mid, 2.dp, Modifier.padding(start = 6.dp))
+            // the arrow turns over as it drops
+            val turn by androidx.compose.animation.core.animateFloatAsState(if (down) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "arrow")
+            Sprite(GENRES_DOWN, if (lit || down) Ink.ink else Ink.mid, 2.dp, Modifier.padding(start = 6.dp).graphicsLayer { rotationZ = turn })
         }
-        if (down) androidx.compose.ui.window.Popup(
+        if (open.currentState || open.targetState) androidx.compose.ui.window.Popup(
             offset = with(LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 40.dp.roundToPx()) },
             onDismissRequest = { down = false },
             properties = androidx.compose.ui.window.PopupProperties(focusable = true),
         ) {
-            Column(Modifier.widthIn(min = 200.dp).background(Ink.black).border(1.dp, Ink.line).heightIn(max = 400.dp)
-                .verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
-                rows.forEachIndexed { i, (w, n, on) ->
-                    Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
-                        onClick = felt { onPick(i); down = false }).padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        BasicText(w, style = pixel(15.sp, if (on) Ink.ink else Ink.mid), modifier = Modifier.weight(1f, fill = false))
-                        n?.let { BasicText("  $it", style = pixel(12.sp, Ink.dim)) }
+            androidx.compose.animation.AnimatedVisibility(
+                open,
+                enter = if (less) fadeIn(tween(Motion.FADE)) else androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                exit = if (less) fadeOut(tween(Motion.FADE)) else androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+            ) {
+                Column(Modifier.widthIn(min = 200.dp).background(Ink.black).border(1.dp, Ink.line).heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+                    rows.forEachIndexed { i, (w, n, on) ->
+                        // each row rising in 30 ms after the one before (the first dozen; the rest with the last)
+                        val shown = remember { androidx.compose.animation.core.Animatable(if (less) 1f else 0f) }
+                        LaunchedEffect(Unit) { if (!less) { kotlinx.coroutines.delay(minOf(i, 12) * 30L); shown.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) } }
+                        Row(Modifier.fillMaxWidth().graphicsLayer { alpha = shown.value; translationY = (1f - shown.value) * 12.dp.toPx() }
+                            .clickable(remember { MutableInteractionSource() }, indication = null,
+                                onClick = felt { onPick(i); down = false }).padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            BasicText(w, style = pixel(15.sp, if (on) Ink.ink else Ink.mid), modifier = Modifier.weight(1f, fill = false))
+                            n?.let { BasicText("  $it", style = pixel(12.sp, Ink.dim)) }
+                        }
                     }
                 }
             }
