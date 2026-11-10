@@ -10,6 +10,8 @@
 # this PC's key, portable Git and Temurin 21 in C:\b (git, jdk), Gradle's cache in C:\b\gradle. Last.fm's key
 # (keystore.properties) goes over for each build and is deleted after it. Slimmed for building (no automatic updates,
 # indexing, telemetry or Store apps; Defender skips C:\b): a build takes about 8 minutes.
+# The app carries JetBrains' Java (JBR 21, for ink's own title bar, 2026-11-09): unzipped to C:\b\jbr once (INK_RUNTIME);
+# without it the build still works, on Temurin, with Windows' own title bar.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 UMBREL=${UMBREL:-umbrel@umbrel.local}
@@ -45,6 +47,7 @@ if (Test-Path C:\b\src) { Remove-Item -Recurse -Force C:\b\src }
 Expand-Archive C:\b\src.zip -DestinationPath C:\b\src; Remove-Item C:\b\src.zip
 Copy-Item C:\b\keystore.properties C:\b\src\
 $env:JAVA_HOME="C:\b\jdk"; $env:GRADLE_USER_HOME="C:\b\gradle"
+if (Test-Path C:\b\jbr\release) { $env:INK_RUNTIME="C:\b\jbr" } else { Write-Host "no C:\b\jbr: Windows title bar back (see the top)" }
 & C:\b\git\bin\bash.exe -lc "cd /c/b/src && GITHUB_SHA='"$sha"' tools/build-windows.sh 2>&1 | grep -v ^w: | tail -15"'
 
 mkdir -p build/release
