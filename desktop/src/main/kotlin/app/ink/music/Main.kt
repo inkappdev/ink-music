@@ -180,6 +180,8 @@ fun main() {
                 androidx.compose.runtime.snapshotFlow { Win.state?.let { it.size to it.position } }
                     .collect { kotlinx.coroutines.delay(800); Win.state?.let(Placed::keep) }
             }
+            // a click on ink music in the Dock brings the window back while the mini player has it hidden
+            LaunchedEffect(Unit) { Mini.dockReopens() }
             // the menus in the Mac's own bar along the top of the screen (elsewhere, the keys alone)
             if (Home.mac) Menus()
             Box(Modifier.fillMaxSize()) {

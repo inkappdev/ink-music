@@ -193,7 +193,8 @@ object Tucked {
     /** Back from the tray, to the front. */
     fun back() {
         away.value = false
-        Win.state?.isMinimized = false
+        // a Mac's window is never minimised by ink (Mini.open), and asking it to come back from that waits as long
+        if (!Home.mac) Win.state?.isMinimized = false
         java.awt.EventQueue.invokeLater { java.awt.Frame.getFrames().firstOrNull { it.title == "ink music" && it.isDisplayable }?.let { it.toFront(); it.requestFocus() } }
     }
 }
@@ -250,11 +251,25 @@ object Mini {
     }
 
     /** Only with something to show (with nothing playing it was a small black window, the main one gone to the Dock). */
-    // the main window goes to the Dock once the mini player's up (MiniWindow), not here: both at once, on a Mac, the
-    // main one's minimise waited on AppKit while AppKit waited on Java to move the new window, and the app froze for
-    // good (2026-11-09, the mini player placed where it was left and sized to ink's size as it opened)
+    // the main window out of the way once the mini player's up (MiniWindow), not here. On a Mac it's hidden, never
+    // minimised: Java's minimise there waits on the event thread for the window to reach the Dock, while the Dock's
+    // animation waits on the same thread to move it, and the app froze for good (2026-11-09, both thread dumps). A
+    // click on ink music in the Dock brings it back (dockReopens)
     fun open() { if (Player.now.value == null) return; on.value = true }
-    fun close() { on.value = false; Win.state?.isMinimized = false; if (Tucked.away.value) Tucked.back() }
+    fun close() { on.value = false; if (!Home.mac) Win.state?.isMinimized = false; if (Tucked.away.value) Tucked.back() }
+
+    /** The main window out of the way while the mini player's up: hidden on a Mac (see [open]), to the taskbar elsewhere. */
+    fun away() { if (Home.mac) Tucked.away.value = true else Win.state?.isMinimized = true }
+
+    /** A Mac: ink music clicked in the Dock while its window's hidden (the mini player up): the window back. */
+    fun dockReopens() {
+        if (!Home.mac) return
+        runCatching {
+            java.awt.Desktop.getDesktop().addAppEventListener(java.awt.desktop.AppReopenedListener {
+                if (on.value) close() else if (Tucked.away.value) Tucked.back()
+            })
+        }
+    }
 }
 
 @Composable
@@ -272,8 +287,8 @@ fun MiniWindow() {
         val chosen by Size.chosen.collectAsState()
         val k = Size.of(chosen)
         androidx.compose.runtime.LaunchedEffect(k) { if (state.size != DpSize(440.dp * k, 128.dp * k)) state.size = DpSize(440.dp * k, 128.dp * k) }
-        // the main window to the Dock, once this one has shown and settled
-        androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(350); Win.state?.isMinimized = true }
+        // the main window out of the way, once this one has shown and settled
+        androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(350); Mini.away() }
         // where it's dragged to, kept for next time (a moment after it stops)
         androidx.compose.runtime.LaunchedEffect(Unit) {
             androidx.compose.runtime.snapshotFlow { state.position }.collect { kotlinx.coroutines.delay(600); Mini.keep(it) }
@@ -468,17 +483,30 @@ object MacTitle {
         if (p.waitFor() == 0) out else "Maximize"
     }.getOrDefault("Maximize")
 
+    // the window's place before it was zoomed, for the next double-click to put it back
+    private var before: java.awt.Rectangle? = null
+
+    /**
+     * Zoomed by its bounds: the screen's room (less the menu bar and the Dock), and back. Not Java's own zoom or
+     * minimise (window states): on a Mac those wait on the event thread for the window to get there, while the Mac
+     * waits on the same thread to move it, and the app froze (the mini player's minimise, 2026-11-09). "Minimize" set
+     * on the Mac does nothing here for that reason; the yellow button still does it.
+     */
     fun doubleClicked() {
         val s = Win.state ?: return
         if (s.placement == WindowPlacement.Fullscreen) return
         Thread {
             val a = action()
             javax.swing.SwingUtilities.invokeLater {
-                when (a) {
-                    "None" -> {}
-                    "Minimize" -> s.isMinimized = true
-                    else -> s.placement = if (s.placement == WindowPlacement.Maximized) WindowPlacement.Floating else WindowPlacement.Maximized
-                }
+                if (a == "None" || a == "Minimize") return@invokeLater
+                val w = java.awt.Frame.getFrames().firstOrNull { it.title == "ink music" && it.isDisplayable && it.isVisible && it.width >= 600 } ?: return@invokeLater
+                val gc = w.graphicsConfiguration
+                val ins = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(gc)
+                val b = gc.bounds
+                val room = java.awt.Rectangle(b.x + ins.left, b.y + ins.top, b.width - ins.left - ins.right, b.height - ins.top - ins.bottom)
+                val was = before
+                if (was != null && w.bounds == room) { w.bounds = was; before = null }
+                else { before = w.bounds; w.bounds = room }
             }
         }.start()
     }
