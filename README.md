@@ -38,9 +38,9 @@
 ## Artist pages that move
 
 <p align="center">
-  <img src=".github/shots/artist-as-it-is.gif" width="34%" alt="An artist's page on the phone opening on their own moving photo, as it is" />
+  <img src=".github/shots/artist-as-it-is.gif" width="34%" alt="The Marías' page on the phone opening on their own moving photo, as it is" />
   &nbsp;&nbsp;
-  <img src=".github/shots/artist-dithered.gif" width="34%" alt="The same page with the moving photo in the dither, in the artist's own color" />
+  <img src=".github/shots/artist-toro.gif" width="34%" alt="Toro y Moi's page with his moving photo in the dither: a silhouette on red, his own color" />
 </p>
 
 An artist's page opens on their own moving photo where Apple Music has one: as it is, or in the dither, in their
