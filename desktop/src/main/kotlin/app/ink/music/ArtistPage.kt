@@ -170,7 +170,8 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
             songs.forEachIndexed { n, s ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     BasicText("${from + n + 1}", style = headline(40.sp), modifier = Modifier.width(64.dp))
-                    Box(Modifier.weight(1f)) { SongRow(s, said = s.album.lowercase().ifEmpty { null }, open = open) { Player.play(top, from + n) } }
+                    // no times in the chart: YouTube's five come without one, the rest of the six with (2026-11-09: only the sixth said)
+                    Box(Modifier.weight(1f)) { SongRow(s.copy(duration = 0), said = s.album.lowercase().ifEmpty { null }, open = open) { Player.play(top, from + n) } }
                 }
             }
         }

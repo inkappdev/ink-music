@@ -1437,7 +1437,8 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
             itemsIndexed(top, key = { _, s -> "t" + s.id }) { n, s -> Box(Modifier.cascade(n + 1)) {
                 Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     BasicText("${n + 1}", style = headline(34.sp), modifier = Modifier.width(48.dp))
-                    Box(Modifier.weight(1f)) { SongRow(s, pages = pages) { Playback.play(top, n) } }
+                    // no times in the chart: YouTube's five come without one, the rest with (2026-11-09: only the sixth said)
+                    Box(Modifier.weight(1f)) { SongRow(s.copy(duration = 0), pages = pages) { Playback.play(top, n) } }
                 }
             }}
             item { Spacer(Modifier.height(10.dp)) }
