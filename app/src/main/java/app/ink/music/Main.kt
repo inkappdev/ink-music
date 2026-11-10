@@ -2069,7 +2069,10 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
     ) {
         item { Column(Modifier.cascade(0)) {
             BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
-                CoverOf(remember(a.url) { tubeFace(a) }, a.title, Modifier.size(minOf(maxWidth, 560.dp)))
+                // YouTube's own (its mixes, liked music...): in the dither, as on its tile, never its branding
+                val face = remember(a.url) { tubeFace(a) }
+                if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Dithered(face, Modifier.size(minOf(maxWidth, 560.dp)), px = 1080)
+                else CoverOf(face, a.title, Modifier.size(minOf(maxWidth, 560.dp)))
             }
             Spacer(Modifier.height(18.dp))
             BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)

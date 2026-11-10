@@ -501,11 +501,14 @@ object Curation {
 
     /**
      * Whether a YouTube Music playlist is YouTube's own (shown in the dither, its lettering made ink's): its mixes
-     * ("RD..."), its charts ("PL4fGSI1pDJn..."), its editors' lists, anything it signs as YouTube Music or a chart.
+     * ("RD..."), its charts ("PL4fGSI1pDJn..."), its editors' lists, anything it signs as YouTube Music or a chart, and its
+     * auto playlists, liked music ("LM", a thumbs up on a gradient) and episodes for later ("SE"): no YouTube Music
+     * branding anywhere in ink, ever (2026-11-09: liked music's thumbs up showed on the computer's for-you shelf).
      */
     fun tubeBranded(url: String, by: String): Boolean =
         Regex("[?&]list=(RD|PL4fGSI1pDJn)").containsMatchIn(url) ||
-            by.trim().lowercase() in setOf("youtube music", "youtube", "chart", "charts")
+            Regex("[?&]list=(LM|SE)(&|$)").containsMatchIn(url) || Regex("(^|/)VL(LM|SE)$").containsMatchIn(url) ||
+            by.trim().lowercase() in setOf("youtube music", "youtube", "chart", "charts", "auto playlist")
 
     /** A record's (or song's) cover from Apple's iTunes search (no key), artist and name matched, at its largest. */
     fun itunes(title: String, artist: String, record: Boolean): String? = runCatching { itunesOrThrow(title, artist, record) }.getOrNull()
