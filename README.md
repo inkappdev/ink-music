@@ -31,6 +31,10 @@
 </p>
 
 <p align="center">
+  <a href="https://ko-fi.com/b0nez93"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Buy us a coffee on Ko-fi" /></a>
+</p>
+
+<p align="center">
   <img src=".github/hero.png" width="100%" alt="ink music on a computer and a phone: Deftones' My Mind Is a Mountain full screen, the lyrics big beside the snake cover; on the phone, Max Chapman's Lost in You mid-automix, 125 to 130 BPM, mixing" />
 </p>
 
