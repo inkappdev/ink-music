@@ -1817,11 +1817,7 @@ fun Filling(text: String, done: Float, modifier: Modifier = Modifier) {
 }
 
 /** A bio's first sentence (if it's one to pull out: not too long), and the rest. */
-fun pullQuote(about: String): Pair<String?, String> {
-    val end = Regex("""[.!?](?=\s+[A-Z“"(])""").find(about)?.range?.last ?: return null to about
-    val first = about.substring(0, end + 1).trim()
-    return if (first.length in 20..180) first to about.substring(end + 1).trim() else null to about
-}
+fun pullQuote(about: String): Pair<String?, String> = Bio.pullQuote(about)
 
 /**
  * A picture in the dither (the player's), in its own colour, developing from black (the brightest dots first) once

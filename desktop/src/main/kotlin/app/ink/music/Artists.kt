@@ -114,11 +114,7 @@ object Artists {
     }
 
     /** What's said of them, its first sentence pulled out (big, as a lyric is) when it's a fair length; the rest. */
-    fun pullQuote(about: String): Pair<String?, String> {
-        val end = Regex("""[.!?](?=\s+[A-Z“"(])""").find(about)?.range?.last ?: return null to about
-        val first = about.substring(0, end + 1).trim()
-        return if (first.length in 20..180) first to about.substring(end + 1).trim() else null to about
-    }
+    fun pullQuote(about: String): Pair<String?, String> = Bio.pullQuote(about)
 }
 
 /** A face or photo as a song-shaped picture (a cover to read), kept apart from records'. */
