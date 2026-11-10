@@ -96,7 +96,9 @@ fun SettingsPage(onClose: () -> Unit) {
                             Spacer(Modifier.height(36.dp)); YouTubeSetting()
                             Spacer(Modifier.height(36.dp)); FilesSetting()
                         }
-                        "the look" -> LookSetting()
+                        // how big everything's drawn first (it was under about, and nobody found it: "everything looks way too
+                        // big", 2026-11-10)
+                        "the look" -> { SizeSetting(); Spacer(Modifier.height(36.dp)); LookSetting() }
                         "sound" -> {
                             SoundSetting()
                             Spacer(Modifier.height(36.dp)); TransitionsSetting()
@@ -110,9 +112,8 @@ fun SettingsPage(onClose: () -> Unit) {
                         }
                         "keys" -> KeysSetting()
                         else -> {
-                            SizeSetting()
-                            if (!Home.mac) { Spacer(Modifier.height(36.dp)); CloseSetting() }
-                            Spacer(Modifier.height(36.dp)); AboutSetting()
+                            if (!Home.mac) { CloseSetting(); Spacer(Modifier.height(36.dp)) }
+                            AboutSetting()
                         }
                     }
                 }
@@ -208,7 +209,8 @@ object Settings {
             val behind by Looks.on.collectAsState()
             val cover by Moving.cover.collectAsState()
             val moving by Moving.on.collectAsState()
-            listOf("cover ${cover?.word ?: "as it is"}", if (behind == Look.PLAIN) "its print beside it" else "${behind.word} behind",
+            val size by Size.chosen.collectAsState()
+            listOf("size ${size?.let(::pct) ?: "fit"}", "cover ${cover?.word ?: "as it is"}", if (behind == Look.PLAIN) "its print beside it" else "${behind.word} behind",
                 if (moving) "moving covers" else "still covers").joinToString(" · ")
         }
         "listening" -> {
@@ -263,16 +265,23 @@ private fun ServerSetting() {
     }
 }
 
-/** Your files: the folder they're read from, how many, another folder or read again. */
+/** Your files: the folders they're read from (each one let go of, beside the last), how many, another, or read again. */
 @Composable
 private fun FilesSetting() {
     BasicText("YOUR FILES", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     val at by Library.folderAt.collectAsState()
     val local = Library.songs.collectAsState().value.count { !it.server }
-    BasicText(remember(at, local) { "every song in ${Library.said} · $local songs" }, style = pixel(12.sp, Ink.mid))
+    val folders = remember(at) { Library.folders }
+    BasicText(remember(at, local) { "every song in ${if (folders.size == 1) "this folder" else "these ${folders.size} folders"} · $local songs" }, style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
-    Word("choose another folder", pixel(14.sp), touch = 8.dp) { chooseFolder()?.let(Library::choose) }
+    for (f in folders) Row(verticalAlignment = Alignment.CenterVertically) {
+        BasicText(Library.said(f), style = pixel(14.sp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false).padding(vertical = 8.dp))
+        if (folders.size > 1) { Spacer(Modifier.width(16.dp)); Word("remove", pixel(12.sp, Ink.mid), touch = 8.dp) { Library.remove(f) } }
+    }
+    Spacer(Modifier.height(8.dp))
+    Word("add a folder", pixel(14.sp), touch = 8.dp) { chooseFolder()?.let(Library::add) }
     Word("read again", pixel(14.sp, Ink.mid), touch = 8.dp) { Library.scan() }
 }
 
@@ -641,6 +650,7 @@ private fun KeptSetting() {
 
 /** How big everything's drawn: fit to the screen, or a size; ⌘/Ctrl = and - step it. */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun SizeSetting() {
     val chosen by Size.chosen.collectAsState()
     val key = if (Home.mac) "⌘" else "ctrl"
@@ -652,7 +662,7 @@ private fun SizeSetting() {
         style = pixel(12.sp, Ink.mid),
     )
     Spacer(Modifier.height(10.dp))
-    androidx.compose.foundation.layout.Row {
+    FlowRow(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Word("fit", pixel(14.sp, if (chosen == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Size.set(null) }
         Size.CHOICES.forEach { c ->
             Word(pct(c), pixel(14.sp, if (chosen == c) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Size.set(c) }

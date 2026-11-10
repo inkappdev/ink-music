@@ -85,21 +85,33 @@ object Library {
     private val kept = File(Home.dir, "library.json")
     private val sounds = setOf("mp3", "flac", "m4a", "aac", "ogg", "oga", "opus", "wav", "aif", "aiff", "wv", "ape", "alac")
 
-    /** ~/Music, or the folder chosen in settings (-Dink.folder=... another, to try it on another library). */
+    /**
+     * ~/Music, or the folders chosen in settings, one a line (-Dink.folder=... another, to try it on another library);
+     * several since 2026-11-10 (Reddit: music kept across drives and folders was half missing).
+     */
     private val chosen = File(Home.dir, "folder")
-    val folder: File get() = File(System.getProperty("ink.folder") ?: runCatching { chosen.readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
-        ?: (System.getProperty("user.home") + "/Music"))
-    /** Bumped when the folder changes, so what shows it says the new one. */
+    val folders: List<File> get() = System.getProperty("ink.folder")?.let { listOf(File(it)) }
+        ?: runCatching { chosen.readLines().map { it.trim() }.filter { it.isNotEmpty() }.distinct().map(::File) }.getOrNull()?.takeIf { it.isNotEmpty() }
+        ?: listOf(File(System.getProperty("user.home") + "/Music"))
+    val folder: File get() = folders.first()
+    /** Bumped when the folders change, so what shows them says the new ones. */
     val folderAt = MutableStateFlow(0)
 
-    /** Another folder for your files: read anew. */
-    fun choose(f: File) {
-        runCatching { Home.write(chosen, f.path) }
+    private fun keep(list: List<File>) {
+        runCatching { Home.write(chosen, list.joinToString("\n") { it.path }) }
         folderAt.value++
         scan(fresh = true)
     }
-    /** The folder as said: ~/music. */
-    val said: String get() = folder.path.replaceFirst(System.getProperty("user.home"), "~").lowercase()
+    /** Only this folder for your files: read anew. */
+    fun choose(f: File) = keep(listOf(f))
+    /** Another folder beside the ones there (one inside another already read: nothing to add). */
+    fun add(f: File) { if (folders.none { f.path == it.path }) keep(folders + f) }
+    /** A folder let go (never the last). */
+    fun remove(f: File) { if (folders.size > 1) keep(folders.filter { it.path != f.path }) }
+    /** A folder as said: ~/music. */
+    fun said(f: File): String = f.path.replaceFirst(System.getProperty("user.home"), "~").lowercase()
+    /** The folders as said: ~/music, d:\\music. */
+    val said: String get() = folders.joinToString(", ") { said(it) }
 
     fun song(id: String): Song? = byId[id] ?: when {
         id.startsWith("y") -> YouTube.known(id)
@@ -132,7 +144,9 @@ object Library {
                 .getOrDefault(emptyList())
             if (before.isNotEmpty() && local.isEmpty()) { putLocal(before); read.value = true }
             val known = (before + local).associateBy { it.path }
-            val now = folder.walkTopDown().filter { it.isFile && it.extension.lowercase() in sounds && !it.name.startsWith("._") }
+            // every folder walked, a file in two (one folder inside another) once
+            val now = folders.asSequence().flatMap { it.walkTopDown() }.filter { it.isFile && it.extension.lowercase() in sounds && !it.name.startsWith("._") }
+                .distinctBy { it.absolutePath }
                 .mapNotNull { f -> known[f.path]?.takeIf { it.modified == f.lastModified() } ?: tags(f) }.toList()
             putLocal(now)
             read.value = true
@@ -173,7 +187,34 @@ object Library {
             format = f.extension.lowercase().let { if (it == "m4a" && h.isLossless) "alac" else it },
             modified = f.lastModified(),
         )
-    } catch (e: Exception) { null }   // not a sound it can read: not shown
+    } catch (e: Exception) { byHand(f) }
+
+    /**
+     * A file jaudiotagger can't read (Opus; a FLAC with an ID3 tag in front): its tags read by hand (`Tags`), else its
+     * name for its title, shown all the same (these were left out without a word, 2026-11-10).
+     */
+    private fun byHand(f: File): Song {
+        val r = Tags.read(f)
+        val artist = said(r?.of("ARTIST").orEmpty())
+        val album = r?.of("ALBUM").orEmpty()
+        val albumArtist = said(r?.of("ALBUMARTIST", "ALBUM ARTIST", "ALBUM_ARTIST").orEmpty()).takeIf { it != "unknown" } ?: artist.substringBefore(", ")
+        return Song(
+            id = "l" + hash(f.path),
+            path = f.path,
+            title = r?.of("TITLE")?.ifEmpty { null } ?: f.nameWithoutExtension,
+            artist = artist,
+            album = album,
+            albumId = "la" + hash(plain(album) + "/" + plain(albumArtist)),
+            albumArtist = albumArtist,
+            duration = r?.durationMs ?: 0L,
+            disc = r?.of("DISCNUMBER")?.substringBefore('/')?.trim()?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+            track = r?.of("TRACKNUMBER")?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0,
+            year = Regex("""\d{4}""").find(r?.of("DATE", "YEAR", "ORIGINALDATE").orEmpty())?.value?.toInt() ?: 0,
+            bits = r?.bits ?: 0, rate = r?.rate ?: 0,
+            format = f.extension.lowercase(),
+            modified = f.lastModified(),
+        )
+    }
 
     @Synchronized private fun putLocal(songs: List<Song>) { local = songs; publish() }
 

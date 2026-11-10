@@ -139,7 +139,8 @@ object Size {
     private val file = File(Home.dir, "size")
     /** null is fit; else the size chosen, 1 the desktop's own. */
     val chosen = MutableStateFlow(runCatching { file.readText().trim().toFloat() }.getOrNull())
-    val CHOICES = listOf(1f, 1.25f, 1.5f, 1.75f, 2f)
+    // smaller than the desktop's own too (2026-11-10: "the interface and fonts are way too large")
+    val CHOICES = listOf(.8f, .9f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
     /** The size fit gives this screen. */
     val fit: Float by lazy {

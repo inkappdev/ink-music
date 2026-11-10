@@ -243,7 +243,7 @@ object Covers {
     }
 
     private fun picture(f: File): ByteArray? =
-        runCatching { AudioFileIO.read(f).tag?.firstArtwork?.binaryData }.getOrNull()
+        runCatching { AudioFileIO.read(f).tag?.firstArtwork?.binaryData }.getOrNull() ?: Tags.read(f)?.picture
             ?: f.parentFile?.listFiles()?.filter { it.extension.lowercase() in setOf("jpg", "jpeg", "png") }
                 ?.minByOrNull { p -> beside.indexOf(p.nameWithoutExtension.lowercase()).let { if (it < 0) 99 else it } }
                 ?.readBytes()
