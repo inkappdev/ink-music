@@ -136,6 +136,8 @@ fun main() {
     // podcasts (Pods): the shows followed and where each episode was left, kept here and carried by sync with the phone
     Podcasts.dir = java.io.File(Home.dir, "podcasts")
     SyncHub.start()
+    // what plays, on your Discord profile (Discord)
+    Discord.start()
     Follows.start()
     Colours.start()
     Player.start()

@@ -107,6 +107,7 @@ fun SettingsPage(onClose: () -> Unit) {
                         }
                         "listening" -> {
                             PrivateSetting()
+                            Spacer(Modifier.height(36.dp)); DiscordSetting()
                             Spacer(Modifier.height(36.dp)); ListenBrainzSetting()
                             if (LastFm.available) { Spacer(Modifier.height(36.dp)); LastFmSetting() }
                         }
@@ -686,6 +687,21 @@ private fun PrivateSetting() {
     androidx.compose.foundation.layout.Row {
         Word("on", pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Private.set(true) }
         Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { Private.set(false) }
+    }
+}
+
+/** Discord: what plays on your profile there, on or off. */
+@Composable
+private fun DiscordSetting() {
+    val on by Discord.on.collectAsState()
+    BasicText("DISCORD", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText(if (on) "what you play shows on your discord profile while discord's open: the song, who, its cover. not while paused, or in private listening"
+        else "off: nothing shown on discord", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    androidx.compose.foundation.layout.Row {
+        Word("on", pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Discord.set(true) }
+        Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { Discord.set(false) }
     }
 }
 

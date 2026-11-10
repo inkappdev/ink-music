@@ -161,6 +161,20 @@ object Covers {
         }
     }
 
+    /**
+     * A link anyone can open to the song's cover, for Discord's card (blocking): YouTube's and a podcast's own, else
+     * iTunes' (kept as the sharp covers' are); a file's or the server's have none out there unless iTunes knows it.
+     */
+    fun link(song: Song, px: Int = 512): String? {
+        if ((song.tube || song.episode) && song.art?.startsWith("http") == true) return song.art
+        if (song.station) return null
+        val link = File(File(Home.cache, "covers"), "itunes-" + song.id.removePrefix("y"))
+        val url = if (link.exists()) link.readText().ifEmpty { null } else itunes(song).also { u ->
+            runCatching { link.parentFile.mkdirs(); link.writeText(u.orEmpty()) }
+        }
+        return url?.replace("/3000x3000bb.", "/${px}x${px}bb.")
+    }
+
     /** The song on Apple's iTunes search: its art's link at the largest it's kept, or null for no match. */
     private fun itunes(song: Song): String? = runCatching {
         fun plain(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
