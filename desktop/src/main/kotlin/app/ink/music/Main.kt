@@ -476,14 +476,15 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
     val albums by Library.albums.collectAsState()
     val songs by Library.songs.collectAsState()
     val read by Library.read.collectAsState()
+    // the places' menu, dropped from the place's word (a narrow window's), folded by a place chosen
+    var menu by remember { mutableStateOf(false) }
+    LaunchedEffect(tab, words) { menu = false }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().padding(top = TOP + if (words) 16.dp else 40.dp)) {
-        // the phone's layout (a narrow window): the places as words across the top
-        if (words) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(horizontal = SIDE), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (t in PLACES) Word(t.uppercase(), headline(26.sp, if (t == tab) Ink.ink else Ink.dim)) { onPlace(t) }
-            Pixel(SEARCH, "find", Ink.mid, Modifier.padding(top = 4.dp)) { open(Page.Find) }
-            Word("your year", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Year) }
-            Word("settings", pixel(13.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Settings) }
-        }
+        // the phone's layout (a narrow window, an upright screen): the place you're on as one big word, the rest dropped
+        // down from it, as the phone's; find beside it. 2026-11-09: every place as words across the top took two or three
+        // lines of an upright window before any music
+        if (words) PlaceHead(tab, menu, { menu = !menu }) { open(Page.Find) }
         // beside the rail no name over the page: the rail's lit word says where you are (2026-10-29)
         if (words) Spacer(Modifier.height(14.dp))
         if (tab in setOf("albums", "artists", "songs")) NetworkShut(Modifier.padding(horizontal = SIDE).padding(bottom = 18.dp))
@@ -562,6 +563,79 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             }
         }
     }
+    if (words) PlaceMenu(tab, menu, Modifier.padding(top = TOP + 16.dp + PLACE_HEAD), { menu = false }, { menu = false; onPlace(it) }) { menu = false; open(it) }
+    }
+}
+
+/** A narrow window's head: the place's word big, a pixel arrow down after it (its menu), find at the right. */
+private val PLACE_HEAD = 64.dp
+
+@Composable
+private fun PlaceHead(tab: String, menu: Boolean, onMenu: () -> Unit, onFind: () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(PLACE_HEAD).padding(horizontal = SIDE), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onMenu)), verticalAlignment = Alignment.CenterVertically) {
+            BasicText(tab.uppercase(), style = headline(44.sp))
+            Spacer(Modifier.width(12.dp))
+            // down while folded, up while it's dropped
+            Pixel(if (menu) PLACES_UP else PLACES_DOWN, "places", Ink.mid, cell = 3.dp, onClick = onMenu)
+        }
+        Spacer(Modifier.weight(1f))
+        Pixel(SEARCH, "find", Ink.mid, cell = 3.dp, onClick = onFind)
+    }
+}
+
+private val PLACES_DOWN = listOf("#...#", ".#.#.", "..#..")
+private val PLACES_UP = listOf("..#..", ".#.#.", "#...#")
+
+/**
+ * The places, dropped down under the word (the phone's): big, the one you're on lit, each arriving in turn; your year,
+ * settings and made by ink after them. Black over the page, never a frosted panel; a click off the words, or esc, folds
+ * it away.
+ */
+@Composable
+private fun PlaceMenu(tab: String, shown: Boolean, modifier: Modifier, onFold: () -> Unit, onPlace: (String) -> Unit, open: (Page) -> Unit) {
+    AnimatedVisibility(
+        shown, modifier = modifier,
+        enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+        exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+    ) {
+        // the keys to it while it's down: esc folds it
+        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+        Column(
+            Modifier.fillMaxSize().background(Ink.black)
+                .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onFold)
+                .focusRequester(focus).focusable()
+                .onKeyEvent { k -> if (k.type == KeyEventType.KeyDown && k.key == Key.Escape) { onFold(); true } else false }
+                .padding(start = SIDE, end = SIDE, top = 8.dp),
+        ) {
+            PLACES.forEachIndexed { i, t ->
+                MenuPlace(i, shown) { Word(t.uppercase(), headline(40.sp, if (t == tab) Ink.ink else Ink.mid), touch = 4.dp) { onPlace(t) } }
+            }
+            Spacer(Modifier.height(24.dp))
+            MenuPlace(PLACES.size, shown) { Word("your year", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Year) } }
+            MenuPlace(PLACES.size + 1, shown) { Word("settings", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Settings) } }
+            // made by ink, its heart (the rail's, which a narrow window hasn't): the quiet funnel
+            MenuPlace(PLACES.size + 2, shown) {
+                Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText("made by ", style = pixel(12.sp, Ink.dim))
+                    Word("ink", pixel(12.sp, Ink.mid)) { browse("https://inkhome.app") }
+                    Spacer(Modifier.width(6.dp))
+                    InkHeart(Ink.dim)
+                }
+            }
+        }
+    }
+}
+
+/** A word of the places' menu, arriving after the one before it (ink's stagger), rising a little as it fades in. */
+@Composable
+private fun MenuPlace(place: Int, shown: Boolean, content: @Composable () -> Unit) {
+    val a = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(shown) {
+        if (shown) { a.snapTo(0f); kotlinx.coroutines.delay(Motion.STAGGER / 2L * place); a.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
+    }
+    Box(Modifier.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 8.dp.toPx() }) { content() }
 }
 
 @Composable
