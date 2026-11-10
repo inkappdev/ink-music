@@ -604,8 +604,17 @@ private fun Scrubber(
     val margin = with(androidx.compose.ui.platform.LocalDensity.current) { 12.dp.toPx() }
     val reach = with(androidx.compose.ui.platform.LocalDensity.current) { REACH.toPx() }
     var pos by remember { mutableLongStateOf(n.positionNow()) }
+    var posOf by remember { mutableStateOf(n.index) }
     LaunchedEffect(n) {
-        while (true) { pos = n.positionNow(); if (!n.moving) break; delay(250) }
+        while (true) {
+            // never a step back of under a second and a half in the same song: the time read is counted on from when it
+            // was read, and read as a song starts going (or the player's own clock a second behind) the count ran ahead, and
+            // the next reading pulled it back ("3, 2, 3, 2" before a blend, 2026-11-10); held a moment, it's caught up
+            val now = n.positionNow()
+            pos = if (posOf == n.index && n.moving && now < pos && pos - now < 1_500) pos else now
+            posOf = n.index
+            if (!n.moving) break; delay(250)
+        }
     }
     val shown = scrub.at ?: pos
     val span = point?.full ?: n.duration

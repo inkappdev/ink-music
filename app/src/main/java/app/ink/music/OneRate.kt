@@ -61,19 +61,7 @@ class OneRate(sink: AudioSink, private val wanted: () -> Boolean) : ForwardingAu
         return taken
     }
 
-    // diagnostic (2026-11-10, the countdown going back up seconds before a blend): the clock heard stepping back
-    private var lastPos = Long.MIN_VALUE
-    override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
-        val p = super.getCurrentPositionUs(sourceEnded)
-        if (p != AudioSink.CURRENT_POSITION_NOT_SET) {
-            if (lastPos != Long.MIN_VALUE && p < lastPos - 20_000) android.util.Log.d("ink-seek", "clock back ${(lastPos - p) / 1000} ms: ${lastPos / 1000} -> ${p / 1000} ms")
-            lastPos = p
-        }
-        return p
-    }
-
     override fun flush() {
-        lastPos = Long.MIN_VALUE
         pending = null
         if (on) resample.flush(AudioProcessor.StreamMetadata.DEFAULT)
         super.flush()
