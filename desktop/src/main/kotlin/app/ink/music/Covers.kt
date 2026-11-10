@@ -89,11 +89,17 @@ object Covers {
 
     private suspend fun fetchOf(song: Song, px: Int): Cover? {
         return withContext(Dispatchers.IO) {
+            val t0 = System.nanoTime()
+            val disk = song.art != null && (song.server || song.tube || song.episode) && onDisk(song.art, px)
             val bytes = try { remote(song, px) } catch (e: Server.Busy) {
                 missed[song.albumId] = System.currentTimeMillis(); return@withContext kept.get(song.albumId)
             } ?: if (song.server || song.tube || song.episode) null else picture(File(song.path)) ?: found(song, px)
+            val t1 = System.nanoTime()
             missed -= song.albumId
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
+            // how long a cover took, and where it came from (as the phone logs its own: ink-covers)
+            if (Log.on) Log.d("covers: ${song.album.take(24)} px $px ${if (disk) "disk" else if (song.server) "server" else if (song.tube) "youtube" else "file"} " +
+                "${(t1 - t0) / 1_000_000} ms read, ${bytes?.size ?: 0} bytes, ${img?.width ?: 0} px")
             if (img == null) {
                 kept.get(song.albumId)?.let { return@withContext it }
                 // a picture there is a link to that didn't come (a timeout, a crowd of them at once): asked again a minute
@@ -105,7 +111,10 @@ object Covers {
             }
             val sq = square(img, px)
             if (sq.width < px * 9 / 10) whole += song.albumId
-            Cover(sq.toComposeImageBitmap(), accentOf(sq)).also { kept.put(song.albumId, it) }
+            Cover(sq.toComposeImageBitmap(), accentOf(sq)).also {
+                kept.put(song.albumId, it)
+                if (Log.on) Log.d("covers: ${song.album.take(24)} ready ${(System.nanoTime() - t0) / 1_000_000} ms")
+            }
         }
     }
 

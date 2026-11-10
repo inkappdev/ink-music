@@ -46,6 +46,12 @@ object Picks {
             kept?.let { show(it) }
             // a day kept before it was checked against YouTube Music: read again now
             readAt = kept?.takeIf { it.optBoolean("checked") }?.optLong("at") ?: 1L
+            // the day's record kept without its cover (it wasn't among those asked): asked for now, not at the next read
+            today.value?.takeIf { it.art == null }?.let { d ->
+                scope.launch {
+                    Curation.cover(d.pick.title, d.pick.artist, d.pick.record)?.let { art -> if (today.value?.pick == d.pick) today.value = d.copy(art = art) }
+                }
+            }
         }
         if (Curation.stale(readAt) && reading?.isActive != true) reading = scope.launch { read() }
     }
@@ -75,10 +81,16 @@ object Picks {
             group.map { (p, _) -> async { Curation.key(p) to Curation.cover(p.title, p.artist, p.record) } }.awaitAll().forEach { (k, v) -> found[k] = v }
             kotlinx.coroutines.delay(800)
         }
-        val shown = firsts.map { (p, by) -> Shown(p, p.art ?: before[Curation.key(p)] ?: found[Curation.key(p)], by) }
+        val firstShown = firsts.map { (p, by) -> Shown(p, p.art ?: before[Curation.key(p)] ?: found[Curation.key(p)], by) }
         // the day's record: the first in turn that YouTube Music has, so play always plays (eight asked at most)
-        val day = Curation.recordsOfTheDay(all).take(8).firstOrNull { record(it) != null }
-            ?.let { d -> shown.firstOrNull { Curation.key(it.pick) == Curation.key(d) }?.copy(pick = d) }
+        val chosen = Curation.recordsOfTheDay(all).take(8).firstOrNull { record(it) != null }
+            ?.let { d -> firstShown.firstOrNull { Curation.key(it.pick) == Curation.key(d) }?.copy(pick = d) }
+        // its cover always asked for: it's the page's biggest, and the forty asked above are the newest picks, which it
+        // needn't be among (2026-11-09: The Universal Bubba showed its name all day; Deezer had its cover)
+        val dayArt = chosen?.art ?: chosen?.let { Curation.cover(it.pick.title, it.pick.artist, it.pick.record) }
+        val dayKey = chosen?.let { Curation.key(it.pick) }
+        val shown = firstShown.map { if (dayArt != null && it.art == null && Curation.key(it.pick) == dayKey) it.copy(art = dayArt) else it }
+        val day = chosen?.copy(art = dayArt)
         // the records several named first, then the publications in turn (Curation.fair: no one of them fills the shelf)
         val recs = shown.filter { it.pick.record }.sortedByDescending { it.pick.at }
         records.value = recs.filter { it.by.size > 1 }.sortedByDescending { it.by.size } + Curation.fair(recs.filter { it.by.size <= 1 }) { it.pick.from }

@@ -92,7 +92,7 @@ fun MixPointBar(frac: Float, cutFrac: Float, accent: Color, line: Dp, modifier: 
  * the clock while it plays.
  */
 @Composable
-fun BeatCounter(songId: String, playing: Boolean, modifier: Modifier = Modifier) {
+fun BeatCounter(songId: String, playing: Boolean, modifier: Modifier = Modifier, key: Boolean = true) {
     val e by androidx.compose.runtime.produceState(Crossfade.endsOf(songId), songId) { while (true) { value = Crossfade.endsOf(songId); delay(1_000) } }
     val ends = e ?: return
     val head = ends.head?.takeIf { it.sure >= Beat.SURE }; val tail = ends.tail?.takeIf { it.sure >= Beat.SURE }
@@ -107,7 +107,8 @@ fun BeatCounter(songId: String, playing: Boolean, modifier: Modifier = Modifier)
     }
     val late = tail != null && t >= ends.duration - 45_000
     val b = (if (late) tail else head) ?: tail ?: head!!
-    val key = (if (late) ends.tailKey else ends.headKey) ?: ends.headKey ?: ends.tailKey
+    // the key beside the tempo, but where there's only room for the tempo (the mini player)
+    val key = ((if (late) ends.tailKey else ends.headKey) ?: ends.headKey ?: ends.tailKey).takeIf { key }
     val beats = (t - b.downbeat) / b.period
     val step = Math.floorMod(Math.floor(beats).toLong(), 4L).toInt()
     val within = (beats - Math.floor(beats)).toFloat()

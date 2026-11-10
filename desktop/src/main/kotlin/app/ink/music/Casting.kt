@@ -700,6 +700,6 @@ object SystemClock {
 
 /** What casting says, on the error stream when asked (-Dink.log). */
 object Log {
-    private val on = System.getProperty("ink.log") != null
+    val on = System.getProperty("ink.log") != null
     fun d(text: String) { if (on) System.err.println("ink-cast: $text") }
 }

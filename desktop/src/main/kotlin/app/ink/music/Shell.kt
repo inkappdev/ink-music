@@ -142,7 +142,7 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
             Column(Modifier.weight(1f).padding(top = 2.dp)) {
                 val (title, artist) = said(n)
                 Row(verticalAlignment = Alignment.Top) {
-                    BasicText(title.uppercase(), style = headline(19.sp), maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    WholeWords(title.uppercase(), headline(19.sp), 3, Modifier.weight(1f))
                     Heart(n.song, 2.dp, Modifier.offset(x = 8.dp, y = (-6).dp))
                 }
                 Spacer(Modifier.height(4.dp))

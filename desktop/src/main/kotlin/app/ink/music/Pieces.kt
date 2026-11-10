@@ -67,7 +67,7 @@ fun clock(ms: Long): String {
 
 /** The giant artist running off both edges; still while paused. A new artist drops and rises. */
 @Composable
-fun Marquee(artist: String, playing: Boolean, modifier: Modifier, size: androidx.compose.ui.unit.TextUnit = 150.sp) {
+fun Marquee(artist: String, playing: Boolean, modifier: Modifier, size: androidx.compose.ui.unit.TextUnit = 150.sp, color: androidx.compose.ui.graphics.Color = Ink.ink) {
     AnimatedContent(
         targetState = artist.uppercase(),
         transitionSpec = {
@@ -78,7 +78,7 @@ fun Marquee(artist: String, playing: Boolean, modifier: Modifier, size: androidx
         },
         modifier = modifier,
         label = "marquee",
-    ) { shown -> Drift(shown, headline(size), playing, Modifier.fillMaxWidth().padding(bottom = 4.dp)) }
+    ) { shown -> Drift(shown, headline(size, color), playing, Modifier.fillMaxWidth().padding(bottom = 4.dp)) }
 }
 
 /**

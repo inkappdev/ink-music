@@ -2,7 +2,9 @@
 # Windows' msi, built on Windows (in Git Bash) as desktop.yml builds it on GitHub's runner, for when Actions can't
 # (GitHub suspended ink's account 2026-11-01): libmpv from mpv's own Windows build (shinchiro's, x86-64), beside the
 # app, then the msi. Unsigned, as ever: the first open is SmartScreen's More info, Run anyway.
-# Needs a JDK 21 (JAVA_HOME), and keystore.properties beside the checkout (Last.fm's key).
+# Needs a JDK 21 (JAVA_HOME), and keystore.properties beside the checkout (Last.fm's key). The msi carries the Java
+# that builds it, or INK_RUNTIME's where it's set: JetBrains' (JBR 21, github.com/JetBrains/JetBrainsRuntime, a
+# "jbrsdk" build) for ink's own title bar; on another Java, Windows' bar is back.
 # Leaves build/release/ink-music-<version>-windows.msi.
 set -euo pipefail
 cd "$(dirname "$0")/.."

@@ -434,8 +434,12 @@ object Mixes {
             // whom you follow first, then whom you play most
             .let { mine -> (Follows.all.value.map { it.name } + mine).distinctBy { it.lowercase() } }.take(8)
         val found = ArrayList<Mix>()
+        val t0 = System.nanoTime()
         for (name in names) {
-            val info = kotlinx.coroutines.withTimeoutOrNull(8_000) { Artists.of(name, "").firstOrNull { it != null } } ?: continue
+            val t = System.nanoTime()
+            val info = kotlinx.coroutines.withTimeoutOrNull(8_000) { Artists.of(name, "").firstOrNull { it != null } }
+            if (Log.on) Log.d("mixes: $name ${(System.nanoTime() - t) / 1_000_000} ms (${(System.nanoTime() - t0) / 1_000_000} ms in)${if (info == null) ", none" else ""}")
+            info ?: continue
             val hit = info.top.firstOrNull { it.tube } ?: continue
             val face = info.photo?.let { faceSong(name, it, photo = true) } ?: hit
             found += Mix(info.name, face, hit)

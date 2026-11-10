@@ -16,8 +16,9 @@ jobs:
     defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v4
+      # JetBrains' Java (JBR 21): the one the msi carries, for its custom title bar (InkTitle, Desk.kt)
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: "21" }
+        with: { distribution: jetbrains, java-version: "21" }
       - uses: gradle/actions/setup-gradle@v4
 
       # libmpv for Windows (x86-64, any CPU from the last decade), beside the app: found at run time from its resources

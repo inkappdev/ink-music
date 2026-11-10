@@ -117,12 +117,15 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
     val behind by Looks.on.collectAsState()
     val coverLook by Moving.cover.collectAsState()
     val names by Marquees.on.collectAsState()
-    Box(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}) {
+        // a window taller than it's wide and not wide (an upright screen): the name along the foot smaller, its room
+        // the page's (at 150 it sat over the record / lyrics / up next words)
+        val tall = maxHeight > maxWidth * 1.1f && maxWidth < 1000.dp
         // the background (settings, the look): the cover across the whole window in its effect
         if (!n.song.station && behind != Look.PLAIN) Backdrop(cover, behind, n.song, n.playing)
         // the artist's name, big, along the foot: a way to their page too
         Marquee(said(n).second, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth()
-            .clickable(remember { MutableInteractionSource() }, indication = null) { show?.let(open) ?: artist?.let { open(Page.Artist(it)) } }, size = 150.sp)
+            .clickable(remember { MutableInteractionSource() }, indication = null) { show?.let(open) ?: artist?.let { open(Page.Artist(it)) } }, size = if (tall) 84.sp else 150.sp)
         Column(Modifier.fillMaxSize()) {
             // close; where in the queue, where it plays (the pixel speaker, lit on one), the whole screen
             Row(Modifier.fillMaxWidth().padding(start = SIDE - 8.dp, end = SIDE - 8.dp, top = TOP), verticalAlignment = Alignment.CenterVertically) {
@@ -131,18 +134,24 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 Word(if (n.song.station) "queue" else "${n.index + 1} of ${Player.queue.collectAsState().value.size}", pixel(12.sp, Ink.mid), touch = 10.dp) { open(Page.Queue) }
                 Spacer(Modifier.width(12.dp))
                 Pixel(SPEAKER, if (on != null) "playing on ${on!!.name}" else "play on", if (on != null) Ink.ink else Ink.mid) { open(Page.PlayOn) }
+                // the mini player from here too: out of the whole screen first, then the window away to the dock
+                Pixel(SHRINK, "mini player", Ink.mid) { Win.full(false); Mini.open() }
                 Pixel(if (Win.full) UNFULL else FULL, if (Win.full) "leave full screen" else "full screen", Ink.mid) { Win.full(!Win.full) }
             }
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(start = SIDE, end = SIDE, top = 8.dp, bottom = 190.dp)) {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(start = SIDE, end = SIDE, top = 8.dp, bottom = if (tall) 110.dp else 190.dp)) {
+                // the cover over the words, not beside them, where beside it the words had a third of the width and the
+                // song's name broke mid-word (2026-11-09)
+                val upright = tall
                 // the print's offset, a twentieth of the cover; the cover as big as that leaves room for
-                val side: Dp = minOf((maxHeight - 17.dp - 18.dp) / 1.05f, maxWidth * .5f).coerceAtLeast(120.dp)
+                val side: Dp = (if (upright) minOf(maxWidth * .6f, (maxHeight - 35.dp) * .44f)
+                    else minOf((maxHeight - 17.dp - 18.dp) / 1.05f, maxWidth * .5f)).coerceAtLeast(120.dp)
                 val off = side * .05f
-                Row {
+                val coverPart: @Composable () -> Unit = {
                     Column(Modifier.width(side + off)) {
                         Scrubber(n, accent, Modifier.width(side)) {
                             // on a speaker, what's sent there: a click to its path too
                             val castQuality by Casting.quality.collectAsState()
-                            HeardWord(if (on != null) sent(castQuality, n.song.id) else heard?.takeIf { it.id == n.song.id }, typing) { heardUp = true }
+                            HeardWord(if (on != null) sent(castQuality, n.song.id) else heard?.takeIf { it.id == n.song.id }, typing) { heardUp = !heardUp }
                         }
                         Box(Modifier.size(side + off)) {
                             // its print beside it, while there's no background (the background takes its place)
@@ -159,8 +168,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             }
                         }
                     }
-                    Spacer(Modifier.width(48.dp))
-                    Column(Modifier.weight(1f).padding(top = 17.dp)) {
+                }
+                val wordsPart: @Composable (Modifier) -> Unit = { m ->
+                    Column(m) {
                         val (title, by) = said(n)
                         AnimatedContent(
                             n.song.id + title,
@@ -172,7 +182,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         ) { _ ->
                             Column {
                                 Row(verticalAlignment = Alignment.Top) {
-                                    BasicText(title.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                    WholeWords(title.uppercase(), headline(44.sp), 3, Modifier.weight(1f, fill = false))
                                     Heart(n.song, 3.dp, Modifier.padding(start = 8.dp))
                                 }
                                 Spacer(Modifier.height(12.dp))
@@ -202,7 +212,8 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         // the record, its lyrics, up next, its notes, chosen by a word; stop at the row's end
                         val lines = rememberLyrics(n.song)
                         var shows by remember(n.song.albumId) { mutableStateOf<String?>(null) }
-                        val panel = shows ?: if (n.song.episode) "episode" else if (!lines.isNullOrEmpty()) "lyrics" else if (n.song.station) "up next" else "record"
+                        // up next first (2026-11-09: it was the lyrics where found, else the record); an episode its notes
+                        val panel = shows ?: if (n.song.episode) "episode" else "up next"
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             // an episode: its own notes where a song's record and lyrics are
                             val words = if (n.song.episode) listOf("episode", "up next", "notes")
@@ -227,20 +238,31 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                 }
                                 "up next" -> Column {
                                     RadioWord()
-                                    QueueList(open, rememberLazyListState(), PaddingValues(bottom = 16.dp), Modifier.fillMaxSize())
+                                    QueueList(open, rememberLazyListState(), PaddingValues(bottom = 16.dp), Modifier.fillMaxSize(), follow = true)
                                 }
                                 else -> Notes(n, heard?.takeIf { it.id == n.song.id }, on?.name)
                             }
                         }
                     }
                 }
+                if (upright) Column { coverPart(); Spacer(Modifier.height(20.dp)); wordsPart(Modifier.weight(1f)) }
+                else Row { coverPart(); Spacer(Modifier.width(48.dp)); wordsPart(Modifier.weight(1f).padding(top = 17.dp)) }
             }
         }
+        // what's heard: on a wide window a band rising over the player's foot, the path across it (SignalBand); else the
+        // page of its own over the player, as on the phone
+        val band = !tall && maxWidth >= 1100.dp
         AnimatedVisibility(
             heardUp && (heard != null || on != null),
-            enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
-            exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { SignalPath(heard?.takeIf { on == null && it.id == n.song.id }) { heardUp = false } }
+            modifier = if (band) Modifier.align(Alignment.BottomStart) else Modifier,
+            enter = if (band) slideInVertically(tween(Motion.ENTER * 2, easing = Motion.expo)) { it } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))
+                else slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = if (band) slideOutVertically(tween(Motion.ENTER, easing = Motion.expo)) { it } + fadeOut(tween(Motion.EXIT, easing = Motion.expo))
+                else slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) {
+            val hh = heard?.takeIf { on == null && it.id == n.song.id }
+            if (band) SignalBand(hh, { heardUp = false }) else SignalPath(hh) { heardUp = false }
+        }
     }
 }
 
@@ -304,7 +326,7 @@ fun Scrubber(n: Player.Now, accent: Color, modifier: Modifier = Modifier, middle
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: MutableState<Long?> = remember { mutableStateOf(null) }) {
+fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: MutableState<Long?> = remember { mutableStateOf(null) }, beat: Boolean = true) {
     val pos by Player.position.collectAsState()
     val live = !n.song.station && n.duration > 0
     var hover by remember { mutableStateOf<Float?>(null) }   // where the mouse is along it, 0 to 1
@@ -349,8 +371,9 @@ fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: 
                 modifier = Modifier.align(Alignment.TopStart).onSizeChanged { label = it.width }
                     .offset { IntOffset((h * width - label / 2f).toInt().coerceIn(0, (width - label).coerceAtLeast(0)), 0) })
         }
-        // automix: the song's beat over the line (BeatCounter), not while the mouse is on it or in a blend
-        if (live && h == null && k == null) BeatCounter(n.song.id, n.playing, Modifier.align(Alignment.TopCenter))
+        // automix: the song's beat over the line (BeatCounter), not while the mouse is on it or in a blend; `beat` off
+        // where it has a place of its own (the mini player's, beside its controls)
+        if (beat && live && h == null && k == null) BeatCounter(n.song.id, n.playing, Modifier.align(Alignment.TopCenter))
         if (k != null && mix != null) MixBar(mix, k, old, accent, thick, Modifier.align(Alignment.BottomStart))
         else if (cut != null) MixPointBar(frac, cut.toFloat() / n.duration, accent, thick, Modifier.align(Alignment.BottomStart))
         else Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(thick).background(Ink.line)) {

@@ -69,9 +69,40 @@ private fun font(name: String) = androidx.compose.ui.text.platform.Font(
 private val tight = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both)
 
 fun headline(size: TextUnit, color: Color = Ink.ink) = TextStyle(
-    fontFamily = Archivo, fontSize = size, color = color,
+    fontFamily = Archivo, fontSize = settable(size), color = color,
     letterSpacing = (-0.02).em, lineHeight = 0.95.em, lineHeightStyle = tight,
 )
+
+/**
+ * Words set whole: where the longest word won't fit the room it's given, the type a little smaller (to 60% at the
+ * least) rather than the word broken across two lines (2026-11-09: "JOHANNESBU / RG" in the bar along the foot,
+ * "JOHANNESB / URG" in a narrow player). Past 60% it breaks as it did.
+ */
+@Composable
+fun WholeWords(text: String, style: TextStyle, maxLines: Int, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val room = constraints.maxWidth
+        val widest = androidx.compose.runtime.remember(text, style) {
+            text.split(' ', '\n').filter { it.isNotEmpty() }.maxOfOrNull { measurer.measure(it, style, maxLines = 1, softWrap = false).size.width } ?: 0
+        }
+        val k = if (constraints.hasBoundedWidth && widest > room && widest > 0) (room.toFloat() / widest).coerceIn(.6f, 1f) else 1f
+        BasicText(text, style = if (k < 1f) style.copy(fontSize = style.fontSize * k) else style, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * A size Skia can set type at: never 0, never without end, always a number. Words sized from the room they're given
+ * (a cover's name from its side, a station's on its sleeve, a list's on its tile) come to 0 where there's no room at
+ * all, and Skia works a line's height out as a share of the size: 0 / 0, not a number, which it refuses ("Check
+ * failed."), and the window never opens ("Failed to launch JVM"). A PC with an upright screen, 2026-11-09: at every
+ * start once a song was left in the bar along the foot, its cover squeezed to nothing by the bar's other things.
+ */
+private fun settable(size: TextUnit): TextUnit = when {
+    !size.isSp -> size
+    size.value.isNaN() -> 1.sp
+    else -> size.value.coerceIn(1f, 2000f).sp
+}
 
 fun pixel(size: TextUnit, color: Color = Ink.ink) = TextStyle(
     fontFamily = Pixel, fontSize = readable(size), color = color, lineHeight = 1.4.em,
@@ -84,7 +115,7 @@ fun pixel(size: TextUnit, color: Color = Ink.ink) = TextStyle(
 private fun readable(size: TextUnit): TextUnit = when {
     size.value < 12f -> 12.sp
     size.value < 14f -> (size.value + 1f).sp
-    else -> size
+    else -> settable(size)
 }
 
 // MOTION.md: one curve (ease-out-expo), no overshoot, nothing over ~300 ms.

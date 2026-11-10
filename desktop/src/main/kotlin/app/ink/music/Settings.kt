@@ -60,8 +60,21 @@ fun SettingsPage(onClose: () -> Unit) {
     LaunchedEffect(part) { Settings.last = part }
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
-        Row(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 16.dp)) {
-            Column(Modifier.width(340.dp).fillMaxHeight()) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 16.dp)) {
+        // a narrow window (an upright screen): the parts as words across the top, the part chosen the whole width under
+        // them (the 340 column of parts left the settings a third of the window, 2026-11-09)
+        val narrow = maxWidth < 860.dp
+        val parts = @Composable {
+            if (narrow) {
+                BasicText("SETTINGS", style = headline(40.sp))
+                Spacer(Modifier.height(14.dp))
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Settings.PARTS.forEach { p -> Word(p.uppercase(), headline(20.sp, if (p == part) Ink.ink else Ink.dim), touch = 4.dp) { part = p } }
+                }
+                Spacer(Modifier.height(10.dp))
+                BasicText(Settings.said(part), style = pixel(12.sp, Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(18.dp))
+            } else Column(Modifier.width(340.dp).fillMaxHeight()) {
                 BasicText("SETTINGS", style = headline(56.sp))
                 Spacer(Modifier.height(28.dp))
                 Settings.PARTS.forEach { p ->
@@ -72,8 +85,9 @@ fun SettingsPage(onClose: () -> Unit) {
                     }
                 }
             }
-            Spacer(Modifier.width(56.dp))
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 40.dp)) {
+        }
+        val chosen = @Composable { m: Modifier ->
+            Column(m.verticalScroll(rememberScrollState()).padding(top = if (narrow) 0.dp else 12.dp, bottom = 40.dp)) {
                 Column(Modifier.widthIn(max = 640.dp)) {
                     when (part) {
                         "your phone" -> PhoneSetting()
@@ -94,9 +108,53 @@ fun SettingsPage(onClose: () -> Unit) {
                             Spacer(Modifier.height(36.dp)); ListenBrainzSetting()
                             if (LastFm.available) { Spacer(Modifier.height(36.dp)); LastFmSetting() }
                         }
-                        else -> { SizeSetting(); Spacer(Modifier.height(36.dp)); AboutSetting() }
+                        "keys" -> KeysSetting()
+                        else -> {
+                            SizeSetting()
+                            if (!Home.mac) { Spacer(Modifier.height(36.dp)); CloseSetting() }
+                            Spacer(Modifier.height(36.dp)); AboutSetting()
+                        }
                     }
                 }
+            }
+        }
+        if (narrow) Column(Modifier.fillMaxSize()) { parts(); chosen(Modifier.weight(1f).fillMaxWidth()) }
+        else Row(Modifier.fillMaxSize()) { parts(); Spacer(Modifier.width(56.dp)); chosen(Modifier.weight(1f).fillMaxHeight()) }
+        }
+    }
+}
+
+/** What closing the window does (Windows and Linux): the app quits, or the music plays on with ink music in the tray. */
+@Composable
+private fun CloseSetting() {
+    val keep by Tucked.keep.collectAsState()
+    BasicText("CLOSING THE WINDOW", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText(if (keep) "the music plays on: ink music waits in the tray, by the clock" else "ink music quits, and the music with it", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+        Word("quit", pixel(14.sp, if (!keep) Ink.ink else Ink.dim), touch = 8.dp) { Tucked.choose(false) }
+        Word("keep playing in the tray", pixel(14.sp, if (keep) Ink.ink else Ink.dim), touch = 8.dp) { Tucked.choose(true) }
+    }
+}
+
+/**
+ * The keys the window answers to, written down (2026-11-09): on Windows and Linux there's no menu bar to show them,
+ * so Ctrl F, Ctrl Shift M and the rest were found by chance or not at all. The Mac's are in its menus.
+ */
+@Composable
+private fun KeysSetting() {
+    BasicText("KEYS", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("anywhere in the window, but while you type in find", style = pixel(12.sp, Ink.mid))
+    for ((head, keys) in Settings.KEYS) {
+        Spacer(Modifier.height(22.dp))
+        BasicText(head, style = pixel(12.sp, Ink.dim))
+        Spacer(Modifier.height(6.dp))
+        keys.forEach { (key, what) ->
+            Row(Modifier.padding(vertical = 3.dp)) {
+                BasicText(key, style = pixel(13.sp), modifier = Modifier.width(180.dp))
+                BasicText(what, style = pixel(13.sp, Ink.mid))
             }
         }
     }
@@ -104,7 +162,24 @@ fun SettingsPage(onClose: () -> Unit) {
 
 /** The settings' parts, and how each stands in a line. */
 object Settings {
-    val PARTS = listOf("your phone", "your music", "the look", "sound", "listening", "about")
+    val PARTS = listOf("your phone", "your music", "the look", "sound", "listening") + (if (Home.mac) emptyList() else listOf("keys")) + "about"
+
+    /** The window's keys (Main's App), as the keys part says them: Ctrl's first, then the plain ones. */
+    val KEYS = listOf(
+        "playing" to listOf(
+            "space" to "play, pause", "ctrl →  ctrl ←" to "next, back", "→  ←" to "10 seconds on, back",
+            "↑  ↓" to "louder, quieter", "ctrl s" to "shuffle", "ctrl r" to "repeat: all, one, off",
+        ),
+        "going" to listOf(
+            "ctrl 1 to 8" to PLACES.joinToString(", "), "ctrl f" to "find", "ctrl ," to "settings", "ctrl y" to "your year",
+            "ctrl [  esc" to "back",
+        ),
+        "seeing" to listOf(
+            "ctrl 0" to "the player", "ctrl shift f" to "the player, full screen", "ctrl shift m" to "the mini player",
+            "ctrl l" to "lyrics", "ctrl u" to "up next", "ctrl p" to "play on", "ctrl \\" to "what's playing beside, or along the foot",
+            "ctrl =  ctrl -" to "bigger, smaller",
+        ),
+    )
     /** The part last open, for the next time (this run). */
     var last = "your music"
 
@@ -143,6 +218,7 @@ object Settings {
             listOfNotNull(if (hidden) "private listening on" else null, lb?.let { "listenbrainz on" }, fm?.let { "last.fm on" })
                 .ifEmpty { listOf("what's kept, and who's told") }.joinToString(" · ")
         }
+        "keys" -> "space to play, ctrl f to find, and the rest"
         else -> "made by ink · free and open" + Keys.build.substringBefore(' ').takeIf { it.isNotEmpty() && it != "here" }?.let { " · $it" }.orEmpty()
     }
 }

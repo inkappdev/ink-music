@@ -59,23 +59,49 @@ object Moodboard {
 
     private fun week() = java.time.LocalDate.now().toEpochDay() / 7
 
+    /** Which week each mood was made in (a mood made this week isn't made again; last week's shows till it is). */
+    private val madeIn = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val writing = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * Each mood's songs and cover, kept for the week. Three made at a time, right now's first, each kept on the disk as
+     * it's made, and last week's shown till this week's comes (2026-11-09: one after another, and only kept once all
+     * twelve were, the first look of a week took about 50 seconds, and leaving before the end kept nothing).
+     */
     fun start() {
         if (started) return
         started = true
         scope.launch {
             val o = runCatching { JSONObject(file.readText()) }.getOrNull()
-            if (o != null) kept.value = read(o)
-            if (o?.optLong("week") == week() && kept.value.size == InkMoods.ALL.size) return@launch
-            val made = HashMap<String, Kept>()
-            for (m in InkMoods.ALL) {
-                val songs = InkMoods.songs(m, LastFm.key, week())
-                if (songs.isEmpty()) continue
-                // its tile's cover: the first of its songs iTunes knows
-                val art = songs.take(4).firstNotNullOfOrNull { (t, a) -> Curation.cover(t, a, false).also { kotlinx.coroutines.delay(400) } }
-                made[m.key] = Kept(songs, art)
-                kept.value = kept.value + (m.key to made.getValue(m.key))
+            if (o != null) {
+                kept.value = read(o)
+                // a mood's own week, else the file's (one written before each mood said its own)
+                InkMoods.ALL.forEach { m -> o.optJSONObject(m.key)?.let { madeIn[m.key] = it.optLong("week", o.optLong("week")) } }
             }
-            if (made.isNotEmpty()) runCatching { Home.write(file, write(made).toString()) }
+            val now = week()
+            val todo = (InkMoods.now() + InkMoods.ALL).distinct().filter { madeIn[it.key] != now || it.key !in kept.value }
+            if (todo.isEmpty()) return@launch
+            val asking = kotlinx.coroutines.sync.Semaphore(3)
+            coroutineScope {
+                todo.forEach { m ->
+                    launch {
+                        asking.acquire()
+                        try {
+                            val songs = InkMoods.songs(m, LastFm.key, now)
+                            if (songs.isEmpty()) return@launch
+                            // its tile's cover: the first of its songs iTunes (or Deezer) knows, a moment between asks
+                            val art = songs.take(4).firstNotNullOfOrNull { (t, a) -> Curation.cover(t, a, false).also { kotlinx.coroutines.delay(400) } }
+                                ?: kept.value[m.key]?.art
+                            writing.lock()
+                            try {
+                                madeIn[m.key] = now
+                                kept.value = kept.value + (m.key to Kept(songs, art))
+                                runCatching { Home.write(file, write(kept.value).toString()) }
+                            } finally { writing.unlock() }
+                        } finally { asking.release() }
+                    }
+                }
+            }
         }
     }
 
@@ -86,7 +112,10 @@ object Moodboard {
     }.toMap()
 
     private fun write(all: Map<String, Kept>) = JSONObject().put("week", week()).apply {
-        all.forEach { (key, k) -> put(key, JSONObject().put("art", k.art ?: "").put("songs", JSONArray(k.songs.map { JSONArray(listOf(it.first, it.second)) }))) }
+        all.forEach { (key, k) ->
+            put(key, JSONObject().put("art", k.art ?: "").put("week", madeIn[key] ?: 0L)
+                .put("songs", JSONArray(k.songs.map { JSONArray(listOf(it.first, it.second)) })))
+        }
     }
 
     /** The mood as a station: its songs in a new order each time, the first few found at once, the rest after. */

@@ -15,11 +15,15 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,6 +65,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -92,11 +98,17 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main() {
     System.setProperty("apple.laf.useScreenMenuBar", "true")
+    // Windows: drawn through ANGLE (bundled beside skiko), not Direct3D's own, whose resizing shook (2026-11-09). Where
+    // ANGLE won't load skiko falls back by itself; -Dskiko.renderApi still chooses
+    if (Home.windows && System.getProperty("skiko.renderApi") == null) System.setProperty("skiko.renderApi", "ANGLE")
     // Apple's catalog (moving covers) wants an Origin header, which the JVM drops unless allowed before any request
     System.setProperty("sun.net.http.allowRestrictedHeaders", "true")
     linuxWindow()
+    // whatever stops it, kept in crash.log (Crash)
+    Crash.start()
     // ⌘Q (the app menu's Quit, the Dock's): the same whole quit as closing the window
     runCatching { java.awt.Desktop.getDesktop().setQuitHandler { _, response -> runCatching { quit() }; response.performQuit() } }
     // what Windows' refused renames left stranded beside each kept file, put back first (Keep)
@@ -130,8 +142,13 @@ fun main() {
         }, java.awt.AWTEvent.WINDOW_EVENT_MASK)
     }
     application {
+        // an error while a window draws: kept in crash.log before its box is shown (Crash)
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.window.LocalWindowExceptionHandlerFactory provides Crash) {
+        // closed into the tray (settings, about): hidden, not gone, the music playing on (Tucked)
+        val away by Tucked.away.collectAsState()
         Window(
-            onCloseRequest = { quit() },
+            onCloseRequest = { Tucked.close() },
+            visible = !away,
             title = "ink music",
             icon = inkIcon,
             state = Placed.remember().also { Win.state = it },
@@ -145,8 +162,14 @@ fun main() {
                 window.rootPane.putClientProperty("apple.awt.fullWindowContent", true)
                 window.rootPane.putClientProperty("apple.awt.transparentTitleBar", true)
                 window.rootPane.putClientProperty("apple.awt.windowTitleVisible", false)
-                // Windows: its title bar black, not white
+                // Windows: its title bar black, not white (and its border, where the bar's ink's own)
                 darkTitleBar(window)
+            }
+            // Windows on JetBrains' Java: no bar of Windows' own, ink's black to the top (InkTitle), the strip as tall
+            // as the pages' TOP at ink's size
+            val chosen by Size.chosen.collectAsState()
+            LaunchedEffect(Size.of(chosen)) { InkTitle.apply(window, Size.of(chosen)) }
+            LaunchedEffect(Unit) {
                 // back to the front: the music folder read again (a song added meanwhile shows)
                 window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
                     override fun windowGainedFocus(e: java.awt.event.WindowEvent?) = Library.freshen()
@@ -159,9 +182,15 @@ fun main() {
             }
             // the menus in the Mac's own bar along the top of the screen (elsewhere, the keys alone)
             if (Home.mac) Menus()
-            Sized { App() }
+            Box(Modifier.fillMaxSize()) {
+                Sized { App() }
+                // Windows: the strip along the top the window's to drag (InkTitle), over the pages
+                TitleStrip(Size.of(chosen))
+            }
         }
         MiniWindow()
+        InkTray()
+        }
     }
     // the window's closed: gone, wholly (2026-10-29: after quitting, the Dock still had it "running in the
     // background": a thread the Mac's media buttons had started kept the Java process alive)
@@ -297,8 +326,8 @@ private fun androidx.compose.ui.window.FrameWindowScope.Menus() {
     }
 }
 
-/** Clear of the Mac's traffic lights (the title bar is gone, its buttons stay). */
-val TOP = if (Home.mac) 28.dp else 0.dp
+/** Clear of the Mac's traffic lights, and of Windows' buttons (InkTitle): the title bar is gone, its buttons stay. */
+val TOP = if (Home.mac) 28.dp else if (InkTitle.on) InkTitle.HEIGHT.dp else 0.dp
 val SIDE = 32.dp
 
 @Composable
@@ -608,24 +637,28 @@ private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
 @Composable
 fun SongRow(
     s: Song, number: String? = null, said: String? = null, open: ((Page) -> Unit)? = null,
-    lit: Boolean? = null, dim: Boolean = false, onRemove: (() -> Unit)? = null, cover: Boolean = false, onClick: () -> Unit,
+    lit: Boolean? = null, dim: Boolean = false, onRemove: (() -> Unit)? = null, cover: Boolean = false,
+    glow: Color? = null, onClick: () -> Unit,
 ) {
     val now by Player.now.collectAsState()
     val on = lit ?: (now?.song?.id == s.id)
     var options by remember { mutableStateOf(false) }
+    // where the right click was, in the row: the menu opens from there
+    var clickAt by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val src = remember { MutableInteractionSource() }
     val over by src.collectIsHoveredAsState()
-    val color = (if (on) Ink.ink else if (dim) Ink.dim else Ink.mid).let { if (over) brighter(it) else it }
+    val color = (if (on || options) Ink.ink else if (dim) Ink.dim else Ink.mid).let { if (over) brighter(it) else it }
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().hoverable(src).clickable(src, indication = null, onClick = felt { options = false; onClick() })
-                // a right click (the phone's hold): its options open under it
+                // a right click (the phone's hold): its options in a menu where it was clicked
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
                             val e = awaitPointerEvent()
                             if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isSecondaryPressed) {
-                                options = !options; e.changes.forEach { it.consume() }
+                                clickAt = e.changes.first().position
+                                options = true; e.changes.forEach { it.consume() }
                             }
                         }
                     }
@@ -637,38 +670,157 @@ fun SongRow(
             if (cover) { CoverOf(s, s.album.ifEmpty { s.title }, Modifier.size(44.dp), px = 160); Spacer(Modifier.width(14.dp)) }
             if (number != null) BasicText(number, style = pixel(12.sp, color), modifier = Modifier.width(36.dp))
             Column(Modifier.weight(1f)) {
-                BasicText(s.title.uppercase(), style = headline(17.sp, color), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // `glow` (the queue's lists): the song playing, its name the progress line, filling from the left in
+                // its cover's colour as it plays (2026-11-09; a wash behind the row was tried first, too much of a box)
+                if (on && glow != null && now?.song?.id == s.id && (now?.duration ?: 0) > 0) PlayingTitle(s.title.uppercase(), color, glow)
+                else BasicText(s.title.uppercase(), style = headline(17.sp, color), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (said != null) BasicText(said, style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // a length not known (YouTube's top songs come without one): none said
             if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), modifier = Modifier.padding(start = 16.dp))
         }
-        // its options, wrapping onto a second line where there's no room (the now column's up next)
-        if (options) androidx.compose.foundation.layout.FlowRow(
-            Modifier.padding(start = (if (cover) 58.dp else 0.dp) + (if (number != null) 36.dp else 0.dp), bottom = 10.dp).fadeUp(),
-            horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            val o = pixel(13.sp)
-            Word("play next", o, touch = 6.dp) { options = false; Player.playNext(s) }
-            Word("add to queue", o, touch = 6.dp) { options = false; Player.add(s) }
+        // its options, in a menu where it was clicked (2026-11-09: they were a row of nine words under the song, too
+        // much to read, wrapping in narrow places and pushing the list down)
+        if (options) SongMenu(s, open, onRemove, clickAt, playing = on) { options = false }
+    }
+}
+
+/**
+ * A song's options, a menu at the right click: on black, a hairline round it, the words one under another in three
+ * kinds (what plays, what's kept, where to go; remove last and dim). It rises a little out of the click as it fades in,
+ * its words following one after another; away by a click anywhere else, esc, or a word chosen. Kept inside the window.
+ */
+@Composable
+private fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?, at: androidx.compose.ui.geometry.Offset, playing: Boolean, onClose: () -> Unit) {
+    val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+    // the close plays out (a fade) before the menu goes; what was chosen is done as it starts
+    fun close(then: () -> Unit = {}) { then(); shown.targetState = false }
+    LaunchedEffect(shown.currentState, shown.isIdle) { if (shown.isIdle && !shown.currentState) onClose() }
+    val loved by Loved.ids.collectAsState()
+    val kept by Offline.kept.collectAsState()
+    // `playing`, the row lit as the one playing (a queue's own row, not every copy of the song in it): "play next" and
+    // "add to queue" say nothing about it, so they're not there
+    val go = open ?: Nav::open
+    // copy link: its words say how it's going, and the menu stays till it's on the clipboard (a short link takes a
+    // moment: Apple's and Deezer's ids found)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var copying by remember { mutableStateOf<String?>(null) }
+    val file = remember(s.id) { SongLink.file(s) }
+    val groups = listOf(
+        listOfNotNull(
+            ("play next" to { Player.playNext(s) }).takeIf { !playing },
+            ("add to queue" to { Player.add(s) }).takeIf { !playing },
             // radio: this song, then more like it as the queue runs out
-            if (!s.station && !s.episode) Word("radio", o, touch = 6.dp) { options = false; Player.startRadio(s) }
-            val loved by Loved.ids.collectAsState()
-            if (!s.station && !s.episode) Word(if (s.id in loved) "unlove" else "love", o, touch = 6.dp) { options = false; Loved.toggle(s) }
-            // an episode's show where a song's record and artist are
-            if (open != null && s.episode) Pods.page(s)?.let { p -> Word("show", o, touch = 6.dp) { options = false; open(p) } }
-            if (open != null && s.album.isNotEmpty() && !s.episode) Word("record", o, touch = 6.dp) { options = false; open(Page.Record(s.albumId)) }
-            if (open != null && !s.episode) Word("artist", o, touch = 6.dp) { options = false; open(Page.Artist(s.albumArtist)) }
+            ("radio" to { Player.startRadio(s) }).takeIf { !s.station && !s.episode },
+        ),
+        listOfNotNull(
+            ((if (s.id in loved) "unlove" else "love") to { Loved.toggle(s) }).takeIf { !s.station && !s.episode },
             // into one of your playlists (the server's, YouTube Music's)
-            if (canAddToList(s)) Word("add to a playlist", o, touch = 6.dp) { options = false; (open ?: Nav::open)(Page.AddTo(s)) }
+            ("add to a playlist" to { go(Page.AddTo(s)) }).takeIf { canAddToList(s) },
             // kept on the computer, to play with no signal (your server's, YouTube's)
-            if (Offline.keepable(s)) {
-                val kept by Offline.kept.collectAsState()
-                if (s.id in kept) Word("not offline", o, touch = 6.dp) { options = false; Offline.remove(listOf(s.id)) }
-                else Word("keep offline", o, touch = 6.dp) { options = false; Offline.keep(listOf(s)) }
+            (if (s.id in kept) "not offline" to { Offline.remove(listOf(s.id)) } else "keep offline" to { Offline.keep(listOf(s)) }).takeIf { Offline.keepable(s) },
+        ),
+        listOfNotNull(
+            // an episode's show where a song's record and artist are
+            Pods.page(s)?.let { p -> "show" to { go(p) } }?.takeIf { open != null && s.episode },
+            ("record" to { go(Page.Record(s.albumId)) }).takeIf { open != null && s.album.isNotEmpty() && !s.episode },
+            ("artist" to { go(Page.Artist(s.albumArtist)) }).takeIf { open != null && !s.episode },
+            // a file of yours: shown where it is (Explorer, the Finder)
+            file?.let { f -> (if (Home.mac) "show in finder" else "show in folder") to { SongLink.reveal(f) } },
+        ),
+    ).filter { it.isNotEmpty() }
+    // copy link, after the keeping kind (its own kind where that's empty): a song with a link (not a station's, an episode's)
+    val share = (copying ?: "copy link").takeIf { SongLink.long(s) != null }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val gap = with(density) { 6.dp.roundToPx() }
+    androidx.compose.ui.window.Popup(
+        popupPositionProvider = object : androidx.compose.ui.window.PopupPositionProvider {
+            override fun calculatePosition(anchorBounds: androidx.compose.ui.unit.IntRect, windowSize: androidx.compose.ui.unit.IntSize,
+                layoutDirection: androidx.compose.ui.unit.LayoutDirection, popupContentSize: androidx.compose.ui.unit.IntSize): androidx.compose.ui.unit.IntOffset {
+                val x = anchorBounds.left + at.x.toInt() + gap
+                val y = anchorBounds.top + at.y.toInt() + gap
+                // kept inside the window: up from the click where it would go past the foot, left where past the side
+                val fx = if (x + popupContentSize.width > windowSize.width - gap) (x - popupContentSize.width - gap * 2) else x
+                val fy = if (y + popupContentSize.height > windowSize.height - gap) (y - popupContentSize.height - gap * 2) else y
+                return androidx.compose.ui.unit.IntOffset(fx.coerceAtLeast(gap), fy.coerceAtLeast(gap))
             }
-            if (onRemove != null) Word("remove", o, touch = 6.dp) { options = false; onRemove() }
+        },
+        onDismissRequest = { close() },
+        properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+        onKeyEvent = { k -> if (k.type == KeyEventType.KeyDown && k.key == Key.Escape) { close(); true } else false },
+    ) {
+        androidx.compose.animation.AnimatedVisibility(
+            shown,
+            enter = fadeIn(tween(Motion.ENTER, easing = Motion.expo)) + slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { -it / 14 } +
+                androidx.compose.animation.scaleIn(tween(Motion.ENTER, easing = Motion.expo), initialScale = .96f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)),
+            exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) {
+            // as wide as its longest word (a popup's given the whole window to fill), the hairlines across that
+            Column(Modifier.width(androidx.compose.foundation.layout.IntrinsicSize.Max).widthIn(min = 180.dp)
+                .background(Ink.black).border(1.dp, Ink.line).padding(horizontal = 18.dp, vertical = 12.dp)) {
+                // the song's cover colour (its progress line's), what a word lights in under the mouse
+                val accent = rememberCover(s, 300)?.accent ?: Ink.ink
+                var n = 0
+                groups.forEachIndexed { g, words ->
+                    if (g > 0) Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(Ink.line))
+                    words.forEach { (word, act) -> MenuWord(word, Ink.ink, accent, n++) { close(act) } }
+                    // copy link at the end of what's kept and sent (the second kind)
+                    if (share != null && words.any { it.first in setOf("love", "unlove", "add to a playlist", "keep offline", "not offline") }) {
+                        MenuWord(share, if (copying == null) Ink.ink else Ink.mid, accent, n++) {
+                            if (copying == null) scope.launch {
+                                copying = "finding the link"
+                                copying = if (SongLink.copy(s)) "link copied" else "no link found"
+                                kotlinx.coroutines.delay(700)
+                                close()
+                            }
+                        }
+                    }
+                }
+                if (onRemove != null) {
+                    Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(Ink.line))
+                    MenuWord("remove", Ink.mid, accent, n) { close(onRemove) }
+                }
+            }
         }
+    }
+}
+
+/**
+ * A word in a menu, coming in after the one before it (ink's stagger). Under the mouse it takes on the song's cover
+ * colour, gently (2026-11-09), and dims a moment while pressed.
+ */
+@Composable
+private fun MenuWord(word: String, color: Color, accent: Color, place: Int, onClick: () -> Unit) {
+    val alpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(Motion.STAGGER / 2L * place); alpha.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
+    val src = remember { MutableInteractionSource() }
+    val over by src.collectIsHoveredAsState()
+    val pressed by src.collectIsPressedAsState()
+    val c by androidx.compose.animation.animateColorAsState(if (pressed) Ink.mid else if (over) accent else color,
+        tween(Motion.ENTER, easing = Motion.expo), label = "menu word")
+    BasicText(
+        word, style = pixel(13.sp, c), maxLines = 1,
+        modifier = Modifier.graphicsLayer { this.alpha = alpha.value; translationY = (1f - alpha.value) * 6.dp.toPx() }.fillMaxWidth()
+            .hoverable(src).clickable(src, indication = null, onClick = felt(then = onClick)).padding(vertical = 6.dp, horizontal = 3.dp),
+    )
+}
+
+/**
+ * The playing song's name as its progress: the letters in `base`, and over them the same letters in the cover's colour
+ * cut off where the song's at, moving on smoothly between the player's fifths of a second.
+ */
+@Composable
+private fun PlayingTitle(title: String, base: Color, accent: Color) {
+    val now by Player.now.collectAsState()
+    val pos by Player.position.collectAsState()
+    val len = now?.duration ?: 0L
+    val target = if (len > 0) (pos.toFloat() / len).coerceIn(0f, 1f) else 0f
+    val k by androidx.compose.animation.core.animateFloatAsState(target, tween(450, easing = androidx.compose.animation.core.LinearEasing), label = "filled")
+    val c by androidx.compose.animation.animateColorAsState(accent, tween(Motion.ENTER * 2, easing = Motion.expo), label = "fill")
+    Box {
+        BasicText(title, style = headline(17.sp, base), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        BasicText(title, style = headline(17.sp, c), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.drawWithContent { clipRect(right = size.width * k) { this@drawWithContent.drawContent() } })
     }
 }
 
@@ -713,7 +865,8 @@ fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, moving
     val there = androidx.compose.runtime.remember(song?.albumId) { cover != null }
     val shown = androidx.compose.runtime.remember(song?.albumId) { androidx.compose.animation.core.Animatable(if (there) 1f else 0f) }
     androidx.compose.runtime.LaunchedEffect(cover != null) {
-        if (cover != null && shown.value < 1f) shown.animateTo(1f, androidx.compose.animation.core.tween(600, easing = Motion.expo))
+        // 300 ms (it was 600, and a shelf of them read as slow to come: 2026-11-09)
+        if (cover != null && shown.value < 1f) shown.animateTo(1f, androidx.compose.animation.core.tween(300, easing = Motion.expo))
     }
     BoxWithConstraints(modifier) {
         if (cover == null || shown.value < 1f) NameCover(name, maxWidth)
@@ -751,9 +904,14 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
     val a = albums.firstOrNull { it.id == id } ?: return Close(onClose)
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
-        Row(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 16.dp)) {
-            Column(Modifier.width(320.dp)) {
-                CoverOf(a.songs.first(), a.title, Modifier.size(320.dp))
+        BoxWithConstraints(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 16.dp)) {
+        // a narrow window (an upright screen): the record over its songs, all one list, not a 320 column beside a
+        // squeezed one (2026-11-09)
+        val narrow = maxWidth < 760.dp
+        val cover = if (narrow) minOf(maxWidth, 360.dp) else 320.dp
+        val head = @Composable {
+            Column(Modifier.width(cover)) {
+                CoverOf(a.songs.first(), a.title, Modifier.size(cover))
                 Spacer(Modifier.height(16.dp))
                 BasicText(a.title.uppercase(), style = headline(30.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
@@ -770,16 +928,24 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                     KeepOffline(a.songs)
                 }
             }
-            Spacer(Modifier.width(40.dp))
-            val list = pageList()
-            val discs = a.songs.map { it.disc }.distinct().size > 1
-            LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
-                itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s ->
-                    val n = if (s.track > 0) (if (discs) "${s.disc}.${s.track}" else "${s.track}") else "${i + 1}"
-                    SongRow(s, number = n, said = s.artist.takeIf { it != a.artist }?.lowercase(), open = open) { Player.play(a.songs, i) }
-                }
-                item { Around(a, albums, open) }
+        }
+        val list = pageList()
+        val discs = a.songs.map { it.disc }.distinct().size > 1
+        val songs: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
+            itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s ->
+                val n = if (s.track > 0) (if (discs) "${s.disc}.${s.track}" else "${s.track}") else "${i + 1}"
+                SongRow(s, number = n, said = s.artist.takeIf { it != a.artist }?.lowercase(), open = open) { Player.play(a.songs, i) }
             }
+            item { Around(a, albums, open) }
+        }
+        if (narrow) LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
+            item(key = "head") { Column { head(); Spacer(Modifier.height(24.dp)) } }
+            songs()
+        } else Row(Modifier.fillMaxSize()) {
+            head()
+            Spacer(Modifier.width(40.dp))
+            LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) { songs() }
+        }
         }
     }
 }
@@ -813,7 +979,9 @@ internal fun NoSound(trouble: String, modifier: Modifier = Modifier) {
 
 /**
  * What's playing, along the foot of the window: the line along the cover's top edge filling with the
- * song in its colour, the cover, the song, back / play / next and the times. A click opens the player.
+ * song in its colour, the cover, the song, back / play / next and the heart, the beat and the times. A click opens
+ * the player. The beat's four squares and tempo are in the bar itself (2026-11-09: over the line they hung on the page
+ * above, apart from everything).
  */
 @Composable
 private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: () -> Unit, onArtist: (String) -> Unit, onOpen: () -> Unit) {
@@ -827,18 +995,36 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
     remoteNow()?.let { return RemoteBar(it, onArtist, onOpen) }
     val n = now ?: return
     val cover = rememberCover(n.song)
+    val side by Bar.side.collectAsState()
     Column(Modifier.fillMaxWidth().background(Ink.black).padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
-        Line(n, cover?.accent ?: Ink.ink)
+        // the bar's top edge over the line's reach: dragged up, the bar taller and its cover bigger (BarEdge)
+        Box(Modifier.fillMaxWidth()) {
+            SeekLine(n, cover?.accent ?: Ink.ink, beat = false)
+            BarEdge(Modifier.align(Alignment.TopStart))
+        }
+        // a narrow window (an upright screen, or the rail beside the bar): the song keeps its room, and what the player
+        // has too goes as the bar narrows: the beat first, then the volume, the times, the words; the cover, the song,
+        // back / play / next and the heart always, as the phone's bar (2026-11-09: all of it was kept whatever the room,
+        // and under 700 across the cover and the song had none)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val beat = maxWidth >= BAR_BEAT
+        val volume = maxWidth >= BAR_VOLUME
+        val times = maxWidth >= BAR_TIMES
+        val words = maxWidth >= BAR_WORDS
+        // nothing behind it: the artist's name big and faint, as the mini player has, made the small words and the
+        // controls over it hard to read (tried and taken out the same day, 2026-11-09)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(
                 Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onOpen)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Opens(Modifier.size(72.dp), onOpen) { CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize()) }
+                Opens(Modifier.size(side), onOpen) { CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize()) }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     val (title, artist) = said(n)
-                    BasicText(title.uppercase(), style = headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    // the song's name a little bigger with the cover: 20 at the bar's least, 28 at its most
+                    val grown = (side - Bar.LEAST) / (Bar.MOST - Bar.LEAST)
+                    WholeWords(title.uppercase(), headline((20 + 8 * grown).sp), 2)
                     Spacer(Modifier.height(4.dp))
                     val on by Casting.on.collectAsState()
                     Row {
@@ -852,21 +1038,74 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                 }
             }
             Controls(n, small = true)
-            Spacer(Modifier.width(24.dp))
-            Times(n, Modifier.widthIn(min = 96.dp))
-            Volume(line = 80.dp)
-            Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
-            // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
-            Word("stop", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp) { Player.stop() }
-            // where it plays: lit while on a speaker
-            val on by Casting.on.collectAsState()
-            Word("play on", pixel(14.sp, if (on != null) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onPlayOn)
-            Pixel(FULL, "full screen", Ink.mid, Modifier.padding(start = 4.dp)) { Win.full(true); onOpen() }
+            Heart(n.song, 2.dp, Modifier.padding(start = 10.dp))
+            if (beat && !n.song.station && n.duration > 0) BeatCounter(n.song.id, n.playing, Modifier.padding(start = 24.dp))
+            if (times) {
+                Spacer(Modifier.width(24.dp))
+                Times(n, Modifier.widthIn(min = 96.dp))
+            }
+            if (volume) Volume(line = 80.dp)
+            if (words) {
+                Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
+                // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
+                Word("stop", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp) { Player.stop() }
+                // where it plays: lit while on a speaker
+                val on by Casting.on.collectAsState()
+                Word("play on", pixel(14.sp, if (on != null) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onPlayOn)
+                // the mini player, over every window (till 2026-11-09 only the now column had its way in, and the keys)
+                Pixel(SHRINK, "mini player", Ink.mid, Modifier.padding(start = 4.dp)) { Mini.open() }
+                Pixel(FULL, "full screen", Ink.mid) { Win.full(true); onOpen() }
+            }
             // the now column, brought back out
             onUntuck?.let { Pixel(UNTUCK, "show what's playing beside", Ink.mid, onClick = it) }
         }
+        }
     }
 }
+
+/**
+ * How tall the bar along the foot is, as its cover's side: dragged by the bar's top edge and kept, as the now column's
+ * width is (2026-11-09: "drag it up and the album art gets bigger"). Never under the bar as it was, nor past [MOST]:
+ * about a cover's size on a shelf, so the page above keeps the window.
+ */
+object Bar {
+    val LEAST = 72.dp
+    val MOST = 168.dp
+    private val file = java.io.File(Home.dir, "bar-height")
+    val side = kotlinx.coroutines.flow.MutableStateFlow(
+        (runCatching { file.readText().trim().toFloat() }.getOrNull()?.takeIf { it.isFinite() }?.dp ?: LEAST).coerceIn(LEAST, MOST),
+    )
+    fun keep() { runCatching { file.writeText(side.value.value.toString()) } }
+}
+
+/**
+ * The bar's top edge, to drag: a strip over the top of the line's reach (the line keeps the rest, nearer itself), the
+ * up-and-down arrow over it and a hairline while the mouse is on it or it's held, as the now column's edge has. 14 of
+ * the reach's 24: a press a little low for the edge takes the edge, never the song somewhere else (it was 8, the two
+ * touching, 2026-11-09).
+ */
+@Composable
+private fun BarEdge(modifier: Modifier = Modifier) {
+    val edge = remember { MutableInteractionSource() }
+    val over by edge.collectIsHoveredAsState()
+    var dragging by remember { mutableStateOf(false) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    Box(
+        modifier.fillMaxWidth().height(14.dp).hoverable(edge)
+            .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor(java.awt.Cursor.N_RESIZE_CURSOR)))
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragStart = { dragging = true }, onDragEnd = { dragging = false; Bar.keep() }, onDragCancel = { dragging = false },
+                ) { c, dy -> c.consume(); Bar.side.value = (Bar.side.value - with(density) { dy.toDp() }).coerceIn(Bar.LEAST, Bar.MOST) }
+            },
+    ) { if (over || dragging) Box(Modifier.fillMaxWidth().height(1.dp).background(if (dragging) Ink.mid else Ink.line)) }
+}
+
+/** How wide the bar along the foot is before it shows each of these too (under [BAR_WORDS]: the cover, the song, back / play / next). */
+private val BAR_WORDS = 580.dp
+private val BAR_TIMES = 760.dp
+private val BAR_VOLUME = 940.dp
+private val BAR_BEAT = 1160.dp
 
 @Composable
 private fun Times(n: Player.Now, modifier: Modifier = Modifier) {
@@ -913,14 +1152,25 @@ fun RadioWord(modifier: Modifier = Modifier) {
 
 /** The queue's songs: played dim, the one playing lit, the rest as they come; a click plays from there. */
 @Composable
-fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyListState, pad: PaddingValues, modifier: Modifier) {
+fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyListState, pad: PaddingValues, modifier: Modifier, follow: Boolean = false) {
     val queue by Player.queue.collectAsState()
     val now by Player.now.collectAsState()
     val at = now?.index ?: -1
+    // `follow` (the player's up next): the song playing at the list's top, there at once when it opens and slid to as
+    // each next one starts, what's been played above it a scroll away (2026-11-09)
+    if (follow) {
+        val opened = remember { booleanArrayOf(false) }
+        LaunchedEffect(at, queue.size) {
+            if (at < 0 || at >= queue.size) return@LaunchedEffect
+            if (!opened[0]) { opened[0] = true; list.scrollToItem(at) } else list.animateScrollToItem(at)
+        }
+    }
+    // the playing song's cover colour, the progress line's, for its row's wash
+    val accent = rememberCover(now?.song, 300)?.accent
     LazyColumn(modifier.feather(list), list, contentPadding = pad) {
         // no keys: one song can be queued twice
         itemsIndexed(queue) { i, s ->
-            SongRow(s, said = s.artist.lowercase(), open = open, lit = i == at, dim = i < at, onRemove = { Player.remove(i) }) { Player.jump(i) }
+            SongRow(s, said = s.artist.lowercase(), open = open, lit = i == at, dim = i < at, onRemove = { Player.remove(i) }, glow = accent) { Player.jump(i) }
         }
     }
 }

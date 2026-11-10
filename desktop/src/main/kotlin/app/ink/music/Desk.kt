@@ -4,7 +4,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
@@ -55,14 +62,21 @@ import java.io.File
  */
 object Placed {
     private val file = File(Home.dir, "window.json")
-    /** The smallest the window is let be (the rail, a page, the now column). */
-    val LEAST = DpSize(960.dp, 640.dp)
+    /**
+     * The smallest the window is let be, and kept: the phone's layout (the places across the top, the bar along the
+     * foot). It was 960 x 640 while the window itself could be dragged to 720 x 520, so a narrower window (an upright
+     * screen) was never kept and came back wider than its screen's half (2026-11-09).
+     */
+    val LEAST = DpSize(720.dp, 520.dp)
     private val FIRST = DpSize(1440.dp, 900.dp)
 
     @Composable
     fun remember(): WindowState {
         val o = runCatching { JSONObject(file.readText()) }.getOrNull()
-        val screen = runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds }.getOrNull()
+        // the screen it was left on, where that's still plugged in (2026-11-09: it only knew the main one, so a window
+        // left on a second screen came back on the first); else the main one
+        val screen = o?.takeIf { it.has("x") }?.let { screenAt(it.optDouble("x").toInt(), it.optDouble("y").toInt()) }
+            ?: runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds }.getOrNull()
         // the first time at most 90% of the screen (a laptop's 1280 x 800 is under FIRST), then as it was left
         val w = o?.optDouble("w", FIRST.width.value.toDouble())?.toFloat() ?: screen?.let { minOf(FIRST.width.value, it.width * .9f) } ?: FIRST.width.value
         val h = o?.optDouble("h", FIRST.height.value.toDouble())?.toFloat() ?: screen?.let { minOf(FIRST.height.value, it.height * .9f) } ?: FIRST.height.value
@@ -84,6 +98,20 @@ object Placed {
         val zoomed = o?.optBoolean("zoomed") ?: true
         return rememberWindowState(placement = if (zoomed) WindowPlacement.Maximized else WindowPlacement.Floating, size = size, position = at)
     }
+
+    /**
+     * The room on the screen a place is on (or nearest it: a window's corner can sit just off a screen's edge), less
+     * the taskbar; null when no screen is near (one since unplugged).
+     */
+    fun screenAt(x: Int, y: Int): java.awt.Rectangle? = runCatching {
+        val env = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+        val toolkit = java.awt.Toolkit.getDefaultToolkit()
+        env.screenDevices.map { it.defaultConfiguration }.map { c ->
+            val b = c.bounds
+            val i = toolkit.getScreenInsets(c)
+            java.awt.Rectangle(b.x + i.left, b.y + i.top, b.width - i.left - i.right, b.height - i.top - i.bottom)
+        }.firstOrNull { java.awt.Rectangle(it.x - 40, it.y - 40, it.width + 80, it.height + 80).contains(x + 40, y + 40) }
+    }.getOrNull()
 
     /** Written down as it is now: its plain size (as it was before, while full screen), and whether it's zoomed. */
     fun keep(s: WindowState) {
@@ -141,54 +169,154 @@ fun Sized(content: @Composable () -> Unit) {
 }
 
 /**
- * The mini player: what's playing in a small window kept over every other (the line along its cover's top, the cover,
- * the song, back / play / next), to be dragged anywhere. The main window goes to the dock meanwhile, back with ↗.
+ * Closing the window on Windows and Linux: the app quits, as it always has; or, chosen in settings (about), the music
+ * plays on with ink music in the tray (by the clock), its icon there bringing the window back and its menu playing,
+ * pausing, going on and quitting (2026-11-09). A Mac's apps go on in the Dock by themselves.
+ */
+object Tucked {
+    private val file = File(Home.dir, "close-to-tray")
+    /** Whether closing the window leaves the music playing, ink music in the tray. */
+    val keep = MutableStateFlow(!Home.mac && file.exists())
+    /** The window closed into the tray. */
+    val away = MutableStateFlow(false)
+
+    fun choose(on: Boolean) {
+        keep.value = on
+        runCatching { if (on) file.writeText("") else file.delete() }
+        if (!on) away.value = false
+    }
+
+    /** The window's close: into the tray, or the whole app quit. */
+    fun close() { if (keep.value) away.value = true else quit() }
+
+    /** Back from the tray, to the front. */
+    fun back() {
+        away.value = false
+        Win.state?.isMinimized = false
+        java.awt.EventQueue.invokeLater { java.awt.Frame.getFrames().firstOrNull { it.title == "ink music" && it.isDisplayable }?.let { it.toFront(); it.requestFocus() } }
+    }
+}
+
+/** ink music in the tray while its window's closed into it: its icon brings the window back, its menu plays. */
+@Composable
+fun androidx.compose.ui.window.ApplicationScope.InkTray() {
+    val keep by Tucked.keep.collectAsState()
+    if (!keep) return
+    val now by Player.now.collectAsState()
+    val n = now
+    Tray(
+        icon = inkIcon,
+        tooltip = n?.let { "${it.song.title} · ${it.song.artist}" } ?: "ink music",
+        onAction = { Tucked.back() },
+        menu = {
+            if (n != null) {
+                Item(if (n.playing) "Pause" else "Play") { Player.toggle() }
+                Item("Next") { Player.next() }
+                Item("Back") { Player.previous() }
+                Separator()
+            }
+            Item("Show ink music") { Tucked.back() }
+            Item("Quit") { quit() }
+        },
+    )
+}
+
+/**
+ * The mini player: what's playing in a small window kept over every other, to be dragged anywhere; the player made
+ * small, not the bar cut out of the window (2026-11-09: "more unique and ink"). The cover the window's whole height at
+ * its left edge (the handle it's dragged by); the song and its artist; back / play / next and the heart; the beat's
+ * four squares and the tempo across from them, in a place of their own (they sat on the line, the tempo cut off);
+ * the artist's name big and faint behind it all, drifting while it plays; the song's line along the window's foot in
+ * the cover's colour. A hairline round it, so it reads as a thing over a dark desktop. The main window goes to the
+ * dock meanwhile, back with ↗.
  */
 object Mini {
     val on = MutableStateFlow(false)
+    private val file = File(Home.dir, "mini.json")
+
+    /** Where it was left (kept), if that's still on a screen; else the top right of the main one, as it always was. */
+    fun at(): WindowPosition = runCatching { JSONObject(file.readText()) }.getOrNull()?.let { o ->
+        val x = o.optDouble("x").toFloat(); val y = o.optDouble("y").toFloat()
+        Placed.screenAt(x.toInt(), y.toInt())?.let { b ->
+            WindowPosition(x.coerceIn(b.x.toFloat(), (b.x + b.width - 440).toFloat().coerceAtLeast(b.x.toFloat())).dp,
+                y.coerceIn(b.y.toFloat(), (b.y + b.height - 128).toFloat().coerceAtLeast(b.y.toFloat())).dp)
+        }
+    } ?: WindowPosition(Alignment.TopEnd)
+
+    fun keep(p: WindowPosition) {
+        if (!p.isSpecified) return
+        runCatching { Home.write(file, JSONObject().put("x", p.x.value.toDouble()).put("y", p.y.value.toDouble()).toString()) }
+    }
 
     /** Only with something to show (with nothing playing it was a small black window, the main one gone to the Dock). */
     fun open() { if (Player.now.value == null) return; on.value = true; Win.state?.isMinimized = true }
-    fun close() { on.value = false; Win.state?.isMinimized = false }
+    fun close() { on.value = false; Win.state?.isMinimized = false; if (Tucked.away.value) Tucked.back() }
 }
 
 @Composable
 fun MiniWindow() {
     val on by Mini.on.collectAsState()
     if (!on) return
-    val state = rememberWindowState(size = DpSize(420.dp, 112.dp), position = WindowPosition(Alignment.TopEnd))
+    val state = rememberWindowState(size = DpSize(440.dp, 128.dp), position = Mini.at())
     Window(
         onCloseRequest = { Mini.close() }, state = state, title = "ink music", icon = inkIcon, undecorated = true,
         alwaysOnTop = true, resizable = false,
     ) {
         window.background = java.awt.Color.BLACK
+        // ink's size (settings, Ctrl = and -): the window and all in it, as the main one's content is (it stayed small)
+        val chosen by Size.chosen.collectAsState()
+        val k = Size.of(chosen)
+        androidx.compose.runtime.LaunchedEffect(k) { state.size = DpSize(440.dp * k, 128.dp * k) }
+        // where it's dragged to, kept for next time (a moment after it stops)
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            androidx.compose.runtime.snapshotFlow { state.position }.collect { kotlinx.coroutines.delay(600); Mini.keep(it) }
+        }
         val now by Player.now.collectAsState()
         val n = now
-        WindowDraggableArea {
-            Box(Modifier.fillMaxSize().background(Ink.black)) {
+        WindowDraggableArea { Sized {
+            Box(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
                 if (n == null) {
                     // stopped while it was up: said, and the way back
                     BasicText("NOTHING PLAYING", style = headline(18.sp, Ink.dim), modifier = Modifier.align(Alignment.CenterStart).padding(start = 16.dp))
                     Pixel(OPEN, "back to the window", Ink.mid, Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)) { Mini.close() }
-                } else Row(Modifier.fillMaxSize().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.width(88.dp)) {
-                        CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.size(88.dp), px = 240, moving = n.playing)
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        val (title, artist) = said(n)
-                        BasicText(title.uppercase(), style = headline(17.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        BasicText(artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Controls(n, Modifier.padding(top = 2.dp), small = true)
+                } else MiniSleeve(n)
+            }
+        } }
+    }
+}
+
+@Composable
+private fun MiniSleeve(n: Player.Now) {
+    val cover = rememberCover(n.song, 320)
+    val accent by animateColorAsState(cover?.accent ?: Ink.ink, tween(Motion.ENTER), label = "accent")
+    val names by Marquees.on.collectAsState()
+    val (title, artist) = said(n)
+    Row(Modifier.fillMaxSize()) {
+        // nothing a click does: the cover is what the window's taken hold of by, to drag it
+        CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxHeight().aspectRatio(1f), px = 320, moving = n.playing)
+        Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
+            // the player's marquee, small and faint: under the words, never over them
+            Marquee(artist, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = 10.dp), size = 64.sp, color = Ink.ink.copy(alpha = .09f))
+            Column(Modifier.fillMaxSize()) {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp)) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Column(Modifier.weight(1f)) {
+                            BasicText(title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(2.dp))
+                            BasicText(artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        // the song's line, filling in its cover's colour
-                        Line(n, rememberCover(n.song, 240)?.accent ?: Ink.ink, Modifier.padding(end = 4.dp))
-                    }
-                    Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Pixel(OPEN, "back to the window", Ink.mid) { Mini.close() }
                     }
+                    Spacer(Modifier.weight(1f))
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Controls(n, small = true)
+                        Heart(n.song, 2.dp, Modifier.padding(start = 10.dp))
+                        Spacer(Modifier.weight(1f))
+                        if (!n.song.station && n.duration > 0) BeatCounter(n.song.id, n.playing, Modifier.padding(end = 6.dp), key = false)
+                    }
                 }
+                // from the cover's edge to the window's
+                SeekLine(n, accent, beat = false)
             }
         }
     }
@@ -248,6 +376,54 @@ fun DropHint() {
             }
         }
     }
+}
+
+/**
+ * Windows, on JetBrains' Java (the app's own since 2026-11-09): no title bar of Windows' own over ink. Ink's black runs
+ * to the window's top, the strip along the top [TOP] tall and empty (it's what the window's dragged by, double-clicked
+ * to fill the screen, snapped with), and Windows' own minimise, maximise and close drawn over its right end, light on
+ * dark, the maximise button's snap layouts and all. On another Java, or with -Dink.titlebar=windows, Windows' bar as
+ * before ([darkTitleBar]). Ink puts nothing to press in the strip: a press there is the window's.
+ */
+object InkTitle {
+    val on: Boolean = Home.windows && System.getProperty("ink.titlebar") != "windows" &&
+        runCatching { com.jetbrains.JBR.isWindowDecorationsSupported() }.getOrDefault(false)
+    /** The strip's height, in ink's own size (dp at ink's size 1). */
+    const val HEIGHT = 34f
+    /** The bar as it's set now: the strip tells it, at each move of the mouse, that it's the bar's ([TitleStrip]). */
+    @Volatile var bar: com.jetbrains.WindowDecorations.CustomTitleBar? = null
+
+    /** The main window's bar made ink's, `k` its size (settings): the strip as tall as the pages' [TOP] is drawn. */
+    fun apply(window: java.awt.Window, k: Float) {
+        if (!on) return
+        val frame = window as? java.awt.Frame ?: return
+        runCatching {
+            val d = com.jetbrains.JBR.getWindowDecorations()
+            val bar = d.createCustomTitleBar()
+            bar.height = HEIGHT * k
+            bar.putProperty("controls.dark", true)
+            d.setCustomTitleBar(frame, bar)
+            this.bar = bar
+        }.onFailure { Log.d("title bar: $it") }
+    }
+}
+
+/**
+ * The strip along the window's top, over everything and drawing nothing: every mouse event on it told to JetBrains'
+ * Java as the title bar's, so it drags the window, double-clicks it full and snaps it. Without it the strip was
+ * ink's (Compose listens to the mouse across the whole window) and the window couldn't be moved (2026-11-09).
+ */
+@Composable
+fun TitleStrip(k: Float) {
+    if (!InkTitle.on) return
+    Box(Modifier.fillMaxWidth().height((InkTitle.HEIGHT * k).dp).pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Main)
+                InkTitle.bar?.forceHitTest(false)
+            }
+        }
+    })
 }
 
 /** Windows' window manager (DWM), the one call ink needs: a window's title bar dark, and its colours. */

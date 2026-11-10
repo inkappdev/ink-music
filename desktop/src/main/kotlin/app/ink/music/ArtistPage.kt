@@ -348,12 +348,22 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
     val density = LocalDensity.current
     BoxWithConstraints(modifier.background(Ink.black)) {
         val side = with(density) { maxWidth.toPx() }
-        val frames by produceState<List<ImageBitmap>?>(null, cover) {
+        val born = remember { System.nanoTime() }
+        // a picture's frames kept for the session: a tile seen before (scrolled back to, listen opened again) is there at
+        // once, not developed all over (2026-11-09: "the dithered ... loading in slow"; each was 25 ms in coming and 7 ms
+        // to make, then 900 ms of developing, every time it came into sight)
+        val key = remember(cover, side) { cover?.let { "${photo.id}|${photo.albumId}|${side.toInt()}|${it.accent.value}" } }
+        val ready = remember(key) { key?.let { Dither.kept(it) } }
+        val frames by produceState(ready, cover) {
             val c = cover ?: return@produceState
-            value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, side, density.density) }
+            if (value != null) return@produceState
+            val t = System.nanoTime()
+            value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, side, density.density) }?.also { f -> key?.let { Dither.keep(it, f) } }
+            if (Log.on) Log.d("dither: ${photo.album.take(20)} cover ${(t - born) / 1_000_000} ms after shown, frames ${(System.nanoTime() - t) / 1_000_000} ms")
         }
-        val shown = remember(frames) { Animatable(0f) }
-        LaunchedEffect(frames) { if (frames != null) shown.animateTo(1f, tween(900, easing = Motion.expo)) }
+        val shown = remember(key) { Animatable(if (ready != null) 1f else 0f) }
+        // the first time it's seen, developed in, quicker than it was (450 ms, was 900)
+        LaunchedEffect(frames) { if (frames != null && shown.value < 1f) shown.animateTo(1f, tween(450, easing = Motion.expo)) }
         frames?.let { f ->
             // the dots drawn as dots: unfiltered, as the player draws them
             Image(f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)], null, Modifier.fillMaxSize(),

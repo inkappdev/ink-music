@@ -65,6 +65,7 @@ object NowPlaying {
 
     /** The app quitting: off Now Playing, so the Mac doesn't keep it as the app playing. */
     fun stop() {
+        if (ours && Home.windows) return WinNowPlaying.stop()
         if (!ours || !::objc.isInitialized) return
         runCatching {
             val pool = objc.objc_autoreleasePoolPush()
@@ -95,13 +96,14 @@ object NowPlaying {
      * so after a crash there the app opens with mpv's own instead (the mark deleted, it's tried again).
      */
     private val trying = java.io.File(Home.dir, "now-playing-trying")
-    /** Whether ink's own is used (else mpv's `media-controls`). */
-    val ours: Boolean = Home.mac && !trying.exists().also { if (it) { Log.d("now playing: crashed last time, mpv's instead"); trying.delete() } }
+    /** Whether ink's own is used (else mpv's `media-controls`): the Mac's, and Windows' ([WinNowPlaying]) since 2026-11-09. */
+    val ours: Boolean = (Home.mac || Home.windows) && !trying.exists().also { if (it) { Log.d("now playing: crashed last time, mpv's instead"); trying.delete() } }
 
-    /** Begun with the player, on a Mac only: the buttons answered, the card kept to what plays. */
+    /** Begun with the player: the buttons answered, the card kept to what plays. */
     fun start() {
         if (!ours) return
         runCatching { trying.writeText("") }
+        if (Home.windows) return WinNowPlaying.start { trying.delete() }
         scope.launch {
             runCatching {
                 objc = Native.load("objc", ObjC::class.java)
@@ -117,7 +119,7 @@ object NowPlaying {
     }
 
     /** Where it is, said again after a seek (the card counts on by itself from the last time it was told). */
-    fun moved() { if (ours) scope.launch { runCatching { show(Player.now.value) } } }
+    fun moved() { if (ours && Home.mac) scope.launch { runCatching { show(Player.now.value) } } }
 
     private fun commands() {
         val pool = objc.objc_autoreleasePoolPush()

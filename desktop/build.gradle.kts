@@ -57,11 +57,22 @@ dependencies {
     // YouTube Music: its API by hand (the phone's InnerTube.kt, shared), its streams through NewPipe's extractor (GPL-3.0)
     implementation(project(":youtube"))
     implementation(project(":core"))
+    // JetBrains' Java's own API (the title bar, InkTitle): Compose carries it into the app already, at this version
+    compileOnly("org.jetbrains.runtime:jbr-api:1.9.0")
+    // Windows: ANGLE (libEGL, libGLESv2), what skiko draws through there (Main.kt sets skiko.renderApi): Direct3D's
+    // own stretched the last frame to a window being resized, and it shook (2026-11-09). Its version is skiko's own,
+    // which Compose brings (skiko-awt-runtime-windows-x64 in the app): move it with Compose's
+    if (System.getProperty("os.name").startsWith("Windows")) runtimeOnly("org.jetbrains.skiko:skiko-awt-runtime-angle-windows-x64:0.150.2")
 }
 
 compose.desktop {
     application {
         mainClass = "app.ink.music.MainKt"
+        // the Java the app carries: INK_RUNTIME where it's given, else the one building it. Windows' is JetBrains' own
+        // (JBR 21, github.com/JetBrains/JetBrainsRuntime), whose custom title bar lets ink's black run to the window's
+        // top with Windows' own buttons over it, snapping and all (InkTitle, Desk.kt; 2026-11-09). On another Java the
+        // app runs as before, Windows' black-tinted bar over it
+        System.getenv("INK_RUNTIME")?.takeIf { it.isNotBlank() }?.let { javaHome = it }
         jvmArgs += listOf("-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua")
         // Linux: linuxWindow() sets AWT's own name and window-manager fields
         jvmArgs += listOf("--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED")
@@ -142,13 +153,26 @@ tasks.withType<AbstractJPackageTask>().configureEach {
     }
 }
 
+// Windows: ANGLE's two libraries beside skiko's own in the finished app. Compose's app sets skiko.library.path to its
+// app folder, and skiko then looks for them only there: it lays out its own library, never ANGLE's, so without these
+// ANGLE "failed to load" and skiko fell back to Direct3D (2026-11-09). The msi is made from this folder, so it has them
+val windowsAngle = System.getProperty("os.name").startsWith("Windows")
+val copyAngle by tasks.registering(Copy::class) {
+    enabled = windowsAngle
+    val jars = configurations.named("runtimeClasspath").map { c -> c.filter { it.name.startsWith("skiko-awt-runtime-angle-windows-x64") } }
+    from(jars.map { j -> j.map { zipTree(it) } }) { include("*.dll") }
+    into(layout.buildDirectory.dir("compose/binaries/main/app/ink music/app"))
+    mustRunAfter(tasks.matching { it.name == "createDistributable" })
+}
+tasks.matching { it.name == "createDistributable" }.configureEach { finalizedBy(copyAngle) }
+
 // Windows: the msi made here rather than by Compose's packageMsi, so it carries ink's own wizard (desktop/windows/:
 // jpackage's main.wxs with ink's pictures, type and an "open ink music" at the end; the wizard's words): jpackage reads
 // those from --resource-dir, which Compose fills and empties itself. jpackage makes Compose's finished app
 // (createDistributable) into the msi, with the WiX Compose fetched; no license or folder pages (welcome, shortcuts,
 // ready, done)
 tasks.register<Exec>("packageInkMsi") {
-    dependsOn("createDistributable")
+    dependsOn("createDistributable", copyAngle)
     if (System.getProperty("os.name").startsWith("Windows")) dependsOn(":unzipWix")   // Compose keeps WiX on the root project
     val app = layout.buildDirectory.dir("compose/binaries/main/app/ink music").get().asFile
     val out = layout.buildDirectory.dir("compose/binaries/main/msi").get().asFile
