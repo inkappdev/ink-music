@@ -108,7 +108,15 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     // what's said of them: its first sentence pulled out big, as a lyric is; the rest small under it, a click for the rest
     val about = @Composable { quote: androidx.compose.ui.unit.TextUnit, lines: Int ->
         // its source line ("From Wikipedia ... under Creative Commons") off, a quiet credit under it instead
-        i?.about?.let { Bio.of(it) }?.takeIf { it.first.isNotEmpty() }?.let { (about, from) ->
+        // with no bio anywhere, a line ink writes from what it knows (Bio.facts): never an empty space
+        val picked by Picks.said.collectAsState()
+        val bio = i?.about?.let { Bio.of(it) }?.takeIf { it.first.isNotEmpty() } ?: i?.let { info ->
+            remember(info, picked, records.size, tubeAlbums.size) {
+                val by = picked.filter { Curation.folded(it.artist.substringBefore(", ")) == Curation.folded(shown) }.map { it.from }.distinct()
+                Bio.facts(records.size + tubeAlbums.size, info.singles.size, by, info.like.map { it.name }, info.audience)
+            }?.let { it to null }
+        }
+        bio?.let { (about, from) ->
             val (said, all) = remember(about) { Artists.pullQuote(about) }
             // its first paragraph only: the rest is read over the page (more), and the name has the room under it
             val rest = remember(all) { all.substringBefore('\n').trim() }

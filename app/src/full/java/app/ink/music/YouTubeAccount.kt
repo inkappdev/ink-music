@@ -343,7 +343,9 @@ object YouTubeAccount {
             val a = (tube ?: InnerTube()).artist(page)
             val who = a.name.ifEmpty { name }
             fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art)
-            ArtistInfo(page, who, a.photo, a.about, a.audience, a.top.map(::song), a.albums.map(::record), a.singles.map(::record),
+            // no bio of YouTube's own, or a scrap: one found (Wikipedia's, else Last.fm's), kept with the page
+            val about = if (Bio.scant(a.about)) Bio.find(who, LastFm.key) ?: a.about else a.about
+            ArtistInfo(page, who, a.photo, about, a.audience, a.top.map(::song), a.albums.map(::record), a.singles.map(::record),
                 a.like.map { TubeArtist(it.title, it.art, it.id) }, a.featured.map { TubeList(it.id.removePrefix("VL"), it.title, it.subtitle, it.art) })
         }.onFailure { android.util.Log.d("ink-youtube", "artist $name $id: $it") }.getOrNull()
         android.util.Log.d("ink-youtube", "artist $name: ${found?.top?.size} songs, ${found?.albums?.size} records in ${System.currentTimeMillis() - t0} ms")

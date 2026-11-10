@@ -1464,7 +1464,11 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         // their music videos (MusicVideos: the full build's), newest first
         if (i != null && i.id.startsWith("UC")) item(key = "videos") { ArtistVideos(name, i.id, pages) }
         // what's said of them: four lines, a tap for the rest
-        i?.about?.let { Bio.of(it) }?.takeIf { it.first.isNotEmpty() }?.let { (about, from) ->
+        // with no bio anywhere, a line ink writes from what it knows (Bio.facts): never an empty space
+        (i?.about?.let { Bio.of(it) }?.takeIf { it.first.isNotEmpty() } ?: i?.let { info ->
+            val by = Picks.said.value.filter { Curation.folded(it.artist.substringBefore(", ")) == Curation.folded(info.name) }.map { it.from }.distinct()
+            Bio.facts(records.size + tubeAlbums.size, info.singles.size, by, info.like.map { it.name }, info.audience)?.let { it to null }
+        })?.let { (about, from) ->
             // its first sentence pulled out big, as a lyric is; the rest small under it; where it's from, quietly after
             item {
                 val (said, rest) = remember(about) { pullQuote(about) }

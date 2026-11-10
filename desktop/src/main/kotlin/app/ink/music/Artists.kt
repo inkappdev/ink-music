@@ -75,7 +75,9 @@ object Artists {
         val a = InnerTube().artist(page)
         val who = a.name.ifEmpty { name }
         fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art)
-        ArtistInfo(page, who, a.photo, a.about, a.audience, a.top.map { YouTube.song(it) }, a.albums.map(::record), a.singles.map(::record),
+        // no bio of YouTube's own, or a scrap: one found (Wikipedia's, else Last.fm's), kept with the page
+        val about = if (Bio.scant(a.about)) Bio.find(who, LastFm.key) ?: a.about else a.about
+        ArtistInfo(page, who, a.photo, about, a.audience, a.top.map { YouTube.song(it) }, a.albums.map(::record), a.singles.map(::record),
             a.like.map { TubeArtist(it.title, it.art, it.id) },
             a.featured.map { TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, "youtube music", it.art) })
     }.onFailure { Log.d("artist $name: $it") }.getOrNull()
