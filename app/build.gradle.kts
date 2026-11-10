@@ -20,8 +20,8 @@ android {
         minSdk = 30
         targetSdk = 37
         // each release: both up (the code by one), and a changelog in fastlane/.../changelogs/<code>.txt
-        versionCode = 63
-        versionName = "2.1.12"
+        versionCode = 64
+        versionName = "2.1.13"
         // ink weekly's weeks (tools/weekly.py writes them); -PweeklyUrl=... to try a week before it's pushed
         val weekly = (project.findProperty("weeklyUrl") as String?) ?: "https://inkhome.app/weekly.json"
         buildConfigField("String", "WEEKLY", "\"$weekly\"")
