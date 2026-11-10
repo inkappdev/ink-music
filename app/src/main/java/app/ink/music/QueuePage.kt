@@ -202,7 +202,9 @@ fun RemoteQueuePage(r: Everywhere.Remote, onClose: () -> Unit) {
                     }
                     Row(Modifier.fillMaxWidth().height(ROW), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            BasicText(q.title.uppercase(), style = headline(18.sp, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            // the song playing there filling with its cover's color, as this phone's own queue does
+                            if (i == r.index && r.length > 0 && !q.station) FilledTitle(q.title.uppercase(), tone, q, r.length, r.playing, r) { r.positionNow() }
+                            else BasicText(q.title.uppercase(), style = headline(18.sp, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             BasicText(q.artist.lowercase(), style = pixel(12.sp, if (tone == Ink.ink) Ink.mid else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         if (i == r.index) {
@@ -222,12 +224,20 @@ fun RemoteQueuePage(r: Everywhere.Remote, onClose: () -> Unit) {
  * letters in its cover's colour, the progress line's, cut off where the song's at, moving on smoothly between looks.
  */
 @Composable
-private fun PlayingTitle(title: String, base: androidx.compose.ui.graphics.Color, n: Now) {
-    var pos by remember { mutableLongStateOf(n.positionNow()) }
-    LaunchedEffect(n) { while (true) { pos = n.positionNow(); if (!n.moving) break; delay(250) } }
-    val target = if (n.duration > 0) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
+private fun PlayingTitle(title: String, base: androidx.compose.ui.graphics.Color, n: Now) =
+    FilledTitle(title, base, n.song, n.duration, n.moving, n) { n.positionNow() }
+
+/**
+ * A title filled as its song plays: `at` where it is now, asked four times a second while it `moves`; `key` anew
+ * when what's playing is told again. This phone's queue ([PlayingTitle]) and another device's ([RemoteQueuePage]).
+ */
+@Composable
+private fun FilledTitle(title: String, base: androidx.compose.ui.graphics.Color, song: Song?, length: Long, moves: Boolean, key: Any?, at: () -> Long) {
+    var pos by remember { mutableLongStateOf(at()) }
+    LaunchedEffect(key) { while (true) { pos = at(); if (!moves) break; delay(250) } }
+    val target = if (length > 0) (pos.toFloat() / length).coerceIn(0f, 1f) else 0f
     val k by animateFloatAsState(target, tween(300, easing = androidx.compose.animation.core.LinearEasing), label = "filled")
-    val accent = rememberCover(n.song, 300)?.accent ?: Ink.ink
+    val accent = rememberCover(song, 300)?.accent ?: Ink.ink
     val c by androidx.compose.animation.animateColorAsState(accent, tween(Motion.ENTER * 2, easing = Motion.expo), label = "fill")
     Box {
         BasicText(title, style = headline(18.sp, base), maxLines = 1, overflow = TextOverflow.Ellipsis)
