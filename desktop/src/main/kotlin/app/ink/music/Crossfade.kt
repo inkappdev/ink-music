@@ -217,14 +217,41 @@ object Crossfade {
             val f = e.fading?.toDouble() ?: return@let o
             if (o <= f - 500) o else a.barNear(f - 500).let { if (it > f - 500) it - 4 * a.period else it }
         }
-        val cut = (a0 - speed * b0).toLong()
-        val fade = kotlin.math.min(16 * b.period, (e.lastSound - cut) / speed).toLong().coerceIn(4_000, 14_000)
+        var out = a0
+        var cut = (a0 - speed * b0).toLong()
+        // keys that sit well together, a longer blend (24 beats, 20 s at most: the phone's, after LastWave's); never more
+        // than two fifths of either song
+        val fit = Key.fit(e.tailKey, next.headKey)
+        var fade = kotlin.math.min((if (fit) 24 else 16) * b.period, (e.lastSound - cut) / speed).toLong().coerceIn(4_000, if (fit) 20_000 else 14_000)
+            .let { f -> listOf(e.duration, next.duration).filter { it > 0 }.minOrNull()?.let { d -> f.coerceAtMost((d * 2 / 5).coerceAtLeast(4_000)) } ?: f }
         if (cut < e.duration - 25_000 + 500 || cut < a.first) return null
+        // no voice over another (the phone's, after LastWave's automix): both singing for more than a third of a second,
+        // the blend shorter a bar at a time (4 s at least), else out a bar or two earlier or later; the first plan that
+        // keeps them apart, inside the old one's end as decoded
+        val vo = vocals[s.id]; val vn = vocals[n.id]
+        if (!vo.isNullOrEmpty() && !vn.isNullOrEmpty()) {
+            val was = Vocals.overlap(vo, out, speed, vn, b0, fade)
+            if (was > Vocals.MOST) {
+                val step = (4 * b.period).toLong()
+                val tries = buildList {
+                    var f = fade - step
+                    while (f >= 4_000) { add(out to f); f -= step }
+                    for (k in listOf(-1, 1, -2)) add(out + k * 4 * a.period to fade)
+                }.mapNotNull { (o, f) ->
+                    val c2 = (o - speed * b0).toLong()
+                    val f2 = kotlin.math.min(f.toDouble(), (e.lastSound - c2) / speed).toLong()
+                    (o to f2).takeIf { o <= latest + 1 && c2 >= e.duration - 25_000 + 500 && c2 >= a.first && f2 >= 4_000 }
+                }
+                val safe = tries.firstOrNull { (o, f) -> Vocals.overlap(vo, o, speed, vn, b0, f) <= Vocals.MOST }
+                Log.d("crossfade: vocals: $was ms of both singing as planned; " + (safe?.let { (o, f) -> "out at %.2fs over %.1fs instead".format(o / 1000, f / 1000.0) } ?: "no plan keeps them apart"))
+                if (safe != null) { out = safe.first; cut = (out - speed * b0).toLong(); fade = safe.second }
+            }
+        }
         // keys clashing (both sure): the same four bars, the old one sinking under the filter fade's low-pass
         val clash = Key.clash(e.tailKey, next.headKey)
         Log.d("crossfade: ${s.title} into ${n.title}: beats matched, %.1f into %.1f bpm, at %.3fx, out at %.2fs (%s), in on bar one at %.2fs, keys %s into %s%s".format(
             a.bpm, b.bpm, speed, a0 / 1000, if (outro != null) "its outro" else "a bar start", b0 / 1000, e.tailKey?.camelot, next.headKey?.camelot, if (clash) ", clashing" else ""))
-        return Plan(s.id, n.id, cut, 0, fade, speed, a0, b0, b.period, a.bpm, filter = clash,
+        return Plan(s.id, n.id, cut, 0, fade, speed, out, b0, b.period, a.bpm, filter = clash,
             hold = ((next.fullAt - b0) / fade).coerceIn(0.0, .7))
     }
 
@@ -375,8 +402,17 @@ object Crossfade {
         if (!asked.add(s.id)) return
         work.execute {
             runCatching { ends(s) }.onFailure { Log.d("crossfade: ${s.title}: $it") }.getOrNull()?.let { ends[s.id] = it }
+            // automix: when it's sung, from its timed lyrics (the lyrics' own cache and sources: Vocals)
+            if (mode.value == AUTOMIX && !s.station && !vocals.containsKey(s.id)) runCatching {
+                val lines = kotlinx.coroutines.runBlocking { Lyrics.of(s) }.orEmpty()
+                vocals[s.id] = Vocals.spans(lines.map { Vocals.Sung(it.at, it.words, it.parts.lastOrNull()?.first) })
+                Log.d("crossfade: ${s.title}: ${vocals[s.id]?.size ?: 0} stretches sung")
+            }
         }
     }
+
+    /** When each song's singing (ms), from its timed lyrics: automix lays no voice over another (Vocals). Empty: none known. */
+    private val vocals = java.util.concurrent.ConcurrentHashMap<String, List<LongRange>>()
 
     private fun ends(s: Song): Ends? {
         val url = if (s.tube && Offline.file(s.id) == null) YouTube.stream(s.id) ?: return null else Player.where(s)

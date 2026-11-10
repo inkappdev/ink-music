@@ -72,6 +72,9 @@ object Key {
     fun distance(a: Found, b: Found) = distance(a.pc, a.minor, b.pc, b.minor)
 
     /** Whether two keys, both sure, clash. Unsure of either: not said to. */
+    /** Keys that sit well together (both sure): the same, or a step round the wheel (automix's longer blend). */
+    fun fit(a: Found?, b: Found?) = a != null && b != null && a.sure >= SURE && b.sure >= SURE && distance(a, b) <= 1
+
     fun clash(a: Found?, b: Found?) = a != null && b != null && a.sure >= SURE && b.sure >= SURE && distance(a, b) >= 2
 
     private fun number(pc: Int, minor: Boolean) = floorMod(floorMod(pc * 7, 12) + if (minor) 4 else 7, 12) + 1
