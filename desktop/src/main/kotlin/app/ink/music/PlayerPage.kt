@@ -326,7 +326,7 @@ fun Scrubber(n: Player.Now, accent: Color, modifier: Modifier = Modifier, middle
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
-fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: MutableState<Long?> = remember { mutableStateOf(null) }, beat: Boolean = true) {
+fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: MutableState<Long?> = remember { mutableStateOf(null) }, beat: Boolean = true, ends: Boolean = false) {
     val pos by Player.position.collectAsState()
     val live = !n.song.station && n.duration > 0
     var hover by remember { mutableStateOf<Float?>(null) }   // where the mouse is along it, 0 to 1
@@ -370,6 +370,12 @@ fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: 
             BasicText(clock(if (at != null) at else (h * n.duration).toLong()), style = pixel(12.sp, Ink.ink),
                 modifier = Modifier.align(Alignment.TopStart).onSizeChanged { label = it.width }
                     .offset { IntOffset((h * width - label / 2f).toInt().coerceIn(0, (width - label).coerceAtLeast(0)), 0) })
+        }
+        // `ends` (the bar along the foot): its times over the line at its two ends, gone, the time a click would go to,
+        // while the mouse is on it; a station's only says it's live
+        if (ends && h == null) {
+            BasicText(if (live) clock(pos) else if (n.song.station) "live" else "", style = pixel(12.sp, Ink.mid), modifier = Modifier.align(Alignment.TopStart))
+            if (live) BasicText("-" + clock((n.duration - pos).coerceAtLeast(0)), style = pixel(12.sp, Ink.mid), modifier = Modifier.align(Alignment.TopEnd))
         }
         // automix: the song's beat over the line (BeatCounter), not while the mouse is on it or in a blend; `beat` off
         // where it has a place of its own (the mini player's, beside its controls)

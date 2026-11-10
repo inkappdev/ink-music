@@ -982,10 +982,10 @@ internal fun NoSound(trouble: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * What's playing, along the foot of the window: the line along the cover's top edge filling with the
- * song in its colour, the cover, the song, back / play / next and the heart, the beat and the times. A click opens
- * the player. The beat's four squares and tempo are in the bar itself (2026-11-09: over the line they hung on the page
- * above, apart from everything).
+ * What's playing, along the foot of the window: the line along the cover's top edge filling with the song in its
+ * colour, its times at its two ends and the beat in the middle over it (as the player's and the phone's line); the
+ * cover, the song, back / play / next and the heart. A click opens the player. The beat and the times were in the row
+ * for an evening (2026-11-09), and it got crowded: they're the line's, so on the line.
  */
 @Composable
 private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: () -> Unit, onArtist: (String) -> Unit, onOpen: () -> Unit) {
@@ -1000,10 +1000,12 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
     val n = now ?: return
     val cover = rememberCover(n.song)
     val side by Bar.side.collectAsState()
+    // the beat over the line where the window's wide enough for its four squares and tempo between the times
+    var beatOn by remember { mutableStateOf(true) }
     Column(Modifier.fillMaxWidth().background(Ink.black).padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
         // the bar's top edge over the line's reach: dragged up, the bar taller and its cover bigger (BarEdge)
         Box(Modifier.fillMaxWidth()) {
-            SeekLine(n, cover?.accent ?: Ink.ink, beat = false)
+            SeekLine(n, cover?.accent ?: Ink.ink, beat = beatOn, ends = true)
             BarEdge(Modifier.align(Alignment.TopStart))
         }
         // a narrow window (an upright screen, or the rail beside the bar): the song keeps its room, and what the player
@@ -1011,9 +1013,8 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
         // back / play / next and the heart always, as the phone's bar (2026-11-09: all of it was kept whatever the room,
         // and under 700 across the cover and the song had none)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val beat = maxWidth >= BAR_BEAT
+        beatOn = maxWidth >= BAR_BEAT
         val volume = maxWidth >= BAR_VOLUME
-        val times = maxWidth >= BAR_TIMES
         val words = maxWidth >= BAR_WORDS
         // nothing behind it: the artist's name big and faint, as the mini player has, made the small words and the
         // controls over it hard to read (tried and taken out the same day, 2026-11-09)
@@ -1043,12 +1044,7 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
             }
             Controls(n, small = true)
             Heart(n.song, 2.dp, Modifier.padding(start = 10.dp))
-            if (beat && !n.song.station && n.duration > 0) BeatCounter(n.song.id, n.playing, Modifier.padding(start = 24.dp))
-            if (times) {
-                Spacer(Modifier.width(24.dp))
-                Times(n, Modifier.widthIn(min = 96.dp))
-            }
-            if (volume) Volume(line = 80.dp)
+            if (volume) { Spacer(Modifier.width(12.dp)); Volume(line = 80.dp) }
             if (words) {
                 Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
                 // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
@@ -1105,17 +1101,13 @@ private fun BarEdge(modifier: Modifier = Modifier) {
     ) { if (over || dragging) Box(Modifier.fillMaxWidth().height(1.dp).background(if (dragging) Ink.mid else Ink.line)) }
 }
 
-/** How wide the bar along the foot is before it shows each of these too (under [BAR_WORDS]: the cover, the song, back / play / next). */
+/**
+ * How wide the bar along the foot is before it shows each of these too (under [BAR_WORDS]: the cover, the song, back /
+ * play / next; the times always, on the line). The beat is on the line, between the times.
+ */
 private val BAR_WORDS = 580.dp
-private val BAR_TIMES = 760.dp
-private val BAR_VOLUME = 940.dp
-private val BAR_BEAT = 1160.dp
-
-@Composable
-private fun Times(n: Player.Now, modifier: Modifier = Modifier) {
-    val pos by Player.position.collectAsState()
-    BasicText(if (n.song.station) "live" else "${clock(pos)} / ${clock(n.duration)}", style = pixel(12.sp, Ink.mid), modifier = modifier)
-}
+private val BAR_VOLUME = 840.dp
+private val BAR_BEAT = 640.dp
 
 /** The line filling with the song in the cover's colour, to go anywhere in it ([SeekLine]). */
 @Composable
