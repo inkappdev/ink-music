@@ -101,7 +101,23 @@ object TempoMixes {
     }.buffer(at)
 
     /** A list as a DJ's arc: begun once three are read, the slowest first; each read after put where it meets its neighbours best. */
-    fun list(title: String, songs: List<Song>) {
+    /**
+     * A list mix's shape (2026-11-10, as the phone's): building up (slowest to fastest, as it always was), steady (round
+     * the tempo most of them share) or winding down (fastest to slowest). The last one chosen kept.
+     */
+    enum class Shape(val word: String) { BUILD("build up"), STEADY("steady"), WIND("wind down") }
+    private val shapeFile = File(Home.dir, "mix-shape")
+    val shape = kotlinx.coroutines.flow.MutableStateFlow(runCatching { Shape.valueOf(shapeFile.readText().trim()) }.getOrDefault(Shape.BUILD))
+    fun shape(s: Shape) { shape.value = s; runCatching { shapeFile.writeText(s.name) } }
+
+    /** The first ones read, in the shape's order: slowest first, fastest first, or nearest the middle first. */
+    private fun opening(found: List<Pair<Song, Tempos.Read>>, s: Shape): List<Pair<Song, Tempos.Read>> = when (s) {
+        Shape.BUILD -> found.sortedBy { fold(it.second.bpm) }
+        Shape.WIND -> found.sortedByDescending { fold(it.second.bpm) }
+        Shape.STEADY -> { val mid = found.map { fold(it.second.bpm) }.sorted().let { it[it.size / 2] }; found.sortedBy { kotlin.math.abs(fold(it.second.bpm) - mid) } }
+    }
+
+    fun list(title: String, songs: List<Song>, shp: Shape = shape.value) {
         job?.cancel()
         automix()
         job = scope.launch {
@@ -116,13 +132,13 @@ object TempoMixes {
                 val (s, r) = p ?: return@collect
                 if (r?.usable == true) waiting += s to r else unread += s
                 if (queued.isEmpty() && waiting.size >= 3) {
-                    queued += waiting.sortedBy { fold(it.second.bpm) }; waiting.clear()
+                    queued += opening(waiting, shp); waiting.clear()
                     javax.swing.SwingUtilities.invokeAndWait {
                         if (Player.shuffle.value) Player.shuffle()
                         Player.play(queued.map { it.first })
                     }
                 } else if (queued.isNotEmpty() && waiting.isNotEmpty()) {
-                    javax.swing.SwingUtilities.invokeAndWait { waiting.forEach { place(it, queued) } }
+                    javax.swing.SwingUtilities.invokeAndWait { waiting.forEach { place(it, queued, shp) } }
                     waiting.clear()
                 }
                 _state.value = State(title, 0, read, all.size, queued.size + waiting.size, queued.isNotEmpty(), false, (queued + waiting).map { it.first })
@@ -131,10 +147,10 @@ object TempoMixes {
             Tempos.save()
             javax.swing.SwingUtilities.invokeAndWait {
                 if (queued.isEmpty()) {
-                    val arc = waiting.sortedBy { fold(it.second.bpm) }.map { it.first } + unread
+                    val arc = opening(waiting, shp).map { it.first } + unread
                     if (arc.isNotEmpty()) { if (Player.shuffle.value) Player.shuffle(); Player.play(arc) }
                 } else {
-                    waiting.forEach { place(it, queued) }
+                    waiting.forEach { place(it, queued, shp) }
                     unread.forEach { Player.add(it) }
                 }
             }
@@ -143,7 +159,7 @@ object TempoMixes {
         }
     }
 
-    private fun place(s: Pair<Song, Tempos.Read>, queued: ArrayList<Pair<Song, Tempos.Read>>) {
+    private fun place(s: Pair<Song, Tempos.Read>, queued: ArrayList<Pair<Song, Tempos.Read>>, shape: Shape = Shape.BUILD) {
         val now = Player.index().coerceAtLeast(0)
         val from = (now + 2).coerceIn(1, queued.size)
         val r = s.second
@@ -152,7 +168,13 @@ object TempoMixes {
         val at = (from..queued.size).minByOrNull { p ->
             val before = queued[p - 1].second
             val after = queued.getOrNull(p)?.second
-            meet(before, r) + (after?.let { meet(r, it) - meet(before, it) } ?: 0.0) + (fold(before.bpm) - fold(r.bpm)).coerceAtLeast(0.0) / 100
+            // against the shape: down a build, up a wind down; steady minds only how two meet
+            val back = when (shape) {
+                Shape.BUILD -> (fold(before.bpm) - fold(r.bpm)).coerceAtLeast(0.0) / 100
+                Shape.WIND -> (fold(r.bpm) - fold(before.bpm)).coerceAtLeast(0.0) / 100
+                Shape.STEADY -> 0.0
+            }
+            meet(before, r) + (after?.let { meet(r, it) - meet(before, it) } ?: 0.0) + back
         } ?: queued.size
         queued.add(at, s)
         Player.insert(s.first, at)

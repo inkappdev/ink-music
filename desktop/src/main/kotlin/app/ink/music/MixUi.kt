@@ -102,7 +102,17 @@ fun MixWord(title: String, songs: List<Song>?, modifier: Modifier = Modifier) {
     if (songs.isNullOrEmpty() || songs.size < 3) return
     val st by TempoMixes.state.collectAsState()
     val going = st?.let { it.title == title && it.bpm == 0 && !it.done } == true
-    Word(if (going) "mixing" else "mix", pixel(14.sp, if (going) Ink.ink else Ink.mid), modifier, touch = 8.dp) { TempoMixes.list(title, songs) }
+    // "mix" opens into its shapes, the last one chosen lit; one clicked starts it (2026-11-10, as the phone's)
+    var choosing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val shape by TempoMixes.shape.collectAsState()
+    if (going || !choosing) Word(if (going) "mixing" else "mix", pixel(14.sp, if (going) Ink.ink else Ink.mid), modifier, touch = 8.dp) { if (!going) choosing = true }
+    else androidx.compose.foundation.layout.Row(modifier) {
+        TempoMixes.Shape.entries.forEach { sh ->
+            Word(sh.word, pixel(14.sp, if (sh == shape) Ink.ink else Ink.mid), Modifier.padding(end = 18.dp), touch = 8.dp) {
+                choosing = false; TempoMixes.shape(sh); TempoMixes.list(title, songs, sh)
+            }
+        }
+    }
 }
 
 /** Under a list's words while it's mixed: the mix as it's found. */

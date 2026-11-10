@@ -1170,7 +1170,17 @@ internal fun MixWord(title: String, songs: List<Song>?, modifier: Modifier = Mod
     val ctx = LocalContext.current
     val st by Mixes.state.collectAsState()
     val going = st?.let { it.title == title && it.bpm == 0 && !it.done } == true
-    Word(if (going) "mixing" else "mix", pixel(14.sp, if (going) Ink.ink else Ink.mid), modifier, touch = 8.dp) { Mixes.list(ctx, title, songs) }
+    // "mix" opens into its shapes, the last one chosen lit; one tapped starts it (2026-11-10, as Prism's DJ mode offers)
+    var choosing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { Mixes.loadShape(ctx) }
+    if (going || !choosing) Word(if (going) "mixing" else "mix", pixel(14.sp, if (going) Ink.ink else Ink.mid), modifier, touch = 8.dp) { if (!going) choosing = true }
+    else Row(modifier) {
+        Mixes.Shape.entries.forEach { sh ->
+            Word(sh.word, pixel(14.sp, if (sh == Mixes.shape) Ink.ink else Ink.mid), Modifier.padding(end = 18.dp), touch = 8.dp) {
+                choosing = false; Mixes.shape(ctx, sh); Mixes.list(ctx, title, songs, sh)
+            }
+        }
+    }
 }
 
 /** Under the words while a list is being mixed: the songs read so far, in step (MixFinding). */

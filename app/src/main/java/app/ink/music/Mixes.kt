@@ -146,7 +146,24 @@ object Mixes {
      * counted as one, [fold]); always beyond the next song (its handover's planned). The late ones too: no cool-down
      * pile at the end. The ones that couldn't be read last. 120 at most. Shuffle off, so the order holds.
      */
-    fun list(c: Context, title: String, songs: List<Song>) {
+    /**
+     * A list mix's shape (2026-11-10): building up (slowest to fastest, as it always was), steady (round the tempo most
+     * of them share, each next the nearest) or winding down (fastest to slowest). The last one chosen kept.
+     */
+    enum class Shape(val word: String) { BUILD("build up"), STEADY("steady"), WIND("wind down") }
+    @Volatile var shape = Shape.BUILD
+        private set
+    fun shape(c: Context, s: Shape) { shape = s; runCatching { File(c.filesDir, "mix-shape").writeText(s.name) } }
+    fun loadShape(c: Context) { runCatching { shape = Shape.valueOf(File(c.filesDir, "mix-shape").readText().trim()) } }
+
+    /** The first ones read, in the shape's order: slowest first, fastest first, or nearest the middle first. */
+    private fun opening(found: List<Pair<Song, Tempos.Read>>, s: Shape): List<Pair<Song, Tempos.Read>> = when (s) {
+        Shape.BUILD -> found.sortedBy { fold(it.second.bpm) }
+        Shape.WIND -> found.sortedByDescending { fold(it.second.bpm) }
+        Shape.STEADY -> { val mid = found.map { fold(it.second.bpm) }.sorted().let { it[it.size / 2] }; found.sortedBy { kotlin.math.abs(fold(it.second.bpm) - mid) } }
+    }
+
+    fun list(c: Context, title: String, songs: List<Song>, shp: Shape = shape) {
         job?.cancel()
         val app = c.applicationContext
         if (Crossfade.mode(app) != Crossfade.AUTOMIX) Crossfade.set(app, Crossfade.AUTOMIX)
@@ -165,13 +182,13 @@ object Mixes {
                 if (r?.usable == true) waiting += s to r else unread += s
                 if (queued.isEmpty() && waiting.size >= 3) {
                     // begun: the slowest of the first ones read, then the next nearest
-                    queued += waiting.sortedBy { fold(it.second.bpm) }; waiting.clear()
+                    queued += opening(waiting, shp); waiting.clear()
                     withContext(Dispatchers.Main) {
                         if (Playback.now.value?.shuffle == true) Playback.shuffle()
                         Playback.play(queued.map { it.first }, 0)
                     }
                 } else if (queued.isNotEmpty() && waiting.isNotEmpty()) {
-                    withContext(Dispatchers.Main) { waiting.forEach { place(it, queued) } }
+                    withContext(Dispatchers.Main) { waiting.forEach { place(it, queued, shp) } }
                     waiting.clear()
                 }
                 _state.value = State(title, 0, read, all.size, queued.size + waiting.size, queued.isNotEmpty(), false, (queued + waiting).map { it.first })
@@ -181,10 +198,10 @@ object Mixes {
             withContext(Dispatchers.Main) {
                 // fewer than three read: what there is, slowest first, then the rest
                 if (queued.isEmpty()) {
-                    val arc = waiting.sortedBy { fold(it.second.bpm) }.map { it.first } + unread
+                    val arc = opening(waiting, shp).map { it.first } + unread
                     if (arc.isNotEmpty()) { if (Playback.now.value?.shuffle == true) Playback.shuffle(); Playback.play(arc, 0) }
                 } else {
-                    waiting.forEach { place(it, queued) }
+                    waiting.forEach { place(it, queued, shp) }
                     unread.forEach { Playback.add(it) }
                 }
             }
@@ -208,7 +225,7 @@ object Mixes {
      * start against the end before it, its end against the start after, less how the two met before; a step back down
      * the climb costs too, and a key that clashes a little. Never before the song after next.
      */
-    private fun place(s: Pair<Song, Tempos.Read>, queued: ArrayList<Pair<Song, Tempos.Read>>) {
+    private fun place(s: Pair<Song, Tempos.Read>, queued: ArrayList<Pair<Song, Tempos.Read>>, shape: Shape = Shape.BUILD) {
         val now = (Playback.now.value?.index ?: 0).coerceAtLeast(0)
         val from = (now + 2).coerceIn(1, queued.size)
         val r = s.second
@@ -217,7 +234,12 @@ object Mixes {
         val at = (from..queued.size).minByOrNull { p ->
             val before = queued[p - 1].second
             val after = queued.getOrNull(p)?.second
-            val back = (fold(before.bpm) - fold(r.bpm)).coerceAtLeast(0.0) / 100   // down the climb
+            // against the shape: down a build, up a wind down; steady minds only how two meet
+            val back = when (shape) {
+                Shape.BUILD -> (fold(before.bpm) - fold(r.bpm)).coerceAtLeast(0.0) / 100
+                Shape.WIND -> (fold(r.bpm) - fold(before.bpm)).coerceAtLeast(0.0) / 100
+                Shape.STEADY -> 0.0
+            }
             meet(before, r) + (after?.let { meet(r, it) - meet(before, it) } ?: 0.0) + back
         } ?: queued.size
         queued.add(at, s)
