@@ -442,10 +442,18 @@ private fun App() {
         val finding = pages.lastOrNull() == Page.Find
         Row(Modifier.fillMaxSize()) {
         val railFolded by RailFold.on.collectAsState()
-        // folded in: only the INK wordmark and an arrow by it to bring the rail back out
-        if (frame != Frame.NARROW && railFolded) FoldedRail { place = "ink"; pages.clear() }
-        if (frame != Frame.NARROW && !railFolded) Rail(place, { place = it; pages.clear() }, { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++ },
+        // folded in: only the INK wordmark and an arrow by it to bring the rail back out; out, the rail slides open and
+        // its words rise in one after another (2026-11-10)
+        androidx.compose.animation.AnimatedVisibility(frame != Frame.NARROW && railFolded,
+            enter = fadeIn(tween(Motion.ENTER, easing = Motion.expo)), exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
+            FoldedRail { place = "ink"; pages.clear() }
+        }
+        androidx.compose.animation.AnimatedVisibility(frame != Frame.NARROW && !railFolded,
+            enter = expandHorizontally(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Start) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = shrinkHorizontally(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Start) + fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
+        Rail(place, { place = it; pages.clear() }, { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++ },
             { if (pages.lastOrNull() != Page.Settings) pages += Page.Settings })
+        }
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 // the player's over the whole window: under it, the page it was opened from

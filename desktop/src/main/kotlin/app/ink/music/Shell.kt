@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,23 +58,24 @@ fun frameOf(width: Dp) = when {
 @Composable
 fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSettings: () -> Unit) {
     Column(Modifier.width(RAIL).fillMaxHeight().padding(start = SIDE, top = TOP + 40.dp, bottom = 20.dp)) {
+        // each word rising in as the rail opens, 40 ms after the one before (the places menu's motion)
         PLACES.forEachIndexed { i, p ->
-          if (i == 0) Row(verticalAlignment = Alignment.CenterVertically) {
+          if (i == 0) Row(Modifier.rising(0), verticalAlignment = Alignment.CenterVertically) {
             Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
             Spacer(Modifier.weight(1f))
             // fold the rail in (⌘⇧\): only the INK wordmark left, an arrow by it to bring it out
             Pixel(FOLD_LEFT, "fold the places away", Ink.dim, Modifier.padding(end = 18.dp), cell = 2.dp) { RailFold.set(true) }
           } else
-            Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
+            Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.rising(i).padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
         }
         Spacer(Modifier.height(28.dp))
         // find, the lens (⌘F)
-        Pixel(SEARCH, "find", Ink.mid, Modifier.offset(x = (-8).dp), cell = 3.dp, onClick = onFind)
-        Word("your year", pixel(13.sp, Ink.mid), touch = 6.dp) { Nav.open(Page.Year) }
-        Word("settings", pixel(13.sp, Ink.mid), touch = 6.dp, onClick = onSettings)
+        Pixel(SEARCH, "find", Ink.mid, Modifier.rising(PLACES.size).offset(x = (-8).dp), cell = 3.dp, onClick = onFind)
+        Word("your year", pixel(13.sp, Ink.mid), Modifier.rising(PLACES.size + 1), touch = 6.dp) { Nav.open(Page.Year) }
+        Word("settings", pixel(13.sp, Ink.mid), Modifier.rising(PLACES.size + 2), touch = 6.dp, onClick = onSettings)
         Spacer(Modifier.weight(1f))
         // made by ink, a small pixel heart after it; ink its own website (the quiet funnel, never a nag)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.rising(PLACES.size + 3), verticalAlignment = Alignment.CenterVertically) {
             BasicText("made by ", style = pixel(12.sp, Ink.dim))
             Word("ink", pixel(12.sp, Ink.mid)) { browse("https://inkhome.app") }
             Spacer(Modifier.width(6.dp))
@@ -84,13 +86,24 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
 }
 
 val RAIL = 210.dp
+/** Rising in as it first shows, `order` steps of 40 ms after the first (the rail's words as it opens). */
+@Composable
+private fun Modifier.rising(order: Int): Modifier {
+    val shown = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(order * 40L); shown.animateTo(1f, androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) }
+    return graphicsLayer { alpha = shown.value; translationY = (1f - shown.value) * Motion.drift.toPx() * .6f }
+}
+
 /** The rail folded in: INK (a click, the INK place) and the arrow by it that brings the rail back out. */
 @Composable
 fun FoldedRail(onInk: () -> Unit) {
-    Row(Modifier.fillMaxHeight().padding(start = SIDE, end = 12.dp, top = TOP + 40.dp), verticalAlignment = Alignment.Top) {
-        Word("INK", headline(22.sp), Modifier.padding(vertical = 2.dp), touch = 6.dp, onClick = onInk)
-        Spacer(Modifier.width(10.dp))
-        Pixel(FOLD_RIGHT, "the places beside", Ink.dim, Modifier.padding(top = 9.dp), cell = 2.dp) { RailFold.set(false) }
+    Column(Modifier.fillMaxHeight().padding(start = SIDE, end = 12.dp, top = TOP + 40.dp)) {
+        // the arrow on the word's middle (it sat low, by the top of its box)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Word("INK", headline(22.sp), Modifier.padding(vertical = 2.dp), touch = 6.dp, onClick = onInk)
+            Spacer(Modifier.width(10.dp))
+            Pixel(FOLD_RIGHT, "the places beside", Ink.dim, cell = 2.dp) { RailFold.set(false) }
+        }
     }
 }
 
