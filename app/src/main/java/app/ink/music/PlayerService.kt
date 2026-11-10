@@ -582,6 +582,31 @@ class PlayerService : MediaLibraryService() {
                 out += object : androidx.media3.exoplayer.audio.MediaCodecAudioRenderer(
                     context, codecAdapterFactory, mediaCodecSelector, enableDecoderFallback, eventHandler, eventListener, audioSink,
                 ) {
+                    // where a jump asked to go, and the sound the decoder hands on after it (2026-11-10: scrubbed near a
+                    // song's end, the clock ran ahead of the sound and caught up at the blend, heard as a hitch)
+                    private var jumpedTo = -1L
+                    private var shown = 3
+                    private var skipped = 0
+                    override fun onPositionReset(positionUs: Long, joining: Boolean, sampleStreamIsResetToKeyFrame: Boolean) {
+                        super.onPositionReset(positionUs, joining, sampleStreamIsResetToKeyFrame)
+                        jumpedTo = positionUs; shown = 0; skipped = 0
+                        android.util.Log.d("ink-seek", "jump to ${positionUs / 1000} ms (joining $joining, key frame $sampleStreamIsResetToKeyFrame)")
+                    }
+                    override fun processOutputBuffer(
+                        positionUs: Long, elapsedRealtimeUs: Long, codec: androidx.media3.exoplayer.mediacodec.MediaCodecAdapter?, buffer: java.nio.ByteBuffer?,
+                        bufferIndex: Int, bufferFlags: Int, sampleCount: Int, bufferPresentationTimeUs: Long, isDecodeOnlyBuffer: Boolean, isLastBuffer: Boolean,
+                        format: androidx.media3.common.Format,
+                    ): Boolean {
+                        if (jumpedTo >= 0 && shown < 3 && buffer != null) {
+                            if (isDecodeOnlyBuffer) skipped++
+                            else {
+                                shown++
+                                android.util.Log.d("ink-seek", "  out ${bufferPresentationTimeUs / 1000} ms (${(bufferPresentationTimeUs - jumpedTo) / 1000} ms from the jump), " +
+                                    "$sampleCount samples at ${format.sampleRate} Hz, ${buffer.remaining()} bytes, $skipped skipped before")
+                            }
+                        }
+                        return super.processOutputBuffer(positionUs, elapsedRealtimeUs, codec, buffer, bufferIndex, bufferFlags, sampleCount, bufferPresentationTimeUs, isDecodeOnlyBuffer, isLastBuffer, format)
+                    }
                     override fun getMediaFormat(format: androidx.media3.common.Format, codecMimeType: String, codecMaxInputSize: Int, codecOperatingRate: Float) =
                         super.getMediaFormat(format, codecMimeType, codecMaxInputSize, codecOperatingRate).also { mf ->
                             // and with transitions on (no exact to a DAC), a deeper file 16 bit too: Media3's processors are
@@ -620,6 +645,17 @@ class PlayerService : MediaLibraryService() {
         // a song ending goes into the next (settings, sound: crossfade)
         // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+            // jumps, and the sound's clock caught out (ink-seek: what scrubbing near a song's end does to a blend)
+            override fun onPositionDiscontinuity(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
+                android.util.Log.d("ink-seek", "discontinuity ($reason): ${old.mediaItem?.mediaId} ${old.positionMs} ms -> ${new.mediaItem?.mediaId} ${new.positionMs} ms")
+            }
+            override fun onAudioSinkError(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime, audioSinkError: Exception) {
+                android.util.Log.d("ink-seek", "sink: ${audioSinkError.message} at ${eventTime.currentPlaybackPositionMs} ms")
+            }
+            override fun onAudioPositionAdvancing(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime, playoutStartSystemTimeMs: Long) {
+                android.util.Log.d("ink-seek", "sound going at ${eventTime.currentPlaybackPositionMs} ms")
+            }
             override fun onAudioInputFormatChanged(
                 eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
                 format: androidx.media3.common.Format,
