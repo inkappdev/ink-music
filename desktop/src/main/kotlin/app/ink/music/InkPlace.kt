@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -126,7 +127,8 @@ private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: (
     BasicText(w.title.uppercase(), style = headline(if (big) 64.sp else 48.sp).copy(lineHeight = if (big) 62.sp else 46.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
     if (w.note.isNotEmpty()) {
         Spacer(Modifier.height(14.dp))
-        BasicText(w.note.lowercase(), style = pixel(14.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 23.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+        BasicText(w.note.lowercase(), style = pixel(14.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 23.sp), maxLines = 5, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = READ))
     }
     Spacer(Modifier.height(20.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {

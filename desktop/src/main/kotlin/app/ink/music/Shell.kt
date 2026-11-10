@@ -79,6 +79,12 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
 
 val RAIL = 210.dp
 val NOW = 360.dp
+/**
+ * The widest a sentence or a paragraph runs (a quote, a note, notes): about 45 to 60 letters a line, the same at every
+ * size. Lists, grids and shelves take the room there is; words to read wrap here, so a smaller size leaves black
+ * beside them rather than one line across the screen (2026-11-10: the record of the day's quote at 80%).
+ */
+val READ = 640.dp
 /** How narrow and how wide the now column can be dragged. */
 val NOW_LEAST = 300.dp
 val NOW_MOST = 620.dp

@@ -155,8 +155,11 @@ object Size {
         runCatching { if (to == null) file.delete() else Home.write(file, chosen.value.toString()) }
     }
 
-    fun bigger() = set(of(chosen.value) + .1f)
-    fun smaller() = set(of(chosen.value) - .1f)
+    /** Counted up at each step from the keys, the wheel or the menu, for [SizeShown]. */
+    val stepped = MutableStateFlow(0)
+
+    fun bigger() { set(of(chosen.value) + .1f); stepped.value++ }
+    fun smaller() { set(of(chosen.value) - .1f); stepped.value++ }
 }
 
 /** The window's content at [Size]'s size. */
@@ -396,6 +399,35 @@ fun DropHint() {
                 BasicText("LET GO TO PLAY", style = headline(64.sp))
                 Spacer(Modifier.height(10.dp))
                 BasicText("songs, a record's folder, a stack of them", style = pixel(14.sp, Ink.mid))
+            }
+        }
+    }
+}
+
+/**
+ * The size as it's stepped (ctrl or ⌘ with the wheel, = and -, the menu): its percentage, big, in the middle of the
+ * window for a moment, so it's known where it's got to (2026-11-10, Bronson). Drawn at the new size, as the rest is.
+ */
+@Composable
+fun SizeShown() {
+    val stepped by Size.stepped.collectAsState()
+    val chosen by Size.chosen.collectAsState()
+    var shown by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(stepped) {
+        if (stepped == 0) return@LaunchedEffect
+        shown = true
+        kotlinx.coroutines.delay(1200)
+        shown = false
+    }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        AnimatedVisibility(shown, enter = fadeIn(tween(Motion.ENTER, easing = Motion.expo)), exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
+            Column(
+                Modifier.background(Ink.black).border(1.dp, Ink.line).padding(horizontal = 40.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                BasicText("${Math.round(Size.of(chosen) * 100)}%", style = headline(64.sp))
+                Spacer(Modifier.height(6.dp))
+                BasicText(if (Home.mac) "size · ⌘ = and -" else "size · ctrl = and -", style = pixel(12.sp, Ink.mid))
             }
         }
     }

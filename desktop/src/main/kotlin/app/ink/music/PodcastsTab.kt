@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -257,6 +258,6 @@ fun EpisodeNotes(id: String, modifier: Modifier = Modifier) {
     val scroll = rememberScrollState()
     Box(modifier.feather(scroll)) {
         BasicText(text.lowercase(), style = pixel(13.sp, Ink.ink).copy(lineHeight = 21.sp),
-            modifier = Modifier.fillMaxWidth().verticalScroll(scroll).padding(bottom = 40.dp))
+            modifier = Modifier.widthIn(max = READ).fillMaxWidth().verticalScroll(scroll).padding(bottom = 40.dp))
     }
 }

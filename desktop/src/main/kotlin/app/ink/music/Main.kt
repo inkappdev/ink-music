@@ -485,6 +485,7 @@ private fun App() {
             else PlayerPage({ pages += it }) { Win.full(false); pages.remove(Page.Playing) }
         }
         DropHint()
+        SizeShown()
       }
     }
 }
@@ -1055,7 +1056,8 @@ fun Critics(title: String, artist: String, most: Int = 3, across: Boolean = fals
     if (said.isEmpty()) return
     @Composable
     fun Quote(p: Curation.Pick, modifier: Modifier) = Column(modifier) {
-        BasicText("\u201c${p.said}\u201d".uppercase(), style = headline(if (across) 19.sp else 17.sp).copy(lineHeight = if (across) 24.sp else 22.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+        BasicText("\u201c${p.said}\u201d".uppercase(), style = headline(if (across) 19.sp else 17.sp).copy(lineHeight = if (across) 24.sp else 22.sp), maxLines = 5, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = READ))
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicText("\u2014 ${p.from.lowercase()}", style = pixel(12.sp, Ink.mid))
             if (p.link.isNotBlank()) Word("read it", pixel(12.sp, Ink.mid), Modifier.padding(start = 16.dp), touch = 8.dp) { browse(p.link) }

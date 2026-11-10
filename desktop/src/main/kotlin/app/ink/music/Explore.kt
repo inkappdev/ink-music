@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -210,7 +211,8 @@ private fun RecordOfTheDay(d: Picks.Shown, open: (Page) -> Unit) {
                 BasicText(d.pick.artist.lowercase(), style = pixel(16.sp))
                 if (d.pick.said.isNotBlank()) {
                     Spacer(Modifier.height(16.dp))
-                    BasicText("“${d.pick.said}”".uppercase(), style = headline(20.sp).copy(lineHeight = 26.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+                    BasicText("“${d.pick.said}”".uppercase(), style = headline(20.sp).copy(lineHeight = 26.sp), maxLines = 5, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = READ))
                     BasicText("— ${d.pick.from}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
                 }
                 Spacer(Modifier.height(18.dp))
@@ -472,7 +474,8 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit)
                     val (said, _) = remember(i.about) { Artists.pullQuote(i.about) }
                     said?.let {
                         Spacer(Modifier.height(14.dp))
-                        BasicText(it.uppercase(), style = headline(20.sp).copy(lineHeight = 26.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+                        BasicText(it.uppercase(), style = headline(20.sp).copy(lineHeight = 26.sp), maxLines = 5, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = READ))
                     }
                     Spacer(Modifier.height(18.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
