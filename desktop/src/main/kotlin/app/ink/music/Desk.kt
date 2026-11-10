@@ -131,21 +131,24 @@ object Placed {
 
 /**
  * How big everything's drawn, over the desktop's own scale (2026-10-29, GNOME on a 4K at 125%: "far too
- * small for the window"). The desktop's scale was right; its screen just held 3072 points across, and ink's pages are
- * made for a window of 1440 to 1920. "fit", the first choice: the screen made about 1920 across (a Mac's, under that,
- * is as it is); or a size chosen in settings, or by ⌘/Ctrl = and -. Kept in a file.
+ * small for the window"). "fit", the first choice, trusts the desktop's own scale (the person's own answer to how far
+ * they sit from how big a screen) and steps in only where a screen's set small: one taller than 1440 points, made
+ * 1440 tall (2026-11-10: by its width, made 1920 across, a 32" 4K at Windows' 150% came out 135%, too big; height, as
+ * an ultrawide at 100% is wide without its words being small). A 4K at 150%: as it is; at 125%: 120%; unscaled: 150%.
+ * Or a size chosen in settings, or by ⌘/Ctrl = and -, or ⌘/Ctrl and the wheel. Kept in a file.
  */
 object Size {
     private val file = File(Home.dir, "size")
     /** null is fit; else the size chosen, 1 the desktop's own. */
     val chosen = MutableStateFlow(runCatching { file.readText().trim().toFloat() }.getOrNull())
-    // smaller than the desktop's own too (2026-11-10: "the interface and fonts are way too large")
-    val CHOICES = listOf(.8f, .9f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+    // smaller than the desktop's own too (2026-11-10: "the interface and fonts are way too large"), and finer steps just
+    // above it (2026-11-10, Bronson: 100% on a 4K "could be just a tad bit bigger")
+    val CHOICES = listOf(.8f, .9f, 1f, 1.1f, 1.2f, 1.35f, 1.5f, 1.75f, 2f)
 
     /** The size fit gives this screen. */
     val fit: Float by lazy {
-        val across = runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds.width }.getOrNull() ?: 0
-        (Math.round(across / 1920f * 20) / 20f).coerceIn(1f, 2f)
+        val tall = runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration.bounds.height }.getOrNull() ?: 0
+        (Math.round(tall / 1440f * 20) / 20f).coerceIn(1f, 2f)
     }
 
     fun of(chosen: Float?) = chosen ?: fit

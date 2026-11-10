@@ -670,7 +670,7 @@ private fun SizeSetting() {
     BasicText("SIZE", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     BasicText(
-        if (chosen == null) "fit: this screen made about 1920 across (${pct(Size.fit)} of the desktop's own size)"
+        if (chosen == null) "fit: the desktop's own size, bigger only on a screen set small (${pct(Size.fit)} here)"
         else "${pct(chosen ?: 1f)} of the desktop's own size. $key = and $key - step it",
         style = pixel(12.sp, Ink.mid),
     )
