@@ -282,7 +282,7 @@ private fun FilesSetting() {
         if (folders.size > 1) { Spacer(Modifier.width(16.dp)); Word("remove", pixel(12.sp, Ink.mid), touch = 8.dp) { Library.remove(f) } }
     }
     Spacer(Modifier.height(8.dp))
-    Word("add a folder", pixel(14.sp), touch = 8.dp) { chooseFolder()?.let(Library::add) }
+    Word("add a folder", pixel(14.sp), touch = 8.dp) { chooseFolder { Library.add(it) } }
     Word("read again", pixel(14.sp, Ink.mid), touch = 8.dp) { Library.scan() }
 }
 
@@ -497,16 +497,26 @@ private fun SoundSetting() {
     BasicText("alone, as recorded, at volume 100: the file's samples reach the output unchanged", style = pixel(12.sp, Ink.mid))
 }
 
-/** A folder picked in the system's own way (the Mac's: its open panel, folders only); null if it's cancelled. */
-private fun chooseFolder(): java.io.File? = if (Home.mac) {
+/**
+ * A folder picked in the system's own way (the Mac's open panel, Windows' own picker, both folders only; Swing's
+ * elsewhere); [picked] isn't called if it's cancelled.
+ */
+private fun chooseFolder(picked: (java.io.File) -> Unit) {
+    if (Home.windows) return WinFolder.choose("Your music", Library.folder, ::swingFolder, picked)
+    (if (Home.mac) macFolder() else swingFolder())?.let(picked)
+}
+
+private fun macFolder(): java.io.File? {
     System.setProperty("apple.awt.fileDialogForDirectories", "true")
     val d = java.awt.FileDialog(null as java.awt.Frame?, "Your music", java.awt.FileDialog.LOAD)
     d.isVisible = true
     System.setProperty("apple.awt.fileDialogForDirectories", "false")
-    d.file?.let { java.io.File(d.directory, it) }
-} else {
+    return d.file?.let { java.io.File(d.directory, it) }
+}
+
+private fun swingFolder(): java.io.File? {
     val c = javax.swing.JFileChooser(Library.folder).apply { fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY; dialogTitle = "Your music" }
-    if (c.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) c.selectedFile else null
+    return if (c.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) c.selectedFile else null
 }
 
 /**
