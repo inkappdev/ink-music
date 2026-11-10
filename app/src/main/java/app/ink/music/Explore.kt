@@ -428,8 +428,11 @@ private fun InkWeeklyCover(pages: Pages) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Word("PLAY THE WEEK", headline(20.sp), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
             Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
+            // the week as a DJ's arc, as on its page (the same mix: its progress shows in both)
+            MixWord("ink weekly ${w.week}", w.songs, Modifier.padding(end = 24.dp))
             Word("${w.songs.size} songs", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.Weekly(w.week)) }
         }
+        Box(Modifier.padding(horizontal = 20.dp)) { MixProgress("ink weekly ${w.week}") }
         Spacer(Modifier.height(14.dp))
         ShelfIndexed(w.songs) { i, s -> Tile(s, s.title, s.artist, number = i + 1) { Playback.play(w.songs, i) } }
     }

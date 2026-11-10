@@ -298,7 +298,11 @@ private fun MixRow(m: Discover.Mix, modifier: Modifier) {
             BasicText(m.said, style = pixel(12.sp, Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(4.dp))
             BasicText(m.fresh, style = pixel(12.sp, Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // the mix as it's found, while it's this one
+            MixProgress(m.title)
         }
+        // as a DJ's arc, each into the next on the beat
+        MixWord(m.title, m.songs, Modifier.padding(start = 12.dp))
         Word("play", pixel(14.sp), Modifier.padding(start = 12.dp), touch = 8.dp) { Player.play(m.songs) }
     }
 }

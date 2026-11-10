@@ -143,6 +143,8 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
         if (playable.isNotEmpty()) Row {
             Word("play", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.play(playable, 0) }
             Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.play(playable.shuffled(), 0) }
+            // their songs as a DJ's arc, each into the next on the beat (the phone's artist page has it)
+            MixWord("artist $shown", playable, Modifier.padding(end = 26.dp))
             // radio: their best-known song, then more like it (the queue's end brings them)
             Word("radio", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.radio(true); Player.play(listOf(playable.first())) }
             // follow: lit while you do (on YouTube Music too, signed in); their mix comes first among yours
@@ -150,6 +152,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
             val on = following.any { it.name.equals(shown, true) }
             Word(if (on) "following" else "follow", pixel(14.sp, if (on) Ink.ink else Ink.mid), touch = 8.dp) { Follows.set(shown, i?.id ?: id, !on) }
         }
+        MixProgress("artist $shown")
     }
     val rule = @Composable { Box(Modifier.fillMaxWidth().padding(vertical = 12.dp).height(1.dp).background(Ink.line)) }
     // a chart: the place big beside each
