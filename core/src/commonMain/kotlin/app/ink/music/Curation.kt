@@ -264,7 +264,23 @@ object Curation {
         return picks.mapNotNull { p ->
             (listOf(p.artist) + p.artist.split(split)).map { it.trim() }.filter { it.isNotEmpty() }
                 .mapNotNull { a -> byBare[bare(a)] }.maxByOrNull { it.second }?.let { (name, n) -> Yours(p, name, n) }
-        }.distinctBy { key(it.pick) }.sortedByDescending { it.plays }
+        }.distinctBy { key(it.pick) }.sortedByDescending { it.plays }.let { l -> apart(l) { it.artist.lowercase() } }
+    }
+
+    /**
+     * In its order, but never two by one artist side by side (2026-11-10: new from your artists showed an artist's two
+     * releases next to each other): each place takes the first not by the one before it; where only theirs are left,
+     * they come last.
+     */
+    fun <T> apart(list: List<T>, who: (T) -> String): List<T> {
+        val left = list.toMutableList()
+        val out = ArrayList<T>(list.size)
+        while (left.isNotEmpty()) {
+            val before = out.lastOrNull()?.let(who)
+            val i = left.indexOfFirst { who(it) != before }.takeIf { it >= 0 } ?: 0
+            out += left.removeAt(i)
+        }
+        return out
     }
 
     // ---- out this friday ----
@@ -510,12 +526,26 @@ object Curation {
             .replace(Regex("\\s+-\\s+.*(edition|remaster|deluxe|version|anniversary).*$", RegexOption.IGNORE_CASE), "").trim()
         val self = title.trim().lowercase().replace(".", "") in setOf("s/t", "st", "self-titled", "self titled")
         val latin = plain.map { if (it.code < 0x250 || it == '’') it else ' ' }.joinToString("").replace(Regex("\\s+"), " ").trim()
-        return listOfNotNull(
+        // each other artist credited too: a record is often filed under the one whose it is, not the first named
+        // (2026-11-10: "Skepta, fakemink - Chiltern Firehouse ." is fakemink's, so none was found under Skepta)
+        val others = credited(artist).drop(1)
+        return (listOfNotNull(
             if (self) who to who else null,
             title to artist,
             (plain to who).takeIf { plain.isNotEmpty() },
             (latin to who).takeIf { latin.length >= 2 },
-        ).distinct()
+        ) + others.map { (plain.ifEmpty { title }) to it }).distinct()
+    }
+
+    /** Every artist credited ("Skepta, fakemink", "A & B", "A feat. B", "A x B"), the first first. */
+    fun credited(artist: String): List<String> =
+        artist.split(Regex("""\s*(?:,|&|\+|\bx\b|\band\b|\bwith\b|\bfeat\.?|\bft\.?|\bvs\.?)\s*""", RegexOption.IGNORE_CASE))
+            .map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+    /** Whether a catalog's artist is one of those credited (or the credit as a whole). */
+    private fun creditMatches(found: String, artist: String, plainName: (String) -> String): Boolean {
+        val a = plainName(found).ifEmpty { return false }
+        return (credited(artist) + artist.substringBefore(",")).map(plainName).filter { it.isNotEmpty() }.any { w -> a.contains(w) || w.contains(a) }
     }
 
     /**
@@ -544,11 +574,10 @@ object Curation {
         val q = urlEncode("artist:\"${artist.substringBefore(",").trim().replace("\"", "")}\" ${if (record) "album" else "track"}:\"${title.replace("\"", "")}\"")
         val o = JSONObject(get("https://api.deezer.com/search/${if (record) "album" else "track"}?q=$q&limit=8"))
         val results = o.optJSONArray("data") ?: return null
-        val want = plainName(artist.substringBefore(",")); val wt = plainName(title)
+        val wt = plainName(title)
         return (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
-            val a = plainName(r.optJSONObject("artist")?.optString("name").orEmpty())
             val t = plainName(r.optString("title"))
-            a.isNotEmpty() && (a.contains(want) || want.contains(a)) && wt.isNotEmpty() && (t.startsWith(wt) || wt.startsWith(t))
+            creditMatches(r.optJSONObject("artist")?.optString("name").orEmpty(), artist, ::plainName) && wt.isNotEmpty() && (t.startsWith(wt) || wt.startsWith(t))
         }?.let { r -> (if (record) r else r.optJSONObject("album"))?.optString("cover_xl")?.takeIf { it.isNotEmpty() } }
     }
 
@@ -573,9 +602,8 @@ object Curation {
         val o = JSONObject(get("https://itunes.apple.com/search?term=$term&entity=${if (record) "album" else "song"}&limit=8"))
         val results = o.optJSONArray("results") ?: return null
         return (0 until results.length()).map { results.getJSONObject(it) }.firstOrNull { r ->
-            val a = plainName(r.optString("artistName")); val want = plainName(artist.substringBefore(","))
             val t = plainName(r.optString(if (record) "collectionName" else "trackName")); val wt = plainName(title)
-            a.isNotEmpty() && (a.contains(want) || want.contains(a)) && wt.isNotEmpty() && (t.startsWith(wt) || wt.startsWith(t))
+            creditMatches(r.optString("artistName"), artist, ::plainName) && wt.isNotEmpty() && (t.startsWith(wt) || wt.startsWith(t))
         }?.optString("artworkUrl100")?.takeIf { it.isNotEmpty() }?.replace(Regex("/\\d+x\\d+[a-z-]*\\.(jpg|png)$"), "/1200x1200bb.$1")
     }
 

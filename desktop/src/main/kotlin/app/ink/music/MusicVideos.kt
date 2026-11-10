@@ -145,14 +145,15 @@ object MusicVideos {
             found += theirs.take(2).map { clip(it, name, now) }
             Log.d("videos: $name, ${theirChannels.joinToString { it.name }}: ${theirs.size}")
         }
-        val clips = found.sortedByDescending { it.at }.take(16)
+        // newest first, never two of one artist's side by side
+        val clips = Curation.apart(found.sortedByDescending { it.at }.take(16)) { it.artist.lowercase() }
         _clips.value = clips
         runCatching { Home.write(file, write(now, clips).toString()) }
     }
 
     private fun read(o: JSONObject) {
-        _clips.value = o.optJSONArray("clips")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
-            .map { Clip(it.getString("id"), it.getString("title"), it.getString("artist"), it.getLong("when")) }
+        _clips.value = Curation.apart(o.optJSONArray("clips")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
+            .map { Clip(it.getString("id"), it.getString("title"), it.getString("artist"), it.getLong("when")) }) { it.artist.lowercase() }
         o.optJSONObject("channels")?.let { c ->
             for (k in c.keys()) c.getJSONObject(k).let { j ->
                 val list = j.optJSONArray("list")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
