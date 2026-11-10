@@ -188,6 +188,8 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
  */
 @Composable
 private fun Issue(records: List<Picks.Shown>, chart: List<IndieChart.Entry>, friday: Curation.Week?, air: List<Curation.Aired>) {
+    // not on a TV: INK there opens on ink weekly (2026-11-10); the phone keeps its issue line
+    if (onTv()) return
     val ctx = LocalContext.current
     val taste by Fresh.taste.collectAsState()
     val since by Fresh.since.collectAsState()
