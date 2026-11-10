@@ -1,5 +1,8 @@
 package app.ink.music
 
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.Color
@@ -84,6 +87,25 @@ object Covers {
             }
         }, "covers-warm").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
     }
+    /**
+     * The songs either side of the one playing, their covers read into memory as each song starts, at the player's size
+     * and the bar's: a song change finds its cover there and shows it at once (2026-11-09: on a Mac the name cover showed
+     * a moment as the next song began, its cover read only then). A YouTube song twice: the player's is Apple's studio
+     * art, kept apart from the rest.
+     */
+    fun ahead() {
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+        scope.launch {
+            kotlinx.coroutines.flow.combine(Player.now, Player.queue) { n, q -> n?.index?.let { i -> listOfNotNull(q.getOrNull(i + 1), q.getOrNull(i - 1)) } ?: emptyList() }
+                .distinctUntilChanged { a, b -> a.map { it.albumId } == b.map { it.albumId } }
+                .collectLatest { near ->
+                    near.filter { !it.station }.forEach { s ->
+                        runCatching { of(s, 1200); if (s.tube) of(s, 640) }
+                    }
+                }
+        }
+    }
+
     /** The size the grids ask for (an album's tile, CoverOf's px there). */
     const val GRID = 400
 

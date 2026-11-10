@@ -1,5 +1,7 @@
 package app.ink.music
 
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.LruCache
@@ -92,6 +94,18 @@ object Covers {
     private fun diskFile(ctx: Context, song: Song, px: Int): java.io.File {
         val key = java.security.MessageDigest.getInstance("SHA-1").digest("${song.art}|$px".toByteArray()).joinToString("") { "%02x".format(it) }
         return java.io.File(java.io.File(ctx.cacheDir, "covers"), "$key.jpg")
+    }
+
+    /**
+     * The songs either side of the one playing, their covers read into memory as each song starts, at the player's
+     * size: a song change finds its cover there and shows it at once, never the name cover a moment (2026-11-09, as the
+     * computer's). From the screens (Main), while they're open: the player's process draws no covers.
+     */
+    suspend fun ahead(ctx: Context) {
+        val px = ctx.resources.displayMetrics.widthPixels.coerceIn(640, 1440)
+        kotlinx.coroutines.flow.combine(Playback.now, Playback.queue) { n, q -> n?.index?.let { i -> listOfNotNull(q.getOrNull(i + 1)?.song, q.getOrNull(i - 1)?.song) } ?: emptyList() }
+            .distinctUntilChanged { a, b -> a.map { it.albumId } == b.map { it.albumId } }
+            .collectLatest { near -> near.filter { !it.station }.forEach { s -> runCatching { of(ctx, s, px) } } }
     }
 
     /** A network picture fetched and kept on the phone only (read ahead: not held in memory, where it'd push out what's on screen). */

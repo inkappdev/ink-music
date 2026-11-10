@@ -116,6 +116,8 @@ fun main() {
     Library.start()
     Server.start()
     Covers.warm()
+    // the next song's cover (and the last's) ready before it plays
+    Covers.ahead()
     Sorts.start()
     Lyrics.start()
     Keys.start()
