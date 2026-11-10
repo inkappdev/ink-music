@@ -1859,21 +1859,39 @@ private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>,
         // genres"): every genre, or the one chosen, lit; ↓ opens it, ↑ while it's open
         if (genres.isNotEmpty() || genre.isNotEmpty()) Box {
             var down by remember { mutableStateOf(false) }
+            // there while it's down or still folding away: it unfolds from under the word, its rows rising in one after
+            // another as the places menu's do, and folds back up (2026-11-10, as the phone's)
+            val open = remember { androidx.compose.animation.core.MutableTransitionState(false) }
+            open.targetState = down
+            val turn by androidx.compose.animation.core.animateFloatAsState(if (down) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "arrow")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Word(genre.ifEmpty { "every genre" }, pixel(13.sp, if (genre.isEmpty() && !down) Ink.dim else Ink.ink), touch = 8.dp) { down = !down }
-                Sprite(if (down) PLACES_UP else PLACES_DOWN, if (genre.isEmpty() && !down) Ink.dim else Ink.ink, 2.dp, Modifier.padding(start = 4.dp))
+                Sprite(PLACES_DOWN, if (genre.isEmpty() && !down) Ink.dim else Ink.ink, 2.dp, Modifier.padding(start = 4.dp).graphicsLayer { rotationZ = turn })
             }
-            if (down) androidx.compose.ui.window.Popup(
+            if (open.currentState || open.targetState) androidx.compose.ui.window.Popup(
                 offset = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 30.dp.roundToPx()) },
                 onDismissRequest = { down = false },
                 properties = androidx.compose.ui.window.PopupProperties(focusable = true),
             ) {
                 // the chosen one always there, even with none of its songs tagged yet
                 val all = if (genre.isNotEmpty() && genres.none { it.first == genre }) genres + (genre to 0) else genres
-                Column(Modifier.background(Ink.black).border(1.dp, Ink.line).heightIn(max = 440.dp)
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp)) {
-                    Choice("every genre", null, genre.isEmpty()) { SongsFrom.setGenre(""); down = false }
-                    all.forEach { (g, n) -> Choice(g, n, g == genre) { SongsFrom.setGenre(g); down = false } }
+                androidx.compose.animation.AnimatedVisibility(
+                    open,
+                    enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                    exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+                ) {
+                    Column(Modifier.background(Ink.black).border(1.dp, Ink.line).heightIn(max = 440.dp)
+                        .verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp)) {
+                        (listOf("every genre" to null) + all.map { it.first to it.second }).forEachIndexed { i, (g, n) ->
+                            // each row rising in 30 ms after the one before (the first dozen; the rest with the last)
+                            val shown = remember { androidx.compose.animation.core.Animatable(0f) }
+                            LaunchedEffect(Unit) { kotlinx.coroutines.delay(minOf(i, 12) * 30L); shown.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
+                            Box(Modifier.graphicsLayer { alpha = shown.value; translationY = (1f - shown.value) * 10.dp.toPx() }) {
+                                if (i == 0) Choice(g, null, genre.isEmpty()) { SongsFrom.setGenre(""); down = false }
+                                else Choice(g, n, g == genre) { SongsFrom.setGenre(g); down = false }
+                            }
+                        }
+                    }
                 }
             }
         }
