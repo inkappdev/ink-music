@@ -7,7 +7,7 @@
 <p align="center">
   A music player that looks like nothing else. Free and open source, for Android, Mac, Windows and Linux.<br />
   Your files, your server, YouTube Music and independent radio; new music picked by people, not a feed.<br />
-  Made by the makers of <a href="https://inkhome.app">ink</a>. Free, always; if it makes your day, <a href="https://ko-fi.com/inkmusic">buy us a coffee</a>.
+  Made by the makers of <a href="https://inkhome.app">ink</a>. Free, always; if it makes your day, <a href="https://ko-fi.com/b0nez93">buy us a coffee</a>.
 </p>
 
 <p align="center">

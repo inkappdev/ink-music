@@ -5,5 +5,5 @@ package app.ink.music
  * nag; the music stays free, always. Not in the play build: Google Play allows no outside donation links in an app.
  */
 object Coffee {
-    const val PAGE = "https://ko-fi.com/inkmusic"
+    const val PAGE = "https://ko-fi.com/b0nez93"
 }
