@@ -269,6 +269,8 @@ sealed interface Page {
     data class Playlist(val id: String, val name: String) : Page
     data class Tube(val album: TubeAlbum) : Page
     data class AddTo(val song: Song) : Page
+    /** Several songs picked (Picking), into a playlist. */
+    data class AddToMany(val songs: List<Song>) : Page
     /** A music video, watched ([WatchPage]). */
     data class Watch(val clip: MusicVideos.Clip, val list: List<MusicVideos.Clip> = emptyList()) : Page
     /** A YouTube song's version chosen by hand ([VersionPage]). */
@@ -346,6 +348,9 @@ private fun App() {
         Playback.begun.collect { if (it != seen) { seen = it; playerUp = true } }
     }
     BackHandler(pages.stack.isNotEmpty() && !playerUp) { pages.back() }
+    // songs being picked: back lets them go (before it closes the page they're on)
+    val picking = Picking.picked.collectAsState().value.isNotEmpty()
+    BackHandler(picking && !playerUp) { Picking.clear() }
 
     Box(Modifier.fillMaxSize().background(Ink.black)) {
         // the first open: ink music before anything is asked
@@ -431,6 +436,7 @@ private fun App() {
                         is Page.Playlist -> PlaylistPage(p.id, p.name, pages)
                         is Page.Tube -> TubeAlbumPage(p.album, pages)
                         is Page.AddTo -> AddToPage(p.song, pages)
+                        is Page.AddToMany -> AddToList(p.songs, onDone = { pages.back(); Picking.clear() }, onClose = { pages.close() })
                         is Page.Watch -> WatchPage(p.clip, p.list, pages)
                         is Page.Version -> VersionPage(p.song, pages)
                         is Page.Path -> PathPage(p.song, pages)
@@ -471,7 +477,9 @@ private fun App() {
             // (paused there: only while nothing waits here either, the mini player's own song, as it shows one)
             val here = Playback.now.collectAsState().value
             val elsewhere = Everywhere.remote.collectAsState().value?.takeIf { it.playing || here == null || here.stopped }
-            if (!stopping && !sideways() && !playingNow && elsewhere != null) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { RemoteMini(frost, elsewhere, onOpen = { remoteUp = true }) }
+            // songs picked: what to do with them all, in the mini player's place
+            if (picking && !playerUp) PickBar(pages)
+            else if (!stopping && !sideways() && !playingNow && elsewhere != null) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { RemoteMini(frost, elsewhere, onOpen = { remoteUp = true }) }
             else if (!stopping && !sideways() && (!onTv() || playingNow)) Box(if (onTv()) Modifier.covered(playerUp) else Modifier) { MiniPlayer(frost, onOpen = { playerUp = true }) }
         }
         androidx.compose.animation.AnimatedVisibility(
@@ -976,6 +984,11 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
     val now by Playback.now.collectAsState()
     val on = now?.song?.id == s.id
     var open by remember { mutableStateOf(false) }
+    // songs being picked (held, "pick more"): a tap or a hold picks this one or lets it go
+    val pickedNow by Picking.picked.collectAsState()
+    val picking = pickedNow.isNotEmpty()
+    val picked = picking && pickedNow.any { it.id == s.id }
+    LaunchedEffect(picking) { if (picking) open = false }
     val haptic = LocalHapticFeedback.current
     val tap = felt(then = onClick)
     val scope = rememberCoroutineScope()
@@ -994,9 +1007,9 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
         Modifier.fillMaxWidth().offset { IntOffset(slid.value.roundToInt(), 0) }.background(Ink.black)
             // a tap and a hold the remote gives too (OK, OK held): a finger-only gesture left a TV's songs unreachable
             .combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
-                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); open = !open; Hints.did(Hints.SWIPE) },
-                onClick = { if (open) open = false else tap() })
-            .then(if (!swipe) Modifier else Modifier.pointerInput(s.id) {
+                onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); if (picking) Picking.toggle(s) else { open = !open; Hints.did(Hints.SWIPE) } },
+                onClick = { if (picking) { haptic.performHapticFeedback(HapticFeedbackType.SegmentTick); Picking.toggle(s) } else if (open) open = false else tap() })
+            .then(if (!swipe || picking) Modifier else Modifier.pointerInput(s.id) {
             var pulled = 0f
             fun letGo(act: Boolean) {
                 if (act) when (armed) {
@@ -1018,6 +1031,11 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
         }).padding(vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+        // picking: a square before it, filled once it's picked
+        if (picking) {
+            Box(Modifier.size(12.dp).then(if (picked) Modifier.background(Ink.ink) else Modifier.border(1.dp, Ink.mid)))
+            Spacer(Modifier.width(14.dp))
+        }
         // its record's cover beside it, small and square (a list's covers word)
         if (cover) { CoverOf(s, s.album.ifEmpty { s.title }, Modifier.size(44.dp), px = 160); Spacer(Modifier.width(14.dp)) }
         Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
@@ -1032,6 +1050,8 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
         }
         }
         if (open) FlowRow(Modifier.padding(start = (if (cover) 58.dp else 0.dp) + (if (number != null) 30.dp else 0.dp), top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            // this one picked, and then any others tapped: all of them at once from the bar along the foot (PickBar)
+            Word("pick more", pixel(13.sp), touch = 8.dp) { open = false; Picking.toggle(s) }
             Word("play next", pixel(13.sp), touch = 8.dp) { open = false; Playback.playNext(s) }
             Word("add to queue", pixel(13.sp), touch = 8.dp) { open = false; Playback.add(s) }
             Word("radio", pixel(13.sp), touch = 8.dp) { open = false; Playback.startRadio(s) }
@@ -2256,10 +2276,17 @@ fun canAddToList(s: Song?): Boolean {
  * of yours on your server or YouTube Music; `onDone` with the list's name once it's in.
  */
 @Composable
-fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) {
+fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) = AddToList(listOf(s), onDone, onClose)
+
+/** Several songs into one playlist (picked: Picking): the server's ones there, every one found on YouTube Music there. */
+@Composable
+fun AddToList(songs: List<Song>, onDone: (String) -> Unit, onClose: () -> Unit) {
+    val s = songs.first()
+    val onServer = songs.filter { Server.idOf(it) != null }
+    val onTube = songs.filter { !it.station && !it.episode }
     val lists by Server.playlists.collectAsState()
     val account by Server.account.collectAsState()
-    val server = account != null && Server.idOf(s) != null
+    val server = account != null && onServer.isNotEmpty()
     val mine = remember(lists, server) { if (server) lists.filter { it.mine } else emptyList() }
     val who by YouTubeAccount.who.collectAsState()
     val tubeLists by YouTubeAccount.playlists.collectAsState()
@@ -2276,12 +2303,12 @@ fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) {
         item {
             BasicText("ADD TO A PLAYLIST", style = headline(36.sp), maxLines = 2)
             Spacer(Modifier.height(8.dp))
-            BasicText(s.title.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BasicText(if (songs.size == 1) s.title.lowercase() else "${songs.size} songs", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(18.dp))
             if (failed) BasicText("that didn't take", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 8.dp))
             if (server) {
                 if (who != null) Label("on your server")
-                NewPlaylist(s, focused = mine.isEmpty() && who == null) { ok -> if (ok) onDone("a new playlist") else failed = true }
+                NewPlaylist(s, focused = mine.isEmpty() && who == null, make = { Server.makePlaylist(it, onServer) }) { ok -> if (ok) onDone("a new playlist") else failed = true }
                 if (mine.isEmpty()) BasicText("no playlists of yours on your server yet: new > makes one, named as you type", style = pixel(12.sp, Ink.mid),
                     modifier = Modifier.padding(top = 6.dp))
                 Spacer(Modifier.height(14.dp))
@@ -2289,7 +2316,7 @@ fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) {
         }
         items(mine, key = { it.id }) { pl ->
             Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
-                onClick = felt { scope.launch { if (Server.addTo(pl.id, s)) onDone(pl.name) else failed = true } }).padding(vertical = 9.dp)) {
+                onClick = felt { scope.launch { if (onServer.map { Server.addTo(pl.id, it) }.all { it }) onDone(pl.name) else failed = true } }).padding(vertical = 9.dp)) {
                 BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
             }
@@ -2299,12 +2326,12 @@ fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) {
             item {
                 Spacer(Modifier.height(10.dp))
                 Label("on youtube music")
-                NewPlaylist(s, focused = !server, make = { YouTubeAccount.makePlaylist(it, s) }) { ok -> if (ok) onDone("a new playlist") else failed = true }
+                NewPlaylist(s, focused = !server, make = { if (onTube.size == 1) YouTubeAccount.makePlaylist(it, s) else YouTubeAccount.makePlaylistOf(it, onTube) != null }) { ok -> if (ok) onDone("a new playlist") else failed = true }
                 Spacer(Modifier.height(14.dp))
             }
             items(tubeLists, key = { "y" + it.id }) { pl ->
                 Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
-                    onClick = felt { scope.launch { if (YouTubeAccount.addTo(pl, s)) onDone(pl.name) else failed = true } }).padding(vertical = 9.dp)) {
+                    onClick = felt { scope.launch { if (onTube.map { YouTubeAccount.addTo(pl, it) }.all { it }) onDone(pl.name) else failed = true } }).padding(vertical = 9.dp)) {
                     BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (pl.said.isNotEmpty()) BasicText(pl.said.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1)
                 }
@@ -2962,3 +2989,44 @@ private fun DropWord(word: String, lit: Boolean, rows: List<Triple<String, Int?,
 
 private val GENRES_DOWN = listOf("#...#", ".#.#.", "..#..")
 private val GENRES_UP = listOf("..#..", ".#.#.", "#...#")
+
+
+/**
+ * Songs picked to do one thing with all of them (2026-11-10, as Prism's select many): begun from a held song's "pick
+ * more", then each tap picks a song or lets it go, wherever songs are listed; back, done or an action lets them all go.
+ */
+object Picking {
+    val picked = kotlinx.coroutines.flow.MutableStateFlow<List<Song>>(emptyList())
+    fun toggle(s: Song) { picked.value = if (picked.value.any { it.id == s.id }) picked.value.filter { it.id != s.id } else picked.value + s }
+    fun clear() { picked.value = emptyList() }
+}
+
+/** In the mini player's place while songs are picked: how many, and what to do with them all; done lets them go. */
+@Composable
+private fun PickBar(pages: Pages) {
+    val picked by Picking.picked.collectAsState()
+    val ctx = LocalContext.current
+    val lovedIds by Loved.ids.collectAsState()
+    val account by Server.account.collectAsState()
+    val who by YouTubeAccount.who.collectAsState()
+    var said by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(said) { if (said != null) { delay(1_200); Picking.clear(); said = null } }
+    Column(Modifier.fillMaxWidth().background(Ink.black).border(androidx.compose.foundation.BorderStroke(1.dp, Ink.line))
+        .windowInsetsPadding(bars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)).padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BasicText(said ?: "${picked.size} PICKED", style = headline(20.sp), modifier = Modifier.weight(1f))
+            Word("done", pixel(13.sp, Ink.mid), touch = 8.dp) { Picking.clear() }
+        }
+        Spacer(Modifier.height(10.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // play next keeps them in the order picked: each put after the one before
+            Word("play next", pixel(13.sp), touch = 8.dp) { picked.reversed().forEach { Playback.playNext(it) }; said = "PLAYING NEXT" }
+            Word("add to queue", pixel(13.sp), touch = 8.dp) { picked.forEach { Playback.add(it) }; said = "QUEUED" }
+            if ((account != null && picked.any { Server.idOf(it) != null }) || (who != null && picked.any { !it.station && !it.episode }))
+                Word("add to playlist", pixel(13.sp), touch = 8.dp) { pages.open(Page.AddToMany(picked)) }
+            if (picked.any { it.id !in lovedIds }) Word("love", pixel(13.sp), touch = 8.dp) { picked.filter { it.id !in lovedIds }.forEach { Loved.toggle(it) }; said = "LOVED" }
+            val keep = picked.filter { Offline.keepable(it) }
+            if (keep.isNotEmpty()) Word("keep offline", pixel(13.sp), touch = 8.dp) { Offline.keep(ctx, keep); said = "KEEPING OFFLINE" }
+        }
+    }
+}
