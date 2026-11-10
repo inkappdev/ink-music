@@ -1140,7 +1140,7 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
     val head: @Composable (Dp?) -> Unit = { side -> Column(Modifier.cascade(0)) {
             if (side != null) CoverOf(a.songs.first(), a.title, Modifier.size(side))
             else BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
-                CoverOf(a.songs.first(), a.title, Modifier.size(minOf(maxWidth, 560.dp)))
+                CoverOf(a.songs.first(), a.title, Modifier.size(headerSide(maxWidth)))
             }
             Spacer(Modifier.height(18.dp))
             BasicText(a.title.uppercase(), style = headline(if (side != null) 28.sp else 36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -1442,7 +1442,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
             // the look), their moving one over it where Apple Music has one, their name on it
             val photo = i?.photo
             if (photo != null || waiting) BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
-                val side = minOf(maxWidth, 560.dp)
+                val side = headerSide(maxWidth)
                 val dithered by Moving.artistDither.collectAsState()
                 if (photo != null) Box(Modifier.size(side).align(Alignment.Center)) {
                     val still = remember(photo) { photoSong(name, photo) }
@@ -1651,7 +1651,7 @@ private fun WeeklyPage(number: Int, pages: Pages) {
         item { Column(Modifier.cascade(0)) {
             // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
             BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
-                Mosaic(w.songs, Modifier.size(minOf(maxWidth, 560.dp)).align(Alignment.Center))
+                Mosaic(w.songs, Modifier.size(headerSide(maxWidth)).align(Alignment.Center))
                 BasicText(w.title.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.background(Ink.black).padding(start = 20.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
             }
@@ -2172,8 +2172,8 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
                 // YouTube's own (its mixes, liked music...): in the dither, as on its tile, never its branding
                 val face = remember(a.url) { tubeFace(a) }
-                if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Dithered(face, Modifier.size(minOf(maxWidth, 560.dp)), px = 1080)
-                else CoverOf(face, a.title, Modifier.size(minOf(maxWidth, 560.dp)))
+                if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Dithered(face, Modifier.size(headerSide(maxWidth)), px = 1080)
+                else CoverOf(face, a.title, Modifier.size(headerSide(maxWidth)))
             }
             Spacer(Modifier.height(18.dp))
             BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)

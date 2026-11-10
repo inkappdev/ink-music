@@ -285,3 +285,15 @@ val UNLOCK = listOf(
     "###.###",
     "#######",
 )
+
+
+/**
+ * How big a header's picture may be (a record's cover, an artist's photo, ink weekly's covers), given the width it has:
+ * never past 420 dp nor 55% of the screen's height (2026-11-10: ink weekly's covers filled a TV's whole width, taller
+ * than the screen). An upright phone's width is the smaller, so it's as it was there.
+ */
+@androidx.compose.runtime.Composable
+fun headerSide(width: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp {
+    val h = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+    return minOf(width, 420.dp, h * .55f)
+}

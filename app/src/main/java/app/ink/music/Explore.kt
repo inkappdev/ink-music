@@ -292,8 +292,10 @@ private fun RecordOfTheDay(d: Picks.Shown, pages: Pages) {
         // picture, YouTube Music): the record of the day was showing only its name
         val art by produceState(d.art, d) { value = Picks.coverFor(d.pick.title, d.pick.artist, true) ?: value ?: Picks.art(d.pick.title, d.pick.artist, d.pick.link, true) }
         val face = remember(d, art) { if (art == d.art) d.face else d.copy(art = art).face }
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clickable(remember { MutableInteractionSource() }, indication = null) { go(false) }) {
-            CoverOf(face, d.pick.title, Modifier.fillMaxSize())
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            Box(Modifier.size(headerSide(maxWidth)).clickable(remember { MutableInteractionSource() }, indication = null) { go(false) }) {
+                CoverOf(face, d.pick.title, Modifier.fillMaxSize())
+            }
         }
         Spacer(Modifier.height(14.dp))
         BasicText(d.pick.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -413,7 +415,7 @@ private fun InkWeeklyCover(pages: Pages) {
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp)
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Weekly(w.week)) }),
             contentAlignment = Alignment.BottomStart) {
-            Mosaic(w.songs, Modifier.size(maxWidth))
+            Mosaic(w.songs, Modifier.size(headerSide(maxWidth)))
             // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
             BasicText(w.title.uppercase(), style = headline(52.sp).copy(lineHeight = 50.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.background(Ink.black).padding(start = 0.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
@@ -546,7 +548,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, pages: Pages) {
         BasicText("ARTIST OF THE WEEK", style = headline(22.sp))
         BasicText("someone the djs and critics are into, a new one each monday", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(12.dp))
-        i.photo?.let { Dithered(remember(it) { faceSong(i.name, it) }, Modifier.fillMaxWidth().aspectRatio(1f)) }
+        i.photo?.let { BoxWithConstraints(Modifier.fillMaxWidth()) { Dithered(remember(it) { faceSong(i.name, it) }, Modifier.size(headerSide(maxWidth))) } }
         Spacer(Modifier.height(12.dp))
         BasicText(i.name.uppercase(), style = headline(40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (i.audience.isNotEmpty()) BasicText(i.audience.lowercase().replace("monthly audience", "a month"), style = pixel(12.sp, Ink.mid))
