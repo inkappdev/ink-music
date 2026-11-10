@@ -745,6 +745,8 @@ class Crossfade(
      * the order, next if it was next (else it'd go last).
      */
     private fun swap(i: Int, item: MediaItem) {
+        android.util.Log.d("ink-seek", "swap ${item.mediaId} at $i (playing ${exo.currentMediaItemIndex}, next ${exo.nextMediaItemIndex}), " +
+            "its end now ${item.clippingConfiguration.endPositionMs.takeIf { it != C.TIME_END_OF_SOURCE }?.let { "${it} ms" } ?: "whole"}, at ${exo.currentPosition} ms of the one playing")
         swapping = true
         try {
             // shuffled: the order as it was, put back after (a song put in again went after its neighbour in the list,

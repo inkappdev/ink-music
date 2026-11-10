@@ -587,9 +587,14 @@ class PlayerService : MediaLibraryService() {
                     private var jumpedTo = -1L
                     private var shown = 3
                     private var skipped = 0
+                    private var lastOut = -1L
+                    // the sound handed on since a jump against its clock: where they part (the extra the hitch catches up)
+                    private var fromPts = -1L
+                    private var fedUs = 0L
+                    private var driftSaid = 0L
                     override fun onPositionReset(positionUs: Long, joining: Boolean, sampleStreamIsResetToKeyFrame: Boolean) {
                         super.onPositionReset(positionUs, joining, sampleStreamIsResetToKeyFrame)
-                        jumpedTo = positionUs; shown = 0; skipped = 0
+                        jumpedTo = positionUs; shown = 0; skipped = 0; fromPts = -1L
                         android.util.Log.d("ink-seek", "jump to ${positionUs / 1000} ms (joining $joining, key frame $sampleStreamIsResetToKeyFrame)")
                     }
                     override fun processOutputBuffer(
@@ -597,6 +602,19 @@ class PlayerService : MediaLibraryService() {
                         bufferIndex: Int, bufferFlags: Int, sampleCount: Int, bufferPresentationTimeUs: Long, isDecodeOnlyBuffer: Boolean, isLastBuffer: Boolean,
                         format: androidx.media3.common.Format,
                     ): Boolean {
+                        if (buffer != null && !isDecodeOnlyBuffer && jumpedTo >= 0) {
+                            if (fromPts < 0) { fromPts = bufferPresentationTimeUs; fedUs = 0; driftSaid = 0 }
+                            val drift = fedUs - (bufferPresentationTimeUs - fromPts)
+                            if (kotlin.math.abs(drift - driftSaid) >= 40_000) {
+                                android.util.Log.d("ink-seek", "drift ${drift / 1000} ms at ${bufferPresentationTimeUs / 1000} ms: this one ${buffer.remaining()} bytes, $sampleCount samples, flags $bufferFlags, ${format.channelCount} ch ${format.sampleRate} Hz enc ${format.pcmEncoding}")
+                                driftSaid = drift
+                            }
+                        }
+                        // the sound's own clock: a step back (a new song) says where the one before really ended
+                        if (buffer != null && !isDecodeOnlyBuffer) {
+                            if (lastOut >= 0 && bufferPresentationTimeUs < lastOut) android.util.Log.d("ink-seek", "song change: the last sound out at ${lastOut / 1000} ms, the next at ${bufferPresentationTimeUs / 1000} ms")
+                            lastOut = bufferPresentationTimeUs
+                        }
                         if (jumpedTo >= 0 && shown < 3 && buffer != null) {
                             if (isDecodeOnlyBuffer) skipped++
                             else {
@@ -605,7 +623,14 @@ class PlayerService : MediaLibraryService() {
                                     "$sampleCount samples at ${format.sampleRate} Hz, ${buffer.remaining()} bytes, $skipped skipped before")
                             }
                         }
-                        return super.processOutputBuffer(positionUs, elapsedRealtimeUs, codec, buffer, bufferIndex, bufferFlags, sampleCount, bufferPresentationTimeUs, isDecodeOnlyBuffer, isLastBuffer, format)
+                        // counted once it's taken (a full output hands the same piece back to be offered again)
+                        val bytes = buffer?.remaining() ?: 0
+                        val taken = super.processOutputBuffer(positionUs, elapsedRealtimeUs, codec, buffer, bufferIndex, bufferFlags, sampleCount, bufferPresentationTimeUs, isDecodeOnlyBuffer, isLastBuffer, format)
+                        if (taken && !isDecodeOnlyBuffer && fromPts >= 0) {
+                            val bytesPerFrame = format.channelCount * (if (format.pcmEncoding == androidx.media3.common.C.ENCODING_PCM_FLOAT) 4 else 2)
+                            fedUs += bytes.toLong() / bytesPerFrame.coerceAtLeast(1) * 1_000_000L / format.sampleRate.coerceAtLeast(1)
+                        }
+                        return taken
                     }
                     override fun getMediaFormat(format: androidx.media3.common.Format, codecMimeType: String, codecMaxInputSize: Int, codecOperatingRate: Float) =
                         super.getMediaFormat(format, codecMimeType, codecMaxInputSize, codecOperatingRate).also { mf ->
