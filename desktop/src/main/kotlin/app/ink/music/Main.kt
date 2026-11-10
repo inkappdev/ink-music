@@ -416,6 +416,10 @@ private fun App() {
                 }
                 when {
                     k.key == Key.Spacebar -> { Watching.toggle?.invoke() ?: Player.toggle(); true }
+                    // a video open: the arrows move through it, f is full screen, esc leaves it (not the music under it)
+                    k.key == Key.DirectionRight && Watching.seekBy != null -> { Watching.seekBy?.invoke(10_000); true }
+                    k.key == Key.DirectionLeft && Watching.seekBy != null -> { Watching.seekBy?.invoke(-10_000); true }
+                    k.key == Key.F && Watching.setFull != null -> { Watching.setFull?.invoke(!Watching.full.value); true }
                     k.key == Key.DirectionRight -> { Player.seek(Player.position.value + 10_000); true }
                     k.key == Key.DirectionLeft -> { Player.seek((Player.position.value - 10_000).coerceAtLeast(0)); true }
                     k.key == Key.DirectionUp -> { Player.volume(Player.volume.value + 5); true }

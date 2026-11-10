@@ -3,6 +3,7 @@ package app.ink.music
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +38,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -205,6 +212,12 @@ object MusicVideos {
 /** A video watched with its sound: space pauses it (not the music, which waits under it). */
 object Watching {
     @Volatile var toggle: (() -> Unit)? = null
+    /** The video moved by this much (the arrows, while one's open; not the music under it). */
+    @Volatile var seekBy: ((Long) -> Unit)? = null
+    /** Full screen on or off (f, a double click, esc to leave). */
+    @Volatile var setFull: ((Boolean) -> Unit)? = null
+    /** A video full screen, in its own window over the screen (the app's window left as it is). */
+    val full = kotlinx.coroutines.flow.MutableStateFlow(false)
 }
 
 /** Listen's shelf of them: each frame wide, its song and artist, how long ago. */
@@ -292,51 +305,51 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
         }
     }
     val picture = video?.frame?.collectAsState()?.value
-    // full screen (2026-11-08): the window's (as the player's), the picture alone on black at its own shape; a click on it
-    // pauses; leaving the page leaves full screen too
+    // full screen (2026-11-10): the video in a window of its own over the whole screen, the picture alone on black at its
+    // own shape, the controls over it; the app's window left as it was (putting the app itself full screen kept the rail
+    // and the bar along the foot round the picture, and is another thing). Leaving the page leaves full screen too
     var full by remember { mutableStateOf(false) }
-    LaunchedEffect(full) { Win.full(full) }
-    DisposableEffect(Unit) { onDispose { if (Win.full) Win.full(false) } }
-    if (full) {
-        Box(Modifier.fillMaxSize().background(Color.Black).clickable(remember { MutableInteractionSource() }, indication = null) { Watching.toggle?.invoke() }) {
-            picture?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-            Row(Modifier.align(Alignment.BottomEnd).padding(20.dp), verticalAlignment = Alignment.Bottom) {
-                if (video != null) Word(if (paused) "play" else "pause", pixel(14.sp, Ink.mid), touch = 8.dp) { Watching.toggle?.invoke() }
-                Spacer(Modifier.size(20.dp))
-                Word("leave full screen", pixel(14.sp, Ink.mid), touch = 8.dp) { full = false }
-                Spacer(Modifier.size(20.dp))
-                Word("stop", pixel(14.sp, Ink.mid), touch = 8.dp) { full = false; Nav.back() }
-            }
-        }
-        return
+    LaunchedEffect(full) { Watching.full.value = full }
+    DisposableEffect(video) {
+        Watching.seekBy = { d -> video?.let { v -> v.seek((v.at() + d).coerceIn(0, (v.length() - 1_000).coerceAtLeast(0))) } }
+        Watching.setFull = { full = it }
+        onDispose { Watching.seekBy = null; Watching.setFull = null }
     }
+    DisposableEffect(Unit) { onDispose { Watching.full.value = false } }
+    val shape = frame?.image?.let { (it.width.toFloat() / it.height).coerceIn(1.2f, 2.8f) } ?: (16 / 9f)
+    val next = clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)
+    @Composable
+    fun Picture(modifier: Modifier, fit: ContentScale) = VideoSurface(
+        picture, frame?.image, said, accent, paused, at, length, video != null, full,
+        title = c.title, artist = c.artist, fit = fit, modifier = modifier,
+        onToggle = { Watching.toggle?.invoke() }, onSeek = { ms -> video?.seek(ms) }, onFull = { full = !full },
+        onNext = next?.let { n -> { Nav.back(); open(Page.Watch(n, clips)) } },
+    )
+    if (full) androidx.compose.ui.window.Window(
+        onCloseRequest = { full = false },
+        state = androidx.compose.ui.window.rememberWindowState(placement = androidx.compose.ui.window.WindowPlacement.Fullscreen),
+        title = c.title, undecorated = true,
+        onKeyEvent = { k ->
+            if (k.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@Window false
+            when (k.key) {
+                androidx.compose.ui.input.key.Key.Escape, androidx.compose.ui.input.key.Key.F -> { full = false; true }
+                androidx.compose.ui.input.key.Key.Spacebar -> { Watching.toggle?.invoke(); true }
+                androidx.compose.ui.input.key.Key.DirectionRight -> { Watching.seekBy?.invoke(10_000); true }
+                androidx.compose.ui.input.key.Key.DirectionLeft -> { Watching.seekBy?.invoke(-10_000); true }
+                else -> false
+            }
+        },
+    ) { Picture(Modifier.fillMaxSize().background(Color.Black), ContentScale.Fit) }
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         BoxWithConstraints(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 12.dp, bottom = 28.dp)) {
-            // its own shape (a wide film's bars baked into YouTube's 16:9 cut off, as its frame's were: the line touches the
-            // picture), as wide as fits with its words under it
-            val shape = frame?.image?.let { (it.width.toFloat() / it.height).coerceIn(1.2f, 2.8f) } ?: (16 / 9f)
-            val w = minOf(maxWidth, (maxHeight - 120.dp) * shape)
+            // its own shape (a wide film's bars baked into YouTube's 16:9 cut off, as its frame's were), as wide as fits
+            // with its words under it
+            val w = minOf(maxWidth, (maxHeight - 100.dp) * shape)
             Column(Modifier.width(w).align(Alignment.Center)) {
-                Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-                    BasicText(time(at), style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.weight(1f))
-                    BasicText(if (length > 0) time(length) else "", style = pixel(12.sp, Ink.mid))
-                }
-                // the line, along its top edge: where it is in its colour; a click goes there
-                Box(Modifier.fillMaxWidth().height(9.dp).pointerInput(video, length) {
-                    detectTapGestures { p -> if (length > 0) video?.seek((p.x / size.width * length).toLong()) }
-                }, contentAlignment = Alignment.BottomStart) {
-                    Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line))
-                    Box(Modifier.fillMaxWidth(if (length > 0) (at.toFloat() / length).coerceIn(0f, 1f) else 0f).height(2.dp).background(accent))
-                }
-                Box(Modifier.fillMaxWidth().aspectRatio(shape).background(Color.Black)
-                    .clickable(remember { MutableInteractionSource() }, indication = null) { Watching.toggle?.invoke() }) {
-                    if (picture != null) Image(picture, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    else {
-                        frame?.let { Image(it.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                        BasicText(said, style = pixel(12.sp, Ink.ink), modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
-                    }
+                if (!full) Picture(Modifier.fillMaxWidth().aspectRatio(shape).background(Color.Black), ContentScale.Crop)
+                else Box(Modifier.fillMaxWidth().aspectRatio(shape).background(Color.Black)) {
+                    Word("playing full screen · back here", pixel(12.sp, Ink.mid), Modifier.align(Alignment.Center), touch = 8.dp) { full = false }
                 }
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -348,17 +361,103 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
                             BasicText("  ·  ${MusicVideos.ago(c.at)}", style = pixel(14.sp, Ink.mid))
                         }
                     }
-                    if (video != null) Word(if (paused) "play" else "pause", pixel(14.sp), touch = 8.dp) { Watching.toggle?.invoke() }
-                    if (video != null) { Spacer(Modifier.size(20.dp)); Word("full screen", pixel(14.sp, Ink.mid), touch = 8.dp) { full = true } }
-                    // stop: the video gone, back where it was opened from
-                    Spacer(Modifier.size(20.dp)); Word("stop", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back() }
-                    clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)?.let { n ->
+                    // stop: the video gone, back where it was opened from (play, the line, next and full screen on the picture)
+                    Word("stop", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back() }
+                    next?.let { n ->
                         Spacer(Modifier.size(20.dp))
                         Word("next video", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back(); open(Page.Watch(n, clips)) }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * The picture and its controls over it (2026-11-10): the controls along its foot on a shade, the line across them in the
+ * video's colour (a click or a drag goes there, the time under the mouse shown), play or pause, the times, its song in
+ * full screen, the next video, full screen; shown while the mouse moves over it or it's paused, fading two and a half
+ * seconds after it stops (the pointer too, in full screen). A click pauses, a double click is full screen.
+ */
+@Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+private fun VideoSurface(
+    picture: ImageBitmap?, still: ImageBitmap?, said: String, accent: Color, paused: Boolean, at: Long, length: Long, ready: Boolean,
+    full: Boolean, title: String, artist: String, fit: ContentScale, modifier: Modifier,
+    onToggle: () -> Unit, onSeek: (Long) -> Unit, onFull: () -> Unit, onNext: (() -> Unit)?,
+) {
+    var moved by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var over by remember { mutableStateOf(false) }
+    var awake by remember { mutableStateOf(true) }
+    LaunchedEffect(moved, over, paused) {
+        awake = true
+        if (!paused) { kotlinx.coroutines.delay(2_500); awake = false }
+    }
+    val shown = (awake && (over || full)) || paused || !ready
+    val fade by androidx.compose.animation.core.animateFloatAsState(if (shown) 1f else 0f, androidx.compose.animation.core.tween(if (shown) Motion.FADE else 600), label = "controls")
+    Box(modifier
+        .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Move) { moved = System.currentTimeMillis(); over = true }
+        .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) { over = true }
+        .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) { over = false }
+        .then(if (full && !shown) Modifier.pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Toolkit.getDefaultToolkit()
+            .createCustomCursor(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB), java.awt.Point(0, 0), "none"))) else Modifier)
+        .pointerInput(ready) { if (ready) detectTapGestures(onDoubleTap = { onFull() }, onTap = { onToggle() }) }) {
+        when {
+            picture != null -> Image(picture, null, Modifier.fillMaxSize(), contentScale = fit)
+            still != null -> Image(still, null, Modifier.fillMaxSize(), contentScale = fit)
+        }
+        if (picture == null) BasicText(said, style = pixel(12.sp, Ink.ink), modifier = Modifier.align(Alignment.TopStart).padding(16.dp))
+        if (!ready) return@Box
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().graphicsLayer { alpha = fade }
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .55f), Color.Black.copy(alpha = .85f))))
+            .padding(start = if (full) 40.dp else 18.dp, end = if (full) 40.dp else 18.dp, top = if (full) 80.dp else 48.dp, bottom = if (full) 32.dp else 14.dp)) {
+            if (full) {
+                BasicText(title.uppercase(), style = headline(44.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                BasicText(artist.lowercase(), style = pixel(14.sp, Ink.mid))
+                Spacer(Modifier.height(18.dp))
+            }
+            SeekLine(at, length, accent, onSeek)
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Pixel(if (paused) PLAY else PAUSE, if (paused) "play" else "pause", Ink.ink, cell = if (full) 3.dp else 2.dp, onClick = onToggle)
+                Spacer(Modifier.width(22.dp))
+                BasicText("${time(at)} / ${if (length > 0) time(length) else "–"}", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.weight(1f))
+                onNext?.let { Pixel(NEXT, "next video", Ink.ink, cell = if (full) 3.dp else 2.dp, onClick = it); Spacer(Modifier.width(22.dp)) }
+                Pixel(if (full) UNFULL else FULL, if (full) "leave full screen" else "full screen", Ink.ink, cell = if (full) 3.dp else 2.dp, onClick = onFull)
+            }
+        }
+    }
+}
+
+/** The video's line: where it is in its colour, a square at that place; a click or a drag goes there, the time under the mouse said above it. */
+@Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+private fun SeekLine(at: Long, length: Long, accent: Color, onSeek: (Long) -> Unit) {
+    var hover by remember { mutableStateOf<Float?>(null) }
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val shownAt = dragging ?: (if (length > 0) (at.toFloat() / length).coerceIn(0f, 1f) else 0f)
+    BoxWithConstraints(Modifier.fillMaxWidth().height(22.dp)
+        .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Move) { e -> hover = (e.changes.first().position.x / size.width).coerceIn(0f, 1f) }
+        .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) { hover = null }
+        .pointerInput(length) {
+            detectTapGestures { p -> if (length > 0) onSeek((p.x / size.width * length).toLong()) }
+        }
+        .pointerInput(length) {
+            detectHorizontalDragGestures(
+                onDragStart = { p -> dragging = (p.x / size.width).coerceIn(0f, 1f) },
+                onDragEnd = { dragging?.let { if (length > 0) onSeek((it * length).toLong()) }; dragging = null },
+                onDragCancel = { dragging = null },
+            ) { change, _ -> dragging = (change.position.x / size.width).coerceIn(0f, 1f) }
+        }
+        .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand), contentAlignment = Alignment.CenterStart) {
+        val thick = if (hover != null || dragging != null) 4.dp else 2.dp
+        Box(Modifier.fillMaxWidth().height(thick).background(Color.White.copy(alpha = .25f)))
+        Box(Modifier.fillMaxWidth(shownAt).height(thick).background(accent))
+        if (hover != null || dragging != null) Box(Modifier.padding(start = (maxWidth * shownAt - 5.dp).coerceAtLeast(0.dp)).size(10.dp).background(accent))
+        val h = dragging ?: hover
+        if (h != null && length > 0) BasicText(time((h * length).toLong()), style = pixel(11.sp, Ink.ink),
+            modifier = Modifier.padding(start = (maxWidth * h - 14.dp).coerceIn(0.dp, maxWidth - 40.dp)).offset(y = (-18).dp))
     }
 }
 
