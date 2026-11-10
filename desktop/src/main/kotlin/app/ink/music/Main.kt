@@ -442,6 +442,8 @@ private fun App() {
         val finding = pages.lastOrNull() == Page.Find
         Row(Modifier.fillMaxSize()) {
         val railFolded by RailFold.on.collectAsState()
+        // folded in: only the INK wordmark and an arrow by it to bring the rail back out
+        if (frame != Frame.NARROW && railFolded) FoldedRail { place = "ink"; pages.clear() }
         if (frame != Frame.NARROW && !railFolded) Rail(place, { place = it; pages.clear() }, { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++ },
             { if (pages.lastOrNull() != Page.Settings) pages += Page.Settings })
         Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -468,7 +470,7 @@ private fun App() {
                     androidx.compose.runtime.CompositionLocalProvider(LocalPageKey provides (if (page == null) "place:$place" else if (at >= 0) "$at:${page.hashCode()}" else null),
                         LocalOpened provides opened) {
                     when (page) {
-                        null -> LibraryPage(place, frame == Frame.NARROW || railFolded, { place = it }) { pages += it }
+                        null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
                         is Page.Record -> RecordPage(page.id, { pages += it }) { Nav.close() }
                         is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { Nav.close() }
                         is Page.Watch -> WatchPage(page.clip, page.list, { pages += it }) { Nav.close() }
@@ -546,8 +548,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
         // the phone's layout (a narrow window, an upright screen): the place you're on as one big word, the rest dropped
         // down from it, as the phone's; find beside it. 2026-11-09: every place as words across the top took two or three
         // lines of an upright window before any music
-        val folded by RailFold.on.collectAsState()
-        if (words) PlaceHead(tab, menu, { menu = !menu }, unfold = if (folded) ({ RailFold.set(false) }) else null) { open(Page.Find) }
+        if (words) PlaceHead(tab, menu, { menu = !menu }) { open(Page.Find) }
         // beside the rail no name over the page: the rail's lit word says where you are (2026-10-29)
         if (words) Spacer(Modifier.height(14.dp))
         if (tab in setOf("albums", "artists", "songs")) NetworkShut(Modifier.padding(horizontal = SIDE).padding(bottom = 18.dp))
@@ -678,10 +679,8 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
 private val PLACE_HEAD = 64.dp
 
 @Composable
-private fun PlaceHead(tab: String, menu: Boolean, onMenu: () -> Unit, unfold: (() -> Unit)? = null, onFind: () -> Unit) {
+private fun PlaceHead(tab: String, menu: Boolean, onMenu: () -> Unit, onFind: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(PLACE_HEAD).padding(horizontal = SIDE), verticalAlignment = Alignment.CenterVertically) {
-        // the rail folded away: an arrow to bring it back
-        unfold?.let { Pixel(FOLD_RIGHT, "the places beside", Ink.dim, Modifier.padding(end = 16.dp), cell = 3.dp, onClick = it) }
         Row(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onMenu)), verticalAlignment = Alignment.CenterVertically) {
             BasicText(tab.uppercase(), style = headline(44.sp))
             Spacer(Modifier.width(12.dp))

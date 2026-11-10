@@ -61,7 +61,7 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
           if (i == 0) Row(verticalAlignment = Alignment.CenterVertically) {
             Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
             Spacer(Modifier.weight(1f))
-            // fold the rail away: the place you're on one big word over the page, the rest dropped down from it (⌘⇧\)
+            // fold the rail in (⌘⇧\): only the INK wordmark left, an arrow by it to bring it out
             Pixel(FOLD_LEFT, "fold the places away", Ink.dim, Modifier.padding(end = 18.dp), cell = 2.dp) { RailFold.set(true) }
           } else
             Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
@@ -84,13 +84,20 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
 }
 
 val RAIL = 210.dp
+/** The rail folded in: INK (a click, the INK place) and the arrow by it that brings the rail back out. */
+@Composable
+fun FoldedRail(onInk: () -> Unit) {
+    Row(Modifier.fillMaxHeight().padding(start = SIDE, end = 12.dp, top = TOP + 40.dp), verticalAlignment = Alignment.Top) {
+        Word("INK", headline(22.sp), Modifier.padding(vertical = 2.dp), touch = 6.dp, onClick = onInk)
+        Spacer(Modifier.width(10.dp))
+        Pixel(FOLD_RIGHT, "the places beside", Ink.dim, Modifier.padding(top = 9.dp), cell = 2.dp) { RailFold.set(false) }
+    }
+}
+
 val FOLD_LEFT = listOf("..#", ".#.", "#..", ".#.", "..#")
 val FOLD_RIGHT = listOf("#..", ".#.", "..#", ".#.", "#..")
 
-/**
- * The rail folded away (2026-11-10, kept): the page takes its room, the place you're on one big word over it with the
- * others dropped down from it (a narrow window's head), an arrow before it to unfold.
- */
+/** The rail folded in (2026-11-10, kept): the page takes its room, the INK wordmark left with an arrow by it to bring it out. */
 object RailFold {
     private val file = java.io.File(Home.dir, "rail-folded")
     val on = kotlinx.coroutines.flow.MutableStateFlow(file.exists())
