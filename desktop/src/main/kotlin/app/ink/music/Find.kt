@@ -325,11 +325,15 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                 songs?.takeIf { it.isNotEmpty() }?.let { s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                         Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
+                        // a playlist played as a DJ's arc, each into the next on the beat (a record keeps its own order)
+                        if (playlist) MixWord(a.title, s)
                         // a playlist's songs are from many records: their covers, if wanted
                         if (playlist) CoversWord()
                         KeepOffline(s)
                     }
                 }
+                // the mix as it's found: its tempo beating, the songs dropping in
+                if (playlist) MixProgress(a.title)
                 // what critics said of it (a record's, not a playlist's)
                 if (!playlist) Critics(a.title, a.artist)
             }

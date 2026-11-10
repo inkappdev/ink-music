@@ -2111,6 +2111,8 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             if (!all.isNullOrEmpty()) Row {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                // a playlist or mix played as a DJ's arc, each into the next on the beat (a record keeps its own order)
+                if ("list=" in a.url) MixWord(a.title, all, Modifier.padding(end = 26.dp))
                 Box(Modifier.padding(end = 26.dp)) { KeepOffline(all) }
                 // signed in: saved to your library there (lit), or not
                 val who by YouTubeAccount.who.collectAsState()
@@ -2121,6 +2123,8 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
                     Word(if (saved) "saved" else "save", pixel(14.sp, if (saved) Ink.ink else Ink.mid), touch = 8.dp) { scope.launch { YouTubeAccount.save(a, !saved) } }
                 }
             }
+            // the mix as it's found: its tempo beating, the songs dropping in
+            if ("list=" in a.url) MixProgress(a.title)
             // what critics said of it (a record's, not a playlist's)
             if ("list=" !in a.url) Critics(a.title, a.artist)
             Spacer(Modifier.height(14.dp))
