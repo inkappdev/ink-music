@@ -235,13 +235,73 @@ object Picks {
         true
     }
 
-    /** A genre's songs from its editors' lists (GenreLists), kept half a day in memory. */
+    /**
+     * A genre's songs from its editors' lists (GenreLists), kept on the disk (as the phone keeps them: a genre opened
+     * before shows at once, a restart too) and asked again after half a day, its lists read all at once. 2026-11-09: in
+     * memory only and read a list at a time, a genre's whole top block came in a second or two after the page.
+     */
     private val genres = HashMap<String, Pair<Long, List<Shown>>>()
+    private const val GENRE_KEEP = 12 * 3_600_000L
+    private val lists = java.util.concurrent.Executors.newFixedThreadPool(6) { r -> Thread(r, "genre-lists").apply { isDaemon = true } }
+    private val fetching = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    /** What's kept for this genre now, any age (none: empty), without asking: the page's first frame. */
+    fun genreNow(g: String): List<Shown> = kept(g.lowercase())?.second.orEmpty()
+
     suspend fun genre(g: String): List<Shown> = withContext(Dispatchers.IO) {
         val k = g.lowercase(); val now = System.currentTimeMillis()
-        synchronized(genres) { genres[k] }?.takeIf { now - it.first < 12 * 3_600_000L }?.let { return@withContext it.second }
-        GenreLists.songs(k, now).map { Shown(it, it.art, listOf(it.from)) }.also { if (it.isNotEmpty()) synchronized(genres) { genres[k] = now to it } }
+        val have = kept(k)
+        // kept and fresh: that; kept but old: that now, and asked again behind it
+        if (have != null && have.second.isNotEmpty()) {
+            if (now - have.first >= GENRE_KEEP) Thread { fetch(k) }.apply { isDaemon = true }.start()
+            return@withContext have.second
+        }
+        fetch(k)
     }
+
+    /** The genres you open most, read ahead after start, so their pages open with their block there (Moods.counts). */
+    fun warmGenres(names: List<String>) {
+        Thread({
+            runCatching {
+                Thread.sleep(25_000)
+                names.filter { GenreLists.known(it) }.forEach { g ->
+                    val k = g.lowercase()
+                    val have = kept(k)
+                    if (have == null || System.currentTimeMillis() - have.first >= GENRE_KEEP) fetch(k)
+                }
+            }
+        }, "genres-warm").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
+    }
+
+    private fun fetch(k: String): List<Shown> {
+        if (!fetching.add(k)) return kept(k)?.second.orEmpty()
+        try {
+            val now = System.currentTimeMillis()
+            val songs = GenreLists.songs(k, now, { Log.d("picks: $it") }) { all ->
+                all.map { f -> lists.submit(java.util.concurrent.Callable { f() }) }.map { runCatching { it.get() }.getOrDefault(emptyList()) }
+            }.map { Shown(it, it.art, listOf(it.from)) }
+            if (songs.isEmpty()) return kept(k)?.second.orEmpty()
+            synchronized(genres) { genres[k] = now to songs }
+            runCatching {
+                genreFile(k).parentFile.mkdirs()
+                Home.write(genreFile(k), JSONObject().put("at", now).put("songs", JSONArray(songs.map { s ->
+                    JSONObject().put("title", s.pick.title).put("artist", s.pick.artist).put("from", s.pick.from).put("art", s.art ?: "")
+                })).toString())
+            }
+            return songs
+        } finally { fetching.remove(k) }
+    }
+
+    private fun genreFile(k: String) = File(File(Home.cache, "genres"), k.replace(Regex("[^a-z0-9]+"), "-") + ".json")
+
+    private fun kept(k: String): Pair<Long, List<Shown>>? = synchronized(genres) { genres[k] } ?: runCatching {
+        val o = JSONObject(genreFile(k).readText())
+        val a = o.getJSONArray("songs")
+        (o.getLong("at") to (0 until a.length()).map { a.getJSONObject(it) }.map { s ->
+            val art = s.optString("art").ifEmpty { null }
+            Shown(Curation.Pick(false, s.getString("title"), s.getString("artist"), s.getString("from"), "", "", o.getLong("at"), art), art, listOf(s.getString("from")))
+        }).also { synchronized(genres) { genres[k] = it } }
+    }.getOrNull()
 
     /** A picked record's page on YouTube Music, its name and artist matched; null when it hasn't it. */
     suspend fun record(p: Curation.Pick): TubeAlbum? = withContext(Dispatchers.IO) {

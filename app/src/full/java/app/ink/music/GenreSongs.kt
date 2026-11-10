@@ -21,20 +21,58 @@ object GenreSongs {
         kept[genre.lowercase()]?.second ?: read(c, genre)?.second.orEmpty()
     }
 
-    /** The genre's songs: kept, else read from its lists (blocking a few seconds; on IO). */
+    /**
+     * The genre's songs: kept (an old one too, asked again behind it), else read from its lists, all at once (blocking
+     * a second or two; on IO). 2026-11-09: a list at a time, and a kept one past half a day waited for the new.
+     */
     suspend fun of(c: Context, genre: String): List<Picks.Shown> = withContext(Dispatchers.IO) {
         val g = genre.lowercase()
+        val have = synchronized(kept) { (kept[g] ?: read(c, g)?.also { kept[g] = it }) }
+        if (have != null && have.second.isNotEmpty()) {
+            if (System.currentTimeMillis() - have.first >= KEEP) Thread { runCatching { fetch(c, g) } }.apply { isDaemon = true }.start()
+            return@withContext have.second
+        }
+        fetch(c, g)
+    }
+
+    /** The genres opened most, read ahead a while after the app opens, so their pages open with their songs there. */
+    fun warm(c: Context, genres: List<String>) {
+        val app = c.applicationContext
+        Thread({
+            runCatching {
+                Thread.sleep(25_000)
+                genres.filter { known(it) }.forEach { g ->
+                    val k = g.lowercase()
+                    val have = synchronized(kept) { kept[k] ?: read(app, k) }
+                    if (have == null || System.currentTimeMillis() - have.first >= KEEP) runCatching { fetch(app, k) }
+                }
+            }
+        }, "genres-warm").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
+    }
+
+    private val lists = java.util.concurrent.Executors.newFixedThreadPool(6) { r -> Thread(r, "genre-lists").apply { isDaemon = true } }
+    private val fetching = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    private fun fetch(c: Context, g: String): List<Picks.Shown> {
+        if (!fetching.add(g)) return now(c, g)
+        try {
+            return fetched(c, g)
+        } finally { fetching.remove(g) }
+    }
+
+    private fun fetched(c: Context, g: String): List<Picks.Shown> {
         val now = System.currentTimeMillis()
-        synchronized(kept) { (kept[g] ?: read(c, g)?.also { kept[g] = it }) }?.takeIf { now - it.first < KEEP }?.let { return@withContext it.second }
-        val songs = GenreLists.songs(g, now) { android.util.Log.d("ink-picks", it) }.map { Picks.Shown(it, it.art, listOf(it.from)) }
-        if (songs.isEmpty()) return@withContext now(c, g)
+        val songs = GenreLists.songs(g, now, { android.util.Log.d("ink-picks", it) }) { all ->
+            all.map { f -> lists.submit(java.util.concurrent.Callable { f() }) }.map { runCatching { it.get() }.getOrDefault(emptyList()) }
+        }.map { Picks.Shown(it, it.art, listOf(it.from)) }
+        if (songs.isEmpty()) return now(c, g)
         synchronized(kept) { kept[g] = now to songs }
         runCatching {
             file(c, g).also { it.parentFile?.mkdirs() }.writeText(org.json.JSONObject().put("at", now).put("songs", org.json.JSONArray(songs.map { s ->
                 org.json.JSONObject().put("title", s.pick.title).put("artist", s.pick.artist).put("from", s.pick.from).put("art", s.art ?: "")
             })).toString())
         }
-        songs
+        return songs
     }
 
     private fun file(c: Context, g: String) = File(File(c.filesDir, "genres"), g.replace(Regex("[^a-z0-9]+"), "-") + ".json")

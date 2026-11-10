@@ -60,14 +60,16 @@ object GenreLists {
 
     /**
      * The genre's songs, its lists taken in turn (one each, so no one list fills it), the same song once; a list that
-     * won't answer passed over. Blocking: a few pages.
+     * won't answer passed over. Blocking: a few pages. `together` reads them all at once where the app can (each a web
+     * page of a second or two: in turn, a genre's block came in well after the page, 2026-11-09).
      */
-    fun songs(genre: String, now: Long, log: (String) -> Unit = {}): List<Curation.Pick> {
+    fun songs(genre: String, now: Long, log: (String) -> Unit = {},
+              together: (List<() -> List<Curation.Pick>>) -> List<List<Curation.Pick>> = { all -> all.map { it() } }): List<Curation.Pick> {
         val lists = BY[genre.lowercase()] ?: return emptyList()
-        val each = lists.map { l ->
+        val each = together(lists.map { l -> {
             runCatching { if (l.apple) apple(l.id, l.name, l.max, now) else SpotifyLists.list(l.id, l.name, l.max, now) }
                 .onFailure { log("genre ${l.name}: $it") }.getOrDefault(emptyList())
-        }
+        } })
         return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }.distinctBy { Curation.key(it) }
             .also { log("genre $genre: ${it.size} songs from ${each.count { l -> l.isNotEmpty() }} of ${lists.size} lists") }
     }

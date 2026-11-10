@@ -118,6 +118,8 @@ fun main() {
     Covers.warm()
     // the next song's cover (and the last's) ready before it plays
     Covers.ahead()
+    // the genres you open most, their editors' songs read ahead (their pages open with their block there)
+    Picks.warmGenres(Moods.counts.value.entries.sortedByDescending { it.value }.map { it.key }.take(6))
     Sorts.start()
     Lyrics.start()
     Keys.start()

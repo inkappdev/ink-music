@@ -7,4 +7,5 @@ object GenreSongs {
     fun known(genre: String) = false
     fun now(c: Context, genre: String): List<Picks.Shown> = emptyList()
     suspend fun of(c: Context, genre: String): List<Picks.Shown> = emptyList()
+    fun warm(c: Context, genres: List<String>) {}
 }

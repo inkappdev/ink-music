@@ -623,7 +623,8 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
     // the genre's editors' lists (GenreLists: Spotify's and Apple Music's public ones, the phone's, 2026-11-08, in place
     // of Last.fm's tags); the critics' records by the lists' artists. A genre with no lists: INK's picks by tag, as before
     val listed = m.genre && GenreLists.known(m.title)
-    val listSongs by produceState<List<Picks.Shown>>(emptyList(), m.title) { if (listed) value = Picks.genre(m.title) }
+    // what's kept shows in the first frame (no block arriving after the page); asked for, or freshened, behind it
+    val listSongs by produceState(if (listed) Picks.genreNow(m.title) else emptyList(), m.title) { if (listed) value = Picks.genre(m.title) }
     val ours = !listed && m.genre && Genres.known(m.title)
     val tagged by GenrePicks.tagged.collectAsState()
     val records by Picks.records.collectAsState()

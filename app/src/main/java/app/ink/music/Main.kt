@@ -176,6 +176,11 @@ class Main : ComponentActivity() {
         setContent { TvFocus { App() } }
         // the next song's cover (and the last's) ready before it plays (Covers.ahead)
         lifecycleScope.launch { Covers.ahead(this@Main) }
+        // the genres opened most, their editors' songs read ahead (their pages open with them there)
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            Moods.kept(this@Main)
+            GenreSongs.warm(this@Main, Moods.counts.value.entries.sortedByDescending { it.value }.map { it.key }.take(6))
+        }
         // casting: the volume buttons, while ink music is open, go to the player's session, which turns the speaker
         // (Android gives them to a session only while it plays, and the phone's own player is paused under a speaker)
         lifecycleScope.launch {
