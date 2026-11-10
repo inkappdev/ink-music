@@ -296,7 +296,7 @@ fun face(a: TubeAlbum) = Song(id = "yface", path = "", title = a.title, artist =
 /** A YouTube Music record: its songs read from YouTube Music, played from there. */
 @Composable
 fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
-    val playlist = "list=" in a.url
+    val playlist = a.playlist
     val covers by ListCovers.on.collectAsState()
     val songs by androidx.compose.runtime.produceState<List<Song>?>(null, a.url) { value = YouTube.album(a) }
     androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
@@ -329,8 +329,9 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                         if (playlist) MixWord(a.title, s)
                         // a playlist's songs are from many records: their covers, if wanted
                         if (playlist) CoversWord()
-                        KeepOffline(s)
                     }
+                    // kept on the computer: its own line under the row (beside play, mix and covers it was cut to "keep o...")
+                    Box(Modifier.padding(top = 10.dp)) { KeepOffline(s) }
                 }
                 // the mix as it's found: its tempo beating, the songs dropping in
                 if (playlist) MixProgress(a.title)

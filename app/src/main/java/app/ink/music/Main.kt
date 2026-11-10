@@ -2107,7 +2107,7 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
             // a record's artist, their page; a playlist's byline (its maker, "auto playlist") only words
-            if ("list=" in a.url || Curation.tubeBranded(a.url, a.artist)) BasicText(a.artist.lowercase(), style = pixel(13.sp, Ink.mid))
+            if (a.playlist || Curation.tubeBranded(a.url, a.artist)) BasicText(a.artist.lowercase(), style = pixel(13.sp, Ink.mid))
             else Word(a.artist.lowercase(), pixel(13.sp, Ink.mid), touch = 6.dp) { pages.open(Page.Artist(a.artist)) }
             Spacer(Modifier.height(4.dp))
             val all = songs
@@ -2117,8 +2117,7 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
                 // a playlist or mix played as a DJ's arc, each into the next on the beat (a record keeps its own order)
-                if ("list=" in a.url) MixWord(a.title, all, Modifier.padding(end = 26.dp))
-                Box(Modifier.padding(end = 26.dp)) { KeepOffline(all) }
+                if (a.playlist) MixWord(a.title, all, Modifier.padding(end = 26.dp))
                 // signed in: saved to your library there (lit), or not
                 val who by YouTubeAccount.who.collectAsState()
                 val records by YouTubeAccount.records.collectAsState()
@@ -2128,10 +2127,12 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
                     Word(if (saved) "saved" else "save", pixel(14.sp, if (saved) Ink.ink else Ink.mid), touch = 8.dp) { scope.launch { YouTubeAccount.save(a, !saved) } }
                 }
             }
+            // kept on the phone: its own line under the row (as the computer's: beside the rest it was cut short)
+            if (!all.isNullOrEmpty()) Box(Modifier.padding(top = 10.dp)) { KeepOffline(all) }
             // the mix as it's found: its tempo beating, the songs dropping in
-            if ("list=" in a.url) MixProgress(a.title)
+            if (a.playlist) MixProgress(a.title)
             // what critics said of it (a record's, not a playlist's)
-            if ("list=" !in a.url) Critics(a.title, a.artist)
+            if (!a.playlist) Critics(a.title, a.artist)
             Spacer(Modifier.height(14.dp))
         }}
         val all = songs.orEmpty()

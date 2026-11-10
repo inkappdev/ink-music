@@ -582,7 +582,11 @@ object Curation {
     /** A blurb's first sentence (what's said, short). */
     private fun sentence(s: String): String {
         val t = s.removeSuffix("…").trim()
-        val end = Regex("[.!?](\\s|$)").find(t)?.range?.first
+        // not at an initial or a short title: "teams with producer A. G. Cook" isn't a sentence ending at "A." (2026-11-09)
+        val end = Regex("[.!?](\\s|$)").findAll(t).map { it.range.first }.firstOrNull { i ->
+            val word = t.substring(0, i).substringAfterLast(' ')
+            !(word.length == 1 && word[0].isUpperCase()) && word.lowercase() !in setOf("mr", "mrs", "ms", "dr", "st", "vs", "jr", "sr", "feat", "ft", "vol", "no")
+        }
         return (if (end != null && end > 20) t.substring(0, end + 1) else t).take(220)
     }
 

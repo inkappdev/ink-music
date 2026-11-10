@@ -12,7 +12,14 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.util.concurrent.ConcurrentHashMap
 
 /** A YouTube Music record found: its link, name, artist and cover. */
-data class TubeAlbum(val url: String, val title: String, val artist: String, val art: String?)
+data class TubeAlbum(val url: String, val title: String, val artist: String, val art: String?) {
+    /**
+     * A playlist (a mix, a chart, someone's list), not a record: a record's link is a playlist's too ("list=OLAK5uy_...")
+     * or its browse page (MPRE...). 2026-11-09: "list=" alone took DIIV's ZIRP! for a playlist (mix and covers on it,
+     * no critics' quote, no artist link).
+     */
+    val playlist: Boolean get() = "list=" in url && "list=OLAK5uy_" !in url
+}
 
 /** What YouTube Music found for find: songs, records, artists, playlists. */
 data class TubeFound(
