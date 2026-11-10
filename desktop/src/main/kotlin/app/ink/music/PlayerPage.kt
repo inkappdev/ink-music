@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -384,6 +385,16 @@ fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: 
         else if (cut != null) MixPointBar(frac, cut.toFloat() / n.duration, accent, thick, Modifier.align(Alignment.BottomStart))
         else Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(thick).background(Ink.line)) {
             Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(accent))
+        }
+        // where it's playing, a square of the accent on the line while the mouse is on it (2026-11-10, Reddit: the line
+        // "way too minimal ... difficult to interact with"): square, as everything of ink's is, and gone when it's not
+        val knob by animateFloatAsState(if (live && k == null && (hover != null || at != null)) 1f else 0f, tween(Motion.FADE), label = "knob")
+        if (knob > 0f) {
+            val side = 9.dp
+            Box(Modifier.align(Alignment.BottomStart)
+                .offset { IntOffset((frac * width - side.toPx() / 2).toInt().coerceIn(0, (width - side.roundToPx()).coerceAtLeast(0)), ((side - thick) / 2).roundToPx()) }
+                .graphicsLayer { scaleX = knob; scaleY = knob; alpha = knob }
+                .size(side).background(accent))
         }
     }
 }

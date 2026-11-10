@@ -640,6 +640,8 @@ private fun KeptSetting() {
         Word("smaller", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { Offline.small(true) }
     }
     if (kept.isNotEmpty()) {
+        // the list of them (lists, kept on this computer): to play, or let one go by its right click
+        Word("see them", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { Nav.open(Page.List(KEPT, "kept on this computer")) }
         var sure by remember { mutableStateOf(false) }
         LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
         Word(if (sure) "remove them all" else "remove all", pixel(14.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {

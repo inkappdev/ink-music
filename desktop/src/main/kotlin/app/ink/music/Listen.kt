@@ -383,7 +383,9 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 BasicText(name.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
                 val s = songs
-                BasicText(s?.let { "${it.size} ${if (it.size == 1) "song" else "songs"} · ${clock(it.sumOf { x -> x.duration })}" } ?: "reading", style = pixel(12.sp, Ink.mid))
+                // kept on this computer: how much room they take too (and each one's right click lets it go)
+                val room = remember(keptNow) { if (id == KEPT) " · ${Offline.bytes() / 1_048_576} mb" else "" }
+                BasicText(s?.let { "${it.size} ${if (it.size == 1) "song" else "songs"} · ${clock(it.sumOf { x -> x.duration })}$room" } ?: "reading", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(14.dp))
                 if (!s.isNullOrEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                     Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
@@ -396,7 +398,10 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 Spacer(Modifier.height(14.dp))
             }
             val s = songs.orEmpty()
-            itemsIndexed(s, key = { i, x -> "$i" + x.id }) { i, x -> SongRow(x, said = "${x.artist}  ·  ${x.album}".lowercase(), open = open, cover = covers) { Player.play(s, i) } }
+            itemsIndexed(s, key = { i, x -> "$i" + x.id }) { i, x ->
+                SongRow(x, said = "${x.artist}  ·  ${x.album}".lowercase(), open = open, cover = covers,
+                    onRemove = if (id == KEPT) ({ Offline.remove(listOf(x.id)) }) else null) { Player.play(s, i) }
+            }
         }
     }
 }
