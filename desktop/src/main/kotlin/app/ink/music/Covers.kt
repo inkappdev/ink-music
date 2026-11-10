@@ -120,8 +120,9 @@ object Covers {
             val bytes = try { remote(song, px) } catch (e: Server.Busy) {
                 missed[song.albumId] = System.currentTimeMillis(); return@withContext kept.get(song.albumId)
             } ?: (if (song.server || song.tube || song.episode) null else picture(File(song.path)))
-                ?: (if (song.station || song.episode) null else found(song, px))
-                ?: (if (song.tube) frame(song, px) else null)
+                // (an artist's face or photo, a song only in shape, is never looked for so)
+                ?: (if (song.station || song.episode || face(song)) null else found(song, px))
+                ?: (if (song.tube && !face(song)) frame(song, px) else null)
             val t1 = System.nanoTime()
             missed -= song.albumId
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
@@ -241,6 +242,8 @@ object Covers {
     }
 
     /** A YouTube song's own video picture (its largest, its middle cut square later): there's one for every video. */
+    private fun face(song: Song) = song.id.startsWith("yface:") || song.id.startsWith("yphoto:")
+
     private fun frame(song: Song, px: Int): ByteArray? {
         val url = "https://i.ytimg.com/vi/${song.id.removePrefix("y")}/hqdefault.jpg"
         return fromDisk(url, px) ?: fetch(url, px)?.also { toDisk(url, px, it) }

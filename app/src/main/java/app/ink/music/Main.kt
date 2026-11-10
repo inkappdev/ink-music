@@ -478,7 +478,7 @@ private fun App() {
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = if (stopping) slideOutVertically(tween(STOP_MS, easing = Motion.expo)) { it } + fadeOut(tween(STOP_MS, delayMillis = STOP_MS / 2))
                 else slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { PlayerPage(onClose = { playerUp = false }, onOpen = { playerUp = false; pages.open(it) }, onStop = { stopping = true; playerUp = false }) }
+        ) { PlayerPage(onClose = { playerUp = false }, onOpen = { playerUp = false; pages.open(it); if (it == Page.Find) OnAirSong.take()?.let { q -> pages.query = q } }, onStop = { stopping = true; playerUp = false }) }
         val remote = Everywhere.remote.collectAsState().value
         LaunchedEffect(remote == null) { if (remote == null) remoteUp = false }
         androidx.compose.animation.AnimatedVisibility(

@@ -452,7 +452,7 @@ object Curation {
      * The Current's latest play, from its own playlist page (2026-11-10: its old feed, nowplaying.publicradio.org, no
      * longer answers): the page carries its plays as escaped JSON, the latest first, each its time, title, artist, art.
      */
-    private fun current(): Triple<String, String, String?>? {
+    fun current(): Triple<String, String, String?>? {
         val page = get("https://www.thecurrent.org/playlist/the-current").replace("\\\"", "\"")
         val at = page.indexOf("\"plays\":[{").takeIf { it >= 0 } ?: return null
         val play = page.substring(at, minOf(page.length, at + 2_000)).substringBefore("}},{")

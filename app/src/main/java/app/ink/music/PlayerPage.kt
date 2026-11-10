@@ -148,6 +148,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     val mixFrom by Playback.mixFrom.collectAsState()
     val mixK = rememberMixing(real?.mix)
     val n = if (mixK != null && mixK < .5f && mixFrom != null) mixFrom else real
+    // a station's song found on YouTube Music: added to a list, loved (OnAirSong)
+    val airedSong = rememberAiredSong(n)
     // the songs either side read ahead, their covers at the sleeve's size, so a push lands on a cover, not a wait
     LaunchedEffect(n?.song?.id, n?.index) {
         val at = n?.index ?: return@LaunchedEffect
@@ -284,7 +286,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             val none = sing && lines?.isEmpty() == true
             Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
                 if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
-                added = added, onAdd = if (canAddToList(n.song)) ({ addUp = true }) else null, episode = episode)
+                added = added, onAdd = if (canAddToList(airedSong ?: n.song)) ({ addUp = true }) else null, episode = episode)
         }
         // a TV: what opens over the player (the queue, the speakers, a list, what's heard) has the remote; the player under it none
         val over = queueUp || addUp || playOnUp || heardUp
@@ -366,10 +368,10 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) { QueuePage(onClose = { queueUp = false }) }
         androidx.compose.animation.AnimatedVisibility(
-            addUp && n.song != null,
+            addUp && (airedSong ?: n.song) != null,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { (it * .04f).toInt() } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-        ) { n.song?.let { song -> AddToList(song, onDone = { name -> addUp = false; added = name }, onClose = { addUp = false }) } }
+        ) { (airedSong ?: n.song)?.let { song -> AddToList(song, onDone = { name -> addUp = false; added = name }, onClose = { addUp = false }) } }
         androidx.compose.animation.AnimatedVisibility(
             playOnUp,
             enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { (it * .06f).toInt() } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
@@ -432,14 +434,18 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
-                    FadeText(t.title.uppercase(), headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Heart(t.song, 2.dp)
+                    val aired = aired(t)
+                    val airedSong = rememberAiredSong(t)
+                    FadeText(t.title.uppercase(), headline(20.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).then(
+                        if (aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                            onClick = felt { OnAirSong.find(aired.title, aired.artist!!, onOpen) }) else Modifier))
+                    Heart(airedSong ?: t.song, 2.dp)
                 }
                 Spacer(Modifier.height(4.dp))
                 Row {
                     FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null,
-                            onClick = felt { artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
+                            onClick = felt { (artistOf(t) ?: aired(t)?.artist?.substringBefore(", "))?.let { onOpen(Page.Artist(it)) } }))
                     ShareWord(Modifier.padding(start = 12.dp), onShare, onPoster)
                 }
             }
@@ -481,10 +487,15 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
             // shrank for a long title (a listener, 2026-11-01). Still where it moves less (not by marquees off: that's
             // the giant name's)
             val slides = t.moving && !Moves.less.collectAsState().value
+            // a station's song: its title opens find with it typed, the heart loves it once found (OnAirSong)
+            val aired = aired(t)
+            val airedSong = rememberAiredSong(t)
             FadeText(t.title.uppercase(), headline(title), maxLines = 1, softWrap = false,
                 overflow = if (slides) TextOverflow.Clip else TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).then(if (slides) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 2_000, initialDelayMillis = 2_000) else Modifier))
-            Heart(t.song, 3.dp, Modifier.padding(start = 8.dp).tvLit())
+                modifier = Modifier.weight(1f).then(if (slides) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 2_000, initialDelayMillis = 2_000) else Modifier)
+                    .then(if (aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = felt { OnAirSong.find(aired.title, aired.artist!!, onOpen) }) else Modifier))
+            Heart(airedSong ?: t.song, 3.dp, Modifier.padding(start = 8.dp).tvLit())
         }
         Spacer(Modifier.height(8.dp))
         // an easter egg's word, when one's due (on repeat, a 100th time, a promise kept)
@@ -501,7 +512,7 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
             val song = t.song
             FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false).tvLit().clickable(remember { MutableInteractionSource() }, indication = null,
-                    onClick = felt { Hints.did(Hints.NAME); if (song?.episode == true) showOf(song)?.let(onOpen) else artistOf(t)?.let { onOpen(Page.Artist(it)) } }))
+                    onClick = felt { Hints.did(Hints.NAME); if (song?.episode == true) showOf(song)?.let(onOpen) else (artistOf(t) ?: aired(t)?.artist?.substringBefore(", "))?.let { onOpen(Page.Artist(it)) } }))
             if (t.album.isNotBlank() && song?.episode != true) {
                 Spacer(Modifier.width(14.dp))
                 FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,

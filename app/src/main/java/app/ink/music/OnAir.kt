@@ -104,11 +104,12 @@ class OnAir(private val player: Player, private val main: Handler, private val n
                     ?.takeIf { recent(OffsetDateTime.parse(it.getString("datetime")).toInstant().toEpochMilli()) }
                     ?.let { song(it.optString("title"), it.optString("artist"), it.optString("albumImageLarge").replace("100x100bb", "600x600bb")) }
             },
-            "sthe-current" to {
-                JSONObject(IndieChart.get("https://nowplaying.publicradio.org/the-current/playlist")).getJSONObject("data").getJSONArray("songs").optJSONObject(0)
-                    ?.takeIf { recent(OffsetDateTime.parse(it.getString("played_at")).toInstant().toEpochMilli()) }
-                    ?.let { song(it.optString("title"), it.optString("artist"), it.optString("art_url")) }
-            },
+            // from its own playlist page, as the computer's (2026-11-10: its old feed, nowplaying.publicradio.org, no longer answers)
+            "sthe-current" to { Curation.current()?.let { (t, a, art) -> song(t, a, art.orEmpty()) } },
+            // NTS's streams say only "stream": its live feed's show on that channel, said where a song's name goes (no
+            // artist: a show, not a song to look for), as the computer's (2026-11-10)
+            "snts1" to { nts("1") },
+            "snts2" to { nts("2") },
             "swxpn" to {
                 val there = ZoneId.of("America/New_York")
                 JSONArray(IndieChart.get("https://origin.xpn.org/utils/playlist/json/${java.time.LocalDate.now(there)}.json")).optJSONObject(0)
@@ -163,6 +164,19 @@ class OnAir(private val player: Player, private val main: Handler, private val n
          * A stream's title as (title, artist), the artist null for a show or a line with no song:
          * "artist - title", WFMU's "\"title\" by artist on show" (Radio Eins's "von"), a show's "station - show".
          */
+        /** NTS's names come HTML-escaped ("MANTRA &amp; DOUBLE O"). */
+        private fun unescape(t: String) = android.text.Html.fromHtml(t, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
+
+        private fun nts(channel: String): Said? {
+            val results = JSONObject(IndieChart.get("https://www.nts.live/api/v2/live")).getJSONArray("results")
+            for (i in 0 until results.length()) {
+                val ch = results.getJSONObject(i)
+                if (ch.optString("channel_name") != channel) continue
+                return ch.optJSONObject("now")?.optString("broadcast_title")?.let(::unescape)?.trim()?.takeIf { it.isNotEmpty() }?.let { Said(it, null) }
+            }
+            return null
+        }
+
         fun parse(raw: String, station: String): Said? {
             val s = raw.trim().removeSuffix(".mp3").trim()
             val up = s.uppercase()

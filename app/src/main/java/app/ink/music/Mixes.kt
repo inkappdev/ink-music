@@ -10,7 +10,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -105,24 +107,26 @@ object Mixes {
             val chosen = ArrayList<Pair<Song, Tempos.Read>>()
             var begun = false
             var read = 0
-            for (group in all.chunked(4)) {
-                val got = coroutineScope { group.map { f -> async { f()?.let { s -> Tempos.of(app, s)?.let { s to it } } } }.awaitAll() }
-                read += group.size
-                for (p in got) {
-                    val (song, m) = p ?: continue
-                    // its start at the tempo, and its end near it (a half-time outro would leave the mix)
-                    if (!m.usable || !Tempos.fits(m.bpm, bpm.toDouble()) || !Tempos.fits(m.outBpm, bpm.toDouble(), .06) || chosen.any { it.first.id == song.id }) continue
+            val t0 = System.currentTimeMillis()
+            // six read at once, each taken as it comes (2026-11-10: four at a time waited on the slowest of each four, and
+            // a hip-hop mix took a minute and more to begin, only a few in ten of a genre's songs at any one tempo)
+            readEach(all, 6) { f -> f()?.let { s -> Tempos.of(app, s)?.let { s to it } } }.takeWhile { chosen.size < 60 }.collect { p ->
+                read++
+                val (song, m) = p ?: (null to null)
+                // its start at the tempo, and its end near it (a half-time outro would leave the mix)
+                if (song != null && m != null && m.usable && Tempos.fits(m.bpm, bpm.toDouble()) && Tempos.fits(m.outBpm, bpm.toDouble(), .06) && chosen.none { it.first.id == song.id }) {
                     chosen += song to m
-                    if (!begun && chosen.size >= 3) {
+                    // begun at two: the first plays while the rest are found (the second is its handover)
+                    if (!begun && chosen.size >= 2) {
                         val ordered = dj(chosen)
                         withContext(Dispatchers.Main) { Playback.play(ordered.map { it.first }, 0) }
                         tell(app, bpm, ordered.first().first.id)
                         begun = true
+                        android.util.Log.d("ink-picks", "mix $title at $bpm: begun after ${System.currentTimeMillis() - t0} ms, $read of ${all.size} read")
                     } else if (begun) withContext(Dispatchers.Main) { Playback.add(song) }
                 }
                 _state.value = State(title, bpm, read, all.size, chosen.size, begun, false, chosen.map { it.first })
                 if (read % 10 == 0) Tempos.save(app)
-                if (chosen.size >= 60) break
             }
             if (!begun && chosen.isNotEmpty()) {
                 val ordered = dj(chosen)
@@ -154,10 +158,11 @@ object Mixes {
             val unread = ArrayList<Song>()
             val waiting = ArrayList<Pair<Song, Tempos.Read>>()
             var read = 0
-            for (group in all.chunked(4)) {
-                val got = coroutineScope { group.map { s -> async { s to Tempos.of(app, s) } }.awaitAll() }
-                read += group.size
-                for ((s, r) in got) if (r?.usable == true) waiting += s to r else unread += s
+            // six read at once, each taken as it comes (four at a time waited on the slowest of each four)
+            readEach(all, 6) { s -> s to Tempos.of(app, s) }.collect { p ->
+                read++
+                val (s, r) = p ?: return@collect
+                if (r?.usable == true) waiting += s to r else unread += s
                 if (queued.isEmpty() && waiting.size >= 3) {
                     // begun: the slowest of the first ones read, then the next nearest
                     queued += waiting.sortedBy { fold(it.second.bpm) }; waiting.clear()
@@ -188,6 +193,15 @@ object Mixes {
             _state.value = State(title, 0, all.size, all.size, found, found + unread.size > 0, true, (queued + waiting).map { it.first })
         }
     }
+
+    /**
+     * Each of `items` through `read`, `at` at a time, given back as each is done (not in their order): no waiting on the
+     * slowest of a group.
+     */
+    private fun <T, R> readEach(items: List<T>, at: Int, read: suspend (T) -> R) = kotlinx.coroutines.flow.channelFlow {
+        val gate = kotlinx.coroutines.sync.Semaphore(at)
+        items.forEach { i -> launch { gate.acquire(); try { send(runCatching { read(i) }.getOrNull()) } finally { gate.release() } } }
+    }.buffer(at)
 
     /**
      * A song read, put where it meets its neighbours best (the cheapest place to put it in, as a route is mended): its

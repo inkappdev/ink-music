@@ -15,6 +15,9 @@ object OnAir {
     @Volatile private var asking: kotlinx.coroutines.Job? = null
 
     /** NTS 1 or 2: its streams say only "stream" (shown as a song called STREAM, 2026-11-10). */
+    private fun unescape(t: String) = t.replace(Regex("&#(\\d+);")) { it.groupValues[1].toInt().toChar().toString() }
+        .replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">").replace("&apos;", "'").replace("&amp;", "&")
+
     fun isNts(id: String) = id == "snts1" || id == "snts2"
 
     /**
@@ -33,7 +36,8 @@ object OnAir {
                     for (i in 0 until results.length()) {
                         val ch = results.getJSONObject(i)
                         if (ch.optString("channel_name") != channel) continue
-                        val show = ch.optJSONObject("now")?.optString("broadcast_title")?.trim().orEmpty()
+                        // its names come HTML-escaped ("MANTRA &amp; DOUBLE O")
+                        val show = ch.optJSONObject("now")?.optString("broadcast_title")?.let(::unescape)?.trim().orEmpty()
                         if (show.isNotEmpty() && Player.now.value?.song?.id.let { it == null || it == id }) Player.onAir.value = Said(show, null)
                     }
                 }
