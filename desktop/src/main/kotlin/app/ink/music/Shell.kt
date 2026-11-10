@@ -185,7 +185,9 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         Spacer(Modifier.height(8.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
         Spacer(Modifier.height(10.dp))
-        // across the column, as the controls are: room for sleep's "song's end" in the narrowest column
+        // across the column, as the controls are; sleep's "song's end" just "end" in the narrowest (it ran past the edge)
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val tight = maxWidth < 300.dp
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             // the lyrics are the player's (2026-10-28)
             for (w in listOf("up next", "play on")) Word(w, pixel(13.sp, if (w == shows) Ink.ink else Ink.dim), touch = 6.dp) { shows = w }
@@ -194,7 +196,10 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
             // sleep: each click the next (15, 30, 60 minutes, the song's end, off), lit while it's set, the minutes left
             val sleep by Sleep.at.collectAsState()
             val tick by androidx.compose.runtime.produceState(0L, sleep) { while (sleep > 0) { value = System.currentTimeMillis(); kotlinx.coroutines.delay(20_000) } }
-            Word(remember(sleep, tick) { if (sleep == 0L) "sleep" else Sleep.said().removePrefix("sleep · ") }, pixel(13.sp, if (sleep != 0L) Ink.ink else Ink.dim), touch = 6.dp) { Sleep.next() }
+            Word(remember(sleep, tick, tight) {
+                if (sleep == 0L) "sleep" else Sleep.said().removePrefix("sleep · ").let { if (tight && it == "song's end") "end" else it }
+            }, pixel(13.sp, if (sleep != 0L) Ink.ink else Ink.dim), touch = 6.dp) { Sleep.next() }
+        }
         }
         Spacer(Modifier.height(8.dp))
         Box(Modifier.weight(1f).fillMaxWidth()) {

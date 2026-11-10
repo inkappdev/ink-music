@@ -280,7 +280,12 @@ object Player {
                     }
                     "media-title" -> {
                         val s = _queue.value.getOrNull(index)
-                        onAir.value = if (s?.station == true) (e.value as? String)?.takeIf { it != s.title && "://" !in it && !STREAM_FILE.containsMatchIn(it) }?.let { OnAir.parse(it, s.title) } else null
+                        onAir.value = when {
+                            s?.station != true -> null
+                            // NTS's streams say only "stream": its own feed says the show instead (OnAir.nts)
+                            OnAir.isNts(s.id) -> { OnAir.nts(s.id); onAir.value }
+                            else -> (e.value as? String)?.takeIf { it != s.title && "://" !in it && !STREAM_FILE.containsMatchIn(it) }?.let { OnAir.parse(it, s.title) }
+                        }
                     }
                     "playlist-pos" -> { index = (e.value as? Long)?.toInt() ?: -1; heard.value = heard.value?.takeIf { it.id == _queue.value.getOrNull(index)?.id }; tell() }
                     "duration" -> { duration = ((e.value as? Double) ?: 0.0).times(1000).toLong(); tell() }

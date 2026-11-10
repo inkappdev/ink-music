@@ -189,7 +189,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val inner = maxWidth - SIDE * 2
             val wide = inner >= 700.dp
-            LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, bottom = 40.dp)) {
+            LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, bottom = 40.dp)) { cascading {
                 // the spread: side by side while there's room, else the photo over what's said
                 val side = minOf(inner * .4f, 440.dp)
                 item(key = "spread") {
@@ -217,7 +217,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                         FlowRow(verticalArrangement = Arrangement.spacedBy(8.dp)) { counts(); actions() }
                     }
                 }
-                if (waiting) return@LazyColumn
+                if (waiting) return@cascading
                 // the songs of theirs you have first, above all YouTube has: they're why you came
                 if (theirs.isNotEmpty()) item(key = "yours") {
                     Column {
@@ -268,7 +268,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                         }
                     }
                 }
-            }
+            }}
         }
     }
     i?.about?.let { Bio.of(it) }?.takeIf { it.first.isNotEmpty() }?.let { (about, from) ->

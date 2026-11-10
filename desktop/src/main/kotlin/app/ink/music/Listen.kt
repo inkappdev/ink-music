@@ -39,6 +39,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -380,7 +382,12 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
         Close(onClose)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
             item {
-                BasicText(name.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                // loved: ink's red heart beside its name, beating, as the phone's (2026-11-10)
+                if (id == LOVED) Row(verticalAlignment = Alignment.CenterVertically) {
+                    BasicText(name.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.width(18.dp))
+                    Heartbeat { Sprite(HEART, RED, 6.dp) }
+                } else BasicText(name.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
                 val s = songs
                 // kept on this computer: how much room they take too (and each one's right click lets it go)
@@ -545,4 +552,13 @@ private fun YearArt(minutes: Long) {
             BasicText("${now.year}", style = headline(size).copy(lineHeight = size), maxLines = 1)
         }
     }
+}
+
+/** A subtle heartbeat, the phone's: a quick double thump every second and a half, its content gently swelling. */
+@Composable
+private fun Heartbeat(content: @Composable () -> Unit) {
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "beat")
+    val scale by t.animateFloat(1f, 1f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.keyframes { durationMillis = 1500; 1f at 0; 1.07f at 120; 1f at 250; 1.04f at 360; 1f at 520 }), label = "beat")
+    Box(Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) { content() }
 }

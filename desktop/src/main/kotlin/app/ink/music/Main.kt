@@ -482,14 +482,21 @@ private fun App() {
                     }
                 }
             }
-            // the bar along the foot where there's no room for the now column
+            // the bar along the foot where there's no room for the now column: rising a third of itself and in, sinking
+            // away out, as the phone's mini player (2026-11-10; it was there or not)
             val remote = remoteNow()
-            if ((frame != Frame.WIDE || tucked || finding || remote != null) && pages.lastOrNull() != Page.Playing) MiniPlayer(
-                if (frame == Frame.WIDE && !finding) ({ Tuck.set(false) }) else null,
-                { if (pages.lastOrNull() != Page.Queue) pages += Page.Queue },
-                { if (pages.lastOrNull() != Page.PlayOn) pages += Page.PlayOn },
-                { name -> pages += Page.Artist(name) },
-            ) { if (pages.lastOrNull() != Page.Playing) { PlayerSide.right = false; pages += Page.Playing } }
+            AnimatedVisibility(
+                (frame != Frame.WIDE || tucked || finding || remote != null) && pages.lastOrNull() != Page.Playing,
+                enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 3 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 3 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+            ) {
+                MiniPlayer(
+                    if (frame == Frame.WIDE && !finding) ({ Tuck.set(false) }) else null,
+                    { if (pages.lastOrNull() != Page.Queue) pages += Page.Queue },
+                    { if (pages.lastOrNull() != Page.PlayOn) pages += Page.PlayOn },
+                    { name -> pages += Page.Artist(name) },
+                ) { if (pages.lastOrNull() != Page.Playing) { PlayerSide.right = false; pages += Page.Playing } }
+            }
         }
         // the now column, tucked away to the right (its arrow, or ⌘\): the bar along the foot instead
         AnimatedVisibility(

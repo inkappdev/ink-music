@@ -259,10 +259,21 @@ object Home {
         else -> File(System.getenv("XDG_DATA_HOME") ?: (System.getProperty("user.home") + "/.local/share"), "ink-music")
     }).apply { mkdirs() }
 
-    /** What may be thrown away and fetched again: ~/Library/Caches/ink music, ~/.cache/ink-music. */
+    /**
+     * What may be thrown away and fetched again: ~/Library/Caches/ink music, ~/.cache/ink-music, %LOCALAPPDATA%\ink\music.
+     * Windows' was in the app's own folder (%LOCALAPPDATA%\ink music, where it's installed for you), and installing an
+     * update uninstalls first and empties that folder: every cover, artist page and lyric fetched again each time
+     * (2026-11-10). Moved beside it once, kept as it was.
+     */
     val cache: File = (when {
         mac -> File(System.getProperty("user.home"), "Library/Caches/ink music")
-        windows -> File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "ink music\\cache")
+        windows -> {
+            val local = System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home")
+            File(local, "ink\\music").also { now ->
+                val was = File(local, "ink music\\cache")
+                if (was.isDirectory && !now.exists()) runCatching { now.parentFile.mkdirs(); was.renameTo(now) }
+            }
+        }
         else -> File(System.getenv("XDG_CACHE_HOME") ?: (System.getProperty("user.home") + "/.cache"), "ink-music")
     }).apply { mkdirs() }
 

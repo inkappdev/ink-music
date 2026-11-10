@@ -112,7 +112,7 @@ object Loved {
 val HEART = listOf(".##.##.", "#######", "#######", ".#####.", "..###..", "...#...")
 
 /** The heart's red, the desktop's: shown only a moment after loving, the one colour that isn't the art. */
-private val RED = Color(0xFFE8302A)
+internal val RED = Color(0xFFE8302A)
 
 /**
  * A song's heart (the phone's): 35% while not loved; loving it, red for two seconds, then ink (loved, the rest of the

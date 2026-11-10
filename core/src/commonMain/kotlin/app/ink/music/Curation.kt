@@ -448,9 +448,18 @@ object Curation {
         ?.takeIf { recent(iso8601(it.getString("datetime")) ?: 0L) }
         ?.let { Triple(it.optString("title"), it.optString("artist"), it.optString("albumImageLarge").replace("100x100bb", "600x600bb").ifEmpty { null }) }
 
-    private fun current(): Triple<String, String, String?>? = JSONObject(get("https://nowplaying.publicradio.org/the-current/playlist")).getJSONObject("data").getJSONArray("songs").optJSONObject(0)
-        ?.takeIf { recent(iso8601(it.getString("played_at")) ?: 0L) }
-        ?.let { Triple(it.optString("title"), it.optString("artist"), it.optString("art_url").ifEmpty { null }) }
+    /**
+     * The Current's latest play, from its own playlist page (2026-11-10: its old feed, nowplaying.publicradio.org, no
+     * longer answers): the page carries its plays as escaped JSON, the latest first, each its time, title, artist, art.
+     */
+    private fun current(): Triple<String, String, String?>? {
+        val page = get("https://www.thecurrent.org/playlist/the-current").replace("\\\"", "\"")
+        val at = page.indexOf("\"plays\":[{").takeIf { it >= 0 } ?: return null
+        val play = page.substring(at, minOf(page.length, at + 2_000)).substringBefore("}},{")
+        fun field(k: String) = Regex("\"$k\":\"([^\"]*)\"").find(play)?.groupValues?.get(1)
+        if (!recent(iso8601(field("played_at") ?: return null) ?: 0L)) return null
+        return Triple(field("title") ?: return null, field("artist") ?: return null, field("art_url"))
+    }
 
     private fun xpn(): Triple<String, String, String?>? {
         return JSONArray(get("https://origin.xpn.org/utils/playlist/json/${todayIn("America/New_York")}.json")).optJSONObject(0)
