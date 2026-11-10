@@ -305,8 +305,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
             enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
             exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
         ) {
+            // as tall as its speakers; scrolled only where they'd run past half the window and a bit
             Column(
-                Modifier.width(340.dp).heightIn(max = 520.dp).background(Ink.black).border(1.dp, Ink.line)
+                Modifier.width(340.dp).heightIn(max = maxHeight * .55f).background(Ink.black).border(1.dp, Ink.line)
                     .clickable(remember { MutableInteractionSource() }, indication = null) {}
                     .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
             ) {

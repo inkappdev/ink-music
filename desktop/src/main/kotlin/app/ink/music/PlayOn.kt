@@ -1,7 +1,10 @@
 package app.ink.music
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -82,11 +85,21 @@ fun PlayOnList(onPicked: () -> Unit = {}, small: Boolean = false) {
     }
 }
 
-/** A place to play: its name (lit where it plays), and what it is. */
+/**
+ * A place to play: its name (lit where it plays), and what it is; a step brighter under the mouse, its name and its
+ * words both, as ink's words are (2026-11-10, Bronson).
+ */
 @Composable
 private fun Place(name: String, said: String, lit: Boolean, small: Boolean, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
-        BasicText(name, style = headline(if (small) 18.sp else 26.sp, if (lit) Ink.ink else Ink.mid))
-        if (said.isNotEmpty()) BasicText(said, style = pixel(12.sp, Ink.mid))
+    val src = remember { MutableInteractionSource() }
+    val over by src.collectIsHoveredAsState()
+    val named by androidx.compose.animation.animateColorAsState(if (lit || over) Ink.ink else Ink.mid,
+        androidx.compose.animation.core.tween(Motion.FADE), label = "place")
+    val words by androidx.compose.animation.animateColorAsState(if (over) brighter(Ink.mid) else Ink.mid,
+        androidx.compose.animation.core.tween(Motion.FADE), label = "said")
+    Column(Modifier.fillMaxWidth().hoverable(src).pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
+        .clickable(src, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
+        BasicText(name, style = headline(if (small) 18.sp else 26.sp, named))
+        if (said.isNotEmpty()) BasicText(said, style = pixel(12.sp, words))
     }
 }
