@@ -137,7 +137,7 @@ private fun NewList(onMake: (String) -> Unit) {
                 if (name.isEmpty()) BasicText("a name for it", style = pixel(14.sp, Ink.dim))
                 BasicTextField(
                     name, { name = it }, singleLine = true, textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
-                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { k ->
+                    modifier = Modifier.fillMaxWidth().typing().onPreviewKeyEvent { k ->
                         if (k.type == KeyEventType.KeyDown && k.key == Key.Enter) { make(); true } else false
                     },
                 )

@@ -147,7 +147,7 @@ private fun Headphones(onPicked: (String, List<Int>) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BasicText("headphones > ", style = pixel(14.sp, Ink.dim))
             BasicTextField(typed, { typed = it }, singleLine = true, textStyle = pixel(14.sp),
-                cursorBrush = SolidColor(Ink.ink), modifier = Modifier.weight(1f).focusRequester(focus))
+                cursorBrush = SolidColor(Ink.ink), modifier = Modifier.weight(1f).focusRequester(focus).typing())
         }
         Spacer(Modifier.height(8.dp))
         val list = all

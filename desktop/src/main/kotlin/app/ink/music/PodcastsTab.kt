@@ -125,7 +125,7 @@ private fun FindShow() {
             Box(Modifier.weight(1f)) {
                 if (showQuery.isEmpty()) BasicText("SONG EXPLODER", style = headline(30.sp, Ink.dim))
                 BasicTextField(showQuery, { showQuery = it }, singleLine = true, textStyle = headline(30.sp), cursorBrush = SolidColor(Ink.ink),
-                    modifier = Modifier.fillMaxWidth())
+                    modifier = Modifier.fillMaxWidth().typing())
             }
             if (showQuery.isNotEmpty()) Word("clear", pixel(13.sp, Ink.mid), Modifier.padding(start = 16.dp), touch = 8.dp) { showQuery = "" }
         }

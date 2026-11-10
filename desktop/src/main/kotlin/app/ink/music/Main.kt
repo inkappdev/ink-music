@@ -6,6 +6,8 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.composed
+import androidx.compose.ui.focus.onFocusChanged
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -378,6 +380,11 @@ private fun App() {
             }
             .onKeyEvent { k ->
                 if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
+                // a text field has the keys (find, a list's name, a search): space and the arrows are its, not play and
+                // seek. A field takes the letter typed, but a key's press comes on up to here: the space between two
+                // words of a search paused the music (2026-11-10, a Reddit report: "songs stop playing whenever ... song
+                // searches are performed")
+                if (Typing.on && !k.isCtrlPressed && !k.isMetaPressed) return@onKeyEvent false
                 // ↑ ↑ ↓ ↓ ← → ← → B A: 1-bit mode (the arrows still do what they do)
                 val name = when (k.key) { Key.DirectionUp -> "up"; Key.DirectionDown -> "down"; Key.DirectionLeft -> "left"; Key.DirectionRight -> "right"; Key.B -> "b"; Key.A -> "a"; else -> "" }
                 if (name.isNotEmpty() && OneBit.key(name)) return@onKeyEvent true
@@ -1709,6 +1716,16 @@ object PageScroll {
         val now = pages.mapIndexed { i, p -> "$i:${p.hashCode()}" }.toSet()
         kept.keys.removeIf { !it.startsWith("place:") && it.substringBefore("#") !in now }
     }
+}
+
+/** Whether a text field has the keys: the window's own (space, the arrows) are left to it then. */
+object Typing { @Volatile var on = false }
+
+/** A text field's: while it has the keys, [Typing] says so (and stops saying so if it goes away holding them). */
+fun Modifier.typing(): Modifier = composed {
+    val mine = remember { booleanArrayOf(false) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (mine[0]) Typing.on = false } }
+    onFocusChanged { mine[0] = it.isFocused; Typing.on = it.isFocused }
 }
 
 /** When the page on top was opened (ms), going forward (a page opened, a place chosen); 0 going back. */

@@ -358,7 +358,7 @@ private fun Field(name: String, value: String, onValue: (String) -> Unit, hint: 
             BasicTextField(
                 value, onValue, singleLine = true, textStyle = headline(18.sp), cursorBrush = SolidColor(Ink.ink),
                 visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-                modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { k ->
+                modifier = Modifier.fillMaxWidth().typing().onPreviewKeyEvent { k ->
                     if (k.type == KeyEventType.KeyDown && k.key == Key.Enter) { onEnter(); true } else false
                 },
             )

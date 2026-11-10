@@ -129,7 +129,7 @@ fun FindTab(open: (Page) -> Unit) {
                     value, { value = it; Finding.query = it.text }, singleLine = true,
                     textStyle = if (big) headline(44.sp) else pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
                     visualTransformation = if (big) Upper else androidx.compose.ui.text.input.VisualTransformation.None,
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus).onPreviewKeyEvent { k ->
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus).typing().onPreviewKeyEvent { k ->
                         // esc leaves find from its field too (the field had kept it); a second esc with words in it clears them first
                         if (k.type == KeyEventType.KeyDown && k.key == Key.Escape) { if (Finding.query.isNotEmpty()) Finding.query = "" else Nav.back(); true } else
                         if (k.type == KeyEventType.KeyDown && k.key == Key.Enter && enter.isNotEmpty()) { Finding.keep(Finding.query); Player.play(enter, 0); true } else false
