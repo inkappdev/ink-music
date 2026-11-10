@@ -335,16 +335,19 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                 }
                 // the mix as it's found: its tempo beating, the songs dropping in
                 if (playlist) MixProgress(a.title)
-                // what critics said of it (a record's, not a playlist's)
-                if (!playlist) Critics(a.title, a.artist)
+
             }
             Spacer(Modifier.width(40.dp))
             val list = pageList()
             val s = songs.orEmpty()
-            LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
-                itemsIndexed(s, key = { _, x -> x.id }) { i, x ->
-                    SongRow(x, number = "${i + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase(), cover = playlist && covers) { Player.play(s, i) }
+            // the songs in their own box, never past what critics said under them (a record's, not a playlist's)
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f).fillMaxHeight()) {
+                LazyColumn(Modifier.weight(1f, fill = false).feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) {
+                    itemsIndexed(s, key = { _, x -> x.id }) { i, x ->
+                        SongRow(x, number = "${i + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase(), cover = playlist && covers) { Player.play(s, i) }
+                    }
                 }
+                if (!playlist) Critics(a.title, a.artist, across = true)
             }
         }
     }

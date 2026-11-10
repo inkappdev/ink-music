@@ -1031,16 +1031,25 @@ fun Close(onClose: () -> Unit) {
  * where no critic picked it.
  */
 @Composable
-fun Critics(title: String, artist: String, most: Int = 2) {
+fun Critics(title: String, artist: String, most: Int = 3, across: Boolean = false) {
     val all by Picks.said.collectAsState()
     val said = remember(all, title, artist) { Curation.saidOf(all, title, artist).take(most) }
-    said.forEach { p ->
-        Spacer(Modifier.height(26.dp))
-        BasicText("\u201c${p.said}\u201d".uppercase(), style = headline(17.sp).copy(lineHeight = 22.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
-        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    if (said.isEmpty()) return
+    @Composable
+    fun Quote(p: Curation.Pick, modifier: Modifier) = Column(modifier) {
+        BasicText("\u201c${p.said}\u201d".uppercase(), style = headline(if (across) 19.sp else 17.sp).copy(lineHeight = if (across) 24.sp else 22.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicText("\u2014 ${p.from.lowercase()}", style = pixel(12.sp, Ink.mid))
             if (p.link.isNotBlank()) Word("read it", pixel(12.sp, Ink.mid), Modifier.padding(start = 16.dp), touch = 8.dp) { browse(p.link) }
         }
+    }
+    // under a record's songs: a hairline, then the quotes side by side, each its share of the width
+    if (across) Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+        Spacer(Modifier.height(22.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) { said.forEach { Quote(it, Modifier.weight(1f)) } }
+    } else Column(Modifier.padding(top = 10.dp)) {
+        said.forEach { p -> Spacer(Modifier.height(20.dp)); Quote(p, Modifier) }
     }
 }
 
@@ -1073,7 +1082,6 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                     Word("play", pixel(14.sp), touch = 8.dp) { Player.play(a.songs) }
                     KeepOffline(a.songs)
                 }
-                Critics(a.title, a.artist)
             }
         }
         val list = pageList()
@@ -1088,10 +1096,15 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
         if (narrow) LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
             item(key = "head") { Column { head(); Spacer(Modifier.height(24.dp)) } }
             songs()
+            item(key = "said") { Critics(a.title, a.artist) }
         } else Row(Modifier.fillMaxSize()) {
             head()
             Spacer(Modifier.width(40.dp))
-            LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) { songs() }
+            // the songs in their own box, never past the quotes under them (2026-11-09: beside the cover they were crowded)
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                LazyColumn(Modifier.weight(1f, fill = false).feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) { songs() }
+                Critics(a.title, a.artist, across = true)
+            }
         }
         }
     }
