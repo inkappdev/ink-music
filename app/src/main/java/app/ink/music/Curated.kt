@@ -103,7 +103,8 @@ object Picks {
         said.value = (0 until a.length()).map { a.getJSONObject(it) }.map { j ->
             Curation.Pick(true, j.getString("title"), j.getString("artist"), j.getString("from"), j.optString("said"), j.optString("link"), j.optLong("at"), null)
         }
-        true
+        // one cut short at an initial (kept before that was fixed): the feeds read again now, its whole sentence over it
+        said.value.none { Curation.cutShort(it.said) }
     }.getOrDefault(false)
 
     private fun saidJson(p: Curation.Pick) = JSONObject().put("title", p.title).put("artist", p.artist).put("from", p.from)

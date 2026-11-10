@@ -414,6 +414,13 @@ object Curation {
         // Dusted's heading, "Artist — Record (Label)", run into the text: by its shape, not the names (a name can be spelled
         // apart, and a sentence can rightly begin with the artist: "Josh Johnson plays the saxophone like an orchestra")
         else Regex("^[^—–]{1,100}\\s[—–]\\s[^(]{1,160}\\([^)]{1,80}\\)").find(s)?.let { s = s.drop(it.value.length) }
+        // the Quietus's, run on at the end: "...a thrilling call to action Devagar Que A Vida É Curta by Ana Lua Caiano"
+        // (its name in another script in brackets between, sometimes: "Ma Waraa Al-Shaabi (ما وراء الشعبي) by Rizan Said")
+        val tail = Regex(Regex.escape(p.title) + "(\\s*\\([^)]*\\))?\\s+by\\s", RegexOption.IGNORE_CASE).find(s)?.range?.first ?: -1
+        if (tail > 20) s = s.substring(0, tail).trimEnd(' ', ',', ':', '—', '–', '-')
+        // or cut for length before its "by": the record's name left trailing at the end, with the dots
+        else Regex("\\s" + Regex.escape(p.title) + "(\\s*\\([^)]*\\))?…?$", RegexOption.IGNORE_CASE).find(s)?.takeIf { it.range.first > 20 }
+            ?.let { s = s.substring(0, it.range.first).trimEnd(' ', ',', ':', '—', '–', '-') }
         return s.trim()
     }
 
@@ -582,13 +589,21 @@ object Curation {
     /** A blurb's first sentence (what's said, short). */
     private fun sentence(s: String): String {
         val t = s.removeSuffix("…").trim()
-        // not at an initial or a short title: "teams with producer A. G. Cook" isn't a sentence ending at "A." (2026-11-09)
+        // a sentence's end, not an initial or an abbreviation's dot: "teams with producer A. G. Cook", "A.G. Cook",
+        // "the U.S. tour", "Mr. Lloyd" (2026-11-09: Pitchfork's DIIV quote ended at "producer A.")
         val end = Regex("[.!?](\\s|$)").findAll(t).map { it.range.first }.firstOrNull { i ->
-            val word = t.substring(0, i).substringAfterLast(' ')
-            !(word.length == 1 && word[0].isUpperCase()) && word.lowercase() !in setOf("mr", "mrs", "ms", "dr", "st", "vs", "jr", "sr", "feat", "ft", "vol", "no")
+            val word = t.substring(0, i).substringAfterLast(' ').trimStart('(', '"', '“', '‘')
+            val initial = word.length == 1 && word[0].isUpperCase()
+            val dotted = '.' in word
+            !initial && !dotted && word.lowercase() !in setOf("mr", "mrs", "ms", "dr", "st", "vs", "jr", "sr", "feat", "ft", "vol", "no", "pt", "vs")
         }
-        return (if (end != null && end > 20) t.substring(0, end + 1) else t).take(220)
+        val one = if (end != null && end > 20) t.substring(0, end + 1) else t
+        // too long for a quote: to the last whole word, said to go on (it was cut at 220 letters, a word in half)
+        return if (one.length <= 220) one else one.take(220).substringBeforeLast(' ').trimEnd(',', ';', ':', '—', '–', '-', ' ') + "…"
     }
+
+    /** A quote kept before the sentences were found well: one ending on an initial ("…producer A."), read again. */
+    fun cutShort(said: String): Boolean = Regex("(^|\\s)[A-Z]\\.$").containsMatchIn(said.trim())
 
     /** A page's text, its redirects followed (Stereogum answers 308, which Java's connection leaves be). */
     fun get(url: String): String {
