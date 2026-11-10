@@ -56,6 +56,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -2885,42 +2886,57 @@ object SongsFrom {
 }
 
 /**
- * The songs tab's filters under its orders, as the computer's: the sources it has, then a hairline's gap, then the
- * genres your songs are in, dropped down from one word, most first, each with how many. Lit is what's shown; a source
- * and a genre together narrow it to both.
+ * The songs tab's filters under its orders: two drop-downs side by side (2026-11-10: the sources and the genres in one
+ * wrapping line were messy and hard to tap), where they come from (everything, this phone, your server, youtube, kept
+ * offline) and the genre (every genre, or one, most first). Each shows what's chosen with an arrow; tapped, its list
+ * drops down, a row a tap, with how many. A source and a genre together narrow it to both.
  */
 @Composable
 private fun SongFilters(counts: Map<String, Int>, genres: List<Pair<String, Int>>) {
     val from by SongsFrom.chosen.collectAsState()
     val genre by SongsFrom.genre.collectAsState()
     val now = if (from in counts) from else "all"
-    @Composable
-    fun Choice(word: String, count: Int?, lit: Boolean, onClick: () -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
-        Word(word, pixel(13.sp, if (lit) Ink.ink else Ink.dim), touch = 8.dp, onClick = onClick)
-        count?.let { BasicText(" $it", style = pixel(12.sp, if (lit) Ink.mid else Ink.dim)) }
-    }
-    FlowRow(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(18.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (counts.size > 1) SongsFrom.WORDS.filter { (k, _) -> k == "all" || k in counts }.forEach { (k, word) ->
-            Choice(word, counts[k].takeIf { k != "all" }, k == now) { SongsFrom.choose(k) }
+    val sources = SongsFrom.WORDS.filter { (k, _) -> k == "all" || k in counts }
+    // the chosen genre always there, even with none of its songs tagged yet
+    val allGenres = if (genre.isNotEmpty() && genres.none { it.first == genre }) genres + (genre to 0) else genres
+    Row(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+        if (counts.size > 1) DropWord(sources.first { it.first == now }.second, now != "all",
+            listOf(Triple("everything", null, now == "all")) + sources.filter { it.first != "all" }.map { (k, w) -> Triple(w, counts[k], k == now) }) { i ->
+            SongsFrom.choose(if (i == 0) "all" else sources.filter { it.first != "all" }[i - 1].first)
         }
-        if (genres.isNotEmpty() || genre.isNotEmpty()) Box {
-            var down by remember { mutableStateOf(false) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Word(genre.ifEmpty { "every genre" }, pixel(13.sp, if (genre.isEmpty() && !down) Ink.dim else Ink.ink), touch = 8.dp) { down = !down }
-                Sprite(if (down) GENRES_UP else GENRES_DOWN, if (genre.isEmpty() && !down) Ink.dim else Ink.ink, 2.dp, Modifier.padding(start = 4.dp))
-            }
-            if (down) androidx.compose.ui.window.Popup(
-                offset = with(LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 30.dp.roundToPx()) },
-                onDismissRequest = { down = false },
-                properties = androidx.compose.ui.window.PopupProperties(focusable = true),
-            ) {
-                // the chosen one always there, even with none of its songs tagged yet
-                val all = if (genre.isNotEmpty() && genres.none { it.first == genre }) genres + (genre to 0) else genres
-                Column(Modifier.background(Ink.black).border(1.dp, Ink.line).heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp)) {
-                    Choice("every genre", null, genre.isEmpty()) { SongsFrom.setGenre(""); down = false }
-                    all.forEach { (g, n) -> Choice(g, n, g == genre) { SongsFrom.setGenre(g); down = false } }
+        if (allGenres.isNotEmpty()) DropWord(genre.ifEmpty { "every genre" }, genre.isNotEmpty(),
+            listOf(Triple("every genre", null, genre.isEmpty())) + allGenres.map { (g, n) -> Triple(g, n.takeIf { it > 0 }, g == genre) }) { i ->
+            SongsFrom.setGenre(if (i == 0) "" else allGenres[i - 1].first)
+        }
+    }
+}
+
+/**
+ * A word with an arrow that drops a list down under it: what's chosen lit (dim while it's the "every" one), each row a
+ * whole line to tap, its count beside it. Black, a hairline round it, scrolling past a screen's half.
+ */
+@Composable
+private fun DropWord(word: String, lit: Boolean, rows: List<Triple<String, Int?, Boolean>>, onPick: (Int) -> Unit) {
+    var down by remember { mutableStateOf(false) }
+    Box {
+        Row(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { down = !down })
+            .padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText(word, style = pixel(14.sp, if (lit || down) Ink.ink else Ink.mid))
+            Sprite(if (down) GENRES_UP else GENRES_DOWN, if (lit || down) Ink.ink else Ink.mid, 2.dp, Modifier.padding(start = 6.dp))
+        }
+        if (down) androidx.compose.ui.window.Popup(
+            offset = with(LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 40.dp.roundToPx()) },
+            onDismissRequest = { down = false },
+            properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+        ) {
+            Column(Modifier.widthIn(min = 200.dp).background(Ink.black).border(1.dp, Ink.line).heightIn(max = 400.dp)
+                .verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+                rows.forEachIndexed { i, (w, n, on) ->
+                    Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = felt { onPick(i); down = false }).padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BasicText(w, style = pixel(15.sp, if (on) Ink.ink else Ink.mid), modifier = Modifier.weight(1f, fill = false))
+                        n?.let { BasicText("  $it", style = pixel(12.sp, Ink.dim)) }
+                    }
                 }
             }
         }
