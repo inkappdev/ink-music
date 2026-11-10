@@ -215,9 +215,9 @@ fun NewVideos(open: (Page) -> Unit) {
     if (clips.isEmpty()) return
     Column {
         Section("NEW VIDEOS", "from the artists you play")
-        Shelf(cover = 16 / 9f) {
+        Shelf(clips.size, 300.dp, cover = 16 / 9f) { each ->
             items(clips, key = { it.id }) { c ->
-                Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {
+                Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))
                     UnderCover(c.title, "${c.artist}  ·  ${MusicVideos.ago(c.at)}")

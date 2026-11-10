@@ -229,8 +229,24 @@ object Picks {
     fun shown(r: Curation.Release, art: String?) = Shown(Curation.Pick(true, r.title, r.artist, "r/indieheads", "", r.link, 0, art), art,
         listOf(r.genres.take(2).joinToString(", ").lowercase()))
 
-    /** What's on the air, asked again (explore asks each minute while it's up). */
-    suspend fun air() { val a = withContext(Dispatchers.IO) { Curation.onAir() }; if (a.isNotEmpty()) onAir.value = a }
+    /**
+     * What's on the air, asked again (explore asks each minute while it's up). A station that answered keeps its song for
+     * a song's length after (six minutes), so a minute of DJs talking or a feed slow to answer doesn't take it off the
+     * shelf (2026-11-10: two left of six); a song it moves on to replaces it.
+     */
+    suspend fun air() {
+        val a = withContext(Dispatchers.IO) { Curation.onAir() }
+        val now = System.currentTimeMillis()
+        synchronized(heardOnAir) {
+            a.forEach { heardOnAir[it.station] = it to now }
+            heardOnAir.entries.removeAll { now - it.value.second > 6 * 60_000L }
+            // the order the stations are asked in, as before
+            val order = (a.map { it.station } + onAir.value.map { it.station }).distinct()
+            val shown = heardOnAir.values.map { it.first }.sortedBy { s -> order.indexOf(s.station).let { if (it < 0) 99 else it } }
+            if (shown.isNotEmpty()) onAir.value = shown
+        }
+    }
+    private val heardOnAir = LinkedHashMap<String, Pair<Curation.Aired, Long>>()
 
     // ---- found on YouTube Music ----
 

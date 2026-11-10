@@ -22,13 +22,18 @@ object GenrePicks {
     fun all(): List<Picks.Shown> =
         (Picks.records.value + Picks.songs.value + Picks.electronic.value.map { Picks.Shown(it, it.art, listOf(it.from)) }).distinctBy { Curation.key(it.pick) }
 
-    suspend fun tag() = withContext(Dispatchers.IO) {
-        if (one.isLocked) return@withContext
+    /**
+     * The picks' artists tagged, and `more` besides (the songs page's, filtered by genre: 2026-11-10), the picks' first;
+     * a library's worth the first time is a few minutes in the background, the songs page's genres filling as they come.
+     */
+    suspend fun tag(more: Collection<String> = emptyList()) = withContext(Dispatchers.IO) {
+        // a second ask for the picks alone is the first's; one with more waits its turn
+        if (one.isLocked && more.isEmpty()) return@withContext
         one.withLock {
             if (!loaded) { runCatching { Genres.load(file.readText()) }; loaded = true; tagged.value++ }
             if (LastFm.key.isBlank()) return@withLock
             val now = System.currentTimeMillis()
-            val missing = Genres.missing(all().map { it.pick.artist }, now).take(300)
+            val missing = Genres.missing(all().map { it.pick.artist } + more, now).take(if (more.isEmpty()) 300 else 2_000)
             missing.forEachIndexed { i, a ->
                 Genres.read(a, LastFm.key, now)
                 if (i % 15 == 14) { keep(); tagged.value++ }

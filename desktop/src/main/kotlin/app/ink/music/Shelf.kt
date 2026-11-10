@@ -67,6 +67,48 @@ fun Shelf(
     }
 }
 
+/**
+ * A shelf of [count] tiles, [tile] wide at least, that reaches across when they'd all fit (2026-11-10: five stations on the
+ * air stopped halfway across a wide window): each grown to its share of the width, up to [most]; more than fit, each
+ * [tile] wide and sliding, as any shelf. [content] is given the width for each tile.
+ */
+@Composable
+fun Shelf(
+    count: Int,
+    tile: Dp,
+    modifier: Modifier = Modifier,
+    gap: Dp = 20.dp,
+    most: Dp = tile * 1.5f,
+    cover: Float = 1f,
+    content: LazyListScope.(Dp) -> Unit,
+) {
+    BoxWithConstraints(modifier) {
+        val share = if (count > 0) (maxWidth - gap * (count - 1)) / count else tile
+        val each = if (share >= tile) minOf(share, most) else tile
+        Shelf(gap = gap, cover = cover) { content(each) }
+    }
+}
+
+/**
+ * A shelf's turns over something else that slides sideways (2026-11-10: the genres' two rows had no way across with a
+ * mouse): < and > at its ends, level with its middle, a page at a time, each only where there's more that way.
+ */
+@Composable
+fun Turned(state: androidx.compose.foundation.gestures.ScrollableState, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier) {
+        val page = with(density) { (maxWidth * .8f).toPx() }
+        content()
+        Turn("<", state.canScrollBackward, Modifier.align(Alignment.CenterStart)) {
+            scope.launch { state.animateScrollBy(-page, tween(Motion.ENTER, easing = Motion.expo)) }
+        }
+        Turn(">", state.canScrollForward, Modifier.align(Alignment.CenterEnd)) {
+            scope.launch { state.animateScrollBy(page, tween(Motion.ENTER, easing = Motion.expo)) }
+        }
+    }
+}
+
 /** One of a shelf's turns: the word in ink on a black square over the covers' edge; under the pointer, black on ink. */
 @Composable
 private fun Turn(word: String, shown: Boolean, modifier: Modifier, onClick: () -> Unit) {

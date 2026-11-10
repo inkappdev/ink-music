@@ -204,8 +204,8 @@ fun FestivalsShelf(open: (Page) -> Unit) {
     if (soon.isEmpty()) return
     Column {
         Section("FESTIVALS SOON", "who's playing, to know before you go")
-        Shelf(gap = 16.dp) {
-            items(soon, key = { it.name }) { f -> FestivalPoster(f, Modifier.width(250.dp)) { open(Page.Festival(f.name)) } }
+        Shelf(soon.size, 250.dp, gap = 16.dp) { each ->
+            items(soon, key = { it.name }) { f -> FestivalPoster(f, Modifier.width(each)) { open(Page.Festival(f.name)) } }
         }
     }
 }

@@ -184,6 +184,21 @@ private fun <T> TileRow(row: List<T>, across: Int, tile: @Composable (T) -> Unit
     }
 }
 
+/**
+ * A feature's cover (the record of the day, the artist of the week), `across` the room for cover and words together:
+ * whatever the words don't need ([READ] and the gap), from 380 dp up to 640 dp and never taller than 60% of the window, so
+ * a wide window's room goes to the art and the words keep their width (2026-11-10); a narrow one's as before, 42% across.
+ */
+@Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+private fun featureSide(across: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp {
+    val tall = with(androidx.compose.ui.platform.LocalDensity.current) {
+        androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp()
+    }
+    val least = minOf(across * .42f, 380.dp)
+    return (across - READ - 32.dp).coerceIn(least, maxOf(least, minOf(640.dp, tall * .6f)))
+}
+
 /** The record of the day: its cover big, its name, what was said of it and by whom; play, or its page. */
 @Composable
 private fun RecordOfTheDay(d: Picks.Shown, open: (Page) -> Unit) {
@@ -197,7 +212,7 @@ private fun RecordOfTheDay(d: Picks.Shown, open: (Page) -> Unit) {
         if (play) Player.play(YouTube.album(a)) else open(Page.Tube(a))
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val side = minOf(maxWidth * .42f, 380.dp)
+        val side = featureSide(maxWidth)
         Row(verticalAlignment = Alignment.Bottom) {
             Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { go(false) }) {
                 CoverOf(d.face, d.pick.title, Modifier.fillMaxSize(), px = 800)
@@ -233,10 +248,10 @@ private fun OnTheAir(air: List<Curation.Aired>) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column {
         Section("ON THE AIR NOW", "what the djs are playing this minute: a click tunes in")
-        Shelf {
+        Shelf(air.size, 170.dp) { each ->
             items(air, key = { it.station }) { a ->
                 var said by remember(a) { mutableStateOf<String?>(null) }
-                Column(Modifier.width(170.dp)) {
+                Column(Modifier.width(each)) {
                     // the station's cover, else iTunes' (asked aside, never while drawing)
                     val art by produceState(a.art, a) { if (value == null) value = withContext(Dispatchers.IO) { Curation.cover(a.title, a.artist, false) } }
                     val face = remember(a, art) { Song(id = "yair:" + a.station + a.title, path = "", title = a.title, artist = a.artist, album = a.title,
@@ -246,7 +261,7 @@ private fun OnTheAir(air: List<Curation.Aired>) {
                     Box(Modifier.fillMaxWidth().aspectRatio(1f).clickable(remember { MutableInteractionSource() }, indication = null) {
                         if (station != null) Player.play(listOf(station))
                         else scope.launch { said = "finding it"; val s = Picks.song(a.title, a.artist); said = if (s == null) "not on youtube music" else null; s?.let { Player.play(listOf(it)) } }
-                    }) { CoverOf(face, a.title, Modifier.fillMaxSize(), px = 340) }
+                    }) { CoverOf(face, a.title, Modifier.fillMaxSize(), px = (each.value * 2).toInt()) }
                     Spacer(Modifier.height(8.dp))
                     UnderCover(a.title, a.artist)
                     BasicText("on ${a.name}", style = pixel(12.sp, Ink.mid))
@@ -275,11 +290,14 @@ private fun OutThisFriday(w: Curation.Week, open: (Page) -> Unit) {
             items(kinds, key = { it.first }) { (k, l) -> Word("$k ${l.size}", pixel(13.sp, if (kind == k) Ink.ink else Ink.dim), touch = 8.dp) { kind = k } }
         }
         key(kind) {
-            androidx.compose.foundation.lazy.grid.LazyHorizontalGrid(androidx.compose.foundation.lazy.grid.GridCells.Fixed(2), Modifier.height(492.dp),
-                horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                items(shown, key = { it.artist + "/" + it.title }) { r ->
-                    val art by produceState<String?>(null, r) { value = Picks.art(r) }
-                    Box(Modifier.width(160.dp)) { PickTile(remember(r, art) { Picks.shown(r, art) }, open) }
+            val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+            Turned(grid) {
+                androidx.compose.foundation.lazy.grid.LazyHorizontalGrid(androidx.compose.foundation.lazy.grid.GridCells.Fixed(2), Modifier.height(492.dp),
+                    state = grid, horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    items(shown, key = { it.artist + "/" + it.title }) { r ->
+                        val art by produceState<String?>(null, r) { value = Picks.art(r) }
+                        Box(Modifier.width(160.dp)) { PickTile(remember(r, art) { Picks.shown(r, art) }, open) }
+                    }
                 }
             }
         }
@@ -462,7 +480,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit)
     Column {
         Section("ARTIST OF THE WEEK", "someone the djs and critics are into, a new one each monday")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val side = minOf(maxWidth * .42f, 380.dp)
+            val side = featureSide(maxWidth)
             Row(verticalAlignment = Alignment.Bottom) {
                 Box(Modifier.size(side), contentAlignment = Alignment.BottomStart) {
                     i.photo?.let { Dithered(remember(it) { faceSong(i.name, it, photo = true) }, Modifier.fillMaxSize()) }
@@ -587,9 +605,12 @@ private fun Genres(all: List<InnerTube.Mood>, open: (Page) -> Unit) {
     }
     Column {
         Section("GENRES", "youtube music's editors' playlists, the ones you open most first")
-        androidx.compose.foundation.lazy.grid.LazyHorizontalGrid(androidx.compose.foundation.lazy.grid.GridCells.Fixed(2), Modifier.height(GENRE * 2 + 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            items(genres, key = { it.params }) { m -> GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(m); open(Page.Mood(m)) } }
+        val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+        Turned(grid) {
+            androidx.compose.foundation.lazy.grid.LazyHorizontalGrid(androidx.compose.foundation.lazy.grid.GridCells.Fixed(2), Modifier.height(GENRE * 2 + 14.dp),
+                state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                items(genres, key = { it.params }) { m -> GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(m); open(Page.Mood(m)) } }
+            }
         }
     }
 }

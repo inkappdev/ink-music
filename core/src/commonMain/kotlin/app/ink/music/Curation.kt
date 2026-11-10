@@ -432,6 +432,8 @@ object Curation {
     fun onAir(): List<Aired> = listOf(
         Triple("skexp", "kexp", ::kexp), Triple("skcrw-e24", "kcrw eclectic24", ::kcrw), Triple("sthe-current", "the current", ::current),
         Triple("swxpn", "wxpn", ::xpn), Triple("sfip", "fip", ::fip), Triple("swfuv", "wfuv", ::wfuv),
+        // music nearly always (2026-11-10: a minute of DJs talking and a feed down left two on the shelf)
+        Triple("sradio-paradise", "radio paradise", ::paradise),
     ).mapNotNull { (key, name, f) -> runCatching { f() }.getOrNull()?.let { (t, a, art) -> Aired(key, name, t.trim(), a.trim(), art) } }
         // a show, not a song ("|Echoes|", "[station id]")
         .filter { it.title.isNotBlank() && it.artist.isNotBlank() && !it.artist.startsWith("|") && !it.artist.startsWith("[") }
@@ -467,6 +469,10 @@ object Curation {
                 Triple(st.optString("title"), by?.ifEmpty { null } ?: st.optString("authors"), st.optString("visual").ifEmpty { null })
             }
     }
+
+    /** Radio Paradise's main mix: what's on now, its cover large (it says only what's playing, so always recent). */
+    private fun paradise(): Triple<String, String, String?>? = JSONObject(get("https://api.radioparadise.com/api/now_playing?chan=0"))
+        .let { Triple(it.optString("title"), it.optString("artist"), it.optString("cover").ifEmpty { null }) }
 
     private fun wfuv(): Triple<String, String, String?>? {
         return JSONObject(get("https://wfuv.org/sites/default/files/player/playlist/now_playing.json")).optJSONObject("live")

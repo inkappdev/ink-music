@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -210,6 +211,79 @@ fun SignalBand(h: Heard?, onClose: () -> Unit, modifier: Modifier = Modifier) {
                     Crossfade(sg.verdict, animationSpec = tween(Motion.ENTER * 2), label = "verdict") { v ->
                         BasicText(v, style = pixel(13.sp).copy(lineHeight = 19.sp))
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The signal path down the now column (2026-11-10, Bronson: its word opened the whole player, and the path took a second
+ * click there): dropped down from the line under the times, over the song and up next. The band's rack stood on end:
+ * the steps top to bottom, each its square and the line down to the next, the signal travelling down and lighting each
+ * in turn, the step's word over what it is; "exact?" where it arrives. The word again, or the close, takes it away.
+ */
+@Composable
+fun SignalColumn(h: Heard?, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val sg = rememberSignal(h)
+    val steps = sg.steps
+    val per = 140
+    val travel = remember { Animatable(0f) }
+    LaunchedEffect(steps.size) {
+        travel.animateTo(steps.size.toFloat(), tween((per * (steps.size - travel.value)).toInt().coerceAtLeast(per * 2), easing = FastOutSlowInEasing))
+    }
+    val arrived = (travel.value - steps.size + .5f).coerceIn(0f, 1f) * 2f
+    val head = travel.value.toInt().coerceIn(0, steps.size)
+    val px1 = with(androidx.compose.ui.platform.LocalDensity.current) { 1.toDp() }
+    val breath by androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse").animateFloat(
+        .35f, .8f, androidx.compose.animation.core.infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "breath")
+    Column(modifier.fillMaxSize().background(Ink.black).clickable(remember { MutableInteractionSource() }, indication = null) {}
+        .verticalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 24.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            BasicText("WHAT YOU HEAR", style = headline(20.sp))
+            Spacer(Modifier.weight(1f))
+            // it dropped down, so it goes back up: ↑ (an arrow points where its thing goes)
+            Pixel(OPEN_UP, "roll it back up", Ink.ink, Modifier.offset(x = 8.dp), onClick = onClose)
+        }
+        BasicText(sg.word, style = pixel(13.sp, if (sg.lossless) Ink.ink else Ink.mid))
+        Spacer(Modifier.height(20.dp))
+        steps.forEachIndexed { i, (label, value) ->
+            key(label) {
+                val reached = (travel.value - i).coerceIn(0f, 1f).let { it * it * (3 - 2 * it) }
+                val lit = Ink.ink.copy(alpha = if (label == "asking") .35f else .35f + .65f * reached)
+                Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
+                    // its square, lit as the signal reaches it, and the line down to the next filling behind it
+                    Column(Modifier.width(5.dp).fillMaxHeight(), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Spacer(Modifier.height(4.dp))
+                        Dot(androidx.compose.ui.graphics.lerp(Ink.dim, Ink.ink, reached), if (i == head) breath else 0f)
+                        Box(Modifier.padding(top = 6.dp).width(px1).weight(1f).background(Ink.line)) {
+                            Box(Modifier.fillMaxWidth().fillMaxHeight((travel.value - i - .2f).coerceIn(0f, 1f)).background(Ink.ink))
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f).padding(bottom = 16.dp)) {
+                        BasicText(if (label == "asking") "" else label, style = pixel(11.sp, Ink.mid.copy(alpha = Ink.mid.alpha * (.5f + .5f * reached))))
+                        Spacer(Modifier.height(4.dp))
+                        Crossfade(value, animationSpec = tween(Motion.ENTER * 2), label = "value") { v ->
+                            BasicText(v, style = pixel(13.sp, lit).copy(lineHeight = 19.sp))
+                        }
+                        sg.acts[label]?.let { (word, act) -> Word(word, pixel(12.sp, Ink.mid), Modifier.padding(top = 4.dp), touch = 6.dp, onClick = act) }
+                    }
+                }
+            }
+        }
+        // where it arrives: exact?
+        Row(Modifier.graphicsLayer { alpha = arrived }) {
+            Column(Modifier.width(5.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(4.dp))
+                Dot(Ink.ink, if (head == steps.size) breath else 0f)
+            }
+            Spacer(Modifier.width(14.dp))
+            if (sg.verdict.isNotEmpty() && steps.none { it.first == "asking" }) Column(Modifier.weight(1f)) {
+                BasicText("EXACT?", style = headline(18.sp))
+                Spacer(Modifier.height(6.dp))
+                Crossfade(sg.verdict, animationSpec = tween(Motion.ENTER * 2), label = "verdict") { v ->
+                    BasicText(v, style = pixel(13.sp).copy(lineHeight = 19.sp))
                 }
             }
         }

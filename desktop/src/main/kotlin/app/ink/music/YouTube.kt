@@ -82,9 +82,12 @@ object YouTube {
         // as you when signed in (your own playlists are private)
         val tube = TubeAccount.tube() ?: InnerTube()
         val list = Regex("[?&]list=([^&]+)").find(record.url)?.groupValues?.get(1)
+        // a mix ("RD...") goes on for ever, page after page of more like it: its first 50, as the phone reads it, its
+        // queue where it has no page (2026-11-10: Discover Mix was read to the 40-page stop, 1,200 songs in 15 s)
+        val mix = list?.startsWith("RD") == true
         val (own, tracks) = runCatching {
             if ("/browse/" in record.url) tube.album(record.url.substringAfterLast('/'))
-            else list to tube.tracks("VL$list")
+            else list to tube.tracks("VL$list", max = if (mix) 50 else 2_000).ifEmpty { if (mix) tube.queue(list!!) else emptyList() }
         }.getOrNull() ?: return@withContext emptyList()
         val id = own ?: list ?: record.url.hashCode().toString()
         val songs = if (id.startsWith("OLAK5uy_") || "/browse/" in record.url) tracks.mapIndexed { i, t ->

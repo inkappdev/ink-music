@@ -17,6 +17,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -128,16 +130,19 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
         Marquee(said(n).second, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth()
             .clickable(remember { MutableInteractionSource() }, indication = null) { show?.let(open) ?: artist?.let { open(Page.Artist(it)) } }, size = if (tall) 84.sp else 150.sp)
         Column(Modifier.fillMaxSize()) {
-            // close; where in the queue, where it plays (the pixel speaker, lit on one), the whole screen
+            // where it plays (the pixel speaker, lit on one), the mini player, the whole screen; the way out at the top
+            // right, as every page's (2026-11-10: it was top left here, top right there). No "queue" word: up next is
+            // on this page already (2026-11-10, Bronson)
             Row(Modifier.fillMaxWidth().padding(start = SIDE - 8.dp, end = SIDE - 8.dp, top = TOP), verticalAlignment = Alignment.CenterVertically) {
-                CloseArrow(onClick = onClose)
                 Spacer(Modifier.weight(1f))
-                Word(if (n.song.station) "queue" else "${n.index + 1} of ${Player.queue.collectAsState().value.size}", pixel(12.sp, Ink.mid), touch = 10.dp) { open(Page.Queue) }
-                Spacer(Modifier.width(12.dp))
                 Pixel(SPEAKER, if (on != null) "playing on ${on!!.name}" else "play on", if (on != null) Ink.ink else Ink.mid) { open(Page.PlayOn) }
                 // the mini player from here too: out of the whole screen first, then the window away to the dock
                 Pixel(SHRINK, "mini player", Ink.mid) { Win.full(false); Mini.open() }
                 Pixel(if (Win.full) UNFULL else FULL, if (Win.full) "leave full screen" else "full screen", Ink.mid) { Win.full(!Win.full) }
+                Spacer(Modifier.width(14.dp))
+                // opened out of the now column, it goes back right into it (→); else back down (↓)
+                if (PlayerSide.right) Pixel(BACK_RIGHT, "back into the column", Ink.ink, onClick = onClose)
+                else CloseArrow(onClick = onClose)
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(start = SIDE, end = SIDE, top = 8.dp, bottom = if (tall) 110.dp else 190.dp)) {
                 // the cover over the words, not beside them, where beside it the words had a third of the width and the
@@ -264,6 +269,8 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
             val hh = heard?.takeIf { on == null && it.id == n.song.id }
             if (band) SignalBand(hh, { heardUp = false }) else SignalPath(hh) { heardUp = false }
         }
+        // opened out of the now column: its right edge, the way back into it
+        ColumnEdge(onClose)
     }
 }
 
@@ -332,6 +339,8 @@ fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: 
     val live = !n.song.station && n.duration > 0
     var hover by remember { mutableStateOf<Float?>(null) }   // where the mouse is along it, 0 to 1
     var width by remember { mutableStateOf(1) }
+    /** The wheel's last aim along the line and when, so quick notches add up. */
+    val wheeled = remember(n.song.id) { longArrayOf(0L, 0L) }
     val at = held.value
     val frac = if (live) ((at ?: pos).toFloat() / n.duration).coerceIn(0f, 1f) else 0f
     val thick by animateDpAsState(if (live && (hover != null || at != null)) 3.dp else 1.dp, tween(Motion.FADE), label = "thick")
@@ -349,11 +358,20 @@ fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: 
             .then(if (live) Modifier.pointerHoverIcon(PointerIcon.Hand) else Modifier)
             .onPointerEvent(PointerEventType.Move) { hover = (it.changes.first().position.x / width).coerceIn(0f, 1f) }
             .onPointerEvent(PointerEventType.Exit) { hover = null }
+            // the wheel over the line scrubs, 5 s a notch: up or right later, as the volume's up is louder (2026-11-10).
+            // Each notch from where the last one aimed while they come quickly (the position lags a seek, so notches
+            // from it went nowhere), and taken, so the page under the line doesn't scroll too
             .onPointerEvent(PointerEventType.Scroll) { e ->
                 if (!live) return@onPointerEvent
                 val d = e.changes.first().scrollDelta
-                val step = if (kotlin.math.abs(d.x) > kotlin.math.abs(d.y)) d.x else d.y
-                if (step != 0f) Player.seek((Player.position.value + (step * 5_000).toLong()).coerceIn(0, (n.duration - 1_000).coerceAtLeast(0)))
+                val step = if (kotlin.math.abs(d.x) > kotlin.math.abs(d.y)) d.x else -d.y
+                if (step == 0f) return@onPointerEvent
+                val now = System.currentTimeMillis()
+                val from = if (now - wheeled[1] < 700) wheeled[0] else Player.position.value
+                val to = (from + (step * 5_000).toLong()).coerceIn(0, (n.duration - 1_000).coerceAtLeast(0))
+                wheeled[0] = to; wheeled[1] = now
+                Player.seek(to)
+                e.changes.forEach { it.consume() }
             }
             .pointerInput(n.duration, n.song.id) { detectTapGestures { o -> if (live) Player.seek(where(o.x)) } }
             .pointerInput(n.duration, n.song.id) {
@@ -536,9 +554,13 @@ fun RemotePlayerPage(o: Continue.Offer, open: (Page) -> Unit, onClose: () -> Uni
             .clickable(remember { MutableInteractionSource() }, indication = null) { artist?.let { open(Page.Artist(it)) } }, size = 150.sp)
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = SIDE - 8.dp, end = SIDE - 8.dp, top = TOP), verticalAlignment = Alignment.CenterVertically) {
-                CloseArrow(onClick = onClose)
+                // the way out at the top right, as every page's (2026-11-10: it was top left here, top right there)
                 Spacer(Modifier.weight(1f))
                 Pixel(if (Win.full) UNFULL else FULL, if (Win.full) "leave full screen" else "full screen", Ink.mid) { Win.full(!Win.full) }
+                Spacer(Modifier.width(14.dp))
+                // opened out of the now column, it goes back right into it (→); else back down (↓)
+                if (PlayerSide.right) Pixel(BACK_RIGHT, "back into the column", Ink.ink, onClick = onClose)
+                else CloseArrow(onClick = onClose)
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(start = SIDE, end = SIDE, top = 8.dp, bottom = 190.dp)) {
                 val side: Dp = minOf((maxHeight - 17.dp - 18.dp) / 1.05f, maxWidth * .5f).coerceAtLeast(120.dp)
@@ -605,5 +627,28 @@ fun RemotePlayerPage(o: Continue.Offer, open: (Page) -> Unit, onClose: () -> Uni
                 }
             }
         }
+        ColumnEdge(onClose)
+    }
+}
+
+/**
+ * Back into the now column, along the player's right edge where the column comes back (2026-11-10, Bronson: "a better
+ * more intuitive way to put it back to the right"): a hairline down the edge, a › beside it, both lit under the mouse;
+ * a click anywhere on it and the player goes back right. Only for a player opened out of the column ([PlayerSide]).
+ */
+@Composable
+fun androidx.compose.foundation.layout.BoxScope.ColumnEdge(onBack: () -> Unit) {
+    if (!PlayerSide.right) return
+    val src = remember { MutableInteractionSource() }
+    val over by src.collectIsHoveredAsState()
+    val c by animateColorAsState(if (over) Ink.ink else Ink.dim, tween(Motion.FADE), label = "edge")
+    Box(
+        Modifier.align(Alignment.CenterEnd).width(SIDE).fillMaxHeight(.6f)
+            .hoverable(src)
+            .pointerHoverIcon(PointerIcon.Hand).clickable(src, indication = null, onClick = felt(then = onBack)),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Box(Modifier.padding(end = 6.dp).width(1.dp).fillMaxHeight().background(if (over) Ink.mid else Ink.line))
+        Box(Modifier.padding(end = 14.dp)) { Chevron(BACK_RIGHT, 8.dp, 14.dp, c) }
     }
 }

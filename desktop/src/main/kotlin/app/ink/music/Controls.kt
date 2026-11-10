@@ -29,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.sp
@@ -52,26 +54,47 @@ val PAUSE = listOf("##.##", "##.##", "##.##", "##.##", "##.##", "##.##", "##.##"
 private val KNOB = listOf(".##.", "####", "####", "####", "####", "####", ".##.")
 /** Open (the player, the whole window): close's chevron turned up. */
 val OPEN_UP = listOf("...#...", "..###..", ".##.##.", "##...##")
+/** Open's chevron turned to the left: the player opening out of the now column, across the page beside it. */
+val OPEN_LEFT = listOf("...#", "..##", ".##.", "##..", ".##.", "..##", "...#")
+/** And to the right: the player, opened out of the now column, going back into it. */
+val BACK_RIGHT = listOf("#...", "##..", ".##.", "..##", ".##.", "##..", "#...")
 
 /**
- * A cover that opens the player: under the mouse a pixel up arrow on a black tab at its foot, and the hand, so it's
- * plain a click makes it the whole window (2026-10-29).
+ * A cover that opens the player: under the mouse a pixel arrow on a black tab, and the hand, so it's plain a click makes
+ * it the whole window (2026-10-29). An arrow points where its thing goes (2026-11-10): ↑ at its foot, the player rising
+ * over the page; [left], the now column's cover on the window's right, ← at its left edge sliding in right to left, the
+ * player opening out across the page (and going back by →).
  */
 @Composable
-fun Opens(modifier: Modifier, onOpen: () -> Unit, content: @Composable () -> Unit) {
+fun Opens(modifier: Modifier, onOpen: () -> Unit, left: Boolean = false, content: @Composable () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val over by src.collectIsHoveredAsState()
     Box(modifier.hoverable(src).pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)))
         .clickable(src, indication = null, onClick = felt(then = onOpen))) {
         content()
-        if (over) Box(Modifier.align(Alignment.BottomCenter).background(Ink.black).padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 4.dp)) {
-            androidx.compose.foundation.Canvas(Modifier.size(14.dp, 8.dp)) {
-                val cell = size.width / 7
-                OPEN_UP.forEachIndexed { r, row -> row.forEachIndexed { c, ch ->
-                    if (ch == '#') drawRect(Ink.ink, androidx.compose.ui.geometry.Offset(c * cell, r * cell), androidx.compose.ui.geometry.Size(cell, cell))
-                } }
-            }
+        if (left) androidx.compose.animation.AnimatedVisibility(
+            over, Modifier.align(Alignment.CenterStart),
+            enter = androidx.compose.animation.slideInHorizontally(tween(Motion.ENTER, easing = Motion.expo)) { it } +
+                androidx.compose.animation.fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = androidx.compose.animation.slideOutHorizontally(tween(Motion.EXIT, easing = Motion.expo)) { it / 2 } +
+                androidx.compose.animation.fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) {
+            Box(Modifier.background(Ink.black).padding(start = 4.dp, end = 6.dp, top = 10.dp, bottom = 10.dp)) { Chevron(OPEN_LEFT, 8.dp, 14.dp) }
         }
+        else if (over) Box(Modifier.align(Alignment.BottomCenter).background(Ink.black).padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 4.dp)) {
+            Chevron(OPEN_UP, 14.dp, 8.dp)
+        }
+    }
+}
+
+/** A pixel chevron, its rows drawn across `w` by `h`. */
+@Composable
+fun Chevron(rows: List<String>, w: Dp, h: Dp, colour: Color = Ink.ink) {
+    androidx.compose.foundation.Canvas(Modifier.size(w, h)) {
+        val cell = size.width / rows[0].length
+        rows.forEachIndexed { r, row -> row.forEachIndexed { c, ch ->
+            if (ch == '#') drawRect(colour, androidx.compose.ui.geometry.Offset(c * cell, r * cell), androidx.compose.ui.geometry.Size(cell, cell))
+        } }
     }
 }
 
@@ -94,9 +117,12 @@ val SEARCH = listOf(".###...", "#...#..", "#...#..", "#...#..", ".####..", "....
 val FULL = listOf("###.###", "#.....#", "#.....#", ".......", "#.....#", "#.....#", "###.###")
 val UNFULL = listOf("#.....#", "##...##", ".......", ".......", ".......", "##...##", "#.....#")
 
-/** Tuck the now column away (out to the right), and bring it back. */
-val TUCK = listOf("#...", "##..", ".##.", "..##", ".##.", "##..", "#...")
-val UNTUCK = listOf("...#", "..##", ".##.", "##..", ".##.", "..##", "...#")
+/**
+ * Tuck the now column away, down into the bar along the foot; and bring it back up (2026-11-10, Bronson: they were
+ * > and <, which also meant back, slide a row and the player's way). An arrow points where its thing goes.
+ */
+val TUCK = listOf("##...##", ".##.##.", "..###..", "...#...")
+val UNTUCK = listOf("...#...", "..###..", ".##.##.", "##...##")
 
 /** The off things' brightness among the controls (shuffle, repeat off). */
 private val OFF get() = Ink.dim
@@ -125,10 +151,13 @@ fun Controls(n: Player.Now, modifier: Modifier = Modifier, small: Boolean = fals
 
 /**
  * Volume: the small speaker (a click mutes), and a line filling to the level as the song's line fills (click or
- * drag along it), the level beside it. On a speaker, the speaker's own. ↑ and ↓ step it too.
+ * drag along it), the level beside it. On a speaker, the speaker's own. ↑ and ↓ step it too. [shrinks]: the line
+ * gives up width, rather than what's beside the volume being squeezed, where the row hasn't [line]'s room. The wheel
+ * anywhere over it steps it, 2 a notch, up or right louder (2026-11-10).
  */
 @Composable
-fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp) {
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp, shrinks: Boolean = false) {
     val mine by Player.volume.collectAsState()
     val muted by Player.muted.collectAsState()
     val speaker by Casting.volume.collectAsState()
@@ -137,14 +166,28 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp) {
     var dragging by remember { mutableStateOf<Int?>(null) }
     val shown = dragging ?: level
     val quiet = on == null && muted
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+    // the wheel's aim (a fraction, so a trackpad's small steps add up) and when, so quick notches add up while the
+    // level catches up with them
+    val aim = remember { floatArrayOf(0f) }
+    val last = remember { longArrayOf(0L) }
+    Row(modifier.onPointerEvent(PointerEventType.Scroll) { e ->
+        val d = e.changes.first().scrollDelta
+        val step = if (kotlin.math.abs(d.x) > kotlin.math.abs(d.y)) d.x else -d.y
+        if (step == 0f) return@onPointerEvent
+        val now = System.currentTimeMillis()
+        val from = if (now - last[0] < 700) aim[0] else (if (quiet) 0 else level).toFloat()
+        aim[0] = (from + step * 2).coerceIn(0f, 100f); last[0] = now
+        val to = aim[0].toInt()
+        if (to != level || quiet) Player.volume(to)
+        e.changes.forEach { it.consume() }
+    }, verticalAlignment = Alignment.CenterVertically) {
         Pixel(if (quiet || shown == 0) MUTED else LOUD, if (quiet) "unmute" else "mute", if (quiet) OFF else Ink.mid) {
             if (on == null) Player.mute() else Player.volume(0)
         }
         val src = remember { MutableInteractionSource() }
         val over by src.collectIsHoveredAsState()
-        Box(
-            Modifier.width(line).height(17.dp).hoverable(src)
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            (if (shrinks) Modifier.weight(1f, fill = false) else Modifier).width(line).height(17.dp).hoverable(src)
                 .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)))
                 .pointerInput(Unit) { detectTapGestures { Player.volume((it.x / size.width * 100).toInt()) } }
                 .pointerInput(Unit) {
@@ -163,7 +206,7 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp) {
             // controls: a pixel pill at the line's end, a step brighter under the mouse, ink while dragged
             val at = if (quiet) 0f else shown / 100f
             val knob = if (dragging != null) Ink.ink else if (over) brighter(Ink.mid) else Ink.mid
-            androidx.compose.foundation.Canvas(Modifier.offset(x = line * at - 4.dp).size(8.dp, 14.dp)) {
+            androidx.compose.foundation.Canvas(Modifier.offset(x = maxWidth * at - 4.dp).size(8.dp, 14.dp)) {
                 val cell = size.width / 4
                 KNOB.forEachIndexed { r, row -> row.forEachIndexed { c, ch ->
                     if (ch == '#') drawRect(knob, androidx.compose.ui.geometry.Offset(c * cell, r * cell), androidx.compose.ui.geometry.Size(cell, cell))
@@ -175,8 +218,12 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp) {
     }
 }
 
+/**
+ * The way out of what rose over the page (a page and its trail, the player, the signal band): ↓, at its top right, lit
+ * so it's found at once (2026-11-10, the arrows made one rule: an arrow points where its thing goes).
+ */
 @Composable
-fun CloseArrow(modifier: Modifier = Modifier, onClick: () -> Unit) = Pixel(CLOSE, "close", Ink.mid, modifier, onClick = onClick)
+fun CloseArrow(modifier: Modifier = Modifier, onClick: () -> Unit) = Pixel(CLOSE, "close", Ink.ink, modifier, onClick = onClick)
 
 /** A pixel control: a step brighter under the mouse, dimmer while pressed (as a word is), its name for a screen reader. */
 @Composable

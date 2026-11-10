@@ -674,6 +674,21 @@ object Player {
         m.set("pause", "no")
     }
 
+    /**
+     * A queued song moved from `from` to `to` (up next dragged into its order, 2026-11-10); the one playing plays on.
+     * mpv's playlist-move puts it in the place of the entry at its second index, so one moved down goes before `to + 1`.
+     */
+    fun move(from: Int, to: Int) {
+        // a speaker's queue is fixed but for its end
+        if (casting) return
+        val m = mpv ?: return
+        val q = _queue.value
+        if (from !in q.indices || to !in q.indices || from == to) return
+        _queue.value = q.toMutableList().apply { add(to, removeAt(from)) }
+        m.command("playlist-move", from.toString(), (if (from < to) to + 1 else to).toString())
+        keep()
+    }
+
     /** The queue's `i`th song out of it (the one playing: on to the next). */
     fun remove(i: Int) {
         // a speaker's queue is fixed but for its end

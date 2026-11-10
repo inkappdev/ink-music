@@ -117,9 +117,9 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         contentAlignment = Alignment.Center,
     ) { if (over || dragging) Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical = TOP + 40.dp).background(if (dragging) Ink.mid else Ink.line)) }
     Column(Modifier.width(wide).fillMaxHeight().padding(end = SIDE, top = TOP + 4.dp, bottom = 16.dp)) {
-        // tucked away to the right (the bar along the foot shows it instead)
+        // tucked away, down into the bar along the foot (it shows what's playing instead; its ↑ brings this back)
         Box(Modifier.fillMaxWidth().height(36.dp)) {
-            Pixel(TUCK, "tuck away", Ink.dim, Modifier.align(Alignment.CenterEnd).offset(x = 8.dp), onClick = onTuck)
+            Pixel(TUCK, "down into the bar", Ink.mid, Modifier.align(Alignment.CenterEnd).offset(x = 8.dp), onClick = onTuck)
         }
         val n = now
         if (n == null) {
@@ -132,16 +132,19 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         val pos by Player.position.collectAsState()
         val heard by Player.heard.collectAsState()
         val on by Casting.on.collectAsState()
-        // the times, what's heard between them (a click opens the player), the line along the cover's top
+        // the times, what's heard between them (a click drops the signal path down over the column, again takes it
+        // away; it opened the whole player, the path a second click there), the line along the cover's top
+        val hh = heard?.takeIf { it.id == n.song.id && on == null }
+        var pathDown by remember { mutableStateOf(false) }
         Scrubber(n, cover?.accent ?: Ink.ink) {
-            heard?.takeIf { it.id == n.song.id && on == null }?.let { h ->
-                Word(h.word, pixel(12.sp, if (h.lossless) Ink.ink else Ink.mid)) { open(Page.Playing) }
-            }
+            hh?.let { h -> Word(h.word, pixel(12.sp, if (h.lossless || pathDown) Ink.ink else Ink.mid)) { pathDown = !pathDown } }
         }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Column(Modifier.fillMaxSize()) {
         // the song small, so up next and the lyrics have the column (2026-10-28): the cover
         // under the line, its words beside it; the cover opens the player, the big one
         Row(verticalAlignment = Alignment.Top) {
-            Opens(Modifier.size(112.dp), { open(Page.Playing) }) {
+            Opens(Modifier.size(112.dp), { open(Page.Playing) }, left = true) {
                 CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize(), px = 720, moving = n.playing)
             }
             Spacer(Modifier.width(14.dp))
@@ -162,11 +165,20 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         }
         Spacer(Modifier.height(10.dp))
         Controls(n, Modifier.fillMaxWidth())
-        Volume(Modifier.offset(x = (-8).dp), line = 200.dp)
+        // the volume, and at its end the mini player (over every window) and the player, the whole screen: here, as the
+        // words below filled their row once sleep joined them and squeezed these two over each other (2026-11-10)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Volume(Modifier.weight(1f).offset(x = (-8).dp), line = 200.dp, shrinks = true)
+            Row(Modifier.offset(x = 8.dp)) {
+                Pixel(SHRINK, "mini player", Ink.mid) { Mini.open() }
+                Pixel(FULL, "full screen", Ink.mid) { Win.full(true); open(Page.Playing) }
+            }
+        }
         Spacer(Modifier.height(8.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+        // across the column, as the controls are: room for sleep's "song's end" in the narrowest column
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             // the lyrics are the player's (2026-10-28)
             for (w in listOf("up next", "play on")) Word(w, pixel(13.sp, if (w == shows) Ink.ink else Ink.dim), touch = 6.dp) { shows = w }
             // stop: the music over, the queue let go, this column gone (the phone's)
@@ -175,13 +187,6 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
             val sleep by Sleep.at.collectAsState()
             val tick by androidx.compose.runtime.produceState(0L, sleep) { while (sleep > 0) { value = System.currentTimeMillis(); kotlinx.coroutines.delay(20_000) } }
             Word(remember(sleep, tick) { if (sleep == 0L) "sleep" else Sleep.said().removePrefix("sleep · ") }, pixel(13.sp, if (sleep != 0L) Ink.ink else Ink.dim), touch = 6.dp) { Sleep.next() }
-            Spacer(Modifier.weight(1f))
-            // the player, the whole screen
-            // the mini player, over every window; the player, the whole screen
-            Row(Modifier.offset(x = 8.dp)) {
-                Pixel(SHRINK, "mini player", Ink.mid) { Mini.open() }
-                Pixel(FULL, "full screen", Ink.mid) { Win.full(true); open(Page.Playing) }
-            }
         }
         Spacer(Modifier.height(8.dp))
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -197,6 +202,16 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
                 }
                 else -> Column(Modifier.verticalScroll(rememberScrollState())) { PlayOnList(small = true) }
             }
+        }
+        }
+        // the signal path, unrolling down from the line over the song and up next
+        androidx.compose.animation.AnimatedVisibility(
+            pathDown && hh != null,
+            enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(Motion.ENTER * 2, easing = Motion.expo), expandFrom = Alignment.Top) +
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)),
+            exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo), shrinkTowards = Alignment.Top) +
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.EXIT, easing = Motion.expo)),
+        ) { SignalColumn(hh, { pathDown = false }) }
         }
     }
 }

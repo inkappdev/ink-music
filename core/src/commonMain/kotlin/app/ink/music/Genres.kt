@@ -38,6 +38,9 @@ object Genres {
     /** Whether ink knows this genre's tags (the ones it doesn't, decades and the like, keep only YouTube's lists). */
     fun known(genre: String) = TAGS.containsKey(genre.lowercase())
 
+    /** Every genre ink can tell an artist by (the computer's songs filtered by them, 2026-11-10). */
+    val names: List<String> get() = TAGS.keys.toList()
+
     // an artist's top tags (lowercase, most given first) and when they were read
     private val kept = HashMap<String, Pair<List<String>, Long>>()
     private const val KEEP = 60L * 86_400_000

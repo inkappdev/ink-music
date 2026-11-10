@@ -113,9 +113,15 @@ object Covers {
         return withContext(Dispatchers.IO) {
             val t0 = System.nanoTime()
             val disk = song.art != null && (song.server || song.tube || song.episode) && onDisk(song.art, px)
+            // its own (the server's, YouTube's, the feed's, the file's); else the catalogs by its record's name, for every
+            // song, not only a file's; else a YouTube song's own video picture, which there always is. A cover always
+            // comes (2026-11-10, Bronson: "i always want art to load": songs from your history no longer in the
+            // library came back with no link, and a YouTube one was given up on at once)
             val bytes = try { remote(song, px) } catch (e: Server.Busy) {
                 missed[song.albumId] = System.currentTimeMillis(); return@withContext kept.get(song.albumId)
-            } ?: if (song.server || song.tube || song.episode) null else picture(File(song.path)) ?: found(song, px)
+            } ?: (if (song.server || song.tube || song.episode) null else picture(File(song.path)))
+                ?: (if (song.station || song.episode) null else found(song, px))
+                ?: (if (song.tube) frame(song, px) else null)
             val t1 = System.nanoTime()
             missed -= song.albumId
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }
@@ -127,7 +133,9 @@ object Covers {
                 // a picture there is a link to that didn't come (a timeout, a crowd of them at once): asked again a minute
                 // on, as a busy server's is (marked as having none, a lot of Linux's records stayed blank till a restart,
                 // 2026-11-08); none only where there's nothing to ask
-                if (song.art != null && (song.server || song.tube || song.episode)) missed[song.albumId] = System.currentTimeMillis()
+                // and so is one only looked for in the catalogs (offline, or turned away): a song no file holds
+                if (song.server || song.tube || song.episode || song.path.isEmpty())
+                    missed[song.albumId] = System.currentTimeMillis()
                 else none += song.albumId
                 return@withContext null
             }
@@ -218,12 +226,23 @@ object Covers {
         return null
     }
 
-    /** A file's record with no picture of its own (none in its tags or folder): found by name in the catalogs. */
+    /**
+     * A record with no picture of its own (none in its tags or folder, or no link to one): found by name in the
+     * catalogs; a song with no record named, by its own name.
+     */
     private fun found(song: Song, px: Int): ByteArray? {
-        val url = FoundCovers.link(File(Home.cache, "covers"), song.album, song.albumArtist) { a, by ->
+        val record = song.album.ifBlank { song.title }
+        val whose = song.albumArtist.ifBlank { song.artist }.substringBefore(", ")
+        val url = FoundCovers.link(File(Home.cache, "covers"), record, whose) { a, by ->
             // none in the catalogs: YouTube Music's record of that name
             kotlinx.coroutines.runBlocking { YouTube.search("$by $a")?.let { (_, records) -> records.firstOrNull { Pipe.same(it.title, it.artist, a, by) }?.art } }
         } ?: return null
+        return fromDisk(url, px) ?: fetch(url, px)?.also { toDisk(url, px, it) }
+    }
+
+    /** A YouTube song's own video picture (its largest, its middle cut square later): there's one for every video. */
+    private fun frame(song: Song, px: Int): ByteArray? {
+        val url = "https://i.ytimg.com/vi/${song.id.removePrefix("y")}/hqdefault.jpg"
         return fromDisk(url, px) ?: fetch(url, px)?.also { toDisk(url, px, it) }
     }
 
