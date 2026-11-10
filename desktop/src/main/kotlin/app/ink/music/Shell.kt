@@ -97,7 +97,7 @@ private fun Modifier.rising(order: Int): Modifier {
 /** The rail folded in: INK (a click, the INK place) and the arrow by it that brings the rail back out. */
 @Composable
 fun FoldedRail(onInk: () -> Unit) {
-    Column(Modifier.fillMaxHeight().padding(start = SIDE, end = 12.dp, top = TOP + 40.dp)) {
+    Column(Modifier.width(FOLDED).fillMaxHeight().padding(start = SIDE, top = TOP + 40.dp)) {
         // the arrow on the word's middle (it sat low, by the top of its box)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Word("INK", headline(22.sp), Modifier.padding(vertical = 2.dp), touch = 6.dp, onClick = onInk)
@@ -107,6 +107,8 @@ fun FoldedRail(onInk: () -> Unit) {
     }
 }
 
+/** The rail folded in: as wide as INK and its arrow. */
+val FOLDED = 112.dp
 val FOLD_LEFT = listOf("..#", ".#.", "#..", ".#.", "..#")
 val FOLD_RIGHT = listOf("#..", ".#.", "..#", ".#.", "#..")
 

@@ -6,6 +6,8 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.ui.composed
 import androidx.compose.ui.focus.onFocusChanged
 
@@ -442,19 +444,25 @@ private fun App() {
         val finding = pages.lastOrNull() == Page.Find
         Row(Modifier.fillMaxSize()) {
         val railFolded by RailFold.on.collectAsState()
-        // folded in: only the INK wordmark and an arrow by it to bring the rail back out; out, the rail slides open and
-        // its words rise in one after another (2026-11-10)
-        androidx.compose.animation.AnimatedVisibility(frame != Frame.NARROW && railFolded,
-            enter = fadeIn(tween(Motion.ENTER, easing = Motion.expo)), exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
-            FoldedRail { place = "ink"; pages.clear() }
+        // the rail folded in (only the INK wordmark and an arrow by it) or out. The page takes its new width at once and
+        // slides from where it was into place while the rail opens or shuts over black: laid out once, not every frame
+        // as the width moved (2026-11-10: the page shifted jerkily), the rail's words rising in as it opens
+        val railed = frame != Frame.NARROW
+        val fold = remember { androidx.compose.animation.core.Animatable(if (railFolded) 1f else 0f) }
+        LaunchedEffect(railFolded) { fold.animateTo(if (railFolded) 1f else 0f, tween(Motion.ENTER, easing = Motion.expo)) }
+        val laid = if (railFolded) FOLDED else RAIL
+        val seen = RAIL + (FOLDED - RAIL) * fold.value
+        if (railed) Box(Modifier.zIndex(1f).width(laid).fillMaxHeight()
+            .wrapContentWidth(Alignment.Start, unbounded = true)) {
+            Box(Modifier.requiredWidth(seen).fillMaxHeight().background(Ink.black).clipToBounds()) {
+                if (fold.value < 1f) Box(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).graphicsLayer { alpha = 1f - fold.value }) {
+                    Rail(place, { place = it; pages.clear() }, { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++ },
+                        { if (pages.lastOrNull() != Page.Settings) pages += Page.Settings })
+                }
+                if (fold.value > 0f) Box(Modifier.graphicsLayer { alpha = fold.value }) { FoldedRail { place = "ink"; pages.clear() } }
+            }
         }
-        androidx.compose.animation.AnimatedVisibility(frame != Frame.NARROW && !railFolded,
-            enter = expandHorizontally(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Start) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
-            exit = shrinkHorizontally(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Start) + fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
-        Rail(place, { place = it; pages.clear() }, { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++ },
-            { if (pages.lastOrNull() != Page.Settings) pages += Page.Settings })
-        }
-        Column(Modifier.weight(1f).fillMaxHeight()) {
+        Column(Modifier.weight(1f).fillMaxHeight().graphicsLayer { translationX = if (railed) (seen - laid).toPx() else 0f }) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 // the player's over the whole window: under it, the page it was opened from
                 val top = pages.lastOrNull().let { if (it == Page.Playing) pages.dropLast(1).lastOrNull() else it }
