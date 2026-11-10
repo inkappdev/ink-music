@@ -284,6 +284,10 @@ sealed interface Page {
     data class TubeArtist(val artist: app.ink.music.TubeArtist) : Page
     data class Weekly(val week: Int) : Page
     data object Kept : Page
+    /** A smart playlist (SmartLists): its songs, filled from its rules as it opens. */
+    data class Smart(val id: String) : Page
+    /** A smart playlist made or changed: null, a new one. */
+    data class SmartEdit(val id: String?) : Page
     data object Import : Page
     data object Equalizer : Page
     data object HandOver : Page
@@ -448,6 +452,8 @@ private fun App() {
                         is Page.TubeArtist -> ArtistPage(p.artist.name, pages, p.artist.id)
                         is Page.Weekly -> WeeklyPage(p.week, pages)
                         Page.Kept -> KeptPage(pages)
+                        is Page.Smart -> SmartPage(p.id, pages)
+                        is Page.SmartEdit -> SmartEditPage(p.id, pages)
                         Page.Import -> ImportPage(pages)
                         Page.Equalizer -> EqualizerPage(pages)
                         Page.HandOver -> HandOverPage(pages)
@@ -720,6 +726,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                         // what's on the phone to play with no signal (your server's, YouTube's)
                         val keptIds by Offline.kept.collectAsState()
                         if (keptIds.isNotEmpty()) ListRow("kept on this phone", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}, offline") { pages.open(Page.Kept) }
+                        // lists that fill themselves from rules (SmartLists), and a new one
+                        SmartRows(pages)
                         Spacer(Modifier.height(10.dp))
                         if (account != null) { NewPlaylist(null) {}; Spacer(Modifier.height(10.dp)) }
                     }
@@ -3029,4 +3037,195 @@ private fun PickBar(pages: Pages) {
             if (keep.isNotEmpty()) Word("keep offline", pixel(13.sp), touch = 8.dp) { Offline.keep(ctx, keep); said = "KEEPING OFFLINE" }
         }
     }
+}
+
+
+/**
+ * Smart playlists on the phone (SmartLists in core): kept in files/smart-lists.json; each filled as it's opened from
+ * the songs you have (the library's, YouTube's liked and loved, the kept), as the songs tab's pool.
+ */
+object Smart {
+    val lists = kotlinx.coroutines.flow.MutableStateFlow<List<SmartLists.SmartList>>(emptyList())
+    private var file: java.io.File? = null
+    fun start(c: android.content.Context) {
+        if (file != null) return
+        file = java.io.File(c.filesDir, "smart-lists.json").also { f -> lists.value = runCatching { SmartLists.load(f.readText()) }.getOrDefault(emptyList()) }
+    }
+    private fun keep() { file?.let { f -> runCatching { Keep.write(f, SmartLists.save(lists.value)) } } }
+    fun put(l: SmartLists.SmartList) { lists.value = if (lists.value.any { it.id == l.id }) lists.value.map { if (it.id == l.id) l else it } else lists.value + l; keep() }
+    fun remove(id: String) { lists.value = lists.value.filter { it.id != id }; keep() }
+
+    /** What's known of a phone song, for the rules. */
+    fun facts(c: android.content.Context, heard: Listening, loved: Set<String>, kept: Set<String>) = object : SmartLists.Facts<Song> {
+        override fun id(s: Song) = s.id
+        override fun loved(s: Song) = s.id in loved
+        override fun plays(s: Song) = heard.plays[s.id] ?: 0
+        override fun last(s: Song) = heard.last[s.id] ?: 0L
+        override fun added(s: Song) = s.added
+        override fun bpm(s: Song) = Tempos.kept(c, s.id)?.bpm ?: 0.0
+        override fun length(s: Song) = s.duration
+        override fun from(s: Song) = when (SongsFrom.of(s)) { "youtube" -> "youtube"; "server" -> "your server"; else -> "this phone" }
+        override fun kept(s: Song) = s.id in kept
+        override fun genre(s: Song, g: String) = Genres.fits(s.artist, g)
+    }
+}
+
+/** The songs a smart playlist picks from: as the songs tab's (the library's, YouTube's liked and loved, the kept). */
+@Composable
+private fun smartPool(): List<Song> {
+    val ctx = LocalContext.current
+    val songs by Library.songs.collectAsState()
+    val liked by YouTubeAccount.liked.collectAsState()
+    val lovedTube by Loved.tube.collectAsState()
+    val keptIds by Offline.kept.collectAsState()
+    val keptTube = remember(keptIds) { Offline.tubeSongs(ctx).filter { it.id in keptIds } }
+    return remember(songs, liked, lovedTube, keptTube) {
+        val have = songs.mapTo(HashSet()) { it.id }
+        songs + (liked + lovedTube + keptTube).filter { it.id !in have }.distinctBy { it.id }
+    }
+}
+
+/** A smart playlist's songs, picked now. */
+@Composable
+private fun smartSongs(l: SmartLists.SmartList?): List<Song> {
+    val ctx = LocalContext.current
+    val pool = smartPool()
+    val heard by Listened.now.collectAsState()
+    val loved by Loved.ids.collectAsState()
+    val kept by Offline.kept.collectAsState()
+    val tagged by GenrePicks.tagged.collectAsState()
+    return androidx.compose.runtime.produceState(emptyList<Song>(), l, pool, heard, loved, kept, tagged) {
+        value = if (l == null) emptyList() else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            SmartLists.pick(pool, l, Smart.facts(ctx, heard, loved, kept), System.currentTimeMillis())
+        }
+    }.value
+}
+
+/** In lists: each smart playlist (its name, what its rules say) and a new one. */
+@Composable
+private fun SmartRows(pages: Pages) {
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) { Smart.start(ctx) }
+    val all by Smart.lists.collectAsState()
+    all.forEach { l -> ListRow(l.name, "smart · ${SmartLists.said(l)}") { pages.open(Page.Smart(l.id)) } }
+    Word("new smart playlist", pixel(13.sp, Ink.mid), Modifier.padding(vertical = 8.dp), touch = 8.dp) { pages.open(Page.SmartEdit(null)) }
+}
+
+/** A smart playlist's page: its name, what its rules say, play, shuffle, mix, change it; its songs, picked as it opens. */
+@Composable
+private fun SmartPage(id: String, pages: Pages) {
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) { Smart.start(ctx) }
+    val all by Smart.lists.collectAsState()
+    val l = all.firstOrNull { it.id == id }
+    val songs = smartSongs(l)
+    if (l == null) return
+    val covers by ListCovers.on.collectAsState()
+    val list = pageList()
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                BasicText(l.name.uppercase(), style = headline(36.sp), maxLines = 2)
+                Spacer(Modifier.height(6.dp))
+                BasicText("smart · ${SmartLists.said(l)} · ${songs.size} ${if (songs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(14.dp))
+                Row {
+                    if (songs.isNotEmpty()) {
+                        Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(songs, 0) }
+                        Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                        MixWord(l.name, songs, Modifier.padding(end = 26.dp))
+                    }
+                    Word("change", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.SmartEdit(l.id)) }
+                }
+                MixProgress(l.name)
+                if (songs.isEmpty()) BasicText("nothing meets all of these yet" + if (SmartLists.Kind.TEMPO in l.rules) ": a tempo is known once a song's been mixed or played" else "",
+                    style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 14.dp))
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(songs, i) } } }
+    } }
+}
+
+/**
+ * A smart playlist made or changed: its name, the starters (a new one), then each kind of rule with its choices as
+ * words (one tapped sets it, tapped again lets it go; genre drops its list from your genres), the order and how many,
+ * how many songs that finds now; save, or delete.
+ */
+@Composable
+private fun SmartEditPage(id: String?, pages: Pages) {
+    val ctx = LocalContext.current
+    LaunchedEffect(Unit) { Smart.start(ctx) }
+    val was = Smart.lists.collectAsState().value.firstOrNull { it.id == id }
+    var name by rememberSaveable { mutableStateOf(was?.name ?: "") }
+    var rules by remember { mutableStateOf(was?.rules ?: emptyMap()) }
+    var order by remember { mutableStateOf(was?.order ?: SmartLists.Order.SHUFFLED) }
+    var most by remember { mutableStateOf(was?.most ?: 50) }
+    val draft = SmartLists.SmartList(was?.id ?: java.util.UUID.randomUUID().toString(), name.ifBlank { "smart playlist" }, rules, order, most)
+    val found = smartSongs(draft)
+    // the genres your songs are in, most first (as the songs tab's drop-down)
+    val pool = smartPool()
+    val tagged by GenrePicks.tagged.collectAsState()
+    val genres = remember(pool, tagged) { Genres.names.map { g -> g to pool.count { Genres.fits(it.artist, g) } }.filter { it.second > 0 }.sortedByDescending { it.second }.take(12) }
+    val list = pageList()
+    @Composable
+    fun Choice(word: String, lit: Boolean, onClick: () -> Unit) = Word(word, pixel(14.sp, if (lit) Ink.ink else Ink.dim), touch = 8.dp, onClick = onClick)
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            BasicText(if (was == null) "NEW SMART PLAYLIST" else "CHANGE IT", style = headline(36.sp), maxLines = 2)
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicText("name > ", style = pixel(14.sp, Ink.dim))
+                Box(Modifier.weight(1f)) {
+                    if (name.isEmpty()) BasicText("gym, sunday, late", style = pixel(14.sp, Ink.dim))
+                    BasicTextField(name, { name = it }, singleLine = true, textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink), modifier = Modifier.fillMaxWidth())
+                }
+            }
+            // a new one: the starters, a tap fills it in
+            if (was == null) {
+                Spacer(Modifier.height(18.dp))
+                BasicText("START FROM", style = headline(16.sp, Ink.mid))
+                Spacer(Modifier.height(6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    SmartLists.STARTERS.forEach { st -> Choice(st.name, rules == st.rules) { rules = st.rules; order = st.order; if (name.isBlank()) name = st.name } }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            BasicText("EVERY ONE OF THESE", style = headline(16.sp, Ink.mid))
+            SmartLists.Kind.entries.forEach { k ->
+                val choices = if (k == SmartLists.Kind.GENRE) genres.map { it.first } else k.choices
+                if (choices.isEmpty()) return@forEach
+                Spacer(Modifier.height(10.dp))
+                BasicText(k.word, style = pixel(12.sp, Ink.mid))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    choices.forEach { c ->
+                        Choice(c, rules[k] == c) { rules = if (rules[k] == c) rules - k else rules + (k to c) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            BasicText("IN WHAT ORDER", style = headline(16.sp, Ink.mid))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) { SmartLists.Order.entries.forEach { o -> Choice(o.word, order == o) { order = o } } }
+            Spacer(Modifier.height(10.dp))
+            BasicText("HOW MANY", style = headline(16.sp, Ink.mid))
+            Row { listOf(25, 50, 100, 0).forEach { n -> Box(Modifier.padding(end = 20.dp)) { Choice(if (n == 0) "all" else "$n", most == n) { most = n } } } }
+            Spacer(Modifier.height(22.dp))
+            BasicText(if (rules.isEmpty()) "pick at least one" else "finds ${found.size} ${if (found.size == 1) "song" else "songs"} now", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(10.dp))
+            Row {
+                if (rules.isNotEmpty()) Word("SAVE", headline(22.sp), Modifier.padding(end = 28.dp), touch = 8.dp) {
+                    Smart.put(draft); pages.back(); if (was == null) pages.open(Page.Smart(draft.id))
+                }
+                if (was != null) Word("delete", pixel(14.sp, Ink.mid), touch = 8.dp) { Smart.remove(was.id); pages.close() }
+            }
+        }
+    } }
 }
