@@ -115,7 +115,9 @@ source needs its own key.
 
 The release certificate's SHA-256:
 `92eb2c4ea8d70b897db7cf000356f72cc2f3e698c39bb31f4b62ba717747e663`
-(check with `apksigner verify --print-certs`).
+(check with `apksigner verify --print-certs`, or paste into [AppVerifier](https://github.com/soupslurpr/AppVerifier):
+`app.ink.music` and
+`92:EB:2C:4E:A8:D7:0B:89:7D:B7:CF:00:03:56:F7:2C:C2:F3:E6:98:C3:9B:B3:1F:4B:62:BA:71:77:47:E6:63`).
 
 **Mac** (Apple silicon): the `.dmg`. It isn't signed by Apple yet, so the first time, macOS stops it:
 System Settings, Privacy & Security, **Open Anyway**.
