@@ -1,5 +1,9 @@
 package app.ink.music
 
+import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -143,7 +147,11 @@ fun QueuePage(onClose: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        BasicText(q.title.uppercase(), style = headline(18.sp, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // the song playing: its name its progress, filling from the left in its cover's colour (the
+                        // computer's since 2026-11-09; a station, no length, stays plain)
+                        val n = now
+                        if (i == playing && l == null && n != null && n.duration > 0) PlayingTitle(q.title.uppercase(), tone, n)
+                        else BasicText(q.title.uppercase(), style = headline(18.sp, tone), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         BasicText(q.artist.lowercase(), style = pixel(12.sp, if (tone == Ink.ink) Ink.mid else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (options == i) {
@@ -206,5 +214,24 @@ fun RemoteQueuePage(r: Everywhere.Remote, onClose: () -> Unit) {
             }
             Box(Modifier.fillMaxWidth().height(BAND).softEdge(soft, towardBottom = false))
         }
+    }
+}
+
+/**
+ * The playing song's name as its progress (as the computer's queue): the letters in `base`, and over them the same
+ * letters in its cover's colour, the progress line's, cut off where the song's at, moving on smoothly between looks.
+ */
+@Composable
+private fun PlayingTitle(title: String, base: androidx.compose.ui.graphics.Color, n: Now) {
+    var pos by remember { mutableLongStateOf(n.positionNow()) }
+    LaunchedEffect(n) { while (true) { pos = n.positionNow(); if (!n.moving) break; delay(250) } }
+    val target = if (n.duration > 0) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
+    val k by animateFloatAsState(target, tween(300, easing = androidx.compose.animation.core.LinearEasing), label = "filled")
+    val accent = rememberCover(n.song, 300)?.accent ?: Ink.ink
+    val c by androidx.compose.animation.animateColorAsState(accent, tween(Motion.ENTER * 2, easing = Motion.expo), label = "fill")
+    Box {
+        BasicText(title, style = headline(18.sp, base), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        BasicText(title, style = headline(18.sp, c), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.drawWithContent { clipRect(right = size.width * k) { this@drawWithContent.drawContent() } })
     }
 }
