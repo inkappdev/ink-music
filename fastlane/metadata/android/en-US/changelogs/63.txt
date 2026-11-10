@@ -1,8 +1,9 @@
-- The computer: its own title bar on Windows. Media keys show the song and its cover
-- Up next opens with the player, the song playing filling in its cover's colour
-- Right click a song: a small menu where you clicked. Copy its link
-- What you hear, as a band across the player. Upright screens fit
-- Moods, faces and the record of the day load quicker
+- Windows: its own title bar. Media keys show the song and cover
+- Up next: the song playing fills in its cover's color (phone too)
+- Right click a song: a small menu right there. Copy its link
+- What you hear, a band across the player. Upright screens fit
+- The bottom bar calmer: times and beat on the line, the rest in more
 - Linux: an AppImage. Mac: double-click the top to zoom
 - Fixed: Windows wouldn't start for some
 - Your song is now legally required to glow
+- Hold a door for someone today
