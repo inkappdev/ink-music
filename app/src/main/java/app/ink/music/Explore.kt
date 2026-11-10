@@ -1057,7 +1057,9 @@ private fun rememberArtist(name: String): ArtistInfo? =
 private fun Headliner(name: String, played: Boolean, pages: Pages, modifier: Modifier) {
     val info = rememberArtist(name)
     val page = { pages.open(Page.Artist(info?.name ?: name)) }
-    BoxWithConstraints(modifier.fillMaxWidth()) {
+    // the card and its line as one, the space between headliners after both (it was between the photo and its line)
+    Column(modifier.fillMaxWidth()) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
         val side = maxWidth * .46f
         Row(verticalAlignment = Alignment.Bottom) {
             Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = page))) {
@@ -1083,7 +1085,8 @@ private fun Headliner(name: String, played: Boolean, pages: Pages, modifier: Mod
     // a line about them under the card, where the phone has its width
     info?.let { i -> remember(i.about) { pullQuote(i.about).first } }?.let {
         BasicText(it.lowercase(), style = pixel(12.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 18.sp), maxLines = 3, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 10.dp, bottom = 8.dp))
+            modifier = Modifier.padding(top = 8.dp))
+    }
     }
 }
 
