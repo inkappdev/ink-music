@@ -294,28 +294,44 @@ private fun RecordOfTheDay(d: Picks.Shown, pages: Pages) {
         // picture, YouTube Music): the record of the day was showing only its name
         val art by produceState(d.art, d) { value = Picks.coverFor(d.pick.title, d.pick.artist, true) ?: value ?: Picks.art(d.pick.title, d.pick.artist, d.pick.link, true) }
         val face = remember(d, art) { if (art == d.art) d.face else d.copy(art = art).face }
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            Box(Modifier.size(headerSide(maxWidth)).clickable(remember { MutableInteractionSource() }, indication = null) { go(false) }) {
-                CoverOf(face, d.pick.title, Modifier.fillMaxSize())
+        @Composable
+        fun Words() {
+            BasicText(d.pick.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            BasicText(d.pick.artist.lowercase(), style = pixel(14.sp))
+            if (d.pick.said.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                BasicText("“${d.pick.said}”".uppercase(), style = headline(18.sp).copy(lineHeight = 23.sp), maxLines = 6, overflow = TextOverflow.Ellipsis)
+                BasicText("— ${d.pick.from}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                if (YouTubeMusic.available) {
+                    Word("play", pixel(14.sp), touch = 8.dp) { go(true) }
+                    Word("its page", pixel(14.sp, Ink.mid), touch = 8.dp) { go(false) }
+                }
+                if (d.pick.link.isNotBlank()) Word("read it", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                    runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(d.pick.link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                }
             }
         }
-        Spacer(Modifier.height(14.dp))
-        BasicText(d.pick.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
-        BasicText(d.pick.artist.lowercase(), style = pixel(14.sp))
-        if (d.pick.said.isNotBlank()) {
-            Spacer(Modifier.height(12.dp))
-            BasicText("“${d.pick.said}”".uppercase(), style = headline(18.sp).copy(lineHeight = 23.sp), maxLines = 6, overflow = TextOverflow.Ellipsis)
-            BasicText("— ${d.pick.from}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-            if (YouTubeMusic.available) {
-                Word("play", pixel(14.sp), touch = 8.dp) { go(true) }
-                Word("its page", pixel(14.sp, Ink.mid), touch = 8.dp) { go(false) }
+        if (onTv()) {
+            // a TV: its name, the critic's words and play beside the cover (2026-11-10), the cover only to look at
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val side = headerSide(maxWidth)
+                Row {
+                    Box(Modifier.size(side)) { CoverOf(face, d.pick.title, Modifier.fillMaxSize()) }
+                    Spacer(Modifier.width(32.dp))
+                    Column(Modifier.weight(1f)) { Words() }
+                }
             }
-            if (d.pick.link.isNotBlank()) Word("read it", pixel(14.sp, Ink.mid), touch = 8.dp) {
-                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(d.pick.link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        } else {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                Box(Modifier.size(headerSide(maxWidth)).clickable(remember { MutableInteractionSource() }, indication = null) { go(false) }) {
+                    CoverOf(face, d.pick.title, Modifier.fillMaxSize())
+                }
             }
+            Spacer(Modifier.height(14.dp))
+            Words()
         }
         said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
     }
@@ -439,7 +455,13 @@ private fun InkWeeklyCover(pages: Pages) {
                 BoxWithConstraints(Modifier.weight(1f)) {
                     val side = headerSide(maxWidth)
                     Row {
-                        Covers(Modifier.size(side))
+                        // the covers and the songs beside them only to look at: play the week, shuffle and mix are the
+                        // presses; down from them, the week's shelf (2026-11-10: picking a song here as well was twice over)
+                        Box(Modifier.size(side), contentAlignment = Alignment.BottomStart) {
+                            Mosaic(w.songs, Modifier.size(side))
+                            BasicText(w.title.uppercase(), style = headline(52.sp).copy(lineHeight = 50.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.background(Ink.black).padding(start = 0.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
+                        }
                         Spacer(Modifier.width(32.dp))
                         Column(Modifier.weight(1f).height(side)) {
                             if (w.note.isNotEmpty()) BasicText(w.note.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 21.sp),
@@ -448,8 +470,7 @@ private fun InkWeeklyCover(pages: Pages) {
                             PlayRow(Modifier)
                             Spacer(Modifier.height(12.dp))
                             w.songs.take(6).forEachIndexed { n, song ->
-                                Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
-                                    onClick = felt { Playback.play(w.songs, n) }).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                     BasicText("%02d".format(n + 1), style = pixel(12.sp, Ink.dim), modifier = Modifier.width(30.dp))
                                     BasicText(song.title.uppercase(), style = headline(15.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                     BasicText("  ${song.artist.lowercase()}", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
