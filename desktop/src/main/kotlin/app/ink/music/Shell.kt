@@ -165,6 +165,10 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
             for (w in listOf("up next", "play on")) Word(w, pixel(13.sp, if (w == shows) Ink.ink else Ink.dim), touch = 6.dp) { shows = w }
             // stop: the music over, the queue let go, this column gone (the phone's)
             Word("stop", pixel(13.sp, Ink.dim), touch = 6.dp) { Player.stop() }
+            // sleep: each click the next (15, 30, 60 minutes, the song's end, off), lit while it's set, the minutes left
+            val sleep by Sleep.at.collectAsState()
+            val tick by androidx.compose.runtime.produceState(0L, sleep) { while (sleep > 0) { value = System.currentTimeMillis(); kotlinx.coroutines.delay(20_000) } }
+            Word(remember(sleep, tick) { if (sleep == 0L) "sleep" else Sleep.said().removePrefix("sleep · ") }, pixel(13.sp, if (sleep != 0L) Ink.ink else Ink.dim), touch = 6.dp) { Sleep.next() }
             Spacer(Modifier.weight(1f))
             // the player, the whole screen
             // the mini player, over every window; the player, the whole screen

@@ -1,5 +1,8 @@
 package app.ink.music
 
+import androidx.compose.ui.input.pointer.isCtrlPressed as pointerCtrl
+import androidx.compose.ui.input.pointer.isMetaPressed as pointerMeta
+import androidx.compose.ui.input.pointer.onPointerEvent
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.graphics.graphicsLayer
 
@@ -309,6 +312,12 @@ private fun androidx.compose.ui.window.FrameWindowScope.Menus() {
             Separator()
             // the lyrics are the player's: on, it opens to them; off, they go
             CheckboxItem("Lyrics", lyrics, shortcut = cmd(Key.L)) { Lyrics.toggle(); if (Lyrics.on.value && now != null) Nav.player() }
+            Menu("Sleep") {
+                val sleep by Sleep.at.collectAsState()
+                CheckboxItem("Off", sleep == 0L) { Sleep.set(null) }
+                Sleep.CHOICES.forEach { m -> CheckboxItem("In $m Minutes", false) { Sleep.set(m) } }
+                CheckboxItem("At the Song's End", sleep == Sleep.END_OF_SONG) { Sleep.set(0) }
+            }
             Item("Up Next", shortcut = cmd(Key.U)) { Nav.open(Page.Queue) }
             Item("Play On", shortcut = cmd(Key.P)) { Nav.open(Page.PlayOn) }
         }
@@ -339,6 +348,7 @@ val TOP = if (Home.mac) 28.dp else if (InkTitle.on) InkTitle.HEIGHT.dp else 0.dp
 val SIDE = 32.dp
 
 @Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 private fun App() {
     val pages = Nav.pages
     var place by Nav::place
@@ -347,6 +357,12 @@ private fun App() {
     LaunchedEffect(pages.lastOrNull()) { if (pages.lastOrNull() != Page.Find) runCatching { focus.requestFocus() } }
     Box(
         Modifier.fillMaxSize().background(Ink.black).takesDrops().focusRequester(focus).focusable()
+            // ctrl (⌘) and the wheel: bigger or smaller, before anything under the mouse scrolls (2026-11-10, after Limusic's)
+            .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Scroll, androidx.compose.ui.input.pointer.PointerEventPass.Initial) { e: androidx.compose.ui.input.pointer.PointerEvent ->
+                val held = if (Home.mac) e.keyboardModifiers.pointerMeta else e.keyboardModifiers.pointerCtrl
+                val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                if (held && dy != 0f) { if (dy < 0) Size.bigger() else Size.smaller(); e.changes.forEach { it.consume() } }
+            }
             .onKeyEvent { k ->
                 if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
                 // ↑ ↑ ↓ ↓ ← → ← → B A: 1-bit mode (the arrows still do what they do)
@@ -1218,6 +1234,10 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                                 "mini player" to { Mini.open() },
                                 "full screen" to { Win.full(true); onOpen() },
                             ),
+                            // sleep: set, or how long's left and off
+                            if (Sleep.at.value == 0L) Sleep.CHOICES.filter { it in setOf(15, 30, 60) }.map { m -> "sleep in $m min" to { Sleep.set(m) } } +
+                                listOf("sleep at the song's end" to { Sleep.set(0) })
+                            else listOf("${Sleep.said()} · off" to { Sleep.set(null) }),
                             // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
                             listOf("stop" to { Player.stop() }),
                         ),
