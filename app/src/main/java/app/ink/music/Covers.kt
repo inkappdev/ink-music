@@ -67,8 +67,9 @@ object Covers {
             } catch (e: Exception) { null }
                 // a cover always comes (2026-11-10, as the computer's): a server's or YouTube's song with no link, or
                 // one that didn't come, from the catalogs by its record's name; else a YouTube song's own video picture
-                ?: (if (song.server || song.tube) runCatching { found(ctx, song, px) }.getOrNull() else null)
-                ?: (if (song.tube) runCatching { frame(ctx, song, px) }.getOrNull() else null)
+                // (an artist's face or photo, a song only in shape, is never looked for so)
+                ?: (if ((song.server || song.tube) && !face(song)) runCatching { found(ctx, song, px) }.getOrNull() else null)
+                ?: (if (song.tube && !face(song)) runCatching { frame(ctx, song, px) }.getOrNull() else null)
             if (bmp == null) {
                 // a link that didn't come: asked again a minute on; none only where there's nothing to ask
                 if (remote || song.server || song.tube) missed[song.albumId] = System.currentTimeMillis()
@@ -99,6 +100,8 @@ object Covers {
         val found = song.copy(art = url)
         return fromDisk(ctx, found, px) ?: fetch(url, px)?.also { toDisk(ctx, found, px, it) }
     }
+
+    private fun face(song: Song) = song.id.startsWith("yface:") || song.id.startsWith("yphoto:")
 
     /** A YouTube song's own video picture (its largest, its centre square): there's one for every video. */
     private fun frame(ctx: Context, song: Song, px: Int): Bitmap? {

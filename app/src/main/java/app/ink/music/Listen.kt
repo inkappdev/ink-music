@@ -667,7 +667,8 @@ internal fun Tile(song: Song?, name: String, said: String, face: String? = null,
 }
 
 /** An artist's photo as a song-shaped face, so it loads and is kept as covers are. */
-fun faceSong(name: String, face: String) = Song(
-    id = "yface:$name", uri = android.net.Uri.EMPTY, title = name, artist = name, album = name, albumId = "face:$name",
+fun faceSong(name: String, face: String, photo: Boolean = false) = Song(
+    id = (if (photo) "yphoto:" else "yface:") + name, uri = android.net.Uri.EMPTY, title = name, artist = name, album = name,
+    albumId = (if (photo) "photo:" else "face:") + name,
     albumArtist = name, duration = 0, disc = 1, track = 0, year = 0, art = face,
 )
