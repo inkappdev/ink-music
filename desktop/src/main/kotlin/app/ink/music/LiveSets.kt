@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
@@ -59,7 +61,26 @@ object LiveSets {
     }
 }
 
-/** Listen's shelf of them: each frame wide, the DJ, the channel and how long ago. */
+/**
+ * A set's sound alone, in the music player (2026-11-10: listen with the window away): the set as a YouTube song, the
+ * DJ its title, the channel its artist, its frame its cover; from `at`, where the video was, once it's begun.
+ */
+fun listenTo(c: MusicVideos.Clip, at: Long = 0L) {
+    val s = Song(
+        id = "y${c.id}", path = "", title = c.title, artist = c.artist, album = "live dj set", albumId = "y${c.id}",
+        albumArtist = c.artist, duration = 0, disc = 1, track = 0, year = 0, format = "youtube",
+        art = "https://i.ytimg.com/vi/${c.id}/maxresdefault.jpg",
+    ).also(YouTube::remember)
+    Player.play(listOf(s))
+    if (at > 5_000) kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch {
+        repeat(80) {
+            kotlinx.coroutines.delay(250)
+            if (Player.now.value?.song?.id == s.id && Player.position.value > 0) { Player.seek(at); return@launch }
+        }
+    }
+}
+
+/** Listen's shelf of them: each frame wide, the DJ, the channel and how long ago; watch it, or listen only. */
 @Composable
 fun LiveSetsShelf(open: (Page) -> Unit) {
     val clips by LiveSets.clips.collectAsState()
@@ -73,6 +94,10 @@ fun LiveSetsShelf(open: (Page) -> Unit) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))
                     UnderCover(c.title, "${c.artist}  ·  ${MusicVideos.ago(c.at)}")
+                    androidx.compose.foundation.layout.Row(Modifier.padding(top = 4.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(20.dp)) {
+                        Word("watch", pixel(13.sp), touch = 6.dp) { open(Page.Watch(c, clips)) }
+                        Word("listen", pixel(13.sp), touch = 6.dp) { listenTo(c) }
+                    }
                 }
             }
         }

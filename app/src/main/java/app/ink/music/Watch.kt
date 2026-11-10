@@ -121,7 +121,16 @@ fun NewVideosShelf(clips: List<MusicVideos.Clip>, pages: Pages) {
 @Composable
 fun LiveSetsShelf(clips: List<MusicVideos.Clip>, pages: Pages) {
     Heading("live dj sets", "humano studios, hör berlin, the lot radio, boiler room, kiosk radio")
-    Shelf(clips) { c -> VideoTile(c, "${c.artist}  ·  ${agoOf(c.at)}") { pages.open(Page.Watch(c, clips)) } }
+    Shelf(clips) { c ->
+        Column(Modifier.width(240.dp)) {
+            VideoTile(c, "${c.artist}  ·  ${agoOf(c.at)}") { pages.open(Page.Watch(c, clips)) }
+            // watch it, or only listen: the sound in the music player, so the phone can be locked (2026-11-10)
+            Row(Modifier.padding(top = 2.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(22.dp)) {
+                Word("watch", pixel(13.sp), touch = 8.dp) { pages.open(Page.Watch(c, clips)) }
+                Word("listen", pixel(13.sp), touch = 8.dp) { LiveSets.listen(c) }
+            }
+        }
+    }
 }
 
 /** An artist's music videos on their page, newest first: each frame wide, its song and how long ago. */
@@ -368,6 +377,11 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, pages: Pages) {
                         if (player != null) Word(if (playing) "PAUSE" else "PLAY", headline(18.sp), touch = 8.dp) { toggle() }
                         Spacer(Modifier.width(24.dp))
                         Word("FULL SCREEN", headline(18.sp, Ink.mid), touch = 8.dp) { Wide.turn = Wide.Turn.SIDEWAYS }
+                        // only its sound, from here, in the music player: lock the phone and listen on
+                        if (YouTubeMusic.available) {
+                            Spacer(Modifier.width(22.dp))
+                            Word("LISTEN", headline(18.sp, Ink.mid), touch = 8.dp) { val from = player?.currentPosition ?: 0L; pages.back(); LiveSets.listen(c, from) }
+                        }
                     }
                     if (player != null && said.startsWith("it wouldn't")) BasicText(said, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 12.dp))
                 }

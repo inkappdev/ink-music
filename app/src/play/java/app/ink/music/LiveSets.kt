@@ -8,4 +8,5 @@ import kotlinx.coroutines.flow.StateFlow
 object LiveSets {
     val clips: StateFlow<List<MusicVideos.Clip>> = MutableStateFlow(emptyList())
     fun start(ctx: Context) {}
+    fun listen(c: MusicVideos.Clip, at: Long = 0L) {}
 }

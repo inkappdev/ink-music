@@ -365,6 +365,9 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
                     }
                     // stop: the video gone, back where it was opened from (play, the line, next and full screen on the picture)
                     Word("stop", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back() }
+                    // only its sound, from here, in the music player: the window can go away
+                    Spacer(Modifier.size(20.dp))
+                    Word("listen", pixel(14.sp, Ink.mid), touch = 8.dp) { val from = video?.at() ?: 0L; Nav.back(); listenTo(c, from) }
                     next?.let { n ->
                         Spacer(Modifier.size(20.dp))
                         Word("next video", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.back(); open(Page.Watch(n, clips)) }

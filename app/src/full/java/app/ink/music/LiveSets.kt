@@ -46,4 +46,17 @@ object LiveSets {
             }
         }
     }
+
+    /**
+     * A set's sound alone, in the music player (2026-11-10: lock the phone and listen): the set as a YouTube song, the
+     * DJ its title, the channel its artist, its frame its cover; from `at`, where the video was.
+     */
+    fun listen(c: MusicVideos.Clip, at: Long = 0L) {
+        val s = Song(
+            id = "y${c.id}", uri = android.net.Uri.parse("ytm://${c.id}"), title = c.title, artist = c.artist, album = "live dj set",
+            albumId = "y${c.id}", albumArtist = c.artist, duration = 0, disc = 1, track = 0, year = 0,
+            art = "https://i.ytimg.com/vi/${c.id}/maxresdefault.jpg", format = "youtube",
+        ).also(YouTubeMusic::remember)
+        Playback.play(listOf(s), 0, at)
+    }
 }
