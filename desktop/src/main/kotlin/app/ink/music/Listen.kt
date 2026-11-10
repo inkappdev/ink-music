@@ -101,7 +101,7 @@ fun ListenPage(open: (Page) -> Unit) {
     LaunchedEffect(Unit) { Pods.refresh() }
     // one rhythm down the page: the same room between every shelf, each with a head of its own (2026-10-29)
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
-        verticalArrangement = Arrangement.spacedBy(GAP)) {
+        verticalArrangement = Arrangement.spacedBy(GAP)) { cascading {
         // macOS keeping it off the network: why nothing from the server shows
         if (shut) item(key = "shut") { NetworkShut() }
         // a newer ink music, first of all (Updates)
@@ -207,7 +207,7 @@ fun ListenPage(open: (Page) -> Unit) {
                 lists.take(8).forEach { p -> ListRow(p) { open(Page.List(p.id, p.name)) } }
             }
         }
-    }
+    }}
 }
 
 /** New from your artists: each pick by someone you play, its cover, why it's here (out friday, or who picked it, and how often you've played them). */
@@ -266,7 +266,7 @@ fun ListsPage(open: (Page) -> Unit) {
     val gridded by ListsGrid.on.collectAsState()
     if (gridded) return ListsTiles(open)
     val list = pageList()
-    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
+    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
         item { ListsView() }
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
         // what's on the computer to play with no signal (your server's, YouTube's)
@@ -287,7 +287,7 @@ fun ListsPage(open: (Page) -> Unit) {
                 }
             }
         }
-    }
+    }}
 }
 
 /** Lists as a list or a grid: two words, the one chosen lit. */
@@ -378,7 +378,7 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
     val list = pageList()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
-        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) {
+        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
             item {
                 BasicText(name.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
@@ -402,7 +402,7 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 SongRow(x, said = "${x.artist}  ·  ${x.album}".lowercase(), open = open, cover = covers,
                     onRemove = if (id == KEPT) ({ Offline.remove(listOf(x.id)) }) else null) { Player.play(s, i) }
             }
-        }
+        }}
     }
 }
 

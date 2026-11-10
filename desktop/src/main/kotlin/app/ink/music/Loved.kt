@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
 
 /**
  * The songs you love (the phone's Loved): a server song's love is its star on the server, so the phone, the web
@@ -131,9 +133,15 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
         when { red -> RED; song != null && song.id in golden -> GOLD; on -> Ink.ink; else -> Ink.dim },
         tween(if (red) Motion.FADE else Motion.ENTER, easing = Motion.expo), label = "heart",
     )
-    Pixel(HEART, if (on) "unlove" else "love", colour, modifier, cell = cell) {
-        val s = song ?: return@Pixel
-        if (s.id !in loved) lovedAt = System.currentTimeMillis()
-        Loved.toggle(s)
+    // its soft red glow while it's red, as the phone's (2026-11-10): the heart again, red and blurred, under it
+    val glow by androidx.compose.animation.core.animateFloatAsState(if (red) .55f else 0f, tween(if (red) Motion.FADE else 600), label = "glow")
+    androidx.compose.foundation.layout.Box(modifier, contentAlignment = androidx.compose.ui.Alignment.Center) {
+        if (glow > 0f) androidx.compose.foundation.layout.Box(Modifier.graphicsLayer { alpha = glow }
+            .blur(cell, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded)) { Sprite(HEART, RED, cell) }
+        Pixel(HEART, if (on) "unlove" else "love", colour, cell = cell) {
+            val s = song ?: return@Pixel
+            if (s.id !in loved) lovedAt = System.currentTimeMillis()
+            Loved.toggle(s)
+        }
     }
 }

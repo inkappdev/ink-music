@@ -110,7 +110,7 @@ fun ExplorePage(open: (Page) -> Unit) {
         val cool by CoolLists.lists.collectAsState()
         // one rhythm down the page: the same room between every section (2026-10-29)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
-            verticalArrangement = Arrangement.spacedBy(GAP)) {
+            verticalArrangement = Arrangement.spacedBy(GAP)) { cascading {
             // ink weekly, the cover: ours, new each Friday
             item(key = "weekly") { InkWeekly() }
             today?.let { d -> item(key = "today") { RecordOfTheDay(d, open) } }
@@ -166,7 +166,7 @@ fun ExplorePage(open: (Page) -> Unit) {
                     }
                 }
             }
-        }
+        }}
     }
 }
 
@@ -678,7 +678,7 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
     val list = pageList()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
-        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 10.dp, bottom = 32.dp)) {
+        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 10.dp, bottom = 32.dp)) { cascading {
             item {
                 BasicText(m.title.uppercase(), style = headline(80.sp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -733,7 +733,7 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
                     Spacer(Modifier.height(14.dp))
                 }
             }
-        }
+        }}
     }
 }
 

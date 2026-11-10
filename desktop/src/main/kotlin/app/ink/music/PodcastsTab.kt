@@ -215,13 +215,13 @@ fun ShowPage(feed: String, first: Podcasts.Show?, open: (Page) -> Unit, onClose:
             Spacer(Modifier.width(40.dp))
             val list = pageList()
             LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                verticalArrangement = Arrangement.spacedBy(16.dp)) { cascading {
                 if (failed) item { BasicText("couldn't read this show's feed", style = pixel(12.sp, Ink.mid)) }
                 if (episodes == null && !failed) item { BasicText("reading its episodes", style = pixel(12.sp, Ink.mid)) }
                 val all = episodes.orEmpty()
                 items(all.take(shown), key = { it.id }) { e -> EpisodeRow(e, places[e.id] ?: 0L, withShow = false, on = now?.song?.id == e.id, open = open) }
                 if (all.size > shown) item(key = "more") { Word("older episodes", pixel(14.sp, Ink.mid), touch = 8.dp) { shown += 60 } }
-            }
+            }}
         }
     }
 }

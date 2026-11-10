@@ -5,6 +5,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -117,6 +120,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
     val artist = n.song.takeUnless { it.station || it.episode }?.let { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
     // an episode's words open its show, where a song's open its artist and record
     val show = remember(n.song.id) { if (n.song.episode) Pods.page(n.song) else null }
+    // which way the last change went, for the push: on (a later song in the queue, from the right) or back (from the left)
+    val was = remember { intArrayOf(n.index) }
+    val dir = remember(n.song.id) { (if (n.index >= was[0]) 1 else -1).also { was[0] = n.index } }
     val behind by Looks.on.collectAsState()
     val coverLook by Moving.cover.collectAsState()
     val names by Marquees.on.collectAsState()
@@ -152,6 +158,14 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 val side: Dp = (if (upright) minOf(maxWidth * .6f, (maxHeight - 35.dp) * .44f)
                     else minOf((maxHeight - 17.dp - 18.dp) / 1.05f, maxWidth * .5f)).coerceAtLeast(120.dp)
                 val off = side * .05f
+                // a track change is the iPod push, as the phone's (2026-11-10, Bronson: "match the phone's animations"):
+                // the cover and the words together, the next song in from the right, back from the left
+                val push = { s: AnimatedContentTransitionScope<*>, dir: Int ->
+                    with(s) {
+                        (slideInHorizontally(tween(Motion.ENTER, easing = Motion.expo)) { it * dir / 3 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
+                            (slideOutHorizontally(tween(Motion.EXIT, easing = Motion.expo)) { -it * dir / 3 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)))
+                    }
+                }
                 val coverPart: @Composable () -> Unit = {
                     Column(Modifier.width(side + off)) {
                         Scrubber(n, accent, Modifier.width(side)) {
@@ -159,18 +173,21 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             val castQuality by Casting.quality.collectAsState()
                             HeardWord(if (on != null) sent(castQuality, n.song.id) else heard?.takeIf { it.id == n.song.id }, typing) { heardUp = !heardUp }
                         }
-                        Box(Modifier.size(side + off)) {
-                            // its print beside it, while there's no background (the background takes its place)
-                            if (!n.song.station && behind == Look.PLAIN) Dithered(n.song, Modifier.offset(off, off).size(side), px = 1200)
-                            Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }) {
-                                val density = androidx.compose.ui.platform.LocalDensity.current.density
-                                CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize().graphicsLayer {
-                                    renderEffect = coverLook?.takeIf { !n.song.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
-                                }, px = 1200, moving = n.playing)
-                                // the record's moving cover over it, where it has one (settings, the look)
-                                if (!n.song.station && !n.song.episode) MovingCover(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }, n.song.album, n.song.title,
-                                    accent, n.playing, Modifier.fillMaxSize())
-                                Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
+                        // each side of the push its own song's cover (the leaving one isn't drawn as the arriving one)
+                        AnimatedContent(n.song, transitionSpec = { push(this, dir) }, contentKey = { it.id }, label = "push") { s ->
+                            Box(Modifier.size(side + off)) {
+                                // its print beside it, while there's no background (the background takes its place)
+                                if (!s.station && behind == Look.PLAIN) Dithered(s, Modifier.offset(off, off).size(side), px = 1200)
+                                Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }) {
+                                    val density = androidx.compose.ui.platform.LocalDensity.current.density
+                                    CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxSize().graphicsLayer {
+                                        renderEffect = coverLook?.takeIf { !s.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
+                                    }, px = 1200, moving = n.playing && s.id == n.song.id)
+                                    // the record's moving cover over it, where it has one (settings, the look)
+                                    if (!s.station && !s.episode) MovingCover(s.albumArtist.ifBlank { s.artist.substringBefore(", ") }, s.album, s.title,
+                                        accent, n.playing && s.id == n.song.id, Modifier.fillMaxSize())
+                                    if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
+                                }
                             }
                         }
                     }
@@ -178,30 +195,33 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 val wordsPart: @Composable (Modifier) -> Unit = { m ->
                     Column(m) {
                         val (title, by) = said(n)
+                        // pushed with the cover on a track change; a station's next song (the same station) rising in
                         AnimatedContent(
-                            n.song.id + title,
+                            Triple(n.song, title, by),
                             transitionSpec = {
-                                (slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 4 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
+                                if (initialState.first.id != targetState.first.id) push(this, dir)
+                                else (slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 4 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo))) togetherWith
                                     (slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { -it / 4 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)))
                             },
+                            contentKey = { it.first.id + it.second },
                             label = "song",
-                        ) { _ ->
+                        ) { (s, title, by) ->
                             Column {
                                 Row(verticalAlignment = Alignment.Top) {
                                     WholeWords(title.uppercase(), headline(44.sp), 3, Modifier.weight(1f, fill = false))
-                                    Heart(n.song, 3.dp, Modifier.padding(start = 8.dp))
+                                    Heart(s, 3.dp, Modifier.padding(start = 8.dp))
                                 }
                                 Spacer(Modifier.height(12.dp))
-                                if (n.song.episode) Word(by.lowercase(), pixel(14.sp)) { show?.let(open) }
-                                else if (!n.song.station) Word(by.lowercase(), pixel(14.sp)) { artist?.let { open(Page.Artist(it)) } }
-                                if (n.song.album.isNotEmpty() && !n.song.episode) Word(n.song.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }
+                                if (s.episode) Word(by.lowercase(), pixel(14.sp)) { show?.let(open) }
+                                else if (!s.station) Word(by.lowercase(), pixel(14.sp)) { open(Page.Artist(s.albumArtist.ifBlank { s.artist.substringBefore(", ") })) }
+                                if (s.album.isNotEmpty() && !s.episode) Word(s.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(s.albumId)) }
                                 Spacer(Modifier.height(4.dp))
                                 // an episode's day out ("oct 31"), a song's year
-                                val day = if (n.song.episode && n.song.modified > 0) java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(n.song.modified)).lowercase() else null
-                                BasicText(listOfNotNull(day ?: n.song.year.takeIf { it > 0 }?.toString(), on?.let { "on ${it.name.lowercase()}" }).joinToString("  ·  "),
+                                val day = if (s.episode && s.modified > 0) java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(s.modified)).lowercase() else null
+                                BasicText(listOfNotNull(day ?: s.year.takeIf { it > 0 }?.toString(), on?.let { "on ${it.name.lowercase()}" }).joinToString("  ·  "),
                                     style = pixel(12.sp, Ink.mid))
                                 // an easter egg's word, when one's due (on repeat, a 100th time, a promise kept)
-                                EggsNow.line(n.song)?.let { BasicText(it, style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 6.dp)) }
+                                EggsNow.line(s)?.let { BasicText(it, style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 6.dp)) }
                             }
                         }
                         Spacer(Modifier.height(22.dp))

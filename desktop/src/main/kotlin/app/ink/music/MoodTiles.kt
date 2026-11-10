@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.hoverable
@@ -324,20 +325,22 @@ fun FestivalPage(name: String, open: (Page) -> Unit, onClose: () -> Unit) {
                 Spacer(Modifier.height(48.dp))
                 BasicText("THE BILL", style = headline(18.sp, Ink.mid))
                 Spacer(Modifier.height(16.dp))
-                // the one under the mouse beside it where there's room; on a narrow page the names alone, each to their page
+                // the one under the mouse right beside the names where there's room; on a narrow page the names alone, each
+                // to their page. Kept together (2026-11-10, Bronson: "feels too far away, too much black"): the names in a
+                // column no wider than a poster's, in bigger type, the photo at its side, not across the page
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val beside = maxWidth >= 760.dp
                     Row(verticalAlignment = Alignment.Top) {
-                        FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
-                            itemVerticalAlignment = Alignment.Bottom) {
+                        FlowRow(Modifier.weight(1f, fill = false).widthIn(max = 780.dp), horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.Bottom) {
                             bill.forEachIndexed { i, a ->
-                                val size = when { i < 4 -> 40.sp; i < 12 -> 28.sp; else -> 20.sp }
+                                val size = when { i < 4 -> 52.sp; i < 10 -> 36.sp; else -> 24.sp }
                                 BillName(a, size, i, a in yours, { over = a }) { open(Page.Artist(a)) }
                             }
                         }
                         if (beside) {
-                            Spacer(Modifier.width(40.dp))
-                            WhoIs(over ?: bill.first(), open, Modifier.width(300.dp))
+                            Spacer(Modifier.width(36.dp))
+                            WhoIs(over ?: bill.first(), open, Modifier.width(260.dp))
                         }
                     }
                 }

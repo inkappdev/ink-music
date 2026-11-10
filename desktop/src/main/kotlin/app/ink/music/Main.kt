@@ -435,6 +435,10 @@ private fun App() {
                 // the player's over the whole window: under it, the page it was opened from
                 val top = pages.lastOrNull().let { if (it == Page.Playing) pages.dropLast(1).lastOrNull() else it }
                 LaunchedEffect(pages.toList()) { PageScroll.stack(pages.toList()) }
+                // going forward (a page opened over another, a place chosen) or back, for the rows' cascade (LocalOpened)
+                val depth = pages.count { it != Page.Playing }
+                val deepest = remember { intArrayOf(depth) }
+                val forward = remember(depth, place) { (depth >= deepest[0]).also { deepest[0] = depth } }
                 AnimatedContent(
                     top,
                     transitionSpec = {
@@ -446,7 +450,9 @@ private fun App() {
                     // each page's place kept while it's under another, and each of the library's places while another's shown
                     // (the phone's, 2026-11-08: back from a genre's page went to INK's top)
                     val at = if (page == null) -1 else pages.indexOf(page)
-                    androidx.compose.runtime.CompositionLocalProvider(LocalPageKey provides (if (page == null) "place:$place" else if (at >= 0) "$at:${page.hashCode()}" else null)) {
+                    val opened = remember(page, if (page == null) place else null) { if (forward) System.currentTimeMillis() else 0L }
+                    androidx.compose.runtime.CompositionLocalProvider(LocalPageKey provides (if (page == null) "place:$place" else if (at >= 0) "$at:${page.hashCode()}" else null),
+                        LocalOpened provides opened) {
                     when (page) {
                         null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
                         is Page.Record -> RecordPage(page.id, { pages += it }) { Nav.close() }
@@ -707,14 +713,17 @@ private fun PlaceMenu(tab: String, shown: Boolean, modifier: Modifier, onFold: (
     }
 }
 
-/** A word of the places' menu, arriving after the one before it (ink's stagger), rising a little as it fades in. */
+/**
+ * A word of the places' menu, arriving after the one before it, rising as it fades in: ink's own arrive, 50 ms apart
+ * and 20 dp, as the phone's (2026-11-10; it was half that here).
+ */
 @Composable
 private fun MenuPlace(place: Int, shown: Boolean, content: @Composable () -> Unit) {
     val a = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(shown) {
-        if (shown) { a.snapTo(0f); kotlinx.coroutines.delay(Motion.STAGGER / 2L * place); a.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
+        if (shown) { a.snapTo(0f); kotlinx.coroutines.delay(Motion.STAGGER.toLong() * place); a.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
     }
-    Box(Modifier.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 8.dp.toPx() }) { content() }
+    Box(Modifier.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * Motion.drift.toPx() }) { content() }
 }
 
 @Composable
@@ -810,9 +819,9 @@ private fun SongGrid(songs: List<Song>) {
 @Composable
 private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
     val list = pageList()
-    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
+    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) { cascading {
         itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(songs, i) } }
-    }
+    }}
 }
 
 /** A song as words: its title, and under it who and where; lit while it plays. A click plays it, in its list. */
@@ -1199,11 +1208,11 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
             }
             item { Around(a, albums, open) }
         }
-        if (narrow) LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) {
+        if (narrow) LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 32.dp)) { cascading {
             item(key = "head") { Column { head(); Spacer(Modifier.height(24.dp)) } }
             songs()
             item(key = "said") { Critics(a.title, a.artist) }
-        } else Row(Modifier.fillMaxSize()) {
+        }} else Row(Modifier.fillMaxSize()) {
             head()
             Spacer(Modifier.width(40.dp))
             // the songs in their own box, never past the quotes under them (2026-11-09: beside the cover they were crowded)
@@ -1699,6 +1708,41 @@ object PageScroll {
     fun stack(pages: kotlin.collections.List<Page>) {
         val now = pages.mapIndexed { i, p -> "$i:${p.hashCode()}" }.toSet()
         kept.keys.removeIf { !it.startsWith("place:") && it.substringBefore("#") !in now }
+    }
+}
+
+/** When the page on top was opened (ms), going forward (a page opened, a place chosen); 0 going back. */
+val LocalOpened = androidx.compose.runtime.compositionLocalOf { 0L }
+
+/**
+ * A page's rows arriving in turn as it opens, the phone's (2026-11-10, Bronson: "i like all the phone animations"): ink's
+ * [arrive], up 20 dp and in, 50 ms apart, the first eight, the rest with the eighth; rows that come later (scrolled to),
+ * and pages gone back to, just there.
+ */
+@Composable
+fun Modifier.cascade(i: Int): Modifier {
+    val opened = LocalOpened.current
+    val now = remember { System.currentTimeMillis() }
+    if (opened == 0L || now - opened > 600) return this
+    return this.arrive(i.coerceAtMost(8), Unit)
+}
+
+/**
+ * A page's list whose rows [cascade] in as it opens, each in the order it's put in the list (one line where the list's
+ * rows are made: `cascading { ... }`, rather than every row wrapped by hand).
+ */
+fun androidx.compose.foundation.lazy.LazyListScope.cascading(rows: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) = Cascading(this).rows()
+
+private class Cascading(private val scope: androidx.compose.foundation.lazy.LazyListScope) : androidx.compose.foundation.lazy.LazyListScope by scope {
+    private var n = 0
+    override fun item(key: Any?, contentType: Any?, content: @Composable androidx.compose.foundation.lazy.LazyItemScope.() -> Unit) {
+        val i = n++
+        scope.item(key, contentType) { val row = this; Box(Modifier.cascade(i)) { row.content() } }
+    }
+    override fun items(count: Int, key: ((index: Int) -> Any)?, contentType: (index: Int) -> Any?,
+                       itemContent: @Composable androidx.compose.foundation.lazy.LazyItemScope.(index: Int) -> Unit) {
+        val first = n; n += count
+        scope.items(count, key, contentType) { at -> val row = this; Box(Modifier.cascade(first + at)) { row.itemContent(at) } }
     }
 }
 
