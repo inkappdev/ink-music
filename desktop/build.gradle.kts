@@ -45,7 +45,9 @@ val writeKeys by tasks.registering {
 tasks.named("processResources") { dependsOn(writeKeys) }
 
 dependencies {
-    implementation(compose.desktop.currentOs)
+    // Compose's desktop bundle without Material (and its ripple): ink draws with foundation alone, and Material came
+    // along unused, 1.6 MB in every download (2026-11-09)
+    implementation(compose.desktop.currentOs) { exclude(group = "org.jetbrains.compose.material") }
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
     // libmpv's client API, called by hand (LGPL / Apache-2.0)
     implementation("net.java.dev.jna:jna:5.19.1")
