@@ -48,6 +48,8 @@ object Picks {
             kept?.let { show(it) }
             // a day kept before it was checked against YouTube Music: read again now
             readAt = kept?.takeIf { it.optBoolean("checked") }?.optLong("at") ?: 1L
+            // no quotes kept yet (2026-11-09, before what critics said was kept): the feeds read now, not in half a day
+            if (!loadSaid()) readAt = 1L
             // the day's record kept without its cover (it wasn't among those asked): asked for now, not at the next read
             today.value?.takeIf { it.art == null }?.let { d ->
                 scope.launch {
@@ -72,7 +74,11 @@ object Picks {
             SpotifyLists.picks(System.currentTimeMillis()) { Log.d("picks: $it") }
         }.getOrDefault(emptyList())).sortedByDescending { it.at }
         if (all.isEmpty()) return@coroutineScope
-        said.value = all.filter { it.record && it.said.isNotBlank() }.take(800)
+        // what was said, kept for good: added to what earlier reads kept (a record keeps its quote after its review
+        // leaves the feeds), each publication's once, the newest 5000
+        said.value = (all.filter { it.record && it.said.isNotBlank() } + said.value)
+            .distinctBy { it.from.lowercase() + "|" + Curation.key(it) }.sortedByDescending { it.at }.take(5000)
+        runCatching { keepSaid() }
         // one of each (a record several named shows once, with all who named it), its cover found
         val firsts = all.groupBy(Curation::key).values.map { group -> group.first() to group.map { it.from }.distinct() }
         // covers: the feed's own, else one found before, else iTunes', asked a few at a time and forty at most a read (it
@@ -102,10 +108,21 @@ object Picks {
         readAt = System.currentTimeMillis()
         runCatching {
             Home.write(file, JSONObject().put("at", readAt).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
-                .put("songs", JSONArray(songs.value.map(::json)))
-                .put("said", JSONArray(said.value.map { saidJson(it) })).toString())
+                .put("songs", JSONArray(songs.value.map(::json))).toString())
         }
     }
+
+    /** What critics said, kept for good (not with the day's picks in the cache, which the system may clear). */
+    private val saidFile by lazy { File(Home.dir, "critics.json") }
+    private fun keepSaid() { saidFile.writeText(JSONArray(said.value.map { saidJson(it) }).toString()) }
+    /** The kept quotes, read once at start; false when there are none yet (the feeds are read at once then). */
+    private fun loadSaid(): Boolean = runCatching {
+        val a = JSONArray(saidFile.readText())
+        said.value = (0 until a.length()).map { a.getJSONObject(it) }.map { j ->
+            Curation.Pick(true, j.getString("title"), j.getString("artist"), j.getString("from"), j.optString("said"), j.optString("link"), j.optLong("at"), null)
+        }
+        true
+    }.getOrDefault(false)
 
     private fun saidJson(p: Curation.Pick) = JSONObject().put("title", p.title).put("artist", p.artist).put("from", p.from)
         .put("said", p.said).put("link", p.link).put("at", p.at)
@@ -123,9 +140,6 @@ object Picks {
     private fun show(o: JSONObject) {
         fun list(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { shown(a.getJSONObject(it)) } }.orEmpty()
         records.value = list("records"); songs.value = list("songs")
-        said.value = o.optJSONArray("said")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { j ->
-            Curation.Pick(true, j.getString("title"), j.getString("artist"), j.getString("from"), j.optString("said"), j.optString("link"), j.optLong("at"), null)
-        } }.orEmpty()
         today.value = o.optJSONObject("today")?.let(::shown)
     }
 
