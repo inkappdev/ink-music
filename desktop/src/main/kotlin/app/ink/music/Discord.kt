@@ -21,8 +21,11 @@ import java.nio.channels.SocketChannel
  * switched off; Discord not running, it's looked for again every half minute.
  */
 object Discord {
-    /** ink music's application on Discord (discord.com/developers): its name is what's shown, "ink music". */
-    private const val APP = ""   // to fill: Bronson makes the application
+    /**
+     * ink music's application on Discord (discord.com/developers, "INK Music", made 2026-11-10): its name is what's
+     * shown, "Listening to INK Music", its icon beside it; its art asset "ink" (the icon) where a song's cover has no link.
+     */
+    private const val APP = "1569768395262533672"
 
     private val file = File(Home.dir, "discord-off")
     val on = MutableStateFlow(!file.exists())
