@@ -1,0 +1,5 @@
+# ink music's own code, all of it, compiled ahead of time where Android allows (2026-11-10). The onn (a slow TV box)
+# scrolled listen at 35% late frames with it run as it came, 9% compiled: the startup profile says compile it all
+# (R8 carries these rules through its renaming). Compose and the other libraries bring their own.
+HSPLapp/ink/music/**->**(**)**
+Lapp/ink/music/**;

@@ -159,7 +159,7 @@ private fun VideoTile(c: MusicVideos.Clip, said: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ClipFrame(c: MusicVideos.Clip, modifier: Modifier) {
+internal fun ClipFrame(c: MusicVideos.Clip, modifier: Modifier) {
     val f by produceState<VideoFrame?>(frames.get(c.id), c.id) { if (value == null) value = frameOf(c.id) }
     BoxWithConstraints(modifier) {
         f?.let { Image(it.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) } ?: NameCover(c.title, maxWidth)

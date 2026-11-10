@@ -252,7 +252,7 @@ fun Modifier.feather(
     top: () -> Float, bottom: () -> Float,
     // a short fade (2026-10-25: subtler than ink tv's): it softens the edge, not a band
     topSize: Dp = 20.dp, bottomSize: Dp = 32.dp,
-): Modifier = this
+): Modifier = if (Device.tv) featherOnBlack(top, bottom, topSize, bottomSize) else this
     .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
     .drawWithContent {
         drawContent()
@@ -269,6 +269,23 @@ fun Modifier.feather(
         }.toTypedArray()
         drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(*stops), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
     }
+
+/**
+ * The feather on a TV: black drawn over the edges, fading in, rather than the list's own opacity masked (2026-11-10).
+ * On black it looks the same, and it needs no copy of the list in a layer of its own each frame (the onn's scrolling).
+ */
+private fun Modifier.featherOnBlack(top: () -> Float, bottom: () -> Float, topSize: Dp, bottomSize: Dp): Modifier = drawWithContent {
+    drawContent()
+    val h = size.height
+    if (h <= 0f) return@drawWithContent
+    val t = (topSize.toPx() * top()).coerceIn(0f, h / 2)
+    val b = (bottomSize.toPx() * bottom()).coerceIn(0f, h / 2)
+    val black = androidx.compose.ui.graphics.Color.Black
+    val clear = androidx.compose.ui.graphics.Color.Transparent
+    if (t > 0f) drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(black, clear), startY = 0f, endY = t), size = androidx.compose.ui.geometry.Size(size.width, t))
+    if (b > 0f) drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(clear, black), startY = h - b, endY = h),
+        topLeft = androidx.compose.ui.geometry.Offset(0f, h - b), size = androidx.compose.ui.geometry.Size(size.width, b))
+}
 
 /** A scrolling list's feather: each edge on while there's more of the list that way, easing on and off. */
 @Composable

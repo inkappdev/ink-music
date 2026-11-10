@@ -665,7 +665,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
        // what scrolls sideways inside a page (a row of covers) keeps its scroll: run to its end, it doesn't turn the page
        Box(Modifier.fillMaxSize().nestedScroll(keepSideways)) {
         when (tabs[page]) {
-            "listen" -> ListenPage(pages, pad, listenList)
+            // a TV: listen made light, five rows of covers (TvListenPage)
+            "listen" -> if (tv) TvListenPage(pages, listenList) else ListenPage(pages, pad, listenList)
             "ink" -> ExplorePage(pages, pad, exploreList)
             // radio, a place of its own: the tower, what's on, every station
             "radio" -> RadioPlace(pages, pad, radioGrid)

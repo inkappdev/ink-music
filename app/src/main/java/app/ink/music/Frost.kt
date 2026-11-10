@@ -41,6 +41,9 @@ fun Modifier.softEdge(state: HazeState, towardBottom: Boolean): Modifier {
     // moving less (a slower phone): no blur at all, the bar's edge as it is. A TV keeps it: two thin strips, and
     // the onn (a slow box, so less) showed lists cut hard at both bars without them
     if (Moves.less.collectAsState().value && !Device.tv) return this
+    // a TV: the bar's edge black, no blur (2026-11-10: a blur takes a copy of all that's behind it, each frame of a
+    // scroll; the onn ran listen at 48% late frames). The lists fade into it instead ([feather], drawn over on a TV)
+    if (Device.tv) return this.background(Ink.black)
     var height by remember { mutableIntStateOf(0) }
     val style = remember(height, towardBottom) {
         val h = height.toFloat().coerceAtLeast(1f)
@@ -60,6 +63,7 @@ fun Modifier.softEdge(state: HazeState, towardBottom: Boolean): Modifier {
 @Composable
 fun Modifier.softEdgeEnd(state: HazeState): Modifier {
     if (Moves.less.collectAsState().value && !Device.tv) return this
+    if (Device.tv) return this.background(Ink.black)
     var width by remember { mutableIntStateOf(0) }
     val style = remember(width) {
         HazeBlurStyle {

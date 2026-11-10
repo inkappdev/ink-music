@@ -676,3 +676,102 @@ fun faceSong(name: String, face: String, photo: Boolean = false) = Song(
     albumId = (if (photo) "photo:" else "face:") + name,
     albumArtist = name, duration = 0, disc = 1, track = 0, year = 0, art = face,
 )
+
+
+/**
+ * Listen on a TV (2026-11-10, light for slow boxes, after Prism's TV): a greeting, then five rows of covers all one size,
+ * asked for at that size: jump back in, new from your artists, live DJ sets, ink radio and your records. No shelves
+ * coming and going by the hour, no moving covers, nothing animating while it scrolls.
+ */
+@Composable
+fun TvListenPage(pages: Pages, state: LazyListState) {
+    val ctx = LocalContext.current
+    val albums by Library.albums.collectAsState()
+    val seed by Order.seed.collectAsState()
+    val heard by androidx.compose.runtime.produceState<List<History.Heard>>(emptyList()) {
+        value = withContext(Dispatchers.IO) { History.read(ctx) }
+    }
+    val recent = remember(heard) { heard.asReversed().distinctBy { it.album.ifEmpty { it.id } }.take(12).mapNotNull { Library.song(it.id) } }
+    val tubeHeard by YouTubeAccount.history.collectAsState()
+    val tubeRecent = remember(tubeHeard, recent) { val said = recent.map { it.id }.toSet(); tubeHeard.filter { it.id !in said }.distinctBy { it.album.ifEmpty { it.id } }.take(10) }
+    val listened by Listened.now.collectAsState()
+    val allSongs by Library.songs.collectAsState()
+    val pickedRecords by Picks.records.collectAsState()
+    val fromYours = remember(pickedRecords, listened, allSongs) { Picks.yours(listened, allSongs) }
+    LaunchedEffect(Unit) { LiveSets.start(ctx) }
+    val sets by LiveSets.clips.collectAsState()
+    val ink = remember { Stations.curated(ctx).sortedByDescending { it.star } }
+    val yours = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(16) }
+    val now by Playback.now.collectAsState()
+    @Composable
+    fun Row(title: String, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+        Column(Modifier.padding(bottom = 26.dp)) {
+            BasicText(title.uppercase(), style = headline(20.sp), modifier = Modifier.padding(start = 20.dp, bottom = 10.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), content = content)
+        }
+    }
+    @Composable
+    fun Cover(song: Song?, name: String, said: String, onClick: () -> Unit) {
+        Column(Modifier.width(TV_TILE).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+            CoverOf(song, name, Modifier.size(TV_TILE), px = 320)
+            Spacer(Modifier.height(8.dp))
+            UnderCover(name, said, pixel(12.sp, Ink.mid))
+        }
+    }
+    LazyColumn(state = state, contentPadding = PaddingValues(top = 6.dp, bottom = 40.dp)) {
+        item(key = "hello") {
+            BasicText(Listen.greeting(), style = headline(40.sp), modifier = Modifier.padding(start = 20.dp, bottom = 22.dp))
+        }
+        if (recent.isNotEmpty() || tubeRecent.isNotEmpty()) item(key = "back") {
+            Row("jump back in") {
+                items(recent, key = { "r" + it.id }) { s ->
+                    Cover(s, s.album.ifEmpty { s.title }, s.artist) {
+                        val record = albums.firstOrNull { it.id == s.albumId }
+                        if (record != null) pages.open(Page.Record(record.id)) else Playback.play(listOf(s), 0)
+                    }
+                }
+                itemsIndexed(tubeRecent, key = { _, s -> "t" + s.id }) { i, s -> Cover(s, s.title, s.artist) { Playback.play(tubeRecent, i) } }
+            }
+        }
+        if (fromYours.isNotEmpty()) item(key = "yours-new") {
+            Row("new from your artists") {
+                items(fromYours, key = { "n" + Curation.key(it.pick) }) { y ->
+                    Cover(y.face, y.pick.title, y.pick.artist) { pages.open(Page.Find); pages.query = "${y.pick.artist} ${y.pick.title}" }
+                }
+            }
+        }
+        if (sets.isNotEmpty()) item(key = "sets") {
+            Row("live dj sets") {
+                items(sets, key = { "s" + it.id }) { c ->
+                    Column(Modifier.width(TV_TILE * 16 / 9).clickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = felt { pages.open(Page.Watch(c, sets)) })) {
+                        ClipFrame(c, Modifier.width(TV_TILE * 16 / 9).height(TV_TILE))
+                        Spacer(Modifier.height(8.dp))
+                        UnderCover(c.title, "${c.artist}  ·  ${agoOf(c.at)}", pixel(12.sp, Ink.mid))
+                    }
+                }
+            }
+        }
+        if (ink.isNotEmpty()) item(key = "radio") {
+            Row("ink radio") {
+                itemsIndexed(ink, key = { _, st -> "i" + st.song.id }) { i, st ->
+                    val on = now?.song?.id == st.song.id
+                    Column(Modifier.width(TV_TILE).clickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = felt { Playback.play(ink.drop(i).map { it.song }, 0) })) {
+                        StationCover(st.song, Modifier.size(TV_TILE), moving = false)
+                        Spacer(Modifier.height(8.dp))
+                        UnderCover(st.song.title, if (on) "on now" else st.city, pixel(12.sp, Ink.mid))
+                    }
+                }
+            }
+        }
+        if (yours.isNotEmpty()) item(key = "records") {
+            Row("your records") {
+                items(yours, key = { "a" + it.id }) { a -> Cover(a.songs.firstOrNull(), a.title, a.artist) { pages.open(Page.Record(a.id)) } }
+            }
+        }
+    }
+}
+
+/** A TV row's covers: one size, for the sofa. */
+private val TV_TILE = 168.dp
