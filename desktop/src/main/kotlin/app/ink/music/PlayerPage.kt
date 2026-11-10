@@ -39,6 +39,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.border
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -120,6 +124,8 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
     val artist = n.song.takeUnless { it.station || it.episode }?.let { it.albumArtist.ifBlank { it.artist.substringBefore(", ") } }
     // an episode's words open its show, where a song's open its artist and record
     val show = remember(n.song.id) { if (n.song.episode) Pods.page(n.song) else null }
+    // where it plays, dropped down from its speaker at the top (it was the whole window: 2026-11-10, Bronson)
+    var speakersDown by remember { mutableStateOf(false) }
     // which way the last change went, for the push: on (a later song in the queue, from the right) or back (from the left)
     val was = remember { intArrayOf(n.index) }
     val dir = remember(n.song.id) { (if (n.index >= was[0]) 1 else -1).also { was[0] = n.index } }
@@ -141,7 +147,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
             // on this page already (2026-11-10, Bronson)
             Row(Modifier.fillMaxWidth().padding(start = SIDE - 8.dp, end = SIDE - 8.dp, top = TOP), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
-                Pixel(SPEAKER, if (on != null) "playing on ${on!!.name}" else "play on", if (on != null) Ink.ink else Ink.mid) { open(Page.PlayOn) }
+                Pixel(SPEAKER, if (on != null) "playing on ${on!!.name}" else "play on", if (on != null || speakersDown) Ink.ink else Ink.mid) { speakersDown = !speakersDown }
                 // the mini player from here too: out of the whole screen first, then the window away to the dock
                 Pixel(SHRINK, "mini player", Ink.mid) { Win.full(false); Mini.open() }
                 Pixel(if (Win.full) UNFULL else FULL, if (Win.full) "leave full screen" else "full screen", Ink.mid) { Win.full(!Win.full) }
@@ -291,6 +297,24 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
         }
         // opened out of the now column: its right edge, the way back into it
         ColumnEdge(onClose)
+        // where it plays: a small panel dropped down from the speaker at the top right, this computer and each speaker
+        // found, the one playing lit; a click outside it, the speaker again, or one chosen rolls it back up
+        if (speakersDown) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, indication = null) { speakersDown = false })
+        AnimatedVisibility(
+            speakersDown, Modifier.align(Alignment.TopEnd).padding(top = TOP + 40.dp, end = SIDE - 8.dp),
+            enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) {
+            Column(
+                Modifier.width(340.dp).heightIn(max = 520.dp).background(Ink.black).border(1.dp, Ink.line)
+                    .clickable(remember { MutableInteractionSource() }, indication = null) {}
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+            ) {
+                BasicText("PLAY ON", style = headline(20.sp))
+                Spacer(Modifier.height(10.dp))
+                PlayOnList(onPicked = { speakersDown = false }, small = true)
+            }
+        }
     }
 }
 
