@@ -286,7 +286,7 @@ private fun OutThisFriday(w: Curation.Week, open: (Page) -> Unit) {
 
 /**
  * Electronic, picked by its own writers: their records in turn (Bandcamp Daily's columns, A Closer Listen, Igloo,
- * Headphone Commute), and the club tracks premiered (Inverted Audio's, Headphone Commute's) beside them.
+ * Headphone Commute), and the tracks premiered for headphones (Inverted Audio's, Headphone Commute's) beside them.
  */
 @Composable
 private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boolean) {
@@ -304,7 +304,8 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
         }
         if (tracks.isNotEmpty()) {
             Spacer(Modifier.height(26.dp))
-            Section("CLUB TRACKS", "premiered by inverted audio and headphone commute") {
+            // named for how they sound, ambient and the edges of it, not for a club (2026-11-09: "not clubby at all")
+            Section("FOR HEADPHONES", "ambient and the edges of it, premiered by inverted audio and headphone commute") {
                 Word("play all", pixel(14.sp), touch = 8.dp) {
                     scope.launch { said = "finding them on youtube music"; Picks.playSongs(tracks.map { Picks.Shown(it, null, listOf(it.from)) }); said = null }
                 }
