@@ -485,6 +485,14 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     BasicText("FREE, AND OPEN", style = headline(20.sp))
                     Spacer(Modifier.height(6.dp))
                     BasicText("gpl-3.0. the fonts are archivo black and silkscreen (sil open font license). lyrics from lrclib.net.", style = pixel(12.sp, Ink.mid))
+                    // a coffee, offered once and quietly; not in the play build (Google Play allows no outside donation links)
+                    if (BuildConfig.FLAVOR == "full") {
+                        Spacer(Modifier.height(10.dp))
+                        BasicText("free, always. if ink music makes your day a little better:", style = pixel(12.sp, Ink.mid))
+                        Word("buy us a coffee", pixel(13.sp), touch = 8.dp) {
+                            runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Coffee.PAGE)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }
+                    }
                     Spacer(Modifier.height(26.dp))
                 }
 

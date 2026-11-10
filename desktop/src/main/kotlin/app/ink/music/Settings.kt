@@ -304,6 +304,10 @@ private fun AboutSetting() {
     }
     Spacer(Modifier.height(10.dp))
     Word("the code", pixel(14.sp, Ink.mid), touch = 8.dp) { browse("https://github.com/inkappdev/ink-music") }
+    // a coffee, offered once and quietly
+    Spacer(Modifier.height(14.dp))
+    BasicText("free, always. if ink music makes your day a little better:", style = pixel(12.sp, Ink.mid))
+    Word("buy us a coffee", pixel(14.sp), touch = 8.dp) { browse(Coffee.PAGE) }
     Spacer(Modifier.height(36.dp))
     // the funnel: said once, plainly, never a nag
     BasicText("FROM THE MAKERS OF INK", style = headline(24.sp))
