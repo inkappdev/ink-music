@@ -340,14 +340,26 @@ object Discover {
             score[k] = s to was + (1f - r.toFloat() / (list.size + 1))
         } }
         val by = HashMap<String, Int>()
-        val picked = score.entries.sortedByDescending { it.value.second }.map { it.key to it.value.first }.filter { (k, s) ->
+        // an artist said "not for me" (Fresh) never back in a made mix, however the pool's filled
+        val down = Fresh.turnedDown(c)
+        // twice as many as wanted, then each one's find-ness on Last.fm (Gems: a song people keep coming back to, over a
+        // hit) added to how many radios lead to it; four asked at a time, a few seconds a week
+        val pool = score.entries.sortedByDescending { it.value.second }.map { it.key to it.value }.filter { (k, v) ->
+            val s = v.first
             if (k in heard || s.id in heard || k in mine || s.id in mine || Radio.odd(s.title)) return@filter false
+            if (Curation.folded(s.artist.substringBefore(",").trim()) in down) return@filter false
             val who = s.artist.lowercase().substringBefore(",").trim()
             if ((by[who] ?: 0) >= 2) return@filter false
             by[who] = (by[who] ?: 0) + 1
             true
-        }.take(n).map { it.second }
-        Radio.apart(picked, "")
+        }.take(n * 2).map { it.second }
+        val asking = kotlinx.coroutines.sync.Semaphore(4)
+        val rated = pool.map { (s, radio) -> async(Dispatchers.IO) {
+            s to radio + asking.withPermit { Gems.bonus(Gems.heard(s.title, s.artist, LastFm.key)) }
+        } }.awaitAll().sortedByDescending { it.second }.take(n)
+        val strength = rated.associate { it.first.id to it.second }
+        // kept apart by artist, then shaped as a set: the strongest opens it, the second-strongest closes it
+        Gems.arc(Radio.apart(rated.map { it.first }, "")) { strength[it.id] ?: 0f }
     }
 
     private suspend fun freshFinds(c: Context, seeds: List<Radio.Seed>, heard: Set<String>, mine: Set<String>): Mix? {

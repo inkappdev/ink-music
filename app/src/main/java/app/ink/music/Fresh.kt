@@ -105,6 +105,9 @@ object Fresh {
         JSONArray(refusedFile(c).readText()).let { a -> (0 until a.length()).map { a.getString(it) } }
     }.getOrDefault(emptyList())
 
+    /** The artists said not for you, folded (made-for-you mixes leave them out for good: no refill lets one back). */
+    fun turnedDown(c: Context): Set<String> = refused(c).map { Curation.folded(it) }.toSet()
+
     /** Said not for you (a pick held): never shown again, and its artist further from you. */
     fun notForMe(c: Context, artist: String, key: String) {
         seen.hide(key)
