@@ -6,7 +6,8 @@
 
 <p align="center">
   A music player that looks like nothing else. Free and open source, for Android, Mac, Windows and Linux.<br />
-  Your files, your server, YouTube Music and independent radio; new music picked by people, not a feed.
+  Your files, your server, YouTube Music and independent radio; new music picked by people, not a feed.<br />
+  Made by the makers of <a href="https://inkhome.app">ink</a>.
 </p>
 
 <p align="center">
