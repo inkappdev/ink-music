@@ -386,6 +386,37 @@ object Curation {
     /** Who else named the same record ("pitchfork, nme"). */
     fun namedBy(p: Pick, picks: List<Pick>): List<String> = picks.filter { key(it) == key(p) }.map { it.from }.distinct()
 
+    /**
+     * What critics said of a record, for its page (2026-11-09: "reviews from critics?"): each publication that picked it,
+     * its first sentence, newest first. Matched loosely: the name without what's in brackets ("(Deluxe)"), letters and
+     * digits only; the first of several artists ("A, B").
+     */
+    fun saidOf(picks: List<Pick>, title: String, artist: String): List<Pick> {
+        fun plainName(s: String) = folded(s).replace(Regex("\\s*[(\\[].*?[)\\]]"), "").filter { it.isLetterOrDigit() }
+        val t = plainName(title)
+        val a = plainName(artist.substringBefore(", "))
+        if (t.isEmpty() || a.isEmpty()) return emptyList()
+        return picks.filter { p ->
+            p.record && p.said.isNotBlank() && plainName(p.title) == t && plainName(p.artist.substringBefore(", ")).let { it == a || it.startsWith(a) || a.startsWith(it) }
+        }.sortedByDescending { it.at }.distinctBy { it.from.lowercase() }
+            .map { it.copy(said = quoted(it)) }.filter { it.said.length >= 30 }
+    }
+
+    /**
+     * A pick's sentence as a quote: without the heading some feeds run into it ("Harmless by Carmen QuillThe bass...",
+     * "Artist — Record (Label)the record..."), Dusted's above all.
+     */
+    private fun quoted(p: Pick): String {
+        var s = p.said.trim()
+        // "Record by Artist" run into the text
+        val by = (p.title + " by " + p.artist)
+        if (s.lowercase().startsWith(by.lowercase())) s = s.drop(by.length)
+        // Dusted's heading, "Artist — Record (Label)", run into the text: by its shape, not the names (a name can be spelled
+        // apart, and a sentence can rightly begin with the artist: "Josh Johnson plays the saxophone like an orchestra")
+        else Regex("^[^—–]{1,100}\\s[—–]\\s[^(]{1,160}\\([^)]{1,80}\\)").find(s)?.let { s = s.drop(it.value.length) }
+        return s.trim()
+    }
+
     fun key(p: Pick) = (p.artist + "/" + p.title).lowercase().filter { it.isLetterOrDigit() || it == '/' }
 
     // ---- on the air now ----

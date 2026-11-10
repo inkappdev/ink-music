@@ -1017,6 +1017,28 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
     }}
 }
 
+/**
+ * What critics said of a record, on its page (2026-11-09: "reviews from critics? cool little editorial snippets in
+ * nice font?"): each publication that picked it (Picks.said), its first sentence as the record of the day says one,
+ * big and in quotes, who said it under it and "read it" to their page. Two at most. Nothing where no critic picked it.
+ */
+@Composable
+fun Critics(title: String, artist: String, most: Int = 2) {
+    val all by Picks.said.collectAsState()
+    val said = remember(all, title, artist) { Curation.saidOf(all, title, artist).take(most) }
+    val ctx = LocalContext.current
+    said.forEach { p ->
+        Spacer(Modifier.height(22.dp))
+        BasicText("\u201c${p.said}\u201d".uppercase(), style = headline(18.sp).copy(lineHeight = 23.sp), maxLines = 6, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText("\u2014 ${p.from.lowercase()}", style = pixel(12.sp, Ink.mid))
+            if (p.link.isNotBlank()) Word("read it", pixel(12.sp, Ink.mid), Modifier.padding(start = 16.dp), touch = 8.dp) {
+                runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(p.link)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            }
+        }
+    }
+}
+
 /** A record's page: its cover, its name, its songs as words; a tap plays from there. */
 @Composable
 private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
@@ -1067,6 +1089,8 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
             Word(if (off) "hidden: show it again" else "hide", pixel(12.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
                 Library.hide(ctx, a.id, !off); if (!off) pages.back()
             }
+            // what critics said of it, where any picked it
+            Critics(a.title, a.artist)
             Spacer(Modifier.height(14.dp))
         } }
     val songs: LazyListScope.() -> Unit = {
@@ -2097,6 +2121,8 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
                     Word(if (saved) "saved" else "save", pixel(14.sp, if (saved) Ink.ink else Ink.mid), touch = 8.dp) { scope.launch { YouTubeAccount.save(a, !saved) } }
                 }
             }
+            // what critics said of it (a record's, not a playlist's)
+            if ("list=" !in a.url) Critics(a.title, a.artist)
             Spacer(Modifier.height(14.dp))
         }}
         val all = songs.orEmpty()

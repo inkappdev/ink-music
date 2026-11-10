@@ -34,6 +34,8 @@ object Picks {
     val records = MutableStateFlow<List<Shown>>(emptyList())
     val songs = MutableStateFlow<List<Shown>>(emptyList())
     val today = MutableStateFlow<Shown?>(null)
+    /** Every record a critic picked with what they said, each publication's own (records shown keep only the first's): for a record's page (Curation.saidOf). */
+    val said = MutableStateFlow<List<Curation.Pick>>(emptyList())
     val onAir = MutableStateFlow<List<Curation.Aired>>(emptyList())
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -60,6 +62,7 @@ object Picks {
         // the critics' feeds, and (the full build) editors' lists: the newest first
         val all = (Curation.picks() + EditorsPicks.read()).sortedByDescending { it.at }
         if (all.isEmpty()) return@coroutineScope
+        said.value = all.filter { it.record && it.said.isNotBlank() }.take(800)
         val firsts = all.groupBy(Curation::key).values.map { group -> group.first() to group.map { it.from }.distinct() }
         // covers: the feed's own, one found before, else iTunes', a few at a time and forty a read at most (it turns crowds away)
         val before = (records.value + songs.value).associate { Curation.key(it.pick) to it.art }
@@ -81,9 +84,13 @@ object Picks {
         readAt = System.currentTimeMillis()
         runCatching {
             file.writeText(JSONObject().put("at", readAt).put("v", 7).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
-                .put("songs", JSONArray(songs.value.map(::json))).toString())
+                .put("songs", JSONArray(songs.value.map(::json)))
+                .put("said", JSONArray(said.value.map { saidJson(it) })).toString())
         }
     }
+
+    private fun saidJson(p: Curation.Pick) = JSONObject().put("title", p.title).put("artist", p.artist).put("from", p.from)
+        .put("said", p.said).put("link", p.link).put("at", p.at)
 
     private fun json(s: Shown) = JSONObject().put("record", s.pick.record).put("title", s.pick.title).put("artist", s.pick.artist)
         .put("from", s.pick.from).put("said", s.pick.said).put("link", s.pick.link).put("at", s.pick.at).put("art", s.art ?: "").put("by", JSONArray(s.by))
@@ -97,6 +104,9 @@ object Picks {
     private fun show(o: JSONObject) {
         fun list(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { shown(a.getJSONObject(it)) } }.orEmpty()
         records.value = list("records"); songs.value = list("songs"); today.value = o.optJSONObject("today")?.let(::shown)
+        said.value = o.optJSONArray("said")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { j ->
+            Curation.Pick(true, j.getString("title"), j.getString("artist"), j.getString("from"), j.optString("said"), j.optString("link"), j.optLong("at"), null)
+        } }.orEmpty()
     }
 
     // ---- out this friday ----

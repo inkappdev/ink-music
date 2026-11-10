@@ -948,6 +948,26 @@ fun Close(onClose: () -> Unit) {
     }
 }
 
+/**
+ * What critics said of a record, under its cover (2026-11-09: "reviews from critics? cool little editorial snippets in
+ * nice font?"): each publication that picked it (Picks.said), its first sentence as the record of the day says one,
+ * big and in quotes, who said it under it and "read it" to their page. Two at most: the column doesn't scroll. Nothing
+ * where no critic picked it.
+ */
+@Composable
+fun Critics(title: String, artist: String, most: Int = 2) {
+    val all by Picks.said.collectAsState()
+    val said = remember(all, title, artist) { Curation.saidOf(all, title, artist).take(most) }
+    said.forEach { p ->
+        Spacer(Modifier.height(26.dp))
+        BasicText("\u201c${p.said}\u201d".uppercase(), style = headline(17.sp).copy(lineHeight = 22.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText("\u2014 ${p.from.lowercase()}", style = pixel(12.sp, Ink.mid))
+            if (p.link.isNotBlank()) Word("read it", pixel(12.sp, Ink.mid), Modifier.padding(start = 16.dp), touch = 8.dp) { browse(p.link) }
+        }
+    }
+}
+
 @Composable
 private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
     val albums by Library.albums.collectAsState()
@@ -977,6 +997,7 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                     Word("play", pixel(14.sp), touch = 8.dp) { Player.play(a.songs) }
                     KeepOffline(a.songs)
                 }
+                Critics(a.title, a.artist)
             }
         }
         val list = pageList()

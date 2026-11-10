@@ -330,6 +330,8 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                         KeepOffline(s)
                     }
                 }
+                // what critics said of it (a record's, not a playlist's)
+                if (!playlist) Critics(a.title, a.artist)
             }
             Spacer(Modifier.width(40.dp))
             val list = pageList()
