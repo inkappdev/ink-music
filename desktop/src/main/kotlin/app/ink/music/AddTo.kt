@@ -55,7 +55,12 @@ fun canAddToList(s: Song?): Boolean {
  * on your server or YouTube Music; a song from elsewhere found there by its words. Once it's in, said, and back.
  */
 @Composable
-fun AddToPage(s: Song, onDone: () -> Unit, onClose: () -> Unit) {
+fun AddToPage(s: Song, onDone: () -> Unit, onClose: () -> Unit) = AddToPage(listOf(s), onDone, onClose)
+
+/** Several songs into one playlist (picked: Picking): the server's ones there, every one found on YouTube Music there. */
+@Composable
+fun AddToPage(songs: List<Song>, onDone: () -> Unit, onClose: () -> Unit) {
+    val s = songs.first()
     val lists by Server.playlists.collectAsState()
     val account by Server.account.collectAsState()
     val mine = remember(lists) { lists.filter { it.mine } }
@@ -85,29 +90,29 @@ fun AddToPage(s: Song, onDone: () -> Unit, onClose: () -> Unit) {
                 Column(Modifier.widthIn(max = 640.dp)) {
                     BasicText("ADD TO A PLAYLIST", style = headline(56.sp), maxLines = 2)
                     Spacer(Modifier.height(8.dp))
-                    BasicText("${s.title}  ·  ${s.artist}".lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BasicText(if (songs.size == 1) "${s.title}  ·  ${s.artist}".lowercase() else "${songs.size} songs", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     BasicText(said ?: "", style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 10.dp))
                     Spacer(Modifier.height(10.dp))
                     if (account != null) {
                         Label("on your server")
-                        NewList { name -> put(name) { Server.makePlaylist(name, listOf(s)) } }
+                        NewList { name -> put(name) { Server.makePlaylist(name, songs) } }
                         if (mine.isEmpty()) BasicText("no playlists of yours there yet: name one above, enter makes it", style = pixel(12.sp, Ink.mid))
                     }
                 }
             }
             if (account != null) items(mine, key = { "n" + it.id }) { pl ->
-                ListChoice(pl.name, "${pl.count} ${if (pl.count == 1) "song" else "songs"}") { put(pl.name) { Server.addTo(pl.id, s) } }
+                ListChoice(pl.name, "${pl.count} ${if (pl.count == 1) "song" else "songs"}") { put(pl.name) { songs.map { Server.addTo(pl.id, it) }.all { it } } }
             }
             if (who != null) {
                 item {
                     Column(Modifier.widthIn(max = 640.dp)) {
                         Spacer(Modifier.height(18.dp))
                         Label("on youtube music")
-                        NewList { name -> put(name) { TubeAccount.makePlaylist(name, s) } }
+                        NewList { name -> put(name) { TubeAccount.makePlaylist(name, songs) } }
                     }
                 }
                 items(tubeLists, key = { "y" + it.url }) { pl ->
-                    ListChoice(pl.title, pl.artist.lowercase()) { put(pl.title) { TubeAccount.addTo(pl, s) } }
+                    ListChoice(pl.title, pl.artist.lowercase()) { put(pl.title) { songs.map { TubeAccount.addTo(pl, it) }.all { it } } }
                 }
             }
         }

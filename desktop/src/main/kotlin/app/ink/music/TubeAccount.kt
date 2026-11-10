@@ -89,10 +89,14 @@ object TubeAccount {
     }
 
     /** A new playlist of yours there (private), with this song in it. */
-    suspend fun makePlaylist(name: String, s: Song): Boolean = withContext(Dispatchers.IO) {
+    suspend fun makePlaylist(name: String, s: Song): Boolean = makePlaylist(name, listOf(s))
+
+    /** A new playlist of yours there (private), these songs in it, in order (each from elsewhere found there first). */
+    suspend fun makePlaylist(name: String, songs: List<Song>): Boolean = withContext(Dispatchers.IO) {
         val t = tube() ?: return@withContext false
-        val id = runCatching { t.makePlaylist(name, listOfNotNull(videoOf(s))) }.getOrNull() ?: return@withContext false
-        playlists.value = listOf(TubeAlbum("${InnerTube.BASE}/playlist?list=$id", name, "", s.art?.takeIf { s.tube })) + playlists.value
+        val first = songs.firstOrNull() ?: return@withContext false
+        val id = runCatching { t.makePlaylist(name, songs.mapNotNull { videoOf(it) }.distinct()) }.getOrNull() ?: return@withContext false
+        playlists.value = listOf(TubeAlbum("${InnerTube.BASE}/playlist?list=$id", name, "", first.art?.takeIf { first.tube })) + playlists.value
         true
     }
 

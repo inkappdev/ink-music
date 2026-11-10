@@ -87,6 +87,9 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
@@ -255,6 +258,8 @@ sealed interface Page {
     data class Watch(val clip: MusicVideos.Clip, val list: kotlin.collections.List<MusicVideos.Clip> = emptyList()) : Page
     /** A song into one of your playlists. */
     data class AddTo(val song: Song) : Page
+    /** Several songs picked (Picking), into a playlist. */
+    data class AddToMany(val songs: kotlin.collections.List<Song>) : Page
     /** A podcast: by its feed (the show as found, shown at once till its feed's read). One page a feed. */
     class Show(val feed: String, val first: Podcasts.Show? = null) : Page {
         override fun equals(other: Any?) = other is Show && other.feed == feed
@@ -428,6 +433,7 @@ private fun App() {
                     k.key == Key.DirectionLeft -> { Player.seek((Player.position.value - 10_000).coerceAtLeast(0)); true }
                     k.key == Key.DirectionUp -> { Player.volume(Player.volume.value + 5); true }
                     k.key == Key.DirectionDown -> { Player.volume(Player.volume.value - 5); true }
+                    k.key == Key.Escape && Picking.picked.value.isNotEmpty() -> { Picking.clear(); true }
                     k.key == Key.Escape && Reading.close != null -> { Reading.close?.invoke(); true }
                     k.key == Key.Escape && pages.isNotEmpty() -> { Nav.back(); true }
                     else -> false
@@ -503,6 +509,7 @@ private fun App() {
                         is Page.Show -> ShowPage(page.feed, page.first, { pages += it }) { Nav.close() }
                         // done, back where it was added from; closed, only itself (not the trail under it)
                         is Page.AddTo -> AddToPage(page.song, { Nav.back() }) { Nav.back() }
+                        is Page.AddToMany -> AddToPage(page.songs, { Nav.back(); Picking.clear() }) { Nav.back() }
                     }
                     }
                 }
@@ -510,8 +517,9 @@ private fun App() {
             // the bar along the foot where there's no room for the now column: rising a third of itself and in, sinking
             // away out, as the phone's mini player (2026-11-10; it was there or not)
             val remote = remoteNow()
+            val pickingNow = Picking.picked.collectAsState().value.isNotEmpty()
             AnimatedVisibility(
-                (frame != Frame.WIDE || tucked || finding || remote != null) && pages.lastOrNull() != Page.Playing,
+                (frame != Frame.WIDE || tucked || finding || remote != null) && pages.lastOrNull() != Page.Playing && !pickingNow,
                 enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 3 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
                 exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 3 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
             ) {
@@ -522,6 +530,12 @@ private fun App() {
                     { name -> pages += Page.Artist(name) },
                 ) { if (pages.lastOrNull() != Page.Playing) { PlayerSide.right = false; pages += Page.Playing } }
             }
+            // songs picked: what to do with them all, along the foot (in the bar's place where it was)
+            AnimatedVisibility(
+                pickingNow && pages.lastOrNull() != Page.Playing,
+                enter = slideInVertically(tween(Motion.ENTER, easing = Motion.expo)) { it / 3 } + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                exit = slideOutVertically(tween(Motion.EXIT, easing = Motion.expo)) { it / 3 } + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+            ) { PickBar() }
         }
         // the now column, tucked away to the right (its arrow, or ⌘\): the bar along the foot instead
         AnimatedVisibility(
@@ -877,10 +891,14 @@ fun SongRow(
     var clickAt by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     val src = remember { MutableInteractionSource() }
     val over by src.collectIsHoveredAsState()
-    val color = (if (on || options) Ink.ink else if (dim) Ink.dim else Ink.mid).let { if (over) brighter(it) else it }
+    // songs being picked (ctrl or cmd and a click, or a menu's "pick more"): a click picks this one or lets it go
+    val pickedNow by Picking.picked.collectAsState()
+    val picking = pickedNow.isNotEmpty()
+    val picked = picking && pickedNow.any { it.id == s.id }
+    val color = (if (on || options || picked) Ink.ink else if (dim) Ink.dim else Ink.mid).let { if (over) brighter(it) else it }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().hoverable(src).clickable(src, indication = null, onClick = felt { options = false; onClick() })
+            Modifier.fillMaxWidth().hoverable(src).clickable(src, indication = null, onClick = felt { options = false; if (picking) Picking.toggle(s) else onClick() })
                 // a right click (the phone's hold): its options in a menu where it was clicked
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
@@ -890,12 +908,19 @@ fun SongRow(
                                 clickAt = e.changes.first().position
                                 options = true; e.changes.forEach { it.consume() }
                             }
+                            // ctrl (cmd on a Mac) and a click: picked, not played (Picking)
+                            else if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isPrimaryPressed &&
+                                (e.keyboardModifiers.isCtrlPressed || e.keyboardModifiers.isMetaPressed)) {
+                                Picking.toggle(s); e.changes.forEach { it.consume() }
+                            }
                         }
                     }
                 }
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // picking: a square before it, filled once it's picked
+            if (picking) { Box(Modifier.size(12.dp).then(if (picked) Modifier.background(Ink.ink) else Modifier.border(1.dp, Ink.mid))); Spacer(Modifier.width(14.dp)) }
             // its record's cover beside it, small and square (a list's covers word)
             if (cover) { CoverOf(s, s.album.ifEmpty { s.title }, Modifier.size(44.dp), px = 160); Spacer(Modifier.width(14.dp)) }
             if (number != null) BasicText(number, style = pixel(12.sp, color), modifier = Modifier.width(36.dp))
@@ -938,6 +963,8 @@ private fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?, 
     val file = remember(s.id) { SongLink.file(s) }
     val groups = listOf(
         listOfNotNull(
+            // this one picked, and then any others clicked: all of them at once from the bar along the foot (PickBar)
+            "pick more" to { Picking.toggle(s) },
             ("play next" to { Player.playNext(s) }).takeIf { !playing },
             ("add to queue" to { Player.add(s) }).takeIf { !playing },
             // radio: this song, then more like it as the queue runs out
@@ -1916,5 +1943,39 @@ private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>,
                 }
             }
         }
+    }
+}
+
+
+/**
+ * Songs picked to do one thing with all of them (2026-11-10, as the phone's): ctrl or cmd and a click, or a song's
+ * menu's "pick more"; then each click picks a song or lets it go. Esc, done or an action lets them all go.
+ */
+object Picking {
+    val picked = kotlinx.coroutines.flow.MutableStateFlow<List<Song>>(emptyList())
+    fun toggle(s: Song) { picked.value = if (picked.value.any { it.id == s.id }) picked.value.filter { it.id != s.id } else picked.value + s }
+    fun clear() { picked.value = emptyList() }
+}
+
+/** Along the foot while songs are picked: how many, and what to do with them all; done (or esc) lets them go. */
+@Composable
+fun PickBar() {
+    val picked by Picking.picked.collectAsState()
+    val loved by Loved.ids.collectAsState()
+    var said by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(said) { if (said != null) { kotlinx.coroutines.delay(1_200); Picking.clear(); said = null } }
+    Row(Modifier.fillMaxWidth().background(Ink.black).border(androidx.compose.foundation.BorderStroke(1.dp, Ink.line))
+        .padding(horizontal = SIDE, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        BasicText(said ?: "${picked.size} PICKED", style = headline(22.sp), modifier = Modifier.padding(end = 32.dp))
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            // play next keeps them in the order picked: each put after the one before
+            Word("play next", pixel(14.sp), touch = 8.dp) { picked.reversed().forEach { Player.playNext(it) }; said = "PLAYING NEXT" }
+            Word("add to queue", pixel(14.sp), touch = 8.dp) { picked.forEach { Player.add(it) }; said = "QUEUED" }
+            if (picked.any { canAddToList(it) }) Word("add to a playlist", pixel(14.sp), touch = 8.dp) { Nav.open(Page.AddToMany(picked)) }
+            if (picked.any { it.id !in loved }) Word("love", pixel(14.sp), touch = 8.dp) { picked.filter { it.id !in loved }.forEach { Loved.toggle(it) }; said = "LOVED" }
+            val keep = picked.filter { Offline.keepable(it) }
+            if (keep.isNotEmpty()) Word("keep offline", pixel(14.sp), touch = 8.dp) { Offline.keep(keep); said = "KEEPING OFFLINE" }
+        }
+        Word("done", pixel(14.sp, Ink.mid), touch = 8.dp) { Picking.clear() }
     }
 }
