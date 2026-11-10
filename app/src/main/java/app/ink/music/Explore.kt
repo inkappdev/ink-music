@@ -412,7 +412,9 @@ private fun InkWeeklyCover(pages: Pages) {
             BasicText(listOf("vol ${w.week}", Weekly.day(w.date), "this week").filter { it.isNotEmpty() }.joinToString("  ·  "), style = pixel(12.sp, Ink.mid))
         }
         Spacer(Modifier.height(10.dp))
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+        val tv = onTv()
+        @Composable
+        fun Covers(modifier: Modifier) = BoxWithConstraints(modifier
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Weekly(w.week)) }),
             contentAlignment = Alignment.BottomStart) {
             Mosaic(w.songs, Modifier.size(headerSide(maxWidth)))
@@ -420,6 +422,46 @@ private fun InkWeeklyCover(pages: Pages) {
             BasicText(w.title.uppercase(), style = headline(52.sp).copy(lineHeight = 50.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.background(Ink.black).padding(start = 0.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
         }
+        @Composable
+        fun PlayRow(modifier: Modifier) = Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+            Word("PLAY THE WEEK", headline(20.sp), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
+            Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
+            // the week as a DJ's arc, as on its page (the same mix: its progress shows in both)
+            MixWord("ink weekly ${w.week}", w.songs, Modifier.padding(end = 24.dp))
+            Word("${w.songs.size} songs", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.Weekly(w.week)) }
+        }
+        if (tv) {
+            // a TV: the covers at a header's size, and beside them (where was black) the week's note, play the week and
+            // its first songs, numbered, each a press to play from (2026-11-10)
+            Row(Modifier.padding(horizontal = 20.dp)) {
+                BoxWithConstraints(Modifier.weight(1f)) {
+                    val side = headerSide(maxWidth)
+                    Row {
+                        Covers(Modifier.size(side))
+                        Spacer(Modifier.width(32.dp))
+                        Column(Modifier.weight(1f).height(side)) {
+                            if (w.note.isNotEmpty()) BasicText(w.note.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 21.sp),
+                                maxLines = 4, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(14.dp))
+                            PlayRow(Modifier)
+                            Spacer(Modifier.height(12.dp))
+                            w.songs.take(6).forEachIndexed { n, song ->
+                                Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
+                                    onClick = felt { Playback.play(w.songs, n) }).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    BasicText("%02d".format(n + 1), style = pixel(12.sp, Ink.dim), modifier = Modifier.width(30.dp))
+                                    BasicText(song.title.uppercase(), style = headline(15.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                    BasicText("  ${song.artist.lowercase()}", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            val names = remember(w) { w.songs.map { it.artist.substringBefore(",").trim() }.distinct().joinToString("  ·  ") }
+            Marquee(names, !less && Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 64.sp)
+        } else {
+        Covers(Modifier.fillMaxWidth().padding(horizontal = 20.dp))
         Spacer(Modifier.height(16.dp))
         val names = remember(w) { w.songs.map { it.artist.substringBefore(",").trim() }.distinct().joinToString("  ·  ") }
         Marquee(names, !less && Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 64.sp)
@@ -428,12 +470,7 @@ private fun InkWeeklyCover(pages: Pages) {
             BasicText(w.note.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 21.sp), modifier = Modifier.padding(horizontal = 20.dp))
         }
         Spacer(Modifier.height(14.dp))
-        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Word("PLAY THE WEEK", headline(20.sp), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
-            Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
-            // the week as a DJ's arc, as on its page (the same mix: its progress shows in both)
-            MixWord("ink weekly ${w.week}", w.songs, Modifier.padding(end = 24.dp))
-            Word("${w.songs.size} songs", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.Weekly(w.week)) }
+        PlayRow(Modifier.padding(horizontal = 20.dp))
         }
         Box(Modifier.padding(horizontal = 20.dp)) { MixProgress("ink weekly ${w.week}") }
         Spacer(Modifier.height(14.dp))
