@@ -260,6 +260,10 @@ sealed interface Page {
     data class AddTo(val song: Song) : Page
     /** Several songs picked (Picking), into a playlist. */
     data class AddToMany(val songs: kotlin.collections.List<Song>) : Page
+    /** A smart playlist (SmartLists): its songs, filled from its rules as it opens. */
+    data class Smart(val id: String) : Page
+    /** A smart playlist made or changed: null, a new one. */
+    data class SmartEdit(val id: String?) : Page
     /** A podcast: by its feed (the show as found, shown at once till its feed's read). One page a feed. */
     class Show(val feed: String, val first: Podcasts.Show? = null) : Page {
         override fun equals(other: Any?) = other is Show && other.feed == feed
@@ -510,6 +514,8 @@ private fun App() {
                         // done, back where it was added from; closed, only itself (not the trail under it)
                         is Page.AddTo -> AddToPage(page.song, { Nav.back() }) { Nav.back() }
                         is Page.AddToMany -> AddToPage(page.songs, { Nav.back(); Picking.clear() }) { Nav.back() }
+                        is Page.Smart -> SmartPage(page.id, { pages += it }) { Nav.close() }
+                        is Page.SmartEdit -> SmartEditPage(page.id, { pages += it }) { Nav.back() }
                     }
                     }
                 }

@@ -275,6 +275,8 @@ fun ListsPage(open: (Page) -> Unit) {
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
         // what's on the computer to play with no signal (your server's, YouTube's)
         if (keptIds.isNotEmpty()) item { ListRow(Server.Playlist(KEPT, "kept on this computer", keptIds.size, true)) { open(Page.List(KEPT, "kept on this computer")) } }
+        // lists that fill themselves from rules (SmartLists), and a new one
+        item { SmartRows(open) }
         if (lists.isEmpty()) item {
             BasicText(if (account == null) "your server's playlists show here once you're signed in to it" else "no playlists on your server yet",
                 style = pixel(12.sp, Ink.mid))
