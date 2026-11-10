@@ -469,6 +469,42 @@ class PlayerService : MediaLibraryService() {
     private val chosen = java.util.concurrent.ConcurrentHashMap<String, Chosen>()
     // YouTube songs found again after their stream failed, and how often (onPlayerError)
     private val retried = HashMap<String, Int>()
+
+    /**
+     * A song stopped by the network (2026-11-09: the S26 just reinstalled, its screen locked and its network not up yet:
+     * a YouTube song tried three times in six seconds, then sat in its error for good): once the phone's online again,
+     * the song tried anew from where it stopped, its tries counted afresh; played on if it was meant to play. Once.
+     */
+    private var waiting: android.net.ConnectivityManager.NetworkCallback? = null
+    /** The songs tried anew once online already (once each: a song that fails online too isn't the network's). */
+    private val triedOnline = HashSet<String>()
+    private fun againWhenOnline() {
+        if (waiting != null) return
+        val cm = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        // only while the phone's really offline: online, the failure's the song's (Android tells a callback the network
+        // there is at once, and it would be tried again and again)
+        val online = runCatching { cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true }.getOrDefault(true)
+        val id = session?.player?.currentMediaItem?.mediaId ?: return
+        if (online || id in triedOnline) return
+        triedOnline += id
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) {
+                if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return
+                main.post {
+                    val cb = waiting ?: return@post
+                    waiting = null
+                    runCatching { cm.unregisterNetworkCallback(cb) }
+                    val player = session?.player ?: return@post
+                    if (player.playerError == null) return@post
+                    player.currentMediaItem?.localConfiguration?.uri?.takeIf { it.scheme == "ytm" }?.let { retried.remove("y" + it.host) }
+                    android.util.Log.d("ink-youtube", "online again: ${player.currentMediaItem?.mediaId} tried anew")
+                    player.prepare()
+                }
+            }
+        }
+        waiting = cb
+        runCatching { cm.registerDefaultNetworkCallback(cb) }.onFailure { waiting = null }
+    }
     /** Each song's stream format as the player read it (by media id): a song's comes in a little before it plays. */
     private val formats = java.util.concurrent.ConcurrentHashMap<String, androidx.media3.common.Format>()
 
@@ -632,6 +668,8 @@ class PlayerService : MediaLibraryService() {
             // out, and played on from where it stopped, twice a song; the player had stopped on the error, and on
             // phones where the signed stream fails no YouTube song played (1.4.5)
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                // the network's fault (any song's): tried again once it's back, whatever the tries below came to
+                if (error.errorCode in 2000 until 3000) againWhenOnline()
                 val uri = player.currentMediaItem?.localConfiguration?.uri ?: return
                 if (uri.scheme != "ytm" || error.errorCode !in 2000 until 3000) return
                 val id = "y" + uri.host
@@ -931,6 +969,7 @@ class PlayerService : MediaLibraryService() {
     }.getOrNull()
 
     override fun onDestroy() {
+        waiting?.let { cb -> runCatching { getSystemService(android.net.ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } }
         runCatching { unregisterReceiver(usbSeen) }
         crossfade?.release()
         UsbDac.release()
