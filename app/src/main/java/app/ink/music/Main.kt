@@ -1349,7 +1349,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
     LaunchedEffect(i?.id) { i?.like?.take(5)?.forEach { YouTubeAccount.warm(ctx, it.name, it.id) } }
     // their best-known songs, the library's own copy where there is one (it plays from the phone or the server)
     val top = remember(i, theirs) {
-        i?.top.orEmpty().take(5).map { t -> theirs.firstOrNull { it.title.equals(t.title, ignoreCase = true) } ?: t }
+        i?.top.orEmpty().take(6).map { t -> theirs.firstOrNull { it.title.equals(t.title, ignoreCase = true) } ?: t }
     }
     val playable = remember(top, theirs) { (top + theirs).distinctBy { it.id } }
     LaunchedEffect(playable.firstOrNull()?.id) { Playback.warm(playable.firstOrNull()) }

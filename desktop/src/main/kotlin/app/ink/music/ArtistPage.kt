@@ -75,7 +75,8 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     // who fans also like, read ahead, so the next click opens at once
     LaunchedEffect(i?.id) { i?.like?.take(5)?.forEach { Artists.warm(it.name, it.id) } }
     // their best-known songs, your own copy where there is one (it plays from here or your server)
-    val top = remember(i, theirs) { i?.top.orEmpty().take(5).map { t -> theirs.firstOrNull { it.title.equals(t.title, ignoreCase = true) } ?: t } }
+    // six, three a column (YouTube's five and the next from its list: InnerTube.top)
+    val top = remember(i, theirs) { i?.top.orEmpty().take(6).map { t -> theirs.firstOrNull { it.title.equals(t.title, ignoreCase = true) } ?: t } }
     val playable = remember(top, theirs) { (top + theirs).distinctBy { it.id } }
     // their records: yours first, then YouTube's that you don't have
     val tubeAlbums = remember(i, records) { i?.albums.orEmpty().filter { t -> records.none { it.title.equals(t.title, ignoreCase = true) } } }

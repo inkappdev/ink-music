@@ -157,6 +157,19 @@ class InnerTube(
         val shelves: List<String> = emptyList(),
     )
 
+    /**
+     * An artist's top songs: the page's shelf holds five; the rest from its own list (its title's and "see all"'s link,
+     * one read more) when that's fewer than six, so a page shows six, three a column (2026-11-09: five sat 3 and 2).
+     */
+    private fun top(page: JSONObject): List<Track> {
+        val shelf = all(page, "musicShelfRenderer").firstOrNull()
+        val first = all(page, "musicShelfRenderer").flatMap { all(it, "musicResponsiveListItemRenderer") }.mapNotNull(::track).distinctBy { it.videoId }
+        if (first.size >= 6 || shelf == null) return first
+        val more = all(shelf, "browseEndpoint").map { it.optString("browseId") }.firstOrNull { it.startsWith("VL") }
+            ?.let { runCatching { tracks(it, 12) }.getOrDefault(emptyList()) }.orEmpty()
+        return (first + more).distinctBy { it.videoId }
+    }
+
     /** An artist's page, one read: the header (photo, bio, monthly audience) and its shelves, told apart by their titles. */
     fun artist(browseId: String): Artist {
         val page = post("browse", JSONObject().put("browseId", browseId))
@@ -174,7 +187,7 @@ class InnerTube(
             photo = biggest(head?.optJSONObject("thumbnail")),
             about = text(head?.optJSONObject("description")).trim(),
             audience = text(head?.optJSONObject("monthlyListenerCount")),
-            top = all(page, "musicShelfRenderer").flatMap { all(it, "musicResponsiveListItemRenderer") }.mapNotNull(::track).distinctBy { it.videoId },
+            top = top(page),
             albums = records.filter { r -> singles.none { it.id == r.id } },
             singles = singles,
             like = shelf("fans might also like", "fans also like", "similar").filter { it.kind == Kind.ARTIST },
