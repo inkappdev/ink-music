@@ -34,7 +34,7 @@ object LiveSets {
     private val _clips = MutableStateFlow<List<MusicVideos.Clip>>(emptyList())
     val clips: StateFlow<List<MusicVideos.Clip>> = _clips
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val file = File(Home.cache, "dj-sets.json")
+    private val file = File(Home.cache, "dj-sets-2.json")
     @Volatile private var started = false
 
     fun start() {
@@ -46,7 +46,7 @@ object LiveSets {
                 .map { MusicVideos.Clip(it.getString("id"), it.getString("dj"), it.getString("channel"), it.getLong("when")) } }
             if (was != null && System.currentTimeMillis() - was.optLong("at") < 6 * 3_600_000L) return@launch
             val now = System.currentTimeMillis()
-            val sets = runCatching { DjSets.read() }.onFailure { Log.d("dj sets: $it") }.getOrDefault(emptyList())
+            val sets = runCatching { DjSets.read(System.currentTimeMillis() / 86_400_000L) }.onFailure { Log.d("dj sets: $it") }.getOrDefault(emptyList())
             if (sets.isEmpty()) return@launch
             val clips = sets.map { MusicVideos.Clip(it.id, it.dj, it.channel, now - it.days * 86_400_000L) }
             _clips.value = clips
@@ -66,7 +66,7 @@ fun LiveSetsShelf(open: (Page) -> Unit) {
     LaunchedEffect(Unit) { LiveSets.start() }
     if (clips.isEmpty()) return
     Column {
-        Section("LIVE DJ SETS", "humano studios, hör berlin, the lot radio, boiler room")
+        Section("LIVE DJ SETS", "humano studios, hör berlin, the lot radio, boiler room, kiosk radio")
         Shelf(clips.size, 300.dp, cover = 16 / 9f) { each ->
             items(clips, key = { it.id }) { c ->
                 Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {

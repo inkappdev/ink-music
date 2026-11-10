@@ -27,14 +27,14 @@ object LiveSets {
         started = true
         val app = ctx.applicationContext
         scope.launch {
-            val file = File(app.filesDir, "youtube/dj-sets.json")
+            val file = File(app.filesDir, "youtube/dj-sets-2.json")
             val was = runCatching { JSONObject(file.readText()) }.getOrNull()
             was?.optJSONArray("sets")?.let { a -> _clips.value = (0 until a.length()).map { a.getJSONObject(it) }
                 .map { MusicVideos.Clip(it.getString("id"), it.getString("dj"), it.getString("channel"), it.getLong("when")) } }
             if (Quality.metered(app)) { started = false; return@launch }
             if (was != null && System.currentTimeMillis() - was.optLong("at") < 6 * 3_600_000L) return@launch
             val now = System.currentTimeMillis()
-            val sets = runCatching { DjSets.read() }.onFailure { android.util.Log.d("ink-youtube", "dj sets: $it") }.getOrDefault(emptyList())
+            val sets = runCatching { DjSets.read(System.currentTimeMillis() / 86_400_000L) }.onFailure { android.util.Log.d("ink-youtube", "dj sets: $it") }.getOrDefault(emptyList())
             if (sets.isEmpty()) return@launch
             val clips = sets.map { MusicVideos.Clip(it.id, it.dj, it.channel, now - it.days * 86_400_000L) }
             _clips.value = clips

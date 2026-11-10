@@ -120,7 +120,7 @@ fun NewVideosShelf(clips: List<MusicVideos.Clip>, pages: Pages) {
 /** Listen's shelf of live DJ sets (LiveSets): each frame wide, the DJ, the channel and how long ago. */
 @Composable
 fun LiveSetsShelf(clips: List<MusicVideos.Clip>, pages: Pages) {
-    Heading("live dj sets", "humano studios, hör berlin, the lot radio, boiler room")
+    Heading("live dj sets", "humano studios, hör berlin, the lot radio, boiler room, kiosk radio")
     Shelf(clips) { c -> VideoTile(c, "${c.artist}  ·  ${agoOf(c.at)}") { pages.open(Page.Watch(c, clips)) } }
 }
 
