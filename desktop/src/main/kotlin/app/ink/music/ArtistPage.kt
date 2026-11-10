@@ -132,7 +132,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                     modifier = Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { reading = true }),
                 )
                 if (all.isNotEmpty()) Word("more", pixel(12.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 8.dp) { reading = true }
-                from?.let { BasicText("from $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 10.dp)) }
+                // where it's from: not on the page (2026-11-09, Bronson: cut it); the licence's credit closes the whole bio (Reading)
             }
         }
     }

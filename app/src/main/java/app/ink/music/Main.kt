@@ -1485,7 +1485,8 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                         .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { aboutOpen = !aboutOpen }),
                 )
                 if (!aboutOpen && rest.isNotEmpty()) Word("more", pixel(12.sp, Ink.mid), Modifier.padding(start = 20.dp, top = 6.dp), touch = 8.dp) { aboutOpen = true }
-                from?.let { BasicText("from $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 20.dp, top = 10.dp)) }
+                // where it's from only with the whole of it open (2026-11-09: not on the page; the licence asks for a credit)
+                if (aboutOpen) from?.let { BasicText("from $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(start = 20.dp, top = 10.dp)) }
                 Spacer(Modifier.height(22.dp))
             }
         }
