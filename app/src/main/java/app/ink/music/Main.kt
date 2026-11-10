@@ -2077,7 +2077,9 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             Spacer(Modifier.height(18.dp))
             BasicText(a.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
-            Word(a.artist.lowercase(), pixel(13.sp, Ink.mid), touch = 6.dp) { pages.open(Page.Artist(a.artist)) }
+            // a record's artist, their page; a playlist's byline (its maker, "auto playlist") only words
+            if ("list=" in a.url || Curation.tubeBranded(a.url, a.artist)) BasicText(a.artist.lowercase(), style = pixel(13.sp, Ink.mid))
+            else Word(a.artist.lowercase(), pixel(13.sp, Ink.mid), touch = 6.dp) { pages.open(Page.Artist(a.artist)) }
             Spacer(Modifier.height(4.dp))
             val all = songs
             BasicText(if (all == null) "reading it from youtube music" else "${all.size} songs   youtube music", style = pixel(12.sp, Ink.mid))

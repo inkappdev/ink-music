@@ -34,6 +34,12 @@ data class ArtistInfo(
  * before shows at once while it's read again.
  */
 object Artists {
+    /**
+     * A record's or song's artists, each a name of its own: YouTube lists collaborators with ", " (only that: an "&"
+     * is often one name's own, Iron & Wine).
+     */
+    fun named(artists: String): List<String> = artists.split(", ").map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(artists) }
+
     private val dir = File(Home.cache, "artists")
     private val reads = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Deferred<ArtistInfo?>>()
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)

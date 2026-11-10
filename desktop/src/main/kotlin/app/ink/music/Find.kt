@@ -308,7 +308,16 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                 Spacer(Modifier.height(16.dp))
                 BasicText(a.title.uppercase(), style = headline(30.sp), maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
-                BasicText(a.artist.lowercase(), style = pixel(14.sp))
+                // a record's artists, each their own page (2026-11-09: the name was only words here); a playlist's byline
+                // (its maker, "auto playlist") stays words
+                if (playlist || a.branded) BasicText(a.artist.lowercase(), style = pixel(14.sp))
+                else Row {
+                    val names = Artists.named(a.artist)
+                    names.forEachIndexed { i, name ->
+                        Word(name.lowercase(), pixel(14.sp), touch = 6.dp) { open(Page.Artist(name)) }
+                        if (i < names.lastIndex) BasicText(", ", style = pixel(14.sp, Ink.mid))
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 BasicText(songs?.let { s -> listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration }), "youtube music").joinToString("  ·  ") } ?: "reading",
                     style = pixel(12.sp, Ink.mid))
