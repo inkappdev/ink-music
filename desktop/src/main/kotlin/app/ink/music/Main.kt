@@ -1759,14 +1759,16 @@ fun androidx.compose.foundation.lazy.LazyListScope.cascading(rows: androidx.comp
 
 private class Cascading(private val scope: androidx.compose.foundation.lazy.LazyListScope) : androidx.compose.foundation.lazy.LazyListScope by scope {
     private var n = 0
+    // each row's pieces one under another, as a list's item lays them (a Box laid them over each other: the kept page's
+    // name over its count and its words, 2026-11-10)
     override fun item(key: Any?, contentType: Any?, content: @Composable androidx.compose.foundation.lazy.LazyItemScope.() -> Unit) {
         val i = n++
-        scope.item(key, contentType) { val row = this; Box(Modifier.cascade(i)) { row.content() } }
+        scope.item(key, contentType) { val row = this; Column(Modifier.cascade(i)) { row.content() } }
     }
     override fun items(count: Int, key: ((index: Int) -> Any)?, contentType: (index: Int) -> Any?,
                        itemContent: @Composable androidx.compose.foundation.lazy.LazyItemScope.(index: Int) -> Unit) {
         val first = n; n += count
-        scope.items(count, key, contentType) { at -> val row = this; Box(Modifier.cascade(first + at)) { row.itemContent(at) } }
+        scope.items(count, key, contentType) { at -> val row = this; Column(Modifier.cascade(first + at)) { row.itemContent(at) } }
     }
 }
 
