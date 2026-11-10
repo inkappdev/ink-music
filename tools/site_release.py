@@ -22,8 +22,9 @@ PART = 20 * 1024 * 1024
 MAX = 25 * 1024 * 1024
 BASE = "https://inkhome.app/download/"
 # a build's kind, from its name: ink-music-2.1.2.apk, ink-music-2.1.2-mac.dmg, -windows.msi, -linux.deb / .rpm
+# / .AppImage
 KINDS = {".apk": ".apk", "-mac.dmg": "-mac.dmg", "-windows.msi": "-windows.msi", "-linux.deb": "-linux.deb",
-         "-linux.rpm": "-linux.rpm", "-source.tar.xz": "-source.tar.xz"}
+         "-linux.rpm": "-linux.rpm", "-linux.AppImage": "-linux.AppImage", "-source.tar.xz": "-source.tar.xz"}
 NAME = re.compile(r"^ink-music-(\d+(?:\.\d+)*)(.*)$")
 
 

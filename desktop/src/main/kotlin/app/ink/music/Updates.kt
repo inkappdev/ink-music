@@ -31,7 +31,8 @@ sealed interface Updating {
  *  - a Mac: the new app copied out of the dmg beside this one, swapped in once this one has quit (downloaded by ink
  *    music, it carries no quarantine, so no Open Anyway again); where it can't write, the dmg is opened to drag over;
  *  - Windows: once this one has quit, the msi run with its progress bar alone (installed just for you, as the first);
- *  - Linux: the system asks for the password (pkexec), apt or dnf puts it in.
+ *  - Linux: the system asks for the password (pkexec), apt or dnf puts it in; an AppImage is the new file put where
+ *    this one is, once it has quit (2026-11-09).
  * Only an installed ink music looks (not one run from the source).
  */
 object Updates {
@@ -45,9 +46,12 @@ object Updates {
     // who asked for it, "(#12, #15)": on GitHub, not on the card
     private val asked = Regex("""\s*\(#\d+(,\s*#\d+)*\)""")
 
-    /** Where this ink music runs from: the launcher inside its app (null run from the source: nothing to update). */
+    /** The AppImage this ink music runs from (its runtime says where in APPIMAGE), or null: installed by a package, a dmg or an msi. */
+    private val appImage: String? = if (Home.mac || Home.windows) null else System.getenv("APPIMAGE")?.takeIf { it.endsWith(".AppImage", ignoreCase = true) && File(it).isFile }
+
+    /** Where this ink music runs from: the launcher inside its app, or its AppImage (null run from the source: nothing to update). */
     private val self: String? by lazy {
-        (System.getProperty("ink.self") ?: ProcessHandle.current().info().command().orElse(null))?.takeIf {
+        appImage ?: (System.getProperty("ink.self") ?: ProcessHandle.current().info().command().orElse(null))?.takeIf {
             when {
                 Home.mac -> ".app/Contents/MacOS/" in it
                 Home.windows -> it.lowercase().endsWith("ink music.exe")
@@ -56,10 +60,11 @@ object Updates {
         }
     }
 
-    /** Which download is this computer's: the Mac's dmg, Windows' msi, Linux's rpm where rpm put it here, else the deb. */
+    /** Which download is this computer's: the Mac's dmg, Windows' msi, Linux's AppImage run as one, rpm where rpm put it here, else the deb. */
     private fun mine(name: String): Boolean = when {
         Home.mac -> name.endsWith("-mac.dmg")
         Home.windows -> name.endsWith(".msi")
+        appImage != null -> name.endsWith("-linux.AppImage")
         rpm -> name.endsWith(".rpm")
         else -> name.endsWith(".deb")
     }
@@ -122,6 +127,7 @@ object Updates {
                 when {
                     Home.mac -> mac(got)
                     Home.windows -> windows(got)
+                    appImage != null -> appImage(got, appImage)
                     else -> linux(got, u.version)
                 }
             }.onFailure {
@@ -163,6 +169,21 @@ object Updates {
         ProcessBuilder("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-EncodedCommand", encoded)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectErrorStream(true).start()
         quit()
+    }
+
+    /**
+     * The new AppImage beside this one (the same folder, so the swap is one rename), put in its place once this one has
+     * quit, and opened. Its folder not ours to write: opened, to put it there by hand.
+     */
+    private fun appImage(got: File, at: String) {
+        val here = File(at)
+        val next = File(here.path + ".new")
+        if (!runCatching { got.copyTo(next, overwrite = true); next.setExecutable(true) }.getOrDefault(false)) {
+            next.delete(); run("xdg-open", got.parentFile.path)
+            step.value = Updating.Failed("put ${got.name} in place of ${here.name}, from the folder that opened"); return
+        }
+        note("appimage: ${got.name} beside ${here.path}")
+        after("mv -f ${q(next.path)} ${q(here.path)} && exec ${q(here.path)}")
     }
 
     /** The system asks for the password, and its own package manager puts it in (libmpv and all); then ink music again. */

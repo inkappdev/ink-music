@@ -186,6 +186,8 @@ fun main() {
                 Sized { App() }
                 // Windows: the strip along the top the window's to drag (InkTitle), over the pages
                 TitleStrip(Size.of(chosen))
+                // the Mac: a double-click along the top zooms, as a title bar's does (MacTitleStrip)
+                MacTitleStrip(Size.of(chosen))
             }
         }
         MiniWindow()

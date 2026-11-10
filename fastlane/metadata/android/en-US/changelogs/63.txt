@@ -3,5 +3,6 @@
 - Right click a song: a small menu where you clicked. Copy its link
 - What you hear, as a band across the player. Upright screens fit
 - Moods, faces and the record of the day load quicker
+- Linux: an AppImage. Mac: double-click the top to zoom
 - Fixed: Windows wouldn't start for some
 - Your song is now legally required to glow

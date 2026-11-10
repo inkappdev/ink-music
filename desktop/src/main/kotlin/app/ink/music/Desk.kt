@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.Arrangement
@@ -424,6 +425,57 @@ fun TitleStrip(k: Float) {
             }
         }
     })
+}
+
+/**
+ * The Mac's top strip, as tall as the pages' [TOP] (under the traffic lights): a double-click there does what the Mac
+ * says a title bar's double-click does (Desktop & Dock: zoom, which fills the screen, by default; or minimise; or
+ * nothing). ink's page runs under the bar (fullWindowContent), so the click was Compose's and the Mac never had it
+ * (2026-11-09). It only watches: nothing is taken from the page, the window still dragged as before.
+ */
+@Composable
+fun MacTitleStrip(k: Float) {
+    if (!Home.mac) return
+    Box(Modifier.fillMaxWidth().height((28f * k).dp).pointerInput(Unit) {
+        val slop = viewConfiguration.touchSlop
+        var last = 0L
+        var lastAt = androidx.compose.ui.geometry.Offset.Zero
+        awaitPointerEventScope {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                if (e.type != androidx.compose.ui.input.pointer.PointerEventType.Press || !e.buttons.isPrimaryPressed) continue
+                val at = e.changes.firstOrNull()?.position ?: continue
+                val now = e.changes.first().uptimeMillis
+                if (now - last <= viewConfiguration.doubleTapTimeoutMillis && (at - lastAt).getDistance() <= slop * 2) {
+                    last = 0L; MacTitle.doubleClicked()
+                } else { last = now; lastAt = at }
+            }
+        }
+    })
+}
+
+object MacTitle {
+    /** What the Mac's set to do (AppleActionOnDoubleClick: Maximize or Fill, Minimize, None; zoom where it's never been set). */
+    private fun action(): String = runCatching {
+        val p = ProcessBuilder("defaults", "read", "-g", "AppleActionOnDoubleClick").redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText().trim()
+        if (p.waitFor() == 0) out else "Maximize"
+    }.getOrDefault("Maximize")
+
+    fun doubleClicked() {
+        val s = Win.state ?: return
+        if (s.placement == WindowPlacement.Fullscreen) return
+        Thread {
+            val a = action()
+            javax.swing.SwingUtilities.invokeLater {
+                when (a) {
+                    "None" -> {}
+                    "Minimize" -> s.isMinimized = true
+                    else -> s.placement = if (s.placement == WindowPlacement.Maximized) WindowPlacement.Floating else WindowPlacement.Maximized
+                }
+            }
+        }.start()
+    }
 }
 
 /** Windows' window manager (DWM), the one call ink needs: a window's title bar dark, and its colours. */
