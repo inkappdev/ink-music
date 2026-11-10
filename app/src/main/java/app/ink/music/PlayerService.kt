@@ -564,13 +564,14 @@ class PlayerService : MediaLibraryService() {
         }, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean) =
-                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                // every song at 48 kHz while transitions are on (exact off), before the output sees it (OneRate): a change
+                // of rate stopped the sound a moment, and after a jump threw the output's clock out
+                OneRate(androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
                     .setAudioOutputProvider(usb)
-                    // every song at 48 kHz while transitions are on (exact off): a change of rate stopped the sound a moment
-                    .setAudioProcessors(arrayOf(blend, Resample { Crossfade.on(this@PlayerService) && !Exact.inUse(this@PlayerService) }, Tap(blend)))
-                    .build()
+                    .setAudioProcessors(arrayOf(blend, Tap(blend)))
+                    .build()) { Crossfade.on(this@PlayerService) && !Exact.inUse(this@PlayerService) }
             // the decoder asked for float only for a file deeper than 16 bit: a 16 bit or lossy one stays 16 bit (as
             // exact: the same numbers), and goes Media3's 16 bit way, where its processors are (an episode's silence
             // skipping; they're never on float)

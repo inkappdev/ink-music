@@ -157,7 +157,12 @@ class Blend : BaseAudioProcessor() {
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
         val format = inputAudioFormat
         val id = idOf(streamMetadata)
-        val startFrame = streamMetadata.positionOffsetUs * format.sampleRate / 1_000_000
+        // a new song set up first with where the old one ended as its place (Media3 sets it up twice at a change of
+        // rate, the second at its start): its start, so the mix begins on its first sample (taken for a jump into it,
+        // the new one's first 23 ms went out alone, its encoder's silence a 15 ms gap, "little skip", 2026-11-10)
+        val endedThere = if (id != null && id != song) song?.let { reached[it] } else null
+        val offsetUs = if (endedThere != null && kotlin.math.abs(streamMetadata.positionOffsetUs / 1000 - endedThere) < 500) 0L else streamMetadata.positionOffsetUs
+        val startFrame = offsetUs * format.sampleRate / 1_000_000
         // the same song set up again where it is (its settings applied anew at a song change): not a seek, the mix goes on
         if (id != null && id == song && format.sampleRate == rate && kotlin.math.abs(startFrame - frame) <= rate / 20) return
         val was = song
@@ -179,14 +184,14 @@ class Blend : BaseAudioProcessor() {
             } else if (t != null) {
                 android.util.Log.d("ink-crossfade", "blend: $was ended at ${endedMs / 1000.0}s, not where it was cut (${t.cutMs / 1000.0}s): not mixed")
             }
-            if (id != null) { reached.keys.retainAll(setOf(id, was)); reached[id] = streamMetadata.positionOffsetUs / 1000 }
+            if (id != null) { reached.keys.retainAll(setOf(id, was)); reached[id] = offsetUs / 1000 }
         }
         tail = null
         early = null
         ride = 1.0; rideStep = 0.0
         pOld = 0.0; pNew = 0.0; pSum = 0.0
         // the new song at its start: the mix begun
-        pending?.takeIf { it.into == id && streamMetadata.positionOffsetUs < 2_000_000 }?.let { p ->
+        pending?.takeIf { it.into == id && offsetUs < 2_000_000 }?.let { p ->
             tail = p.tail
             at = p.at
             step = p.tail.rate.toDouble() / format.sampleRate
