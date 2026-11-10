@@ -179,7 +179,7 @@ object Settings {
         "seeing" to listOf(
             "ctrl 0" to "the player", "ctrl shift f" to "the player, full screen", "ctrl shift m" to "the mini player",
             "ctrl l" to "lyrics", "ctrl u" to "up next", "ctrl p" to "play on", "ctrl \\" to "what's playing beside, or along the foot",
-            "ctrl =  ctrl -" to "bigger, smaller",
+            "ctrl shift \\" to "the places beside, or folded away", "ctrl =  ctrl -" to "bigger, smaller",
         ),
     )
     /** The part last open, for the next time (this run). */

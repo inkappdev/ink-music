@@ -57,7 +57,13 @@ fun frameOf(width: Dp) = when {
 @Composable
 fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSettings: () -> Unit) {
     Column(Modifier.width(RAIL).fillMaxHeight().padding(start = SIDE, top = TOP + 40.dp, bottom = 20.dp)) {
-        PLACES.forEach { p ->
+        PLACES.forEachIndexed { i, p ->
+          if (i == 0) Row(verticalAlignment = Alignment.CenterVertically) {
+            Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
+            Spacer(Modifier.weight(1f))
+            // fold the rail away: the place you're on one big word over the page, the rest dropped down from it (⌘⇧\)
+            Pixel(FOLD_LEFT, "fold the places away", Ink.dim, Modifier.padding(end = 18.dp), cell = 2.dp) { RailFold.set(true) }
+          } else
             Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
         }
         Spacer(Modifier.height(28.dp))
@@ -78,6 +84,18 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
 }
 
 val RAIL = 210.dp
+val FOLD_LEFT = listOf("..#", ".#.", "#..", ".#.", "..#")
+val FOLD_RIGHT = listOf("#..", ".#.", "..#", ".#.", "#..")
+
+/**
+ * The rail folded away (2026-11-10, kept): the page takes its room, the place you're on one big word over it with the
+ * others dropped down from it (a narrow window's head), an arrow before it to unfold.
+ */
+object RailFold {
+    private val file = java.io.File(Home.dir, "rail-folded")
+    val on = kotlinx.coroutines.flow.MutableStateFlow(file.exists())
+    fun set(t: Boolean) { on.value = t; runCatching { if (t) file.writeText("") else file.delete() } }
+}
 val NOW = 360.dp
 /**
  * The widest a sentence or a paragraph runs (a quote, a note, notes): about 45 to 60 letters a line, the same at every
