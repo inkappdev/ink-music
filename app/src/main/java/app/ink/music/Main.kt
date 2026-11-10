@@ -122,6 +122,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.runtime.CompositionLocalProvider
@@ -657,7 +659,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // the menu folded, the remote back on the place's word (the library's own start)
     val placeFocus = LocalTvStart.current ?: rememberTvStart()
     TvRefocus(menu) { if (menu) menuFocus else placeFocus }
-    Box(Modifier.fillMaxSize().then(if (tv) Modifier.padding(top = (head - BAND).coerceAtLeast(0.dp), bottom = (foot - BAND).coerceAtLeast(0.dp)).covered(menu, placeFocus) else Modifier)
+    Box(Modifier.fillMaxSize().then(if (tv) Modifier.padding(start = TV_RAIL, top = 24.dp, bottom = (foot - BAND).coerceAtLeast(0.dp)).covered(menu, placeFocus) else Modifier)
         .hazeSource(tabsFrost).then(if (tv) Modifier.feather(placeList, 28.dp, 44.dp) else Modifier).windowInsetsPadding(sides)) {
       val place: @Composable (Int) -> Unit = { page ->
        // what scrolls sideways inside a page (a row of covers) keeps its scroll: run to its end, it doesn't turn the page
@@ -772,8 +774,11 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
         ) { page -> place(page) }
       }
     }
-    // the tab row on black; what scrolls up toward it softens just under it
-    Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
+    // a TV: the places as a rail down the left, ink tv's (2026-11-10, in place of the place's word and its menu)
+    if (tv) TvRail(tabs, tab, onPlace = { tab = it }, onFind = { pages.open(Page.Find) }, onPlayer = onPlayer,
+        onSettings = { pages.open(Page.Settings) }, onYear = { pages.open(Page.Year) }, foot = foot)
+    // the tab row on black; what scrolls up toward it softens just under it (not on a TV: the rail has the places)
+    if (!tv) Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
       Column(Modifier.fillMaxWidth().background(Ink.black).windowInsetsPadding(bars)) {
         // the place you're on, one big word (2026-10-28: the row of words got crowded at six); a tap drops
         // every place down as big words, ink's menu (no hamburger: a word where an icon would go). Find stays put.
@@ -3228,4 +3233,37 @@ private fun SmartEditPage(id: String?, pages: Pages) {
             }
         }
     } }
+}
+
+
+/** How wide a TV's rail of places is. */
+private val TV_RAIL = 220.dp
+
+/**
+ * A TV's places, ink tv's way (2026-11-10, after Prism's TV and ink tv's own launcher): stacked words down the left, the
+ * place shown lit, the remote stepping up and down them ([railItem]); resting on a place a moment shows it (as ink tv's
+ * list shows its reel), OK goes at once. Then find, what's playing, your year and settings, smaller. Right goes into the
+ * place, left from the place's edge comes back here.
+ */
+@Composable
+private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, onFind: () -> Unit, onPlayer: () -> Unit,
+                   onSettings: () -> Unit, onYear: () -> Unit, foot: Dp) {
+    val playing = Playback.now.collectAsState().value != null
+    Column(Modifier.width(TV_RAIL).fillMaxHeight().padding(start = 28.dp, top = 28.dp, bottom = foot)) {
+        BasicText("INK MUSIC", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(bottom = 18.dp))
+        tabs.forEachIndexed { i, t ->
+            var focused by remember { mutableStateOf(false) }
+            // resting on a place a moment shows it; passing through doesn't
+            LaunchedEffect(focused) { if (focused && t != tab) { delay(350); onPlace(t) } }
+            Word(t.uppercase(), headline(24.sp, if (t == tab) Ink.ink else Ink.mid),
+                Modifier.railItem(i, home = t == tab).then(if (t == tab) Modifier.tvFirst() else Modifier)
+                    .onFocusChanged { focused = it.isFocused }.padding(vertical = 1.dp), touch = 4.dp) { onPlace(t) }
+        }
+        Spacer(Modifier.height(22.dp))
+        var at = tabs.size
+        Word("find", pixel(13.sp, Ink.mid), Modifier.railItem(at++), touch = 6.dp, onClick = onFind)
+        if (playing) Word("now playing", pixel(13.sp, Ink.mid), Modifier.railItem(at++), touch = 6.dp, onClick = onPlayer) else at++
+        Word("your year", pixel(13.sp, Ink.mid), Modifier.railItem(at++), touch = 6.dp, onClick = onYear)
+        Word("settings", pixel(13.sp, Ink.mid), Modifier.railItem(at), touch = 6.dp, onClick = onSettings)
+    }
 }

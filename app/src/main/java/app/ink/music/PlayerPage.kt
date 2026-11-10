@@ -1446,13 +1446,23 @@ private fun TvPlayer(
             Spacer(Modifier.width(48.dp))
             // beside it: the song's words, its lyrics when they're on (big, read from the sofa), the controls at the foot
             Column(Modifier.weight(1f).fillMaxHeight().padding(top = 36.dp)) {
-                SongWords(n, onOpen, share, onHeard, title = 40.sp)
+                SongWords(n, onOpen, share, onHeard, title = 44.sp)
                 when {
-                    sing && notes != null -> NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp))
-                    sing && lyric != null -> LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp))
-                    else -> Spacer(Modifier.weight(1f))
+                    sing && notes != null -> { NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp)); controls() }
+                    sing && lyric != null -> { LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp)); controls() }
+                    // no lyrics: the controls right under the song (2026-11-10, as Prism's TV: they sat at the foot, a
+                    // band of nothing between), then what plays next, quietly
+                    else -> {
+                        Spacer(Modifier.height(36.dp))
+                        controls()
+                        val q by Playback.queue.collectAsState()
+                        q.getOrNull(n.index + 1)?.song?.let { next ->
+                            BasicText("up next: ${next.title} · ${next.artist}".lowercase(), style = pixel(SMALL, SAID), maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 14.dp, top = 18.dp))
+                        }
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
-                controls()
                 Spacer(Modifier.height(4.dp))
             }
         }

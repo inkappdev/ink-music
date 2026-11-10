@@ -100,6 +100,29 @@ object TvKeys {
     val topRow = arrayOfNulls<androidx.compose.ui.focus.FocusRequester>(3)
     /** Which of the top row has the remote (-1: none). */
     var topAt by mutableStateOf(-1)
+    /**
+     * The library's rail on a TV (2026-11-10, ink tv's stacked words down the left in place of the place's word and its
+     * menu): the remote steps up and down it by these, right goes into the place, left from the place's edge comes back
+     * to the place it's on ([railHome]).
+     */
+    val rail = arrayOfNulls<androidx.compose.ui.focus.FocusRequester>(16)
+    /** Which of the rail has the remote (-1: none). */
+    var railAt by mutableStateOf(-1)
+    /** The rail's word for the place shown: where left from the place lands. */
+    var railHome: androidx.compose.ui.focus.FocusRequester? = null
+}
+
+/** One of the library's rail ([TvKeys.rail]): its place in it, and whether it has the remote. */
+@Composable
+fun Modifier.railItem(i: Int, home: Boolean = false): Modifier {
+    if (!Device.tv) return this
+    val r = remember { androidx.compose.ui.focus.FocusRequester() }
+    DisposableEffect(r) {
+        TvKeys.rail[i] = r
+        onDispose { if (TvKeys.rail[i] === r) TvKeys.rail[i] = null; if (TvKeys.railAt == i) TvKeys.railAt = -1 }
+    }
+    if (home) TvKeys.railHome = r
+    return focusRequester(r).onFocusChanged { f -> if (f.isFocused) TvKeys.railAt = i else if (TvKeys.railAt == i) TvKeys.railAt = -1 }
 }
 
 /**
@@ -134,6 +157,31 @@ fun TvFocus(content: @Composable () -> Unit) {
                         i += by
                     }
                     return true   // the row's end: stays
+                }
+                // the rail: up and down along it, right into the place, left stays; left from the place's edge, the rail
+                val railAt = TvKeys.railAt
+                fun railStep(by: Int): Boolean {
+                    var i = railAt + by
+                    while (i in TvKeys.rail.indices) {
+                        TvKeys.rail[i]?.let { r -> if (runCatching { r.requestFocus() }.getOrDefault(false)) return true }
+                        i += by
+                    }
+                    return true
+                }
+                if (railAt >= 0) return@onPreviewKeyEvent when (e.key) {
+                    androidx.compose.ui.input.key.Key.DirectionUp -> railStep(-1)
+                    androidx.compose.ui.input.key.Key.DirectionDown -> railStep(1)
+                    androidx.compose.ui.input.key.Key.DirectionRight ->
+                        fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Right) || fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Next)
+                    androidx.compose.ui.input.key.Key.DirectionLeft -> true
+                    else -> false
+                }
+                // left from the place: on along it where there's more; at its edge, the rail's word for the place shown
+                // (not whichever word is level with it: that one, rested on, showed another place, 2026-11-10)
+                if (e.key == androidx.compose.ui.input.key.Key.DirectionLeft && at < 0 && TvKeys.railHome != null) {
+                    val moved = fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Left)
+                    if (!moved || TvKeys.railAt >= 0) runCatching { TvKeys.railHome?.requestFocus() }
+                    return@onPreviewKeyEvent true
                 }
                 when (e.key) {
                     androidx.compose.ui.input.key.Key.DirectionLeft -> if (at >= 0) step(-1) else false
