@@ -398,6 +398,9 @@ private fun VideoSurface(
         while (true) { at = v.at(); length = v.length(); kotlinx.coroutines.delay(250) }
     }
     var moved by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // where the mouse was: a new frame relaid under a still mouse sends a move of its own, so only a real one counts
+    // (2026-11-10: the controls never faded, a move every frame)
+    var last by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Unspecified) }
     var over by remember { mutableStateOf(false) }
     var awake by remember { mutableStateOf(true) }
     LaunchedEffect(moved, over, paused) {
@@ -407,10 +410,15 @@ private fun VideoSurface(
     val shown = (awake && (over || full)) || paused || !ready
     val fade by androidx.compose.animation.core.animateFloatAsState(if (shown) 1f else 0f, androidx.compose.animation.core.tween(if (shown) Motion.FADE else 600), label = "controls")
     Box(modifier
-        .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Move) { moved = System.currentTimeMillis(); over = true }
+        .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Move) { e ->
+            val p = e.changes.first().position
+            if (last == androidx.compose.ui.geometry.Offset.Unspecified || (p - last).getDistance() > 2f) { last = p; moved = System.currentTimeMillis() }
+            over = true
+        }
         .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Enter) { over = true }
         .onPointerEvent(androidx.compose.ui.input.pointer.PointerEventType.Exit) { over = false }
-        .then(if (full && !shown) Modifier.pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Toolkit.getDefaultToolkit()
+        // the pointer fades with the controls, over the picture (and all of full screen)
+        .then(if (!shown && ready) Modifier.pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Toolkit.getDefaultToolkit()
             .createCustomCursor(java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB), java.awt.Point(0, 0), "none"))) else Modifier)
         .pointerInput(ready) { if (ready) detectTapGestures(onDoubleTap = { onFull() }, onTap = { onToggle() }) }) {
         when {
