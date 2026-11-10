@@ -37,13 +37,15 @@ import java.util.Calendar
  */
 enum class Sort(val word: String, val turns: Boolean = true) {
     AZ("a-z"), ARTIST("artist"), YEAR("year"), ADDED("added"), HOUR("this hour"), LATELY("lately"), MOST("most"),
-    FORGOTTEN("forgotten"), COLOUR("color"), SHUFFLE("shuffle", turns = false),
+    FORGOTTEN("forgotten"), COLOUR("color"), LENGTH("length"), SHUFFLE("shuffle", turns = false),
 }
 
 object Sorts {
     val RECORDS = listOf(Sort.AZ, Sort.ARTIST, Sort.YEAR, Sort.ADDED, Sort.LATELY, Sort.COLOUR, Sort.SHUFFLE)
     val ARTISTS = listOf(Sort.AZ, Sort.MOST, Sort.LATELY, Sort.FORGOTTEN, Sort.SHUFFLE)
-    val SONGS = listOf(Sort.AZ, Sort.HOUR, Sort.LATELY, Sort.MOST, Sort.FORGOTTEN, Sort.SHUFFLE)
+    // the records' own orders too, as the computer's (2026-11-10): by artist, a record at a time in its order; the year
+    // as a timeline; newest in; the longest first
+    val SONGS = listOf(Sort.AZ, Sort.ARTIST, Sort.YEAR, Sort.ADDED, Sort.HOUR, Sort.LATELY, Sort.MOST, Sort.FORGOTTEN, Sort.LENGTH, Sort.SHUFFLE)
 
     data class Chosen(val sort: Sort = Sort.AZ, val turned: Boolean = false)
 

@@ -55,6 +55,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -167,6 +168,7 @@ class Main : ComponentActivity() {
         ListenBrainz.start(this)
         LastFm.start(this)
         Offline.start(this)
+        SongsFrom.start(this)
         Pods.start(this)
         Order.start(this)
         Seeds.start(this)
@@ -565,11 +567,44 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             }
         }
     }
-    val everySong = remember(songs, sc, seed, heard, minute) {
-        Sorts.order(songs, sc, seed, { it.id }) { s ->
+    // the songs tab's songs, as the computer's: the library's and every YouTube song you have (liked there, loved here,
+    // kept on the phone), each from where it comes (SongsFrom); and what's kept offline, from anywhere
+    val liked by YouTubeAccount.liked.collectAsState()
+    val lovedTube by Loved.tube.collectAsState()
+    val keptIds by Offline.kept.collectAsState()
+    val keptTube = remember(keptIds) { Offline.tubeSongs(ctx).filter { it.id in keptIds } }
+    val pool = remember(songs, liked, lovedTube, keptTube) {
+        val have = songs.mapTo(HashSet()) { it.id }
+        (songs + (liked + lovedTube + keptTube).filter { it.id !in have }.distinctBy { it.id }).sortedBy { Library.sortName(it.title) }
+    }
+    val counts = remember(pool, keptIds) {
+        pool.groupingBy(SongsFrom::of).eachCount() + (pool.count { it.id in keptIds }.takeIf { it > 0 }?.let { mapOf("kept" to it) } ?: emptyMap())
+    }
+    // the genres your songs are in (each artist's Last.fm tags, Genres), most first; tagged once the songs tab is open
+    val tagged by GenrePicks.tagged.collectAsState()
+    LaunchedEffect(tab, pool.size) { if (tab == "songs" && pool.isNotEmpty()) GenrePicks.tag(ctx, pool.map { it.artist }) }
+    val genres = remember(pool, tagged, tab) {
+        if (tab != "songs") emptyList()
+        else Genres.names.map { g -> g to pool.count { Genres.fits(it.artist, g) } }.filter { it.second > 0 }.sortedByDescending { it.second }
+    }
+    val from by SongsFrom.chosen.collectAsState()
+    val genre by SongsFrom.genre.collectAsState()
+    val everySong = remember(pool, from, genre, keptIds, tagged, sc, seed, heard, minute) {
+        val shown = pool.filter { s ->
+            (from == "all" || from !in counts || (if (from == "kept") s.id in keptIds else SongsFrom.of(s) == from)) &&
+                (genre.isEmpty() || Genres.fits(s.artist, genre))
+        }
+        Sorts.order(shown, sc, seed, { it.id },
+            compareBy<Song>({ Library.sortName(it.albumArtist.ifBlank { it.artist }) }, { it.year }, { Library.sortName(it.album) }, { it.disc }, { it.track })) { s ->
             when (sc.sort) {
                 Sort.HOUR -> heard.hour(s.id, minute); Sort.LATELY -> heard.lately(s.id); Sort.MOST -> heard.most(s.id)
-                Sort.FORGOTTEN -> heard.forgotten(s.id, now); else -> null
+                Sort.FORGOTTEN -> heard.forgotten(s.id, now)
+                // a timeline: the oldest first
+                Sort.YEAR -> s.year.takeIf { it > 0 }?.let { -it.toDouble() }
+                // newest in first: the phone's index's date added, a server song's when the server took it in
+                Sort.ADDED -> s.added.takeIf { it > 0 }?.toDouble()
+                Sort.LENGTH -> s.duration.takeIf { it > 0 }?.toDouble()
+                else -> null
             }
         }
     }
@@ -704,6 +739,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             }
             else -> LazyColumn(state = songList, contentPadding = pad) {
                 item(key = "sort") { SortRow("songs", Sorts.SONGS) }
+                if (counts.size > 1 || genres.isNotEmpty() || genre.isNotEmpty()) item(key = "filters") { SongFilters(counts, genres) }
                 itemsIndexed(everySong, key = { _, s -> s.id }) { i, s -> SongRow(s, swipe = false, onClick = { Playback.play(everySong, i) }) }
             }
         }
@@ -2824,3 +2860,72 @@ fun nameDim(image: androidx.compose.ui.graphics.ImageBitmap): Float {
     val light = lights[lights.size * 9 / 10]
     return if (light <= .4f) 1f else (.4f / light).coerceAtLeast(.4f)
 }
+
+
+/**
+ * Where the songs tab's songs come from, and the genre it shows, as the computer's (2026-11-10): everything, this phone's
+ * files, your server, YouTube, or what's kept offline from wherever it came; kept between starts.
+ */
+object SongsFrom {
+    private var prefs: android.content.SharedPreferences? = null
+    val chosen = kotlinx.coroutines.flow.MutableStateFlow("all")
+    /** The genre shown, "" for every one. */
+    val genre = kotlinx.coroutines.flow.MutableStateFlow("")
+    val WORDS = listOf("all" to "everything", "phone" to "this ${Device.word}", "server" to "your server", "youtube" to "youtube", "kept" to "kept offline")
+
+    fun start(c: android.content.Context) {
+        val p = c.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).also { prefs = it }
+        chosen.value = p.getString("songs-from", null) ?: "all"
+        genre.value = p.getString("songs-genre", null).orEmpty()
+    }
+    fun choose(f: String) { chosen.value = f; prefs?.edit()?.putString("songs-from", f)?.apply() }
+    /** A genre shown ("": every genre). */
+    fun setGenre(g: String) { genre.value = g; prefs?.edit()?.putString("songs-genre", g)?.apply() }
+    fun of(s: Song) = when { s.tube -> "youtube"; s.server -> "server"; else -> "phone" }
+}
+
+/**
+ * The songs tab's filters under its orders, as the computer's: the sources it has, then a hairline's gap, then the
+ * genres your songs are in, dropped down from one word, most first, each with how many. Lit is what's shown; a source
+ * and a genre together narrow it to both.
+ */
+@Composable
+private fun SongFilters(counts: Map<String, Int>, genres: List<Pair<String, Int>>) {
+    val from by SongsFrom.chosen.collectAsState()
+    val genre by SongsFrom.genre.collectAsState()
+    val now = if (from in counts) from else "all"
+    @Composable
+    fun Choice(word: String, count: Int?, lit: Boolean, onClick: () -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
+        Word(word, pixel(13.sp, if (lit) Ink.ink else Ink.dim), touch = 8.dp, onClick = onClick)
+        count?.let { BasicText(" $it", style = pixel(12.sp, if (lit) Ink.mid else Ink.dim)) }
+    }
+    FlowRow(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (counts.size > 1) SongsFrom.WORDS.filter { (k, _) -> k == "all" || k in counts }.forEach { (k, word) ->
+            Choice(word, counts[k].takeIf { k != "all" }, k == now) { SongsFrom.choose(k) }
+        }
+        if (genres.isNotEmpty() || genre.isNotEmpty()) Box {
+            var down by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Word(genre.ifEmpty { "every genre" }, pixel(13.sp, if (genre.isEmpty() && !down) Ink.dim else Ink.ink), touch = 8.dp) { down = !down }
+                Sprite(if (down) GENRES_UP else GENRES_DOWN, if (genre.isEmpty() && !down) Ink.dim else Ink.ink, 2.dp, Modifier.padding(start = 4.dp))
+            }
+            if (down) androidx.compose.ui.window.Popup(
+                offset = with(LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 30.dp.roundToPx()) },
+                onDismissRequest = { down = false },
+                properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+            ) {
+                // the chosen one always there, even with none of its songs tagged yet
+                val all = if (genre.isNotEmpty() && genres.none { it.first == genre }) genres + (genre to 0) else genres
+                Column(Modifier.background(Ink.black).border(1.dp, Ink.line).heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp)) {
+                    Choice("every genre", null, genre.isEmpty()) { SongsFrom.setGenre(""); down = false }
+                    all.forEach { (g, n) -> Choice(g, n, g == genre) { SongsFrom.setGenre(g); down = false } }
+                }
+            }
+        }
+    }
+}
+
+private val GENRES_DOWN = listOf("#...#", ".#.#.", "..#..")
+private val GENRES_UP = listOf("..#..", ".#.#.", "#...#")

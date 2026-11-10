@@ -283,6 +283,8 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         val mb = remember(kept) { Offline.bytes(ctx) / 1_048_576 }
                         BasicText(if (kept.isEmpty()) "keep a song, a record or a playlist on the ${Device.word} (keep offline: on its page, or held) to play it with no signal"
                             else "${kept.size} ${if (kept.size == 1) "song" else "songs"} on this ${Device.word}, $mb mb", style = pixel(12.sp, Ink.mid))
+                        // the list itself, from here too, as the computer's (2026-11-10)
+                        if (kept.isNotEmpty()) Word("see them", pixel(14.sp), Modifier.padding(top = 8.dp), touch = 8.dp) { pages.open(Page.Kept) }
                         Spacer(Modifier.height(12.dp))
                         BasicText("kept as: your server's original file (lossless if it is) and youtube's best, or smaller (mp3 320, and youtube's lighter stream)", style = pixel(12.sp, Ink.mid))
                         Spacer(Modifier.height(6.dp))
