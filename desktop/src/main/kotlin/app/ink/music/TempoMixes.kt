@@ -9,6 +9,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
@@ -65,14 +67,14 @@ object TempoMixes {
             val chosen = ArrayList<Pair<Song, Tempos.Read>>()
             var begun = false
             var read = 0
-            for (group in all.chunked(4)) {
-                val got = coroutineScope { group.map { f -> async { f()?.let { s -> Tempos.of(s)?.let { s to it } } } }.awaitAll() }
-                read += group.size
-                for (p in got) {
-                    val (song, m) = p ?: continue
-                    if (!m.usable || !Tempos.fits(m.bpm, bpm.toDouble()) || !Tempos.fits(m.outBpm, bpm.toDouble(), .06) || chosen.any { it.first.id == song.id }) continue
+            // six read at once, each taken as it comes (2026-11-10, as the phone's: four at a time waited on the slowest of
+            // each four, and a hip-hop mix took a minute and more to begin); begun at two
+            readEach(all, 6) { f -> f()?.let { s -> Tempos.of(s)?.let { s to it } } }.takeWhile { chosen.size < 60 }.collect { p ->
+                read++
+                val (song, m) = p ?: (null to null)
+                if (song != null && m != null && m.usable && Tempos.fits(m.bpm, bpm.toDouble()) && Tempos.fits(m.outBpm, bpm.toDouble(), .06) && chosen.none { it.first.id == song.id }) {
                     chosen += song to m
-                    if (!begun && chosen.size >= 3) {
+                    if (!begun && chosen.size >= 2) {
                         val ordered = dj(chosen)
                         javax.swing.SwingUtilities.invokeAndWait { Player.play(ordered.map { it.first }) }
                         tell(bpm, ordered.first().first.id)
@@ -81,7 +83,6 @@ object TempoMixes {
                 }
                 _state.value = State(title, bpm, read, all.size, chosen.size, begun, false, chosen.map { it.first })
                 if (read % 20 == 0) Tempos.save()
-                if (chosen.size >= 60) break
             }
             if (!begun && chosen.isNotEmpty()) {
                 val ordered = dj(chosen)
@@ -92,6 +93,12 @@ object TempoMixes {
             Tempos.save()
         }
     }
+
+    /** Each of `items` through `read`, `at` at a time, given back as each is done (not in their order). */
+    private fun <T, R> readEach(items: List<T>, at: Int, read: suspend (T) -> R) = kotlinx.coroutines.flow.channelFlow {
+        val gate = kotlinx.coroutines.sync.Semaphore(at)
+        items.forEach { i -> launch { gate.acquire(); try { send(runCatching { read(i) }.getOrNull()) } finally { gate.release() } } }
+    }.buffer(at)
 
     /** A list as a DJ's arc: begun once three are read, the slowest first; each read after put where it meets its neighbours best. */
     fun list(title: String, songs: List<Song>) {
@@ -104,10 +111,10 @@ object TempoMixes {
             val unread = ArrayList<Song>()
             val waiting = ArrayList<Pair<Song, Tempos.Read>>()
             var read = 0
-            for (group in all.chunked(4)) {
-                val got = coroutineScope { group.map { s -> async { s to Tempos.of(s) } }.awaitAll() }
-                read += group.size
-                for ((s, r) in got) if (r?.usable == true) waiting += s to r else unread += s
+            readEach(all, 6) { s -> s to Tempos.of(s) }.collect { p ->
+                read++
+                val (s, r) = p ?: return@collect
+                if (r?.usable == true) waiting += s to r else unread += s
                 if (queued.isEmpty() && waiting.size >= 3) {
                     queued += waiting.sortedBy { fold(it.second.bpm) }; waiting.clear()
                     javax.swing.SwingUtilities.invokeAndWait {
