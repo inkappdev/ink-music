@@ -116,6 +116,8 @@ fun ListenPage(open: (Page) -> Unit) {
         if (fromYours.isNotEmpty()) item { NewFromYours(fromYours, open) }
         // their new music videos (MusicVideos.kt), shown once some are found
         item(key = "videos") { NewVideos(open) }
+        // live DJ sets from four channels that film them (LiveSets.kt)
+        item(key = "live-sets") { LiveSetsShelf(open) }
         if (first.isNotEmpty()) item {
             Column {
             val play = hourSongs.ifEmpty { first.flatMap { it.songs } }

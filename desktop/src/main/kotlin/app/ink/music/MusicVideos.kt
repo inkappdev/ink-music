@@ -242,7 +242,7 @@ fun NewVideos(open: (Page) -> Unit) {
 }
 
 @Composable
-private fun VideoFrame(c: MusicVideos.Clip, modifier: Modifier) {
+internal fun VideoFrame(c: MusicVideos.Clip, modifier: Modifier) {
     val f by produceState<MusicVideos.Frame?>(null, c.id) { value = MusicVideos.frame(c.id) }
     BoxWithConstraints(modifier) {
         f?.let { Image(it.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) } ?: NameCover(c.title, maxWidth)
