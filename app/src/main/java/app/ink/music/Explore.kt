@@ -294,6 +294,7 @@ private fun RecordOfTheDay(d: Picks.Shown, pages: Pages) {
         // picture, YouTube Music): the record of the day was showing only its name
         val art by produceState(d.art, d) { value = Picks.coverFor(d.pick.title, d.pick.artist, true) ?: value ?: Picks.art(d.pick.title, d.pick.artist, d.pick.link, true) }
         val face = remember(d, art) { if (art == d.art) d.face else d.copy(art = art).face }
+        val tvHere = onTv()
         @Composable
         fun Words() {
             BasicText(d.pick.title.uppercase(), style = headline(36.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -309,12 +310,13 @@ private fun RecordOfTheDay(d: Picks.Shown, pages: Pages) {
                     Word("play", pixel(14.sp), touch = 8.dp) { go(true) }
                     Word("its page", pixel(14.sp, Ink.mid), touch = 8.dp) { go(false) }
                 }
-                if (d.pick.link.isNotBlank()) Word("read it", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                // not on a TV: a review opened in a browser there is no place to read (2026-11-10)
+                if (d.pick.link.isNotBlank() && !tvHere) Word("read it", pixel(14.sp, Ink.mid), touch = 8.dp) {
                     runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(d.pick.link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 }
             }
         }
-        if (onTv()) {
+        if (tvHere) {
             // a TV: its name, the critic's words and play beside the cover (2026-11-10), the cover only to look at
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val side = headerSide(maxWidth)

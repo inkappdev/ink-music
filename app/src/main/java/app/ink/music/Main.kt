@@ -1099,6 +1099,7 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
  */
 @Composable
 fun Critics(title: String, artist: String, most: Int = 2) {
+    val tv = onTv()
     val all by Picks.said.collectAsState()
     val said = remember(all, title, artist) { Curation.saidOf(all, title, artist).take(most) }
     val ctx = LocalContext.current
@@ -1107,7 +1108,8 @@ fun Critics(title: String, artist: String, most: Int = 2) {
         BasicText("\u201c${p.said}\u201d".uppercase(), style = headline(18.sp).copy(lineHeight = 23.sp), maxLines = 6, overflow = TextOverflow.Ellipsis)
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicText("\u2014 ${p.from.lowercase()}", style = pixel(12.sp, Ink.mid))
-            if (p.link.isNotBlank()) Word("read it", pixel(12.sp, Ink.mid), Modifier.padding(start = 16.dp), touch = 8.dp) {
+            // not on a TV: a review opened in a browser there is no place to read
+            if (p.link.isNotBlank() && !tv) Word("read it", pixel(12.sp, Ink.mid), Modifier.padding(start = 16.dp), touch = 8.dp) {
                 runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(p.link)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         }
