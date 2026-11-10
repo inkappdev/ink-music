@@ -4,7 +4,9 @@
 # the same finished app (createDistributable), but carrying its own libmpv (the deb and rpm ask the system for it):
 # libmpv and the libraries it needs, out of Ubuntu's, beside it in the app's resources (Mpv.kt loads that one first),
 # each told to find the others beside itself ($ORIGIN). Left out, the system's own: glibc, the GPU's, X and Wayland,
-# fonts, ALSA and JACK, D-Bus and udev (each tied to its system, and on every desktop); so glibc 2.39 (2024) at the least.
+# fonts, ALSA, D-Bus and udev (each tied to its system, and on every desktop); so glibc 2.39 (2024) at the least. JACK
+# and systemd's are carried: a system's libjack can be PipeWire's, built for a newer PipeWire than the one carried
+# (Fedora 45's: libmpv wouldn't load), and a system without systemd has no libsystemd.
 # appimagetool and its runtime fetched once, at pinned releases, into ~/.cache/ink-appimage.
 # Leaves build/release/ink-music-<version>-linux.AppImage. Runs as one (APPIMAGE set), it updates itself (Updates.kt).
 set -euo pipefail
@@ -42,7 +44,7 @@ mkdir -p "$res"
 # libmpv, and what it needs but the systems own (by soname)
 mpv=$(readlink -f /usr/lib/x86_64-linux-gnu/libmpv.so.2)
 cp "$mpv" "$res/libmpv.so.2"
-keep_out="^(ld-linux|libc|libm|libdl|libpthread|librt|libresolv|libutil|libanl|libnsl|libmvec|libstdc\+\+|libgcc_s|libGL|libGLX|libGLdispatch|libEGL|libOpenGL|libGLESv2|libgbm|libdrm|libX11|libX11-xcb|libxcb|libxcb-.*|libXext|libXrender|libXi|libXtst|libXau|libXdmcp|libwayland-.*|libfontconfig|libfreetype|libharfbuzz|libexpat|libz|libasound|libjack|libdbus-1|libudev|libsystemd|libglib-2\.0|libgobject-2\.0|libgio-2\.0|libgmodule-2\.0)\.so"
+keep_out="^(ld-linux|libc|libm|libdl|libpthread|librt|libresolv|libutil|libanl|libnsl|libmvec|libstdc\+\+|libgcc_s|libGL|libGLX|libGLdispatch|libEGL|libOpenGL|libGLESv2|libgbm|libdrm|libX11|libX11-xcb|libxcb|libxcb-.*|libXext|libXrender|libXi|libXtst|libXau|libXdmcp|libwayland-.*|libfontconfig|libfreetype|libharfbuzz|libexpat|libz|libasound|libdbus-1|libudev|libglib-2\.0|libgobject-2\.0|libgio-2\.0|libgmodule-2\.0)\.so"
 ldd "$res/libmpv.so.2" | awk "/=> \// { print \$1, \$3 }" | while read -r name path; do
   echo "$name" | grep -Eq "$keep_out" && continue
   cp -L "$path" "$res/$name"
