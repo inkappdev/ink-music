@@ -304,7 +304,6 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
             delay(250)
         }
     }
-    val picture = video?.frame?.collectAsState()?.value
     // full screen (2026-11-10): the video in a window of its own over the whole screen, the picture alone on black at its
     // own shape, the controls over it; the app's window left as it was (putting the app itself full screen kept the rail
     // and the bar along the foot round the picture, and is another thing). Leaving the page leaves full screen too
@@ -320,7 +319,7 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
     val next = clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)
     @Composable
     fun Picture(modifier: Modifier, fit: ContentScale) = VideoSurface(
-        picture, frame?.image, said, accent, paused, at, length, video != null, full,
+        video, frame?.image, said, accent, paused, full,
         title = c.title, artist = c.artist, fit = fit, modifier = modifier,
         onToggle = { Watching.toggle?.invoke() }, onSeek = { ms -> video?.seek(ms) }, onFull = { full = !full },
         onNext = next?.let { n -> { Nav.back(); open(Page.Watch(n, clips)) } },
@@ -328,7 +327,9 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
     if (full) androidx.compose.ui.window.Window(
         onCloseRequest = { full = false },
         state = androidx.compose.ui.window.rememberWindowState(placement = androidx.compose.ui.window.WindowPlacement.Fullscreen),
-        title = c.title, undecorated = true,
+        // with its title bar, which full screen hides: the Mac makes only a titled window full screen (without, it kept
+        // its first size in a space of its own)
+        title = c.title,
         onKeyEvent = { k ->
             if (k.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@Window false
             when (k.key) {
@@ -382,10 +383,20 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
 @Composable
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 private fun VideoSurface(
-    picture: ImageBitmap?, still: ImageBitmap?, said: String, accent: Color, paused: Boolean, at: Long, length: Long, ready: Boolean,
+    video: Video?, still: ImageBitmap?, said: String, accent: Color, paused: Boolean,
     full: Boolean, title: String, artist: String, fit: ContentScale, modifier: Modifier,
     onToggle: () -> Unit, onSeek: (Long) -> Unit, onFull: () -> Unit, onNext: (() -> Unit)?,
 ) {
+    // the frames and the time read here, in the window showing them: full screen is its own window, and the app's,
+    // covered by it, is slowed by the Mac to a few frames a second (2026-11-10: 5 fps when read through the page)
+    val picture = video?.frame?.collectAsState()?.value
+    val ready = video != null
+    var at by remember(video) { mutableLongStateOf(0L) }
+    var length by remember(video) { mutableLongStateOf(0L) }
+    LaunchedEffect(video) {
+        val v = video ?: return@LaunchedEffect
+        while (true) { at = v.at(); length = v.length(); kotlinx.coroutines.delay(250) }
+    }
     var moved by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var over by remember { mutableStateOf(false) }
     var awake by remember { mutableStateOf(true) }
