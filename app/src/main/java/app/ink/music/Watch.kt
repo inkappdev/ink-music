@@ -1,5 +1,9 @@
 package app.ink.music
 
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.view.TextureView
@@ -255,7 +259,9 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, pages: Pages) {
     // video to the next; put back upright when the last one closes
     val activity = ctx as? android.app.Activity
     val turn = Wide.turn
+    val tv = onTv()
     LaunchedEffect(turn) {
+        if (tv) return@LaunchedEffect
         activity?.requestedOrientation = when (turn) {
             Wide.Turn.SIDEWAYS -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             Wide.Turn.UPRIGHT -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -264,14 +270,16 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, pages: Pages) {
     }
     DisposableEffect(Unit) {
         onDispose {
-            if (pages.stack.lastOrNull() !is Page.Watch) {
+            if (pages.stack.lastOrNull() !is Page.Watch && !tv) {
                 Wide.turn = Wide.Turn.FOLLOW
                 activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
     }
-    if (sideways()) {
-        androidx.activity.compose.BackHandler { Wide.turn = Wide.Turn.UPRIGHT }
+    // a TV: always the whole screen, a set or a video opened straight into it (2026-11-10: a page under it first was a
+    // step too many); back leaves it, the remote steers it
+    if (sideways() || tv) {
+        if (!tv) androidx.activity.compose.BackHandler { Wide.turn = Wide.Turn.UPRIGHT }
         // the whole screen: the bars away (a swipe from an edge brings them a moment)
         val window = activity?.window
         DisposableEffect(window) {
@@ -282,8 +290,23 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, pages: Pages) {
         }
         // the words over it come with a tap and go a few seconds on, while it plays
         var shown by remember { mutableStateOf(true) }
-        LaunchedEffect(shown, playing) { if (shown && playing) { delay(3_000); shown = false } }
-        BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)
+        var poked by remember { mutableStateOf(0) }
+        LaunchedEffect(shown, playing, poked) { if (shown && playing) { delay(3_000); shown = false } }
+        // the remote (a TV): OK pauses or plays, left and right ten seconds back and on, down the next; any press shows the words
+        val tvKeys = if (!tv) Modifier else Modifier.tvFirst().onPreviewKeyEvent { e ->
+            if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            shown = true; poked++
+            when (e.key) {
+                androidx.compose.ui.input.key.Key.DirectionCenter, androidx.compose.ui.input.key.Key.Enter,
+                androidx.compose.ui.input.key.Key.MediaPlayPause -> { toggle(); true }
+                androidx.compose.ui.input.key.Key.DirectionLeft -> { player?.let { it.seekTo((it.currentPosition - 10_000).coerceAtLeast(0)) }; true }
+                androidx.compose.ui.input.key.Key.DirectionRight -> { player?.let { it.seekTo(it.currentPosition + 10_000) }; true }
+                androidx.compose.ui.input.key.Key.DirectionDown -> { next?.let { watch(it) }; true }
+                androidx.compose.ui.input.key.Key.DirectionUp -> true
+                else -> false
+            }
+        }.focusable()
+        BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).then(tvKeys)
             .clickable(remember { MutableInteractionSource() }, indication = null) { shown = !shown }) {
             // the picture as big as the screen lets it, whole: in its frame's shape (bars baked into the video itself cut
             // off, as upright), so the line can touch it
@@ -326,7 +349,7 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, pages: Pages) {
                             Word("NEXT", headline(16.sp, Ink.mid), touch = 8.dp) { watch(n) }
                         }
                         Spacer(Modifier.width(20.dp))
-                        Word("EXIT", headline(16.sp, Ink.mid), touch = 8.dp) { Wide.turn = Wide.Turn.UPRIGHT }
+                        Word("EXIT", headline(16.sp, Ink.mid), touch = 8.dp) { if (tv) pages.back() else Wide.turn = Wide.Turn.UPRIGHT }
                     }
                 }
             }
