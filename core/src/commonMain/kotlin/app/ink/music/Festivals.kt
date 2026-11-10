@@ -11,7 +11,8 @@ import kotlinx.datetime.plus
  * become a section on explore: who's playing, and a station of them. Shared by every app.
  */
 object Festivals {
-    data class Festival(val name: String, val city: String, val start: LocalDate, val end: LocalDate, val link: String, val artists: List<String>) {
+    /** `tickets`: where to buy them, its own site's (2026-11-10, Bronson: "is it crazy to add links to buy tickets"); "" for none known. */
+    data class Festival(val name: String, val city: String, val start: LocalDate, val end: LocalDate, val link: String, val artists: List<String>, val tickets: String = "") {
         /** "on now", "tomorrow", "in 9 days", "in 3 weeks", as of `today`. */
         fun when_(today: LocalDate = today()): String {
             val days = today.daysUntil(start).toLong()
@@ -29,7 +30,7 @@ object Festivals {
         (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             val names = o.getJSONArray("artists")
             Festival(o.getString("name"), o.optString("city"), LocalDate.parse(o.getString("start")), LocalDate.parse(o.getString("end")),
-                o.optString("link"), (0 until names.length()).map { names.getString(it) })
+                o.optString("link"), (0 until names.length()).map { names.getString(it) }, o.optString("tickets"))
         }
     }.getOrDefault(emptyList())
 

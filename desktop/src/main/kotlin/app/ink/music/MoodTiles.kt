@@ -16,6 +16,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicText
@@ -235,44 +245,190 @@ fun dates(f: Festivals.Festival): String {
     return (if (a.month == b.month) "${m.format(a)} – ${b.dayOfMonth}" else "${m.format(a)} – ${m.format(b)}").lowercase()
 }
 
-/** A festival's page: its name and when, its whole lineup as faces in a grid, a station of them, the lineup's source. */
+/**
+ * A festival's page, set as its poster is (2026-11-10, Bronson: "more fun and editorial, interactive, beautiful, maybe
+ * artist images"): where and when small, its name huge, how long till it big beside it and PLAY THE LINEUP; the ones on
+ * it you play, said; the headliners as big photo cards (who, how many listen, a line about them, play, their page); then
+ * the bill in type that shrinks down it, names you play lit, each a click to their page, the one under the mouse shown
+ * beside it (their photo, a line about them, play). The bill's names come in one after another.
+ */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 fun FestivalPage(name: String, open: (Page) -> Unit, onClose: () -> Unit) {
     val f = remember(name) { Fests.all.firstOrNull { it.name == name } } ?: return Close(onClose)
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
-    val grid = pageGrid()
+    val heard by Listened.now.collectAsState()
+    // the artists on it you've played
+    val yours = remember(f, heard) { f.artists.filter { (heard.most("a:" + it.lowercase()) ?: 0.0) > 0 } }
+    // top of the bill: two, three on a long one, all of a short one
+    val heads = f.artists.take(when { f.artists.size <= 3 -> f.artists.size; f.artists.size >= 9 -> 3; else -> 2 })
+    val bill = f.artists.drop(heads.size)
+    // the bill's name under the mouse, shown beside it (the first till one is)
+    var over by remember { mutableStateOf<String?>(null) }
+    val scroll = rememberScrollState()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
-        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(androidx.compose.foundation.lazy.grid.GridCells.Adaptive(150.dp), Modifier.fillMaxSize().feather(grid), grid,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = SIDE, end = SIDE, top = 10.dp, bottom = 32.dp),
-            horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                Column {
-                    BasicText(f.name.uppercase(), style = headline(64.sp))
-                    BasicText("${dates(f)} · ${f.city} · ${f.when_()} · ${f.artists.size} artists", style = pixel(13.sp, Ink.mid))
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                        Word("station", pixel(14.sp), touch = 8.dp) { scope.launch { said = "finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" } }
-                        if (f.link.isNotBlank()) Word("the lineup, announced", pixel(14.sp, Ink.mid), touch = 8.dp) { browse(f.link) }
+        Column(Modifier.fillMaxSize().feather(scroll).verticalScroll(scroll).padding(start = SIDE, end = SIDE, top = 6.dp, bottom = 56.dp)) {
+            // the poster's top: where and when, the name huge; how long till it, and the lineup to play
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val wide = maxWidth >= 900.dp
+                val big = if (wide) 96.sp else 64.sp
+                @Composable
+                fun Soon() = Column(horizontalAlignment = if (wide) Alignment.End else Alignment.Start) {
+                    BasicText(f.when_().uppercase(), style = headline(44.sp))
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (f.link.isNotBlank()) Word("the lineup, announced", pixel(13.sp, Ink.mid), touch = 8.dp) { browse(f.link) }
+                        Word("PLAY THE LINEUP", headline(24.sp), touch = 8.dp) {
+                            scope.launch { said = "finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" }
+                        }
+                        // where to buy them, the festival's own site (the festivals file says where)
+                        if (f.tickets.isNotBlank()) Word("TICKETS", headline(24.sp, Ink.mid), touch = 8.dp) { browse(f.tickets) }
                     }
                     said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp)) }
                 }
+                Column {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Column(Modifier.weight(1f)) {
+                            BasicText("${f.city} · ${dates(f)} · ${f.artists.size} artists".lowercase(), style = pixel(13.sp, Ink.mid))
+                            Spacer(Modifier.height(8.dp))
+                            BasicText(f.name.uppercase(), style = headline(big).copy(lineHeight = big * .95f))
+                        }
+                        if (wide) { Spacer(Modifier.width(40.dp)); Soon() }
+                    }
+                    if (!wide) { Spacer(Modifier.height(18.dp)); Soon() }
+                }
             }
-            items(f.artists.size, key = { f.artists[it] }) { i -> LineupTile(f.artists[i], open) }
+            if (yours.isNotEmpty()) {
+                Spacer(Modifier.height(18.dp))
+                BasicText(("you play ${if (yours.size == f.artists.size) "every one of them" else "${yours.size} of them"}: " +
+                    yours.take(5).joinToString(", ") + if (yours.size > 5) " and more" else "").lowercase(), style = pixel(14.sp))
+            }
+            // the headliners, big
+            Spacer(Modifier.height(40.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+            Spacer(Modifier.height(28.dp))
+            // side by side where each has room for its photo and its name whole; one under another where not (half a
+            // screen: three across broke their names mid-word, 2026-11-10)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val each = (maxWidth - 36.dp * (heads.size - 1).coerceAtLeast(0)) / heads.size.coerceAtLeast(1)
+                if (each >= 460.dp) Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                    heads.forEach { a -> Headliner(a, a in yours, open, Modifier.weight(1f)) }
+                } else Column(verticalArrangement = Arrangement.spacedBy(32.dp)) {
+                    heads.forEach { a -> Headliner(a, a in yours, open, Modifier.fillMaxWidth()) }
+                }
+            }
+            // the bill, set as a poster's: biggest first, shrinking down it
+            if (bill.isNotEmpty()) {
+                Spacer(Modifier.height(48.dp))
+                BasicText("THE BILL", style = headline(18.sp, Ink.mid))
+                Spacer(Modifier.height(16.dp))
+                // the one under the mouse beside it where there's room; on a narrow page the names alone, each to their page
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val beside = maxWidth >= 760.dp
+                    Row(verticalAlignment = Alignment.Top) {
+                        FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+                            itemVerticalAlignment = Alignment.Bottom) {
+                            bill.forEachIndexed { i, a ->
+                                val size = when { i < 4 -> 40.sp; i < 12 -> 28.sp; else -> 20.sp }
+                                BillName(a, size, i, a in yours, { over = a }) { open(Page.Artist(a)) }
+                            }
+                        }
+                        if (beside) {
+                            Spacer(Modifier.width(40.dp))
+                            WhoIs(over ?: bill.first(), open, Modifier.width(300.dp))
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/** An artist on a lineup: their photo in the dither (read from YouTube Music, kept), their name; a tap opens their page. */
+/** An artist's page read from YouTube Music (kept): their photo, how many listen, what's said of them, their top songs. */
 @Composable
-private fun LineupTile(name: String, open: (Page) -> Unit) {
-    val info by androidx.compose.runtime.produceState<ArtistInfo?>(null, name) { Artists.of(name, "").collect { if (it != null) value = it } }
-    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Artist(info?.name ?: name, info?.id ?: "")) })) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            info?.photo?.let { Dithered(remember(it) { faceSong(name, it, photo = true) }, Modifier.fillMaxSize(), px = 260) } ?: NameCover(name, 150.dp)
+private fun rememberArtist(name: String): ArtistInfo? =
+    androidx.compose.runtime.produceState<ArtistInfo?>(null, name) { Artists.of(name, "").collect { if (it != null) value = it } }.value
+
+/**
+ * Their photo as it is, no dither (2026-11-10, Bronson), developing in from black as covers do ([CoverOf]); black while
+ * they're looked up, their name as a cover where they've no photo.
+ */
+@Composable
+private fun ArtistPicture(name: String, info: ArtistInfo?, side: androidx.compose.ui.unit.Dp) {
+    when {
+        info == null -> Box(Modifier.fillMaxSize().background(Ink.black))
+        info.photo != null -> CoverOf(remember(info.photo) { faceSong(name, info.photo, photo = true) }, name, Modifier.fillMaxSize(), px = 600)
+        else -> NameCover(name, side)
+    }
+}
+
+/** A headliner, big: their photo, their name, how many listen, a line about them; play them, their page. */
+@Composable
+private fun Headliner(name: String, played: Boolean, open: (Page) -> Unit, modifier: Modifier) {
+    val info = rememberArtist(name)
+    val page = { open(Page.Artist(info?.name ?: name, info?.id ?: "")) }
+    BoxWithConstraints(modifier) {
+        val side = minOf(maxWidth * .48f, 300.dp)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = page))) { ArtistPicture(name, info, side) }
+            Spacer(Modifier.width(20.dp))
+            Column(Modifier.weight(1f)) {
+                if (played) BasicText("you play them", style = pixel(12.sp))
+                WholeWords(name.uppercase(), headline(36.sp).copy(lineHeight = 36.sp), 3)
+                info?.audience?.takeIf { it.isNotEmpty() }?.let { BasicText(it.lowercase().replace("monthly audience", "a month"), style = pixel(12.sp, Ink.mid)) }
+                info?.let { i -> remember(i.about) { Artists.pullQuote(i.about).first } }?.let {
+                    Spacer(Modifier.height(10.dp))
+                    BasicText(it.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 20.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                    info?.top?.takeIf { it.isNotEmpty() }?.let { top -> Word("play", pixel(14.sp), touch = 8.dp) { Player.play(top) } }
+                    Word("their page", pixel(14.sp, Ink.mid), touch = 8.dp, onClick = page)
+                }
+            }
         }
-        Spacer(Modifier.height(6.dp))
-        BasicText(name.uppercase(), style = headline(13.sp), maxLines = 2)
+    }
+}
+
+/** A name on the bill: lit if you play them or it's under the mouse (and shown beside the bill then); rising in, in turn. */
+@Composable
+private fun BillName(name: String, size: androidx.compose.ui.unit.TextUnit, order: Int, yours: Boolean, onOver: () -> Unit, onClick: () -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    val over by src.collectIsHoveredAsState()
+    LaunchedEffect(over) { if (over) onOver() }
+    val shown = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(order * 35L); shown.animateTo(1f, androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) }
+    val c by androidx.compose.animation.animateColorAsState(if (over || yours) Ink.ink else Ink.mid, androidx.compose.animation.core.tween(Motion.FADE), label = "bill")
+    BasicText(name.uppercase(), style = headline(size, c).copy(lineHeight = size),
+        modifier = Modifier.graphicsLayer { alpha = shown.value; translationY = (1f - shown.value) * Motion.drift.toPx() * .6f }
+            .hoverable(src).pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
+            .clickable(src, indication = null, onClick = felt(then = onClick)))
+}
+
+/** Beside the bill: the name under the mouse, their photo, a line about them, play, their page; one giving way to the next. */
+@Composable
+private fun WhoIs(name: String, open: (Page) -> Unit, modifier: Modifier) {
+    androidx.compose.animation.Crossfade(name, modifier, animationSpec = androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo), label = "who") { n ->
+        val info = rememberArtist(n)
+        val page = { open(Page.Artist(info?.name ?: n, info?.id ?: "")) }
+        Column {
+            Box(Modifier.fillMaxWidth().aspectRatio(1f).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = page))) {
+                ArtistPicture(n, info, 300.dp)
+            }
+            Spacer(Modifier.height(12.dp))
+            BasicText(n.uppercase(), style = headline(24.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            info?.audience?.takeIf { it.isNotEmpty() }?.let { BasicText(it.lowercase().replace("monthly audience", "a month"), style = pixel(12.sp, Ink.mid)) }
+            info?.let { i -> remember(i.about) { Artists.pullQuote(i.about).first } }?.let {
+                Spacer(Modifier.height(8.dp))
+                BasicText(it.lowercase(), style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 20.sp), maxLines = 5, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                info?.top?.takeIf { it.isNotEmpty() }?.let { top -> Word("play", pixel(14.sp), touch = 8.dp) { Player.play(top) } }
+                Word("their page", pixel(14.sp, Ink.mid), touch = 8.dp, onClick = page)
+            }
+        }
     }
 }

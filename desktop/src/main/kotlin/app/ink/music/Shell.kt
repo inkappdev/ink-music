@@ -150,15 +150,23 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f).padding(top = 2.dp)) {
                 val (title, artist) = said(n)
+                // a station's song, as it says it (OnAirSong): its title opens find with it typed, its artist their page; the
+                // song found, a heart to love it and "add" to put it in a list
+                val aired = rememberAired(n)
+                val airedSong = rememberAiredSong(n)
                 Row(verticalAlignment = Alignment.Top) {
-                    WholeWords(title.uppercase(), headline(19.sp), 3, Modifier.weight(1f))
-                    Heart(n.song, 2.dp, Modifier.offset(x = 8.dp, y = (-6).dp))
+                    WholeWords(title.uppercase(), headline(19.sp), 3, Modifier.weight(1f).then(
+                        if (aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                            onClick = felt { OnAirSong.find(aired.title, aired.artist!!) }) else Modifier))
+                    Heart(airedSong ?: n.song, 2.dp, Modifier.offset(x = 8.dp, y = (-6).dp))
                 }
                 Spacer(Modifier.height(4.dp))
                 Word(artist.lowercase(), pixel(13.sp)) {
                     if (n.song.episode) Pods.page(n.song)?.let(open)
+                    else if (aired != null) open(Page.Artist(aired.artist!!.substringBefore(", ")))
                     else if (!n.song.station) open(Page.Artist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }))
                 }
+                airedSong?.let { s -> Word("add to a list", pixel(12.sp, Ink.mid), touch = 6.dp) { open(Page.AddTo(s)) } }
                 if (n.song.album.isNotEmpty()) Word(n.song.album.lowercase(), pixel(12.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }
                 on?.let { BasicText("on ${it.name.lowercase()}", style = pixel(12.sp, Ink.mid)) }
             }

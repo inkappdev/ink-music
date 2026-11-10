@@ -59,6 +59,13 @@ import kotlinx.coroutines.withContext
  * chart, each song's move over the week; YouTube Music's own new records and shelves only as you, signed in (signed
  * out they're mostly made by AI).
  */
+/** INK's sections as last read this run, so the page comes back as it was ([ExplorePage]). */
+private object ExploreKept {
+    @Volatile var chart: List<IndieChart.Entry>? = null
+    @Volatile var fresh: List<TubeAlbum>? = null
+    @Volatile var shelves: List<Pair<String, List<TubeAlbum>>>? = null
+}
+
 @Composable
 fun ExplorePage(open: (Page) -> Unit) {
     // the picks' artists tagged ahead, so a genre's page has its picks when it opens (GenrePicks)
@@ -66,19 +73,23 @@ fun ExplorePage(open: (Page) -> Unit) {
     LaunchedEffect(picked.size) { if (picked.isNotEmpty()) GenrePicks.tag() }
     // YouTube's cool lists read as INK opens, once the critics' picks are in to score them by
     LaunchedEffect(picked.isNotEmpty()) { if (picked.isNotEmpty()) CoolLists.read() }
-    val chart by produceState<List<IndieChart.Entry>?>(null) { value = IndieChart.week() }
+    // each section as it was last read, at once, then read again: back from a page opened from here (a festival's), the
+    // page is as it was and stays where it was left; it had read them all again from nothing, the page short and its
+    // place kept pointing at another section, so it began at the top (2026-11-10, Bronson)
+    val chart by produceState(ExploreKept.chart) { value = IndieChart.week().also { if (it.isNotEmpty()) ExploreKept.chart = it } }
     val before = remember(chart) { IndieChart.before() }
     val who by TubeAccount.who.collectAsState()
-    val fresh by produceState<List<TubeAlbum>?>(null, who) {
+    val fresh by produceState(ExploreKept.fresh, who) {
         val t = TubeAccount.tube() ?: run { value = emptyList(); return@produceState }
         value = withContext(Dispatchers.IO) { runCatching { t.items("FEmusic_new_releases_albums", 24).mapNotNull(::tubeAlbum) }.getOrDefault(emptyList()) }
+            .also { if (it.isNotEmpty()) ExploreKept.fresh = it }
     }
-    val shelves by produceState<List<Pair<String, List<TubeAlbum>>>?>(null, who) {
+    val shelves by produceState(ExploreKept.shelves, who) {
         val t = TubeAccount.tube() ?: run { value = emptyList(); return@produceState }
         value = withContext(Dispatchers.IO) {
             runCatching { t.home(12).map { it.title to it.items.mapNotNull(::tubeAlbum) }.filter { it.first.isNotEmpty() && it.second.size >= 3 } }
                 .getOrDefault(emptyList())
-        }
+        }.also { if (it.isNotEmpty()) ExploreKept.shelves = it }
     }
     val moods by produceState<List<InnerTube.Mood>?>(Moods.kept()) { value = Moods.read() ?: value }
     LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic() }
