@@ -1,6 +1,143 @@
 {
  "weeks": [
   {
+   "week": 3,
+   "date": "2026-11-10",
+   "title": "VOL 3",
+   "note": "What we're listening to at ink, curated weekly by real people.",
+   "playlist": "PLF30fjd7nsmw",
+   "songs": [
+    {
+     "title": "Time Machine",
+     "artist": "HIROSHI FUJIWARA",
+     "album": "Time Machine",
+     "seconds": 331,
+     "video": "a62Zs84tO9I",
+     "art": "https://yt3.googleusercontent.com/rzJGx8WBtabn807r9x5evqVEpe5_jpiko14rFuFnGkovKoh1C3k6P_kK94ERW2LJONs8CvYAqtpqbAHf=w600-h600-l90-rj"
+    },
+    {
+     "title": "Honey Is My New Favorite",
+     "artist": "adore, Deem Spencer",
+     "album": "Honey Is My New Favorite",
+     "seconds": 144,
+     "video": "8vD7mVpgM-c",
+     "art": "https://yt3.googleusercontent.com/_bOuNkENa6hQ1JK1e1VtcrSXFMBc5BGiocxEqSgxxbIqhVfkk1Z4zRo29H-4_3ymA4EFzMdPFbEfi_58=w600-h600-l90-rj"
+    },
+    {
+     "title": "Cairo FM",
+     "artist": "Alewya",
+     "album": "Zero",
+     "seconds": 182,
+     "video": "QCUHgXfs_YM",
+     "art": "https://yt3.googleusercontent.com/FUUH7dolTQe-pePDDlIgr2aJhly_n1qvakM7KDnPYQT5NqpHONznlE2StxZp3SLmxN41gfZbIr9LoxI=w600-h600-l90-rj"
+    },
+    {
+     "title": "Moment",
+     "artist": "Not For Radio",
+     "album": "Melt",
+     "seconds": 275,
+     "video": "QMOuPreEi5A",
+     "art": "https://yt3.googleusercontent.com/kJlpNcZTwF6YvDA6fgo2CgY3AuiwWrb_x5spY2dj7f1hFD-KlrjVgrLVyhE1xNuHM2hmHKAmbGFghLOn=w600-h600-l90-rj"
+    },
+    {
+     "title": "80's Cocaine",
+     "artist": "Future Nobodies",
+     "album": "",
+     "seconds": 287,
+     "video": "lGDA1-gpm2o",
+     "art": "https://i.ytimg.com/vi/lGDA1-gpm2o/hqdefault.jpg?sqp=-oaymwEWCJADEOEBIAQqCggAEOADGC0guwJIWg&rs=AMzJL3lS1LoWLQx402Ftqi9i_vEFKc9dTg"
+    },
+    {
+     "title": "Curse",
+     "artist": "Hannah Jadagu",
+     "album": "Curse",
+     "seconds": 204,
+     "video": "_01Sz5BPF7s",
+     "art": "https://yt3.googleusercontent.com/tEsVGdRY6dkm5p1anBD0FnPcr8HGZxQsp6_HkpzQxUuBfbN4JX0_ovdSX-6KRFFdzVBgLygChrZvFSyDRA=w600-h600-l90-rj"
+    },
+    {
+     "title": "Fenceline",
+     "artist": "mildred",
+     "album": "Fenceline",
+     "seconds": 216,
+     "video": "dIxYWfqEgtA",
+     "art": "https://yt3.googleusercontent.com/GrD_OSZSVOyNQN0csY7qjBzAt19u9ZBgJEeQbfR7dVqYqE9O8JI8qRAr6P-JUS8vQxeHU_99WYJodTo=w600-h600-l90-rj"
+    },
+    {
+     "title": "BUZZKILL",
+     "artist": "almost a.m.",
+     "album": "BUZZKILL",
+     "seconds": 168,
+     "video": "SlZRprYgFwY",
+     "art": "https://yt3.googleusercontent.com/wUbvfOx_sEbGPhQSdS7f-vO0bZdgQxa-C5npWkpBc9oifpv2QioG_RksPlqZC08Aalqyg7dz2p0lB5u-xA=w600-h600-l90-rj"
+    },
+    {
+     "title": "Speeding 72",
+     "artist": "Momma",
+     "album": "Household Name",
+     "seconds": 239,
+     "video": "ylmCbkzSZ_k",
+     "art": "https://yt3.googleusercontent.com/Y5Vcw_KlrFK119XToE2Y-V84G3HWp7E6jh6cmK8bTuV7ClPTt4hM7qnqPS_3pBE25UN7hrWEEp1xRsoY=w600-h600-l90-rj"
+    },
+    {
+     "title": "Seeing Double",
+     "artist": "Ian Frandsen",
+     "album": "Don't touch me, Im scared",
+     "seconds": 146,
+     "video": "khIkW9CoK8c",
+     "art": "https://yt3.googleusercontent.com/WviRV4BBbPGsvL5LDvGSTKYwC5MY7BISMcbcc6FwHYYhrUGgx0h4GpoOSW83XB_SW8FE6XKezTGax0WK=w600-h600-l90-rj"
+    },
+    {
+     "title": "Shiver",
+     "artist": "Rachel Chinouriri",
+     "album": "I think I spoke too soon",
+     "seconds": 231,
+     "video": "FPq3isl-k64",
+     "art": "https://yt3.googleusercontent.com/pP3yp-73Kqnso5sXwb1o92Ns0SV7VJQM5ehEfiv8f3mjAG3qHWfvn7XjPL_go4wOpR5vZcdKDBJpJqW4=w600-h600-l90-rj"
+    },
+    {
+     "title": "Shadowplay",
+     "artist": "Automatic",
+     "album": "Shadowplay",
+     "seconds": 285,
+     "video": "kMSGrFnwub4",
+     "art": "https://yt3.googleusercontent.com/DK4njHUJwXl3ORxRmg0t_uB6Z2sxhShQANa-zq6kiucYAgmvspAXc_f5MikBFVqcc8gDp4gpbyhitCo=w600-h600-l90-rj"
+    },
+    {
+     "title": "3AM+",
+     "artist": "Discrete, JD Cliffe",
+     "album": "3AM+",
+     "seconds": 157,
+     "video": "oGIoivldx-A",
+     "art": "https://yt3.googleusercontent.com/Fuazl-AgTZldmpC2P2OcOS__G3xhAkDg6PsE27xnrcf8LKtqrxrD4M6D3KXpk-700OQNAQQVE68o9AMhiw=w600-h600-l90-rj"
+    },
+    {
+     "title": "i think i'm going blind",
+     "artist": "Computer Kill",
+     "album": "i think i'm going blind",
+     "seconds": 180,
+     "video": "5qeLtmm17VI",
+     "art": "https://yt3.googleusercontent.com/lVRovLxNFt7NMu-2pKjLCf_4PRVSr3khxFTXp3jGgqm3_JQxqd6LsBTjSw3NOeAY-Csu1jclz5XX_JfmTw=w600-h600-l90-rj"
+    },
+    {
+     "title": "Cycle",
+     "artist": "B77",
+     "album": "Cycle",
+     "seconds": 183,
+     "video": "FWOFNRe7Y6Y",
+     "art": "https://yt3.googleusercontent.com/HPPy5CwWprjTgyXz8pa_X5TqRTAIXOtZoykJnKyBLbAVtrDKoYZ1F8z33KXbod1T9NmVi5FyjuyuQuNrJQ=w600-h600-l90-rj"
+    },
+    {
+     "title": "I am a Man",
+     "artist": "Billboard Style",
+     "album": "Pull of the Moon",
+     "seconds": 203,
+     "video": "MHJoIR08THA",
+     "art": "https://yt3.googleusercontent.com/LP_skVz3H0DzqEs6ucLZn4vJtqW9DdnVi4TtFqQQUSfmnAt_MiBUBPI-NzNw20vlAel4dk231bBDeECB=w600-h600-l90-rj"
+    }
+   ]
+  },
+  {
    "week": 2,
    "date": "2026-11-03",
    "title": "VOL 2",
