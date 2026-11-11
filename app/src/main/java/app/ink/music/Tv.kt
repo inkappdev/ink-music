@@ -554,8 +554,7 @@ fun TvPhoneSetting() {
     var pairing by remember { mutableStateOf(false) }
     BasicText("YOUR PHONE", style = headline(32.sp))
     Spacer(Modifier.height(6.dp))
-    BasicText("ink music on your phone signs this tv in to everything it is (your server, youtube music, listenbrainz, last.fm), " +
-        "and the two keep in step on your wifi: what you've heard, what you love, what you were playing", style = pixel(12.sp, Ink.mid))
+    BasicText("your phone signs this tv in and keeps it in step", style = pixel(13.sp, Ink.mid))
     Spacer(Modifier.height(10.dp))
     val tick by androidx.compose.runtime.produceState(System.currentTimeMillis()) { while (true) { kotlinx.coroutines.delay(30_000); value = System.currentTimeMillis() } }
     peers.forEach { p ->

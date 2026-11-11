@@ -48,6 +48,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.chrisbanes.haze.hazeSource
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Arrangement
 import kotlinx.coroutines.launch
 
 /** The cog (ink's, on Silkscreen's grid: the one icon): dim like an unselected tab, 55% while pressed. */
@@ -787,4 +791,70 @@ fun ago(ms: Long): String = when {
     ms < 3_600_000 -> (ms / 60_000).let { "$it ${if (it == 1L) "minute" else "minutes"} ago" }
     ms < 86_400_000 -> (ms / 3_600_000).let { "$it ${if (it == 1L) "hour" else "hours"} ago" }
     else -> (ms / 86_400_000).let { "$it ${if (it == 1L) "day" else "days"} ago" }
+}
+
+
+/**
+ * Settings on a TV (2026-11-10: the phone's five parts were too much to read and steer from a sofa): one short page.
+ * The version and an update; your phone (pairing, the phones in step); what's signed in, said, changed on the phone;
+ * the look behind the player; how one song goes into the next. Everything else is the phone's.
+ */
+@Composable
+fun TvSettingsPage(pages: Pages) {
+    val ctx = LocalContext.current
+    val account by Server.account.collectAsState()
+    val who by YouTubeAccount.who.collectAsState()
+    val lb by ListenBrainz.account.collectAsState()
+    val fm by LastFm.account.collectAsState()
+    val look by Looks.on.collectAsState()
+    var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
+    val list = pageList()
+    @Composable
+    fun Choice(word: String, lit: Boolean, onClick: () -> Unit) = Word(word, pixel(16.sp, if (lit) Ink.ink else Ink.dim), touch = 10.dp, onClick = onClick)
+    @Composable
+    fun Head(text: String) { BasicText(text, style = headline(32.sp)); Spacer(Modifier.height(10.dp)) }
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost),
+        contentPadding = PaddingValues(start = 40.dp, end = 40.dp, top = top + 14.dp, bottom = LocalFoot.current + 40.dp),
+    ) {
+        item {
+            Column(Modifier.widthIn(max = 640.dp)) {
+                BasicText("SETTINGS", style = headline(48.sp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BasicText("ink music ${BuildConfig.VERSION_NAME}", style = pixel(13.sp, Ink.mid))
+                    if (Updates.manual) {
+                        Spacer(Modifier.width(24.dp))
+                        Word("check for an update", pixel(13.sp), touch = 10.dp) { Updates.check(ctx, now = true) }
+                    }
+                }
+                if (Updates.manual) {
+                    val said by Updates.said.collectAsState()
+                    val offer by Updates.offer.collectAsState()
+                    said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
+                    offer?.let { Spacer(Modifier.height(12.dp)); UpdateCard(it, side = 0.dp) }
+                }
+                Spacer(Modifier.height(36.dp))
+                TvPhoneSetting()
+                Spacer(Modifier.height(36.dp))
+                Head("SIGNED IN")
+                val on = listOfNotNull(account?.let { "your server" }, who?.let { "youtube music" }, lb?.let { "listenbrainz" }, fm?.let { "last.fm" })
+                BasicText(if (on.isEmpty()) "nothing yet: sign in on your phone, then pair it above" else on.joinToString("  ·  "), style = pixel(15.sp))
+                BasicText("change these on your phone", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
+                Spacer(Modifier.height(36.dp))
+                Head("THE LOOK")
+                BasicText("behind the player", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                    Look.entries.forEach { l -> Choice(l.word, look == l) { Looks.set(ctx, l) } }
+                }
+                Spacer(Modifier.height(36.dp))
+                Head("ONE SONG INTO THE NEXT")
+                Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                    listOf(Crossfade.OFF to "one after another", Crossfade.CROSSFADE to "crossfade", Crossfade.AUTOMIX to "automix").forEach { (m, word) ->
+                        Choice(word, mode == m) { Crossfade.set(ctx, m); mode = m }
+                    }
+                }
+            }
+        }
+    } }
 }
