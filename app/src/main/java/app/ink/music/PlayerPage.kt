@@ -104,6 +104,7 @@ import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.wrapContentWidth
 import kotlin.math.roundToInt
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1496,15 +1497,23 @@ private fun TvPlayer(
             end = { CloseArrow(SAID, onClick = onClose) },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
         )
+        // the name moving along the foot, or (chosen in the look, 2026-11-10) big and still over the cover's lower left
+        val moving = Marquees.on.collectAsState().value
         Row(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
-            // the cover as big as the height leaves after the line and the times over it
+            // the cover as big as the height leaves after the line and the times over it (and the name under it)
             BoxWithConstraints(Modifier.fillMaxHeight()) {
-                val room = (maxHeight - 44.dp).coerceIn(160.dp, 460.dp)
-                Column(Modifier.width(room)) {
-                    androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
-                        Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
-                        Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping) }
+                val room = (maxHeight - if (moving) 44.dp else 104.dp).coerceIn(160.dp, 460.dp)
+                Box {
+                    Column(Modifier.width(room)) {
+                        androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
+                            Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
+                            Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping) }
+                        }
                     }
+                    // its foot over the cover's, a little in from the left, as far right as it runs
+                    if (!moving) BasicText(n.artist.uppercase(), style = headline(72.sp), maxLines = 1, softWrap = false,
+                        modifier = Modifier.align(Alignment.BottomStart).offset(x = (-8).dp, y = 52.dp)
+                            .then(Modifier.wrapContentWidth(Alignment.Start, unbounded = true)))
                 }
             }
             Spacer(Modifier.width(48.dp))
@@ -1525,7 +1534,8 @@ private fun TvPlayer(
                 Spacer(Modifier.height(4.dp))
             }
         }
-        Marquee(n.artist, n.moving && Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 72.sp)
+        if (moving) Marquee(n.artist, n.moving, Modifier.fillMaxWidth(), size = 72.sp)
+        else Spacer(Modifier.height(24.dp))
     }
     }
 }

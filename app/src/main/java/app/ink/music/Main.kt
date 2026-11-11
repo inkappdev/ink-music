@@ -537,8 +537,10 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // a TV shows the place on its own, no pager: a remote doesn't swipe, and a pager's pages took no focus from the
     // place's word above them (the onn, 2026-11-03: down went nowhere); places change from the menu
     val tv = onTv()
-    BackHandler(backHome && (if (tv) tab != tabs[0] else pager.currentPage != 0)) {
-        if (tv) tab = tabs[0]
+    // a TV: back from deep in a place goes to the rail, on the place's own word (2026-11-10); from the rail, to listen
+    BackHandler(backHome && (if (tv) TvKeys.railAt < 0 || tab != tabs[0] else pager.currentPage != 0)) {
+        if (tv && TvKeys.railAt < 0 && TvKeys.railHome != null) { runCatching { TvKeys.railHome?.requestFocus() } }
+        else if (tv) tab = tabs[0]
         else scope.launch { pager.animateScrollToPage(0, animationSpec = tween(Motion.ENTER, easing = Motion.expo)) }
     }
     val listenList = rememberLazyListState()
@@ -3274,17 +3276,25 @@ private val TV_RAIL = 220.dp
 private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, onFind: () -> Unit, onPlayer: () -> Unit,
                    onSettings: () -> Unit, onYear: () -> Unit, foot: Dp) {
     val playing = Playback.now.collectAsState().value != null
-    Column(Modifier.width(TV_RAIL).fillMaxHeight().padding(start = 28.dp, top = 28.dp, bottom = foot)) {
-        BasicText("INK MUSIC", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(bottom = 18.dp))
+    val fm = androidx.compose.ui.platform.LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+    // a word pressed: its place, and the remote into it (2026-11-10: pressing did nothing, the place already showing)
+    fun into(t: String) {
+        onPlace(t)
+        scope.launch { delay(if (t == tab) 0L else Motion.ENTER.toLong()); fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Right) }
+    }
+    // a little smaller, and scrolled if it must be, so settings stays above the mini player (it went under it)
+    Column(Modifier.width(TV_RAIL).fillMaxHeight().padding(bottom = foot).verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 24.dp, bottom = 12.dp)) {
+        BasicText("INK MUSIC", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(bottom = 12.dp))
         tabs.forEachIndexed { i, t ->
             var focused by remember { mutableStateOf(false) }
             // resting on a place a moment shows it; passing through doesn't
             LaunchedEffect(focused) { if (focused && t != tab) { delay(350); onPlace(t) } }
-            Word(t.uppercase(), headline(24.sp, if (t == tab) Ink.ink else Ink.mid),
+            Word(t.uppercase(), headline(21.sp, if (t == tab) Ink.ink else Ink.mid),
                 Modifier.railItem(i, home = t == tab).then(if (t == tab) Modifier.tvFirst() else Modifier)
-                    .onFocusChanged { focused = it.isFocused }.padding(vertical = 1.dp), touch = 4.dp) { onPlace(t) }
+                    .onFocusChanged { focused = it.isFocused }.padding(vertical = 1.dp), touch = 4.dp) { into(t) }
         }
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(16.dp))
         // the small words: lit white with a square before them while the remote's on one (2026-11-10: grey to begin
         // with, the screen's dim round them hardly showed which)
         @Composable

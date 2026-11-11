@@ -395,9 +395,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         Row(verticalAlignment = Alignment.Bottom) {
             Label("ink radio")
             Spacer(Modifier.weight(1f))
-            Word("all", pixel(12.sp, Ink.mid), Modifier.padding(end = 16.dp), touch = 8.dp) { pages.open(Page.InkRadio) }
+            // a TV: no "all", one more stop for the remote; the shelf has every station instead (2026-11-10)
+            if (!Device.tv) Word("all", pixel(12.sp, Ink.mid), Modifier.padding(end = 16.dp), touch = 8.dp) { pages.open(Page.InkRadio) }
         }
-        val starred = ink.filter { it.star }
+        val starred = if (Device.tv) ink.sortedByDescending { it.star } else ink.filter { it.star }
         ShelfIndexed(starred) { i, st ->
             val on = now?.song?.id == st.song.id
             StationTile(st.song, on, now?.playing == true, said = if (on) "on now" else st.city) { Playback.play(starred.map { it.song }, i) }

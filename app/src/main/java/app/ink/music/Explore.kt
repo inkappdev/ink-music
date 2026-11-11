@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -513,8 +515,9 @@ private fun InkRadioShelf(pages: Pages) {
     val now by Playback.now.collectAsState()
     val ink = remember { Stations.curated(ctx).sortedByDescending { it.star } }
     if (ink.isEmpty()) return
+    // a TV: no "all" (the shelf is every station already)
     Heading("ink radio", "real djs") {
-        Word("all", pixel(13.sp, Ink.mid), touch = 8.dp) { pages.open(Page.InkRadio) }
+        if (!Device.tv) Word("all", pixel(13.sp, Ink.mid), touch = 8.dp) { pages.open(Page.InkRadio) }
     }
     ShelfIndexed(ink) { i, st ->
         val on = now?.song?.id == st.song.id
@@ -796,7 +799,8 @@ fun MoodPage(m: TubeMood, pages: Pages) {
             }
         }
         // a genre at a tempo, mixed (Mixes): its songs at the tempo chosen, one into the next on the beat
-        if (listed && YouTubeMusic.available) item(key = "mix") {
+        // (not on a TV, 2026-11-10: reading each song's tempo is slow on a TV box, a minute or more before it played)
+        if (listed && YouTubeMusic.available && !Device.tv) item(key = "mix") {
             val mix by Mixes.state.collectAsState()
             val ours = mix?.takeIf { it.title.equals(m.title, true) }
             var bpm by remember(m.title) { mutableStateOf(ours?.bpm ?: 125) }
@@ -1062,6 +1066,8 @@ fun FestivalPage(name: String, pages: Pages) {
     val heads = f.artists.take(when { f.artists.size <= 3 -> f.artists.size; f.artists.size >= 9 -> 3; else -> 2 })
     val bill = f.artists.drop(heads.size)
     fun browse(url: String) = runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    if (onTv()) { TvFestival(f, yours, heads, bill, said, onPlay = {
+        scope.launch { said = "finding their songs"; said = if (Fests.play(f)) null else "couldn't find their songs" } }, pages = pages); return }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
@@ -1112,6 +1118,70 @@ fun FestivalPage(name: String, pages: Pages) {
             }
         }
     } }
+}
+
+/**
+ * A festival on a TV (2026-11-10): the whole poster on one screen, nothing to scroll. At the left where and when, the
+ * name, how long till it, play the lineup and tickets, how many you play; at the right the headliners' photos in a row
+ * with their names, and the bill under them, set smaller as a poster's, as many as fit. A photo or a name opens the
+ * artist. (Tickets: the festival's site doesn't open on a TV with no browser, so it's said, not linked.)
+ */
+@Composable
+private fun TvFestival(f: Festivals.Festival, yours: List<String>, heads: List<String>, bill: List<String>, said: String?, onPlay: () -> Unit, pages: Pages) {
+    FrostedPage(onClose = { pages.close() }) { frost, top ->
+        Row(Modifier.fillMaxSize().hazeSource(frost).padding(start = 40.dp, end = 40.dp, top = top + 20.dp, bottom = LocalFoot.current + 20.dp)) {
+            Column(Modifier.weight(.8f).fillMaxHeight()) {
+                BasicText("${f.city} · ${dates(f)}".lowercase(), style = pixel(13.sp, Ink.mid))
+                Spacer(Modifier.height(10.dp))
+                BasicText(f.name.uppercase(), style = headline(46.sp).copy(lineHeight = 44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(14.dp))
+                BasicText(f.when_().uppercase(), style = headline(26.sp, Ink.mid))
+                Spacer(Modifier.height(22.dp))
+                Word("PLAY THE LINEUP", headline(22.sp), Modifier.tvFirst(), touch = 8.dp, onClick = onPlay)
+                said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp)) }
+                Spacer(Modifier.height(18.dp))
+                if (yours.isNotEmpty()) BasicText(("you play ${if (yours.size == f.artists.size) "every one of them" else "${yours.size} of them"}: " +
+                    yours.take(4).joinToString(", ") + if (yours.size > 4) " and more" else "").lowercase(), style = pixel(13.sp), maxLines = 3)
+                Spacer(Modifier.weight(1f))
+                BasicText("${f.artists.size} artists".lowercase() + (if (f.tickets.isNotBlank()) " · tickets at " +
+                    f.tickets.substringAfter("://").substringBefore("/").removePrefix("www.") else ""), style = pixel(12.sp, Ink.mid))
+            }
+            Spacer(Modifier.width(40.dp))
+            Column(Modifier.weight(1.2f).fillMaxHeight()) {
+                // the headliners, side by side
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    heads.forEach { a ->
+                        val info = rememberArtist(a)
+                        Column(Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null,
+                            onClick = felt { pages.open(Page.Artist(info?.name ?: a)) })) {
+                            BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f)) {
+                                when {
+                                    info == null -> Box(Modifier.fillMaxSize().background(Ink.black))
+                                    info.photo != null -> CoverOf(remember(info.photo) { faceSong(a, info.photo, photo = true) }, a, Modifier.fillMaxSize(), px = 360)
+                                    else -> NameCover(a, maxWidth)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            BasicText(a.uppercase(), style = headline(18.sp, if (a in yours) Ink.ink else Ink.ink.copy(alpha = .85f)).copy(lineHeight = 18.sp),
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                // the bill, a poster's: biggest first, shrinking, as many as the screen holds (the foot feathered)
+                if (bill.isNotEmpty()) {
+                    Spacer(Modifier.height(18.dp))
+                    Box(Modifier.fillMaxWidth().weight(1f).clipToBounds()) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            bill.forEachIndexed { i, a ->
+                                val size = when { i < 4 -> 22.sp; i < 12 -> 17.sp; else -> 14.sp }
+                                BillName(a, size, i, a in yours) { pages.open(Page.Artist(a)) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** An artist's page read from YouTube Music (kept): their photo, how many listen, what's said of them, their top songs. */
@@ -1233,7 +1303,8 @@ internal fun MixFinding(st: Mixes.State) {
 /** "mix" beside play and shuffle (a list, your loved songs): played in a DJ's order by tempo and key (Mixes.list). */
 @Composable
 internal fun MixWord(title: String, songs: List<Song>?, modifier: Modifier = Modifier) {
-    if (songs.isNullOrEmpty() || songs.size < 3) return
+    // not on a TV (2026-11-10): too slow on a TV box to be worth the stop
+    if (Device.tv || songs.isNullOrEmpty() || songs.size < 3) return
     val ctx = LocalContext.current
     val st by Mixes.state.collectAsState()
     val going = st?.let { it.title == title && it.bpm == 0 && !it.done } == true
@@ -1267,7 +1338,7 @@ private fun YourMix() {
     val songs by Library.songs.collectAsState()
     val liked by YouTubeAccount.liked.collectAsState()
     val listened by Listened.now.collectAsState()
-    if (remember(songs.size, liked.size, listened) { Mixes.yoursSize() } < 20) return
+    if (Device.tv || remember(songs.size, liked.size, listened) { Mixes.yoursSize() } < 20) return
     val st by Mixes.state.collectAsState()
     val ours = st?.takeIf { it.title == "your music" }
     var bpm by remember { mutableStateOf(ours?.bpm ?: 120) }

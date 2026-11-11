@@ -162,16 +162,13 @@ fun LookPage(pages: Pages) {
         // a TV: the preview held still on the left, as big as the height allows, and every layer's choices on the right,
         // moved through with the remote, the preview changing beside them (2026-11-03: the phone's preview pinned across
         // the top had each heading scrolled away under it before its choices came up)
-        if (tv) Row(Modifier.fillMaxSize().hazeSource(frost).padding(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = 12.dp)) {
-            Column(Modifier.weight(1.15f).fillMaxHeight()) {
-                title()
-                Spacer(Modifier.height(14.dp))
-                // the player in small at the screen's own shape, its song's words right under it
-                preview(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-            }
-            Spacer(Modifier.width(48.dp))
+        // a TV: the choices alone (2026-11-10: the player in small started its moving covers anew with each choice, a
+        // second's stall on the onn each time); what's chosen shows in the player itself
+        if (tv) Column(Modifier.fillMaxSize().hazeSource(frost).padding(start = 40.dp, end = 40.dp, top = top + 14.dp)) {
+            title()
+            Spacer(Modifier.height(18.dp))
             val scroll = rememberScrollState()
-            Column(Modifier.weight(1f).fillMaxHeight().feather(scroll, 28.dp, 44.dp).verticalScroll(scroll).padding(top = 12.dp, bottom = 40.dp)) {
+            Column(Modifier.fillMaxWidth().weight(1f).feather(scroll, 28.dp, 44.dp).verticalScroll(scroll).padding(bottom = 40.dp)) {
                 sections()
             }
         } else Column(Modifier.fillMaxSize().hazeSource(frost).padding(start = 20.dp, end = 20.dp, top = top + 14.dp)) {
@@ -219,6 +216,9 @@ private fun ColumnScope.TvLookChoices(signed: Boolean, canvasOn: Boolean) {
         Part("MOVING COVERS", "a record's animated cover where it has one. smooth on a fast tv; on a slow one, leave it off",
             listOf("on" to on, "off" to !on)) { Moving.set(ctx, whenOn = if (it == 0) Moving.ALWAYS else Moving.OFF) }
     }
+    val marquee by Marquees.on.collectAsState()
+    Part("THE NAME", "the artist's name running along the foot, or big and still over the cover's corner",
+        listOf("moving" to marquee, "on the cover" to !marquee)) { Marquees.set(ctx, it == 0) }
     if (Spotify.available) {
         val ready = signed || Spotify.ready()
         if (!ready) Part("SPOTIFY CANVAS", "a song's looping clip behind the player. sign in to spotify on your phone, then it's here", emptyList()) {}

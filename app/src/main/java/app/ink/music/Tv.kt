@@ -143,6 +143,9 @@ fun TvFocus(content: @Composable () -> Unit) {
     var root by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var at by remember { mutableStateOf<Rect?>(null) }
     val fm = androidx.compose.ui.platform.LocalFocusManager.current
+    // where the lit thing is now, read from the keys (the handler's own `at` is the top row's)
+    val litTop = { at?.top }
+    val tall = { root?.size?.height?.toFloat() ?: 0f }
     DisposableEffect(fm) {
         TvKeys.wake = { fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) || fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Next) }
         onDispose { TvKeys.wake = null }
@@ -192,8 +195,11 @@ fun TvFocus(content: @Composable () -> Unit) {
                 when (e.key) {
                     androidx.compose.ui.input.key.Key.DirectionLeft -> if (at >= 0) step(-1) else false
                     androidx.compose.ui.input.key.Key.DirectionRight -> if (at >= 0) step(1) else false
+                    // down finding nothing: on in order only from near the top (a bar over a page into it); at a
+                    // page's foot it stays (2026-11-10: Next from the last row went right, along the row)
                     androidx.compose.ui.input.key.Key.DirectionDown ->
-                        fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) || fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Next)
+                        fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) ||
+                            (litTop()?.let { it < tall() * 0.25f } == true && fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Next)) || true
                     // on the top row, up stays; up from the first row of covers found nothing (measured): the place's
                     // word; a page with no top row of its own goes on to the previous in order
                     androidx.compose.ui.input.key.Key.DirectionUp -> at >= 0 || fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Up) ||

@@ -16,6 +16,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.withPermit
 
 /** A record's cover, made ready to draw, and its colour (the only colour on screen). */
@@ -64,12 +65,15 @@ object Covers {
                     // a file with no picture of its own: the record's from the catalogs (FoundCovers)
                     else runCatching { ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null) }.getOrNull() ?: found(ctx, song, px)
                     )?.also { if (remote) { android.util.Log.d("ink-covers", "${song.title}: fetched ${System.currentTimeMillis() - t0} ms"); toDisk(ctx, song, px, it) } }
-            } catch (e: Exception) { null }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }
                 // a cover always comes (2026-11-10, as the computer's): a server's or YouTube's song with no link, or
                 // one that didn't come, from the catalogs by its record's name; else a YouTube song's own video picture
                 // (an artist's face or photo, a song only in shape, is never looked for so)
                 ?: (if ((song.server || song.tube) && !face(song)) runCatching { found(ctx, song, px) }.getOrNull() else null)
                 ?: (if (song.tube && !face(song)) runCatching { frame(ctx, song, px) }.getOrNull() else null)
+            // moved past before it came (a cover scrolled off, the remote along a shelf): not a miss, asked again when
+            // it's back (2026-11-10: marked missed, it stayed blank a minute on the TV)
+            ensureActive()
             if (bmp == null) {
                 // a link that didn't come: asked again a minute on; none only where there's nothing to ask
                 if (remote || song.server || song.tube) missed[song.albumId] = System.currentTimeMillis()
