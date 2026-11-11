@@ -574,3 +574,15 @@ fun TvPhoneSetting() {
     if (pairing) PairPhone()
     else Word(if (phones.isEmpty()) "SIGN IN FROM YOUR PHONE" else "LINK ANOTHER PHONE", headline(24.sp), touch = 10.dp) { pairing = true }
 }
+
+/**
+ * On a TV, a YouTube song the remote rests on (a moment, not passing through) has its stream found now, in the player:
+ * signing a song's link took the onn about two seconds, the wait after OK (2026-11-10). By then it's there.
+ */
+@Composable
+fun Modifier.warmOnRest(song: Song?): Modifier {
+    if (!Device.tv || song?.tube != true) return this
+    var on by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(on, song.id) { if (on) { kotlinx.coroutines.delay(450); Playback.warm(song) } }
+    return onFocusChanged { on = it.hasFocus }
+}

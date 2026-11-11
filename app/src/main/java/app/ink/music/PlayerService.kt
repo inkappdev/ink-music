@@ -84,6 +84,7 @@ class PlayerService : MediaLibraryService() {
     private val net = java.util.concurrent.Executors.newSingleThreadExecutor()
     /** The next YouTube song's stream found while this one plays, so a skip doesn't wait for it. */
     private val ahead = java.util.concurrent.Executors.newSingleThreadExecutor()
+    @Volatile private var warmWanted: String? = null
     private var told: String? = null
     private var nowSaid: String? = null
     private var tubeTold: String? = null
@@ -868,8 +869,11 @@ class PlayerService : MediaLibraryService() {
                         tell()
                     }
                     // a YouTube song about to be played (its page is up): its stream found now, so play starts at once
+                    // only the latest asked is found: a remote moving along a shelf asks for each it rests on, and the
+                    // older ones waiting would hold up the one played
                     if (customCommand.customAction == WARM) args.getString(WARM)?.takeIf { it.startsWith("y") }?.let { id ->
-                        ahead.execute { YouTubeMusic.stream(id, false, small = Quality.now(this@PlayerService) == Quality.SAVER) }
+                        warmWanted = id
+                        ahead.execute { if (warmWanted == id) YouTubeMusic.stream(id, false, small = Quality.now(this@PlayerService) == Quality.SAVER) }
                     }
                     if (customCommand.customAction == LEVEL) {
                         val on = args.getBoolean(LEVEL, true)

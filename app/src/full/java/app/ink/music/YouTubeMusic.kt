@@ -195,8 +195,11 @@ object YouTubeMusic {
         }
         val sync = account ?: return null.also { android.util.Log.d("ink-youtube", "signed $vid: no account id") }
         val js = playerUrl ?: return null.also { android.util.Log.d("ink-youtube", "signed $vid: no player") }
+        val tA = System.currentTimeMillis()
         val tokens = PoTokens.signed(vid, sync)
+        val tB = System.currentTimeMillis()
         val answer = t.player(vid, playerSts, tokens?.first)
+        val tC = System.currentTimeMillis()
         val status = answer.optJSONObject("playabilityStatus")
         if (status?.optString("status") != "OK") {
             android.util.Log.d("ink-youtube", "signed $vid: ${status?.optString("status")} ${status?.optString("reason")}"); return null
@@ -217,6 +220,7 @@ object YouTubeMusic {
         }
         var url = cipher?.get("url") ?: pick.optString("url").ifEmpty { return null }
         val n = Regex("[?&]n=([^&]+)").find(url)?.groupValues?.get(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+        val tD = System.currentTimeMillis()
         val (sig, nAnswer) = Solver.solve(c, js, cipher?.get("s"), n)
             ?: return null.also { android.util.Log.d("ink-youtube", "signed $vid: the solver couldn't") }
         if (cipher != null) url += "&" + (cipher["sp"] ?: "signature") + "=" + java.net.URLEncoder.encode(sig ?: return null, "UTF-8")
@@ -226,13 +230,15 @@ object YouTubeMusic {
         // tried before it's trusted: a link with a step half-done (no poToken minted, the signature or n not
         // solved on that phone's WebView) is turned away (403), and played nothing for testers on 1.4.5; turned
         // away, the stream NewPipe finds signed out plays instead
+        val tE = System.currentTimeMillis()
         if (!opens(url)) {
             android.util.Log.d("ink-youtube", "signed $vid: turned away (${if (tokens != null) "with" else "no"} poToken, n ${if (nAnswer != null) "solved" else "none"})")
             return null
         }
         val kbps = rate(pick) / 1000
         android.util.Log.d("ink-youtube", "signed $vid: itag ${pick.optInt("itag")} ${pick.optString("mimeType").substringBefore(';')} $kbps kbps " +
-            "(${if (tokens != null) "with" else "no"} poToken, ${if (cipher != null) "cipher" else "plain"}, n ${if (nAnswer != null) "solved" else "none"}) in ${System.currentTimeMillis() - t0} ms")
+            "(${if (tokens != null) "with" else "no"} poToken, ${if (cipher != null) "cipher" else "plain"}, n ${if (nAnswer != null) "solved" else "none"}) in ${System.currentTimeMillis() - t0} ms " +
+            "(page ${tA - t0}, poToken ${tB - tA}, player ${tC - tB}, solver ${tE - tD}, checked ${System.currentTimeMillis() - tE})")
         Triple(url, pick.optString("mimeType").substringBefore(';'), kbps)
     }.onFailure { android.util.Log.d("ink-youtube", "signed $id: $it") }.getOrNull()
 

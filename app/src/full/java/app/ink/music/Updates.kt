@@ -48,6 +48,7 @@ object Updates {
      */
     fun check(c: Context, now: Boolean = false) {
         if (BuildConfig.DEBUG) return  // a debug build has its own key: the installer would refuse it
+        if (!BuildConfig.UPDATER) return  // F-Droid's build: F-Droid brings the next one
         scope.launch {
             if (now) said.value = "looking"
             val k = kept(c)

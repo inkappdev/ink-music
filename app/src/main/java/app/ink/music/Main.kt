@@ -1024,7 +1024,7 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
             if (slid.value < 0) BasicText("add to queue", style = pixel(13.sp, if (armed == -1) Ink.ink else Ink.dim))
         }
     Column(
-        Modifier.fillMaxWidth().offset { IntOffset(slid.value.roundToInt(), 0) }.background(Ink.black)
+        Modifier.fillMaxWidth().offset { IntOffset(slid.value.roundToInt(), 0) }.background(Ink.black).warmOnRest(s)
             // a tap and a hold the remote gives too (OK, OK held): a finger-only gesture left a TV's songs unreachable
             .combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
                 onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); if (picking) Picking.toggle(s) else { open = !open; Hints.did(Hints.SWIPE) } },
