@@ -111,8 +111,20 @@ object Moving {
         ).joinToString("\n")) }
     }
 
-    /** Whether to show them on the network the phone is on now. */
-    fun wanted(c: Context) = available && when (_when.value) { ALWAYS -> true; WIFI -> !Quality.metered(c); else -> false }
+    /** Whether to show them on the network the phone is on now (a TV: and while it isn't short of memory). */
+    fun wanted(c: Context) = available && when (_when.value) { ALWAYS -> true; WIFI -> !Quality.metered(c); else -> false } &&
+        !(Device.tv && lowMemory(c))
+
+    private fun lowMemory(c: Context): Boolean = runCatching {
+        val am = c.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.let { it.lowMemory || it.availMem < it.threshold * 3 / 2 }
+    }.getOrDefault(false)
+
+    /**
+     * A TV: a song's canvas playing behind the player now (2026-11-10: a canvas and a moving cover, each a video with its
+     * effect drawn every frame, ran the onn out of memory and froze it). While it is, the cover stays still.
+     */
+    val canvasPlaying = MutableStateFlow(false)
 }
 
 /**
@@ -124,6 +136,8 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
     val shape by Moving.cover.collectAsState()
+    // a TV: one video at a time, the canvas first
+    if (Device.tv && Moving.canvasPlaying.collectAsState().value) return
     val url by produceState<String?>(null, artist, album, title, whenOn) {
         // a song without its record's name (YouTube's search finds them so): the record found from the song
         value = if (Moving.wanted(ctx)) withContext(Dispatchers.IO) { if (album.isNotBlank()) MotionCover.of(artist, album) else MotionCover.ofSong(artist, title) } else null
@@ -169,6 +183,7 @@ fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean,
         android.util.Log.i("ink-moving", "canvas for $artist / $title: ${if (value != null) "found" else "none"}")
     }
     val u = url ?: return
+    if (Device.tv) DisposableEffect(u) { Moving.canvasPlaying.value = true; onDispose { Moving.canvasPlaying.value = false } }
     // as it is: the clip itself, held to half over the black so the white words over it still read (at full, a light
     // canvas took the title; Spotify's own app darkens it too, by a gradient: here evenly, as ink's look has none);
     // an effect, at that look's own strength, as the still background's

@@ -1503,7 +1503,8 @@ private fun TvPlayer(
             // the cover as big as the height leaves after the line and the times over it (and the name under it)
             BoxWithConstraints(Modifier.fillMaxHeight()) {
                 val room = (maxHeight - if (moving) 44.dp else 104.dp).coerceIn(160.dp, 460.dp)
-                Box {
+                // held to the cover's width: the name runs past it without widening it (it squeezed the controls)
+                Box(Modifier.width(room)) {
                     Column(Modifier.width(room)) {
                         androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
                             Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
@@ -1512,7 +1513,7 @@ private fun TvPlayer(
                     }
                     // its foot over the cover's, a little in from the left, as far right as it runs
                     if (!moving) BasicText(n.artist.uppercase(), style = headline(72.sp), maxLines = 1, softWrap = false,
-                        modifier = Modifier.align(Alignment.BottomStart).offset(x = (-8).dp, y = 52.dp)
+                        modifier = Modifier.align(Alignment.BottomStart).offset(x = 28.dp, y = 52.dp)
                             .then(Modifier.wrapContentWidth(Alignment.Start, unbounded = true)))
                 }
             }
