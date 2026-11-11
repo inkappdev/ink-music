@@ -12,6 +12,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -125,10 +127,14 @@ object StationSleeve {
 fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean = false) {
     // a white frame round it, the rings filling it all, the name big on a black tab at its lower left, over the rings
     // where they begin (2026-10-28, the name "spilling into" it)
-    BoxWithConstraints(modifier.background(Ink.black).border(1.dp, Ink.ink)) {
-        val side = maxWidth
+    // its size read as it's placed, not with a layout pass of its own (BoxWithConstraints in each of a grid's sleeves:
+    // radio scrolled at 29 ms a frame on the onn, 2026-11-10)
+    var sidePx by remember { mutableIntStateOf(0) }
+    Box(modifier.background(Ink.black).border(1.dp, Ink.ink).onSizeChanged { sidePx = it.width }) {
+        if (sidePx == 0) return@Box
         val density = LocalDensity.current.density
-        val px = side.value * density
+        val side = (sidePx / density).dp
+        val px = sidePx.toFloat()
         val frames by produceState<List<ImageBitmap>?>(null, station.id, px, moving) {
             val n = StationSleeve.cells(px, density)
             value = withContext(Dispatchers.Default) {

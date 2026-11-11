@@ -104,6 +104,9 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     }
     val rankedRecords = ranked.first
     val rankedSongs = ranked.second
+    // a TV: INK kept to what reads from a sofa (2026-11-10, for slow boxes): ink weekly, the record of the day, on the
+    // air, ink radio, festivals, the critics' records, out this Friday, the artist of the week
+    val tv = onTv()
     LazyColumn(state = state, contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding())) {
         // the day's issue: its number and a note on what's in it, turning at six each morning
         item(key = "issue") { Issue(records, chart, friday, air) }
@@ -111,7 +114,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         item(key = "weekly") { InkWeeklyCover(pages) }
         today?.let { d -> item(key = "today") { RecordOfTheDay(d, pages) } }
         // the rest of the day's: a song, a station, one of your own you've never played
-        item(key = "ofTheDay") { OfTheDay(songs, pages) }
+        if (!tv) item(key = "ofTheDay") { OfTheDay(songs, pages) }
         if (air.isNotEmpty()) item(key = "air") {
             // who's on, said once: "kexp, kcrw and fip", "kexp, kcrw, fip and 3 more"
             val names = air.map { it.name }.distinct()
@@ -124,20 +127,20 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         item(key = "radio") { InkRadioShelf(pages) }
         item(key = "festivals") { FestivalsShelf(pages) }
         // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: 2026-10-28)
-        item(key = "inkmoods") { InkMoodsShelf() }
-        moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
+        if (!tv) item(key = "inkmoods") { InkMoodsShelf() }
+        if (!tv) moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
         // YouTube Music's own lists, the cool ones only (CoolLists)
-        item(key = "coollists") { CoolListsShelf(pages) }
+        if (!tv) item(key = "coollists") { CoolListsShelf(pages) }
         // your own music at a tempo (Mixes.yours)
-        item(key = "yourmix") { YourMix() }
+        if (!tv) item(key = "yourmix") { YourMix() }
         if (records.isNotEmpty()) item(key = "picked") {
             Heading("the critics' records")
             ShelfIndexed(rankedRecords) { _, p -> PickTile(p.item, pages, Fresh.reason(p.item, p.stretch, taste), near = !p.stretch && taste.of(p.item.pick.artist) >= .3) }
         }
         friday?.let { w -> item(key = "friday") { OutThisFriday(w, pages) } }
-        if (electronic.isNotEmpty()) item(key = "electronic") { Electronic(electronic, pages) }
+        if (electronic.isNotEmpty() && !tv) item(key = "electronic") { Electronic(electronic, pages) }
         if (chart.isNotEmpty()) item(key = "artist") { ArtistOfTheWeek(chart, pages) }
-        if (songs.isNotEmpty()) item(key = "songs") {
+        if (songs.isNotEmpty() && !tv) item(key = "songs") {
             var said by remember { mutableStateOf<String?>(null) }
             Heading("the critics' songs") {
                 Word("play all", pixel(13.sp), touch = 8.dp) { scope.launch { said = "finding them"; Picks.playSongs(songs); said = null } }
@@ -154,7 +157,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
                 }
             }
         }
-        if (chart.isNotEmpty()) {
+        if (chart.isNotEmpty() && !tv) {
             item(key = "chart") {
                 Heading("the indie chart", "kexp, kcrw and wxpn, this week")
             }
@@ -355,7 +358,7 @@ private fun AiredTile(a: Curation.Aired) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clickable(remember { MutableInteractionSource() }, indication = null) {
             if (station != null) Playback.play(listOf(station), 0)
             else scope.launch { said = "finding it"; val s = Picks.song(a.title, a.artist); said = if (s == null) "not on youtube music" else null; s?.let { Playback.play(listOf(it), 0) } }
-        }) { CoverOf(face, a.title, Modifier.fillMaxSize()) }
+        }) { CoverOf(face, a.title, Modifier.fillMaxSize(), px = TILE_PX) }
         Spacer(Modifier.height(8.dp))
         UnderCover(a.title, a.artist, pixel(12.sp, Ink.mid))
         BasicText("on ${a.name}", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -398,7 +401,7 @@ internal fun PickTile(s: Picks.Shown, pages: Pages, reason: String? = null, near
         // no cover found when the picks were read (forty are asked for a read, and a read is twice a day: #1's INK was
         // half gray): asked for as the tile comes into sight, three at a time, YouTube Music's the last place
         val art by produceState(s.art, s) { value = Picks.artOf(s, s.pick.record) }
-        CoverOf(remember(s, art) { if (art == s.art) s.face else s.copy(art = art).face }, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f))
+        CoverOf(remember(s, art) { if (art == s.art) s.face else s.copy(art = art).face }, s.pick.title, Modifier.fillMaxWidth().aspectRatio(1f), px = TILE_PX)
         Spacer(Modifier.height(8.dp))
         UnderCover(s.pick.title, s.pick.artist, pixel(12.sp, Ink.mid))
         // a third line only when there's something to say: what's happening, or a reason worth it (2026-11-07: less

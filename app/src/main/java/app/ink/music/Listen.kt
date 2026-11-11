@@ -661,7 +661,7 @@ internal fun Tile(song: Song?, name: String, said: String, face: String? = null,
     Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         // a mix or a playlist: its picture in the dither (YouTube's lettering on it made ink's)
         if (dither && shown?.art != null) Dithered(shown, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
-        else CoverOf(shown, name, Modifier.fillMaxWidth().aspectRatio(1f))
+        else CoverOf(shown, name, Modifier.fillMaxWidth().aspectRatio(1f), px = TILE_PX)
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Top) {
             number?.let { BasicText("$it", style = pixel(12.sp, Ink.mid), modifier = Modifier.width(26.dp).padding(top = 2.dp)) }
@@ -775,3 +775,7 @@ fun TvListenPage(pages: Pages, state: LazyListState) {
 
 /** A TV row's covers: one size, for the sofa. */
 private val TV_TILE = 168.dp
+
+
+/** How many pixels a shelf's cover is read at: a TV's tiles at their own size (a 640 px read, four times the pixels, was memory and decoding a slow box hasn't got), a phone's as it was. */
+val TILE_PX: Int get() = if (Device.tv) 320 else 640

@@ -17,3 +17,8 @@
 
 # the poToken WebView calls back into Kotlin by name
 -keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+
+# ink music's own classes keep their names (2026-11-10), so the startup profile's one rule, app/ink/music/**, finds them
+# all and Android compiles them ahead (renamed to n4 and the like, the rule missed most: the onn's TV scrolled at 20-25%
+# late frames run as it came, 6% compiled). Their members are still renamed and everything unused still goes.
+-keepnames class app.ink.music.**
