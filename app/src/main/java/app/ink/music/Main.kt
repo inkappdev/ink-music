@@ -122,6 +122,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.alpha
@@ -1202,6 +1205,24 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
 }
 
 /**
+ * A list's page (a playlist's): on a phone its head over its rows in one list; on a TV the head held still on the left,
+ * its rows on the right ([TvBeside]), so play and the rest are a press left, never scrolled away (2026-11-10: pressing up
+ * to reach them on a TV closed the page instead).
+ */
+@Composable
+fun ListPageBody(frost: HazeState, top: Dp, list: androidx.compose.foundation.lazy.LazyListState, head: @Composable () -> Unit, rows: LazyListScope.() -> Unit) {
+    if (onTv()) TvBeside(frost, top, list, { head() }, rows)
+    else LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item { head() }
+        rows()
+    }
+}
+
+/**
  * A page on a TV: what it is on the left (a cover and its words, held still), its list on the right; the two side by
  * side on the wide screen, as the computer's are, rather than the phone's one column with the cover the screen's width.
  */
@@ -1213,7 +1234,14 @@ fun TvBeside(frost: HazeState, top: Dp, list: androidx.compose.foundation.lazy.L
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.width(300.dp).verticalScroll(rememberScrollState())) { side(cover) }
         Spacer(Modifier.width(40.dp))
-        LazyColumn(state = list, modifier = Modifier.weight(1f).hazeSource(frost).feather(list, 28.dp, 44.dp), contentPadding = PaddingValues(bottom = 24.dp)) { rows() }
+        // left from the list: the side's first press (play), not whichever word is level with the row (a playlist's
+        // "delete from youtube", 2026-11-10)
+        val start = LocalTvStart.current
+        val go = remember(start) { { start?.first?.let { runCatching { it.requestFocus(); true }.getOrDefault(false) } ?: false } }
+        androidx.compose.runtime.DisposableEffect(go) { onDispose { if (TvKeys.besideLeft === go) TvKeys.besideLeft = null } }
+        LazyColumn(state = list, modifier = Modifier.weight(1f).hazeSource(frost).feather(list, 28.dp, 44.dp)
+            .onFocusChanged { f -> if (f.hasFocus) TvKeys.besideLeft = go else if (TvKeys.besideLeft === go) TvKeys.besideLeft = null },
+            contentPadding = PaddingValues(bottom = 24.dp)) { rows() }
     }
     }
 }
@@ -1365,13 +1393,8 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
     var sure by remember { mutableStateOf(false) }
     LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
     val list = pageList()
-    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
-        state = list,
-        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
-    ) {
-        item { Column(Modifier.cascade(0)) {
-            BasicText(name.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+    FrostedPage(onClose = { pages.close() }) { frost, top -> ListPageBody(frost, top, list, head = { Column(Modifier.cascade(0)) {
+            BasicText(name.uppercase(), style = headline(if (Device.tv) 30.sp else 44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
             val all = songs
             BasicText(
@@ -1380,7 +1403,7 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
                 style = pixel(12.sp, Ink.mid),
             )
             Spacer(Modifier.height(16.dp))
-            if (!all.isNullOrEmpty()) Row {
+            if (!all.isNullOrEmpty()) FlowRow {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
                 MixWord(name, all, Modifier.padding(end = 26.dp))
@@ -1393,7 +1416,7 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
                 if (!sure) sure = true else scope.launch { if (Server.deletePlaylist(id)) pages.back() }
             }
             Spacer(Modifier.height(14.dp))
-        }}
+        }}) {
         val all = songs.orEmpty()
         // no keys: a playlist can hold one song twice
         itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) {
@@ -2226,13 +2249,8 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
     }
     LaunchedEffect(songs?.firstOrNull()?.id) { Playback.warm(songs?.firstOrNull()) }
     val list = pageList()
-    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
-        state = list,
-        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
-    ) {
-        item { Column(Modifier.cascade(0)) {
-            BasicText(pl.name.uppercase(), style = headline(44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+    FrostedPage(onClose = { pages.close() }) { frost, top -> ListPageBody(frost, top, list, head = { Column(Modifier.cascade(0)) {
+            BasicText(pl.name.uppercase(), style = headline(if (Device.tv) 30.sp else 44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
             val all = songs
             BasicText(
@@ -2241,7 +2259,7 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
                 style = pixel(12.sp, Ink.mid),
             )
             Spacer(Modifier.height(16.dp))
-            if (!all.isNullOrEmpty()) Row {
+            if (!all.isNullOrEmpty()) FlowRow {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
                 MixWord(pl.name, all, Modifier.padding(end = 26.dp))
@@ -2267,7 +2285,7 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
                 }
             }
             Spacer(Modifier.height(14.dp))
-        }}
+        }}) {
         val all = songs.orEmpty()
         // no keys: a playlist can hold one song twice
         itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, cover = covers) { Playback.play(all, i) } }}
@@ -2543,7 +2561,9 @@ fun FrostedPage(onClose: (() -> Unit)? = null, content: @Composable (HazeState, 
     }
     Box(
         Modifier.fillMaxSize().onSizeChanged { tall = it.height }
-            .nestedScroll(pulling).graphicsLayer { translationY = pull }.background(Ink.black),
+            // (not on a TV: up at a list's top there, a scroll past it, counted as a pull and closed the page, 2026-11-10;
+            // back closes it there)
+            .then(if (Device.tv) Modifier else Modifier.nestedScroll(pulling)).graphicsLayer { translationY = pull }.background(Ink.black),
     ) {
         // a TV: the page between its close row and the mini player, overlapping only their soft strips (so what runs
         // out of view still softens), as the library's place is: the remote finds the page under the close arrow

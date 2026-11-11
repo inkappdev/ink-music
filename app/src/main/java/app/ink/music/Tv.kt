@@ -110,6 +110,8 @@ object TvKeys {
     var railAt by mutableStateOf(-1)
     /** The rail's word for the place shown: where left from the place lands. */
     var railHome: androidx.compose.ui.focus.FocusRequester? = null
+    /** A page side by side ([TvBeside]) with the remote in its list: left goes to its side's first press (play). */
+    var besideLeft: (() -> Boolean)? = null
 }
 
 /** One of the library's rail ([TvKeys.rail]): its place in it, and whether it has the remote. */
@@ -176,6 +178,8 @@ fun TvFocus(content: @Composable () -> Unit) {
                     androidx.compose.ui.input.key.Key.DirectionLeft -> true
                     else -> false
                 }
+                // left from a side-by-side page's list: its side's first press (play), not the word level with the row
+                if (e.key == androidx.compose.ui.input.key.Key.DirectionLeft) TvKeys.besideLeft?.let { go -> if (go()) return@onPreviewKeyEvent true }
                 // left from the place: on along it where there's more; at its edge, the rail's word for the place shown
                 // (not whichever word is level with it: that one, rested on, showed another place, 2026-11-10)
                 if (e.key == androidx.compose.ui.input.key.Key.DirectionLeft && at < 0 && TvKeys.railHome != null) {
