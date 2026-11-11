@@ -40,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -186,6 +187,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val listened by Listened.now.collectAsState()
     val allSongs by Library.songs.collectAsState()
     val brought by Fresh.brought.collectAsState()
+    var knowMeShut by remember { mutableStateOf(java.io.File(ctx.filesDir, "know-me-shut").exists()) }
     val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, listened, allSongs, brought) { Picks.yours(listened, allSongs, brought) }
     // your server's records kept on the phone: with no signal they come first, "no data? no problem"
     val kept by Offline.kept.collectAsState()
@@ -492,6 +494,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         continued?.let { o -> item(key = "continue") { Column(Modifier.cascade(1)) { ContinueHere(o) } } }
         if (!online && keptRecords.isNotEmpty()) item { Column(Modifier.cascade(1)) { KeptShelf(keptRecords, "no data? no problem", pages) }}
         // what's new since you were here, a line each (Fresh)
+        // knowing nothing of you yet (little played here, nothing brought in, no artists picked): your listening on
+        // Last.fm or ListenBrainz asked for, as the computer's listen does (2026-11-11); "not now" puts it away
+        if (YouTubeMusic.available && LastFm.available && brought.isEmpty() && heard.size < 40 && !knowMeShut)
+            item(key = "know-me") { Column(Modifier.cascade(1).padding(horizontal = 20.dp).padding(bottom = 14.dp)) { KnowMeCard { knowMeShut = true } } }
         if (sinceLines.isNotEmpty()) item(key = "since") { Column(Modifier.cascade(1).moving(this)) { SinceYouWereHere(since, sinceLines) } }
         // the shelves, in the moment's order (Fresh.order): each shown, and its taps counted, so the unopened sink
         order.forEachIndexed { i, k ->
@@ -782,3 +788,34 @@ private val TV_TILE = 168.dp
 
 /** How many pixels a shelf's cover is read at: a TV's tiles at their own size (a 640 px read, four times the pixels, was memory and decoding a slow box hasn't got), a phone's as it was. */
 val TILE_PX: Int get() = if (Device.tv) 320 else 640
+
+
+/** Know me, on listen: your Last.fm or ListenBrainz name, your listening brought in ([Brought]); or not now, for good. */
+@Composable
+private fun KnowMeCard(shut: () -> Unit) {
+    val ctx = LocalContext.current
+    var where by remember { mutableStateOf("last.fm") }
+    var name by remember { mutableStateOf("") }
+    var bringing by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    BasicText("DO YOU SCROBBLE?", style = headline(22.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("your listening on last.fm or listenbrainz, brought in by your name, so ink music knows you from today. nothing's sent, no password",
+        style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    Row {
+        for (w in listOf("last.fm", "listenbrainz"))
+            Word(w, pixel(14.sp, if (where == w) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { where = w }
+    }
+    Spacer(Modifier.height(10.dp))
+    Field("your $where name", name, { name = it }, "", androidx.compose.ui.text.input.KeyboardType.Text)
+    said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(8.dp)) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Word(if (bringing) "BRINGING IT IN" else "BRING IT IN", headline(26.sp, if (name.isBlank() || bringing) Ink.dim else Ink.ink), Modifier.padding(end = 28.dp), touch = 8.dp) {
+            if (bringing || name.isBlank()) return@Word
+            bringing = true; said = null
+            Fresh.bringIn(ctx, name, brainz = where == "listenbrainz") { b -> bringing = false; if (b == null) said = "$where has no listening under that name" }
+        }
+        Word("not now", pixel(13.sp, Ink.mid), touch = 8.dp) { runCatching { java.io.File(ctx.filesDir, "know-me-shut").writeText("") }; shut() }
+    }
+}
