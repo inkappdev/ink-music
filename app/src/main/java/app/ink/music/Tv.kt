@@ -108,6 +108,8 @@ object TvKeys {
     val rail = arrayOfNulls<androidx.compose.ui.focus.FocusRequester>(16)
     /** Which of the rail has the remote (-1: none). */
     var railAt by mutableStateOf(-1)
+    /** The place shown beside the rail: where right from the rail goes, its first thing (2026-11-10). */
+    var placeIn: androidx.compose.ui.focus.FocusRequester? = null
     /** The rail's word for the place shown: where left from the place lands. */
     var railHome: androidx.compose.ui.focus.FocusRequester? = null
     /** A page side by side ([TvBeside]) with the remote in its list: left goes to its side's first press (play). */
@@ -178,8 +180,10 @@ fun TvFocus(content: @Composable () -> Unit) {
                 if (railAt >= 0) return@onPreviewKeyEvent when (e.key) {
                     androidx.compose.ui.input.key.Key.DirectionUp -> railStep(-1)
                     androidx.compose.ui.input.key.Key.DirectionDown -> railStep(1)
+                    // into the place, its first thing (the search right from listen went down the rail to settings)
                     androidx.compose.ui.input.key.Key.DirectionRight ->
-                        fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Right) || fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Next)
+                        (runCatching { TvKeys.placeIn?.requestFocus() == true }.getOrDefault(false) && TvKeys.railAt < 0) ||
+                            fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Right) || true
                     androidx.compose.ui.input.key.Key.DirectionLeft -> true
                     else -> false
                 }

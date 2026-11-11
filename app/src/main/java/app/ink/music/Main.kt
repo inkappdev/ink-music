@@ -540,6 +540,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // place's word above them (the onn, 2026-11-03: down went nowhere); places change from the menu
     val tv = onTv()
     val placeIn = remember { androidx.compose.ui.focus.FocusRequester() }
+    if (tv) androidx.compose.runtime.DisposableEffect(placeIn) { TvKeys.placeIn = placeIn; onDispose { if (TvKeys.placeIn === placeIn) TvKeys.placeIn = null } }
     // a TV: back from deep in a place goes to the rail, on the place's own word (2026-11-10); from the rail, to listen
     BackHandler(backHome && (if (tv) TvKeys.railAt < 0 || tab != tabs[0] else pager.currentPage != 0)) {
         if (tv && TvKeys.railAt < 0 && TvKeys.railHome != null) { runCatching { TvKeys.railHome?.requestFocus() } }
