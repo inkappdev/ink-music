@@ -329,6 +329,14 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                         if (playlist) MixWord(a.title, s)
                         // a playlist's songs are from many records: their covers, if wanted
                         if (playlist) CoversWord()
+                        // its link on YouTube Music onto the clipboard, to share or hand on (2026-11-10: a playlist's
+                        // link was only to be had from YouTube's own app)
+                        var copied by remember(a.url) { mutableStateOf(false) }
+                        LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(2_000); copied = false } }
+                        Word(if (copied) "copied" else "copy link", pixel(14.sp, if (copied) Ink.ink else Ink.mid), touch = 8.dp) {
+                            java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(tubeLink(a.url)), null)
+                            copied = true
+                        }
                     }
                     // kept on the computer: its own line under the row (beside play, mix and covers it was cut to "keep o...")
                     Box(Modifier.padding(top = 10.dp)) { KeepOffline(s) }
@@ -351,4 +359,13 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
             }
         }
     }
+}
+
+/** A record's or playlist's YouTube Music link, from however it was found (a link, its list id, its browse id). */
+fun tubeLink(url: String): String {
+    Regex("[?&]list=([^&]+)").find(url)?.let { return "https://music.youtube.com/playlist?list=" + it.groupValues[1] }
+    if (url.startsWith("http")) return url.replace("://www.youtube.com", "://music.youtube.com").replace("://youtube.com", "://music.youtube.com")
+    val id = url.removePrefix("VL")
+    return if (id.startsWith("PL") || id.startsWith("OLAK") || id.startsWith("RD")) "https://music.youtube.com/playlist?list=$id"
+        else "https://music.youtube.com/browse/$id"
 }
