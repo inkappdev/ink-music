@@ -11,6 +11,7 @@ object Spotify {
     val at: StateFlow<Long> = MutableStateFlow(0L)
     fun ready() = false
     fun signedIn() = false
+    fun signOut() {}
     suspend fun canvas(c: Context, title: String, artist: String): String? = null
     fun signIn(c: Context) {}
     fun handover(c: Context, scope: kotlinx.coroutines.CoroutineScope): String? = null

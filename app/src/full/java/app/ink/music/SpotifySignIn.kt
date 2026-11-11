@@ -125,6 +125,27 @@ object Spotify {
         if (p.fresh && p.bearer != bearer) take(p.bearer, p.client, p.at)
     }
 
+    /**
+     * Signed out of Spotify, to sign in to another account (2026-11-11, a listener with three, wanting playlists from
+     * each): its cookies expired, every name on every Spotify host the WebView has them for, its pages' storage gone,
+     * the passes forgotten. Playlists brought in stay.
+     */
+    fun signOut() {
+        val m = CookieManager.getInstance()
+        val hosts = listOf("https://open.spotify.com", "https://accounts.spotify.com", "https://www.spotify.com", "https://spotify.com")
+        for (h in hosts) {
+            val names = runCatching { m.getCookie(h) }.getOrNull().orEmpty().split(";").map { it.substringBefore('=').trim() }.filter { it.isNotEmpty() }
+            for (n in names) {
+                m.setCookie(h, "$n=; Max-Age=0; Path=/")
+                m.setCookie(h, "$n=; Domain=.spotify.com; Max-Age=0; Path=/")
+            }
+        }
+        m.flush()
+        runCatching { hosts.forEach { android.webkit.WebStorage.getInstance().deleteOrigin(it) } }
+        bearer = null; client = null; _at.value = 0L
+        android.util.Log.i("ink-spotify", "signed out: ${!signedIn()}")
+    }
+
     /** Signed in: Spotify's session cookie is there (a visitor's player asks with an anonymous pass, no use here). */
     fun signedIn() = runCatching { CookieManager.getInstance().getCookie("https://open.spotify.com")?.contains("sp_dc=") == true }.getOrDefault(false)
 

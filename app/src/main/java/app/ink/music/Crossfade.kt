@@ -143,7 +143,9 @@ class Crossfade(
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
         const val SAID = "crossfade-said"
         /** The last song mixed into the next, or why the last one wasn't (for settings). */
-        fun said(c: Context): String? = runCatching { File(c.filesDir, SAID).readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+        fun said(c: Context): String? = history(c).firstOrNull()
+        /** The last dozen, the newest first. */
+        fun history(c: Context): List<String> = runCatching { File(c.filesDir, SAID).readLines() }.getOrDefault(emptyList()).map { it.trim() }.filter { it.isNotEmpty() }
 
     }
 
@@ -605,7 +607,13 @@ class Crossfade(
     // the last song mixed, or the last reason one wasn't, in files/crossfade-said (the screens read it)
     private val titles = ConcurrentHashMap<String, String>()
     private fun titleOf(id: String) = titles[id]?.takeIf { it.isNotBlank() } ?: "a song"
-    private fun tell(line: String) { runCatching { Keep.write(File(c.filesDir, SAID), line.lowercase()) } }
+    // the newest first, the last 12 kept: settings copies them all, with the phone's name, for a listener to send
+    // (2026-11-11: blends rare on a listener's four Android 13 phones, Poco and Realme, never on the S26)
+    private fun tell(line: String) { runCatching {
+        val f = File(c.filesDir, SAID)
+        val was = runCatching { f.readLines() }.getOrDefault(emptyList()).filter { it.isNotBlank() }
+        Keep.write(f, (listOf(line.lowercase()) + was).take(12).joinToString("\n"))
+    } }
 
     /** A beat-matched blend's plan: where to cut, over how long, the old song's end stretched to the new one's tempo. */
     private class Matched(val cut: Long, val fade: Long, val stretched: FloatArray, val from: Double, val speed: Double, val period: Double, val clash: Boolean = false, val hold: Double = 0.0)
@@ -1005,7 +1013,10 @@ class Crossfade(
                 }
                 if (o >= 0) {
                     val at = info.presentationTimeUs / 1000
+                    // only the part the decoder filled: some phones' decoders hand back the whole buffer, its limit
+                    // left at its size (read past it, stale sound joined the end and the blend's sums came out wrong)
                     val b: ByteBuffer = codec.getOutputBuffer(o)!!.order(ByteOrder.LITTLE_ENDIAN)
+                    runCatching { b.limit(info.offset + info.size); b.position(info.offset) }
                     val float = codec.outputFormat.let { it.containsKey(MediaFormat.KEY_PCM_ENCODING) && it.getInteger(MediaFormat.KEY_PCM_ENCODING) == android.media.AudioFormat.ENCODING_PCM_FLOAT }
                     if (at >= fromMs) {
                         if (first < 0) first = at

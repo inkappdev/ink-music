@@ -248,7 +248,17 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     Spacer(Modifier.height(6.dp))
                     BasicText(if (Spotify.available) "bring a playlist in: signed in to spotify, or from a file" else "bring a playlist in: exported from exportify.app, or from spotify's own download of your data", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(10.dp))
-                    Word("bring one in", pixel(14.sp), touch = 8.dp) { pages.open(Page.Import) }
+                    // signed in: out again, to bring in another account's playlists (2026-11-11)
+                    val spotifyAt by Spotify.at.collectAsState()
+                    var spotifyIn by remember(spotifyAt) { mutableStateOf(Spotify.available && Spotify.signedIn()) }
+                    Row {
+                        Word("bring one in", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { pages.open(Page.Import) }
+                        if (spotifyIn) Word("sign out of spotify", pixel(14.sp, Ink.mid), touch = 8.dp) { Spotify.signOut(); spotifyIn = Spotify.signedIn() }
+                    }
+                    if (spotifyIn) {
+                        Spacer(Modifier.height(6.dp))
+                        BasicText("signed in to spotify. sign out, then bring one in, to sign in to another account", style = pixel(12.sp, Ink.mid))
+                    }
                     Spacer(Modifier.height(40.dp))
                 }
 
@@ -375,6 +385,15 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     if (cross) Crossfade.said(ctx)?.let { line ->
                         Spacer(Modifier.height(10.dp))
                         BasicText("last: $line", style = pixel(12.sp, Ink.mid))
+                        // the last dozen, and which phone, onto the clipboard: to send when it isn't mixing (2026-11-11)
+                        var copied by remember { mutableStateOf(false) }
+                        Spacer(Modifier.height(8.dp))
+                        Word(if (copied) "copied" else "copy what happened", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                            val text = (listOf("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, android ${android.os.Build.VERSION.RELEASE}, ink music ${BuildConfig.VERSION_NAME}, $mode") +
+                                Crossfade.history(ctx)).joinToString("\n")
+                            ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("ink music transitions", text))
+                            copied = true
+                        }
                     }
                     Spacer(Modifier.height(40.dp))
                 }
