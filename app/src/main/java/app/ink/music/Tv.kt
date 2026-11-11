@@ -600,14 +600,21 @@ fun Modifier.warmOnRest(song: Song?): Modifier {
  * A shelf on a TV: down or up into it lands on its first cover in view, never the one under where the remote was
  * (2026-11-10: down from a shelf landed on the next one's second or third). Along it, as ever.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun Modifier.tvShelf(): Modifier {
     if (!Device.tv) return this
     val r = remember { androidx.compose.ui.focus.FocusRequester() }
+    // the cover it was on, kept as the remote leaves it: up, back into it, lands there again (the way it came);
+    // down into it, its first in view
     return focusRequester(r).focusProperties {
+        onExit = { r.saveFocusedChild() }
         onEnter = {
-            if (requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Down || requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Up)
-                r.requestFocus()
+            when (requestedFocusDirection) {
+                androidx.compose.ui.focus.FocusDirection.Up -> if (!r.restoreFocusedChild()) r.requestFocus()
+                androidx.compose.ui.focus.FocusDirection.Down -> r.requestFocus()
+                else -> {}
+            }
         }
     }.focusGroup()
 }
