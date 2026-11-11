@@ -127,7 +127,11 @@ class Mpv(options: Map<String, String>) {
             }
             val names = listOfNotNull(bundled?.path, "mpv", "libmpv.so.2", "libmpv.so.1", "/opt/homebrew/lib/libmpv.dylib", "/usr/local/lib/libmpv.dylib", "libmpv-2", "mpv-2")
             var last: Throwable? = null
-            for (n in names) try { return Native.load(n, MpvApi::class.java) } catch (e: UnsatisfiedLinkError) { last = e }
+            // mpv's words are UTF-8 on every system; JNA's own default is the system's, on Windows its old code page
+            // (Cp1252): a file named in Korean, Japanese, Russian, Turkish, even Italian's "Papà" reached mpv as "?"s and
+            // other bytes, a path to nothing, and wouldn't play (2026-11-10, a Reddit report)
+            val utf8 = mapOf(com.sun.jna.Library.OPTION_STRING_ENCODING to "UTF-8")
+            for (n in names) try { return Native.load(n, MpvApi::class.java, utf8) } catch (e: UnsatisfiedLinkError) { last = e }
             throw IllegalStateException("libmpv isn't here", last)
         }
     }

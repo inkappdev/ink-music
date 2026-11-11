@@ -444,7 +444,16 @@ fun SizeShown() {
  * before ([darkTitleBar]). Ink puts nothing to press in the strip: a press there is the window's.
  */
 object InkTitle {
-    val on: Boolean = Home.windows && System.getProperty("ink.titlebar") != "windows" &&
+    private val file = File(Home.dir, "title-bar")
+    /**
+     * The top chosen in settings ("ink" or "windows"); none chosen, ink's, but Windows' own on Windows 10, where ink's
+     * didn't minimise from the taskbar (2026-11-10, a Reddit report; Windows 11's was fine).
+     */
+    val wanted: String = runCatching { file.readText().trim() }.getOrNull()?.takeIf { it == "ink" || it == "windows" }
+        ?: if (System.getProperty("os.name") == "Windows 10") "windows" else "ink"
+    fun choose(to: String) { runCatching { file.writeText(to) } }
+
+    val on: Boolean = Home.windows && System.getProperty("ink.titlebar") != "windows" && wanted == "ink" &&
         runCatching { com.jetbrains.JBR.isWindowDecorationsSupported() }.getOrDefault(false)
     /** The strip's height, in ink's own size (dp at ink's size 1). */
     const val HEIGHT = 34f

@@ -114,6 +114,7 @@ fun SettingsPage(onClose: () -> Unit) {
                         "keys" -> KeysSetting()
                         else -> {
                             if (!Home.mac) { CloseSetting(); Spacer(Modifier.height(36.dp)) }
+                            if (Home.windows) { TitleBarSetting(); Spacer(Modifier.height(36.dp)) }
                             AboutSetting()
                         }
                     }
@@ -137,6 +138,25 @@ private fun CloseSetting() {
     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
         Word("quit", pixel(14.sp, if (!keep) Ink.ink else Ink.dim), touch = 8.dp) { Tucked.choose(false) }
         Word("keep playing in the tray", pixel(14.sp, if (keep) Ink.ink else Ink.dim), touch = 8.dp) { Tucked.choose(true) }
+    }
+}
+
+/**
+ * Windows: the window's top, ink's own black (Windows' buttons drawn on it) or Windows' own bar, as every app has it
+ * (2026-11-10: on Windows 10 ink's wouldn't minimise from the taskbar, a Reddit report; there Windows' own is the first
+ * choice). It's set as the window opens, so it changes the next time.
+ */
+@Composable
+private fun TitleBarSetting() {
+    var chosen by remember { mutableStateOf(InkTitle.wanted) }
+    BasicText("THE WINDOW'S TOP", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText((if (chosen == "ink") "ink's own, black to the top, windows' buttons on it" else "windows' own bar, as every app has it") +
+        (if (chosen != (if (InkTitle.on) "ink" else "windows")) ". from the next time ink music opens" else ""), style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+        Word("ink's", pixel(14.sp, if (chosen == "ink") Ink.ink else Ink.dim), touch = 8.dp) { InkTitle.choose("ink"); chosen = "ink" }
+        Word("windows' own", pixel(14.sp, if (chosen == "windows") Ink.ink else Ink.dim), touch = 8.dp) { InkTitle.choose("windows"); chosen = "windows" }
     }
 }
 

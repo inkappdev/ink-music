@@ -931,9 +931,12 @@ fun SongRow(
             if (cover) { CoverOf(s, s.album.ifEmpty { s.title }, Modifier.size(44.dp), px = 160); Spacer(Modifier.width(14.dp)) }
             if (number != null) BasicText(number, style = pixel(12.sp, color), modifier = Modifier.width(36.dp))
             Column(Modifier.weight(1f)) {
-                // `glow` (the queue's lists): the song playing, its name the progress line, filling from the left in
-                // its cover's colour as it plays (2026-11-09; a wash behind the row was tried first, too much of a box)
-                if (on && glow != null && now?.song?.id == s.id && (now?.duration ?: 0) > 0) PlayingTitle(s.title.uppercase(), color, glow)
+                // the song playing, its name the progress line, filling from the left in its cover's colour as it plays
+                // (the queue's, 2026-11-09; a wash behind the row was tried first, too much of a box). Every list's since
+                // 2026-11-10 (a Reddit report: the song playing was easy to lose in a record's tracklist, lit alone)
+                val playingHere = now?.song?.id == s.id && (now?.duration ?: 0) > 0
+                val tint = glow ?: if (playingHere) rememberCover(now?.song, 300)?.accent else null
+                if (on && tint != null && playingHere) PlayingTitle(s.title.uppercase(), color, tint)
                 else BasicText(s.title.uppercase(), style = headline(17.sp, color), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (said != null) BasicText(said, style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
