@@ -1,6 +1,6 @@
 - Android TV, a big step (still beta): a rail down the left, a calm player, lyrics on their own, festivals on one screen, artist pages side by side, smooth on slow boxes
-- Smart playlists that fill themselves from a few rules
-- Pick several songs at once: play next, queue, add, love, keep
-- Mixes build up, hold steady or wind down
+- On the phone: smart playlists that fill themselves from a few rules
+- On the phone: pick several songs at once: play next, queue, add, love, keep
+- On the phone: mixes build up, hold steady or wind down
 - The remote and ink music are finally on speaking terms
 - Call someone you've been meaning to call
