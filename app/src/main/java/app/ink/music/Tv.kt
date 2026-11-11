@@ -110,6 +110,8 @@ object TvKeys {
     var railAt by mutableStateOf(-1)
     /** The shelf the remote was last on in the place: where right from the rail goes back to, on its cover. */
     var lastShelf: androidx.compose.ui.focus.FocusRequester? = null
+    /** The place's own first thing ([placeFirst]), where it has one. */
+    var placeFirst: androidx.compose.ui.focus.FocusRequester? = null
     /** The place shown beside the rail: where right from the rail goes, its first thing (2026-11-10). */
     var placeIn: androidx.compose.ui.focus.FocusRequester? = null
     /** The rail's word for the place shown: where left from the place lands. */
@@ -186,11 +188,7 @@ fun TvFocus(content: @Composable () -> Unit) {
                     // (nothing to take it yet, the place still coming in: it stays, never the search)
                     // back to the shelf and cover it came from (2026-11-10: from the critics' records, left and back,
                     // it went to the festivals at the top); a place not yet gone into, its first thing
-                    androidx.compose.ui.input.key.Key.DirectionRight -> {
-                        val back = TvKeys.lastShelf?.let { sh -> runCatching { sh.restoreFocusedChild() || sh.requestFocus() }.getOrDefault(false) } == true
-                        if (!back) runCatching { TvKeys.placeIn?.requestFocus() }
-                        true
-                    }
+                    androidx.compose.ui.input.key.Key.DirectionRight -> { intoPlace(); true }
                     androidx.compose.ui.input.key.Key.DirectionLeft -> true
                     else -> false
                 }
@@ -626,4 +624,25 @@ fun Modifier.tvShelf(): Modifier {
             }
         }
     }.focusGroup().onFocusChanged { if (it.hasFocus) TvKeys.lastShelf = r }
+}
+
+/**
+ * A place's own first thing on a TV (INK's play the week): where right or a press from the rail goes into it when it
+ * hasn't been gone into (2026-11-10: Compose's own pick, by place on the screen, was the week's first song below it).
+ */
+@Composable
+fun Modifier.placeFirst(): Modifier {
+    if (!Device.tv) return this
+    val r = remember { androidx.compose.ui.focus.FocusRequester() }
+    DisposableEffect(r) { TvKeys.placeFirst = r; onDispose { if (TvKeys.placeFirst === r) TvKeys.placeFirst = null } }
+    return focusRequester(r)
+}
+
+/** Into the place beside the rail: its shelf and cover come from, else its own first thing, else the first found. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+fun intoPlace() {
+    val back = TvKeys.lastShelf?.let { sh -> runCatching { sh.restoreFocusedChild() || sh.requestFocus() }.getOrDefault(false) } == true
+    if (back) return
+    val own = TvKeys.placeFirst?.let { runCatching { it.requestFocus() }.getOrDefault(false) } == true
+    if (!own) runCatching { TvKeys.placeIn?.requestFocus() }
 }

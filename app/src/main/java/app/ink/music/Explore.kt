@@ -449,7 +449,7 @@ private fun InkWeeklyCover(pages: Pages) {
         }
         @Composable
         fun PlayRow(modifier: Modifier) = Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-            Word("PLAY THE WEEK", headline(20.sp), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs, 0) }
+            Word("PLAY THE WEEK", headline(20.sp), Modifier.padding(end = 24.dp).placeFirst(), touch = 8.dp) { Playback.play(w.songs, 0) }
             Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(w.songs.shuffled(), 0) }
             // the week as a DJ's arc, as on its page (the same mix: its progress shows in both)
             MixWord("ink weekly ${w.week}", w.songs, Modifier.padding(end = 24.dp))

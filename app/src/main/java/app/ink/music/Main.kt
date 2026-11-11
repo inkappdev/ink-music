@@ -3437,7 +3437,7 @@ private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, p
         // a moment for a place just changed to come in, a few tries while its rows arrive
         scope.launch {
             delay(if (t == tab) 0L else Motion.ENTER.toLong())
-            repeat(6) { if (runCatching { placeIn.requestFocus() }.getOrDefault(false) && TvKeys.railAt < 0) return@launch; delay(150) }
+            repeat(6) { intoPlace(); if (TvKeys.railAt < 0) return@launch; delay(150) }
         }
     }
     // a little smaller, and scrolled if it must be, so settings stays above the mini player (it went under it)
