@@ -1461,6 +1461,56 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
     var patient by remember(name, tubeId) { mutableStateOf(true) }
     LaunchedEffect(name, tubeId) { delay(1_500); patient = false }
     val waiting = YouTubeAccount.available && info == null && patient
+    // a TV: who they are held still at the left, their music at the right (2026-11-10: the phone's photo, the screen's
+    // width, put play far under it; the remote landing there scrolled the top away)
+    if (onTv()) {
+        FrostedPage(onClose = { pages.close() }) { frost, top0 ->
+            TvBeside(frost, top0, list, { room -> TvArtistSide(name, i, room, records.size + tubeAlbums.size, theirs.size, playable, info == null) }) {
+                if (top.isNotEmpty()) {
+                    item { TvLabel("top songs") }
+                    itemsIndexed(top, key = { _, s -> "t" + s.id }) { n, s ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            BasicText("${n + 1}", style = headline(26.sp, Ink.mid), modifier = Modifier.width(40.dp))
+                            Box(Modifier.weight(1f)) { SongRow(s.copy(duration = 0), pages = pages) { Playback.play(top, n) } }
+                        }
+                    }
+                }
+                if (theirs.isNotEmpty()) {
+                    item { TvLabel("yours") }
+                    itemsIndexed(theirs.take(30), key = { _, s -> s.id }) { n, s -> SongRow(s, pages = pages) { Playback.play(theirs, n) } }
+                }
+                if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) item(key = "records") {
+                    TvLabel("records")
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) {
+                            pages.open(Page.Record(a.id, (i?.albums.orEmpty() + i?.singles.orEmpty()).firstOrNull { it.title.equals(a.title, ignoreCase = true) }))
+                        } }
+                        items(tubeAlbums, key = { it.url }) { r -> TubeTile(r, Modifier.width(140.dp)) { pages.open(Page.Tube(r)) } }
+                    }
+                }
+                i?.singles?.takeIf { it.isNotEmpty() }?.let { singles -> item(key = "singles") {
+                    TvLabel("singles and eps")
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(120.dp)) { pages.open(Page.Tube(r)) } }
+                    }
+                } }
+                i?.like?.takeIf { it.isNotEmpty() }?.let { like -> item(key = "like") {
+                    TvLabel("fans also like")
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        items(like, key = { it.id.ifEmpty { it.name } }) { a ->
+                            Column(Modifier.width(120.dp).clickable(remember { MutableInteractionSource() }, indication = null,
+                                onClick = felt { pages.open(Page.TubeArtist(a)) })) {
+                                CoverOf(remember(a.face) { a.face?.let { faceSong(a.name, it) } }, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
+                                Spacer(Modifier.height(8.dp))
+                                UnderCover(a.name, "artist", pixel(12.sp, Ink.mid))
+                            }
+                        }
+                    }
+                } }
+            }
+        }
+        return
+    }
     FrostedPage(onClose = { pages.close() }) { frost, top0 -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
@@ -1615,6 +1665,46 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
             }
         }
     } }
+}
+
+/** A heading over a TV page's list, at the list's own left. */
+@Composable
+private fun TvLabel(text: String) = BasicText(text.uppercase(), style = headline(18.sp, Ink.mid), modifier = Modifier.padding(top = 22.dp, bottom = 10.dp))
+
+/**
+ * An artist on a TV, the left: their photo (still, in the dither or as it is), their name, how many listen and what
+ * there is, play, shuffle and radio (the remote starts on play), and the first line said of them.
+ */
+@Composable
+private fun TvArtistSide(name: String, i: ArtistInfo?, room: Dp, records: Int, yours: Int, playable: List<Song>, reading: Boolean) {
+    val dithered by Moving.artistDither.collectAsState()
+    val side = room.coerceAtMost(240.dp)
+    Box(Modifier.size(side)) {
+        val photo = i?.photo
+        if (photo != null) {
+            val still = remember(photo) { photoSong(name, photo) }
+            if (dithered) Dithered(still, Modifier.fillMaxSize()) else AsItIs(still, Modifier.fillMaxSize())
+        } else Box(Modifier.fillMaxSize().background(Ink.black))
+    }
+    Spacer(Modifier.height(14.dp))
+    BasicText((i?.name ?: name).uppercase(), style = headline(30.sp).copy(lineHeight = 30.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    Spacer(Modifier.height(6.dp))
+    BasicText(listOfNotNull(
+        i?.audience?.takeIf { it.isNotEmpty() }?.lowercase()?.replace("monthly audience", "a month"),
+        records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" },
+        yours.takeIf { it > 0 }?.let { "$it of yours" },
+    ).joinToString("  ·  ").ifEmpty { if (reading && YouTubeAccount.available) "reading it from youtube music" else "" }, style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(14.dp))
+    if (playable.isNotEmpty()) Row {
+        Word("play", pixel(15.sp), Modifier.padding(end = 24.dp).tvFirst(), touch = 8.dp) { Playback.play(playable, 0) }
+        Word("shuffle", pixel(15.sp, Ink.mid), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(playable.shuffled(), 0) }
+        Word("radio", pixel(15.sp, Ink.mid), touch = 8.dp) { Playback.startRadio(playable.first()) }
+    }
+    i?.about?.let { Bio.of(it) }?.first?.takeIf { it.isNotEmpty() }?.let { about ->
+        val said = remember(about) { pullQuote(about).first ?: about }
+        Spacer(Modifier.height(16.dp))
+        BasicText(said.lowercase(), style = pixel(12.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 18.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /** The songs kept on the phone (your server's, YouTube Music's), to play with no signal; each let go from its options. */
