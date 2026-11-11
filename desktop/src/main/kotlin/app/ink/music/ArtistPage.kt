@@ -371,15 +371,18 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
         // to make, then 900 ms of developing, every time it came into sight)
         val key = remember(cover, dots) { cover?.let { "${photo.id}|${photo.albumId}|$dots|${it.accent.value}" } }
         val ready = remember(key) { key?.let { Dither.kept(it) } }
-        val frames by produceState(ready, cover) {
+        // made anew for each size (the zoom, the window): keyed on the key, not the cover alone (2026-11-11: zoomed, the
+        // old size's frames were kept as made, the new ones never were, and the develop stopped at its first frame, one
+        // dot in sixteen: "the effect loses its nice look")
+        val frames by produceState(ready, key) {
             val c = cover ?: return@produceState
-            if (value != null) return@produceState
+            if (ready != null) { value = ready; return@produceState }
             val t = System.nanoTime()
             value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, dots) }?.also { f -> key?.let { Dither.keep(it, f) } }
             if (Log.on) Log.d("dither: ${photo.album.take(20)} cover ${(t - born) / 1_000_000} ms after shown, frames ${(System.nanoTime() - t) / 1_000_000} ms")
         }
-        val shown = remember(key) { Animatable(if (ready != null) 1f else 0f) }
-        // the first time it's seen, developed in, quicker than it was (450 ms, was 900)
+        // developed in the first time it's seen (450 ms); a size changed after, there at once (the picture's, not the size's)
+        val shown = remember(photo.id, photo.albumId) { Animatable(if (ready != null) 1f else 0f) }
         LaunchedEffect(frames) { if (frames != null && shown.value < 1f) shown.animateTo(1f, tween(450, easing = Motion.expo)) }
         frames?.let { f ->
             // the dots drawn as dots: unfiltered, as the player draws them
