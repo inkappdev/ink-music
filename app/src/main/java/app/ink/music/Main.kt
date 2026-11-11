@@ -100,6 +100,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1248,7 +1249,8 @@ fun TvBeside(frost: HazeState, top: Dp, list: androidx.compose.foundation.lazy.L
         val start = LocalTvStart.current
         val go = remember(start) { { start?.first?.let { runCatching { it.requestFocus(); true }.getOrDefault(false) } ?: false } }
         androidx.compose.runtime.DisposableEffect(go) { onDispose { if (TvKeys.besideLeft === go) TvKeys.besideLeft = null } }
-        LazyColumn(state = list, modifier = Modifier.weight(1f).focusRequester(first).hazeSource(frost).feather(list, 28.dp, 44.dp)
+        // back from the side: to the row it was on (2026-11-10: from records, over to shuffle and back, it went to yours)
+        LazyColumn(state = list, modifier = Modifier.weight(1f).focusRequester(first).focusRestorer().hazeSource(frost).feather(list, 28.dp, 44.dp)
             .onFocusChanged { f -> if (f.hasFocus) TvKeys.besideLeft = go else if (TvKeys.besideLeft === go) TvKeys.besideLeft = null },
             contentPadding = PaddingValues(bottom = 24.dp)) { rows() }
     }
@@ -1487,7 +1489,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 }
                 if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) item(key = "records") {
                     TvLabel("records")
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) {
                             pages.open(Page.Record(a.id, (i?.albums.orEmpty() + i?.singles.orEmpty()).firstOrNull { it.title.equals(a.title, ignoreCase = true) }))
                         } }
@@ -1496,13 +1498,13 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 }
                 i?.singles?.takeIf { it.isNotEmpty() }?.let { singles -> item(key = "singles") {
                     TvLabel("singles and eps")
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(120.dp)) { pages.open(Page.Tube(r)) } }
                     }
                 } }
                 i?.like?.takeIf { it.isNotEmpty() }?.let { like -> item(key = "like") {
                     TvLabel("fans also like")
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         items(like, key = { it.id.ifEmpty { it.name } }) { a ->
                             Column(Modifier.width(120.dp).clickable(remember { MutableInteractionSource() }, indication = null,
                                 onClick = felt { pages.open(Page.TubeArtist(a)) })) {
