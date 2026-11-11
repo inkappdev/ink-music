@@ -50,13 +50,22 @@ object Looks {
      * shows the square at `shown` px a side, so ribs, cells and dots come out the size meant on any
      * screen. Null if the cover can't be read.
      */
+    /** A dither dot's side, in dp: 2.5 (3 till 2026-11-11, Bronson: "15 percent more detail"), the computer's too. */
+    const val DOT = 2.5f
+
+    /** A dot in whole pixels (7.5 would draw dots of two sizes): 8 on a 3x phone, 7 on a 2.75x. */
+    fun cell(density: Float): Int = (DOT * density).roundToInt().coerceAtLeast(2)
+
+    /** How many dots cover `shown` pixels, whole-pixel dots (the last cut by the edge). */
+    fun dots(shown: Float, density: Float): Int = kotlin.math.ceil(shown / cell(density)).toInt().coerceIn(24, 400)
+
     fun draw(art: Bitmap, look: Look, accent: Color, shown: Float, density: Float): Bitmap? = if (look == Look.PLAIN) null else try {
         val src = if (art.config == Bitmap.Config.HARDWARE) art.copy(Bitmap.Config.ARGB_8888, false) else art
         when (look) {
             Look.BLUR -> soft(src, 48, 2)
             Look.FLUTED -> fluted(src, 540, 20 * density * 540 / shown)
             Look.PIXELS -> pixels(src, (shown / (18 * density)).roundToInt().coerceIn(4, 80))
-            Look.DITHER -> dither(src, (shown / (3 * density)).roundToInt().coerceIn(24, 400), accent.toArgb())
+            Look.DITHER -> dither(src, dots(shown, density), accent.toArgb())
             Look.AS_IS -> src
             Look.PLAIN -> null
         }
@@ -68,7 +77,7 @@ object Looks {
      */
     fun develop(art: Bitmap, accent: Color, shown: Float, density: Float, frames: Int = 12): List<Bitmap>? = try {
         val src = if (art.config == Bitmap.Config.HARDWARE) art.copy(Bitmap.Config.ARGB_8888, false) else art
-        val dots = (shown / (3 * density)).roundToInt().coerceIn(24, 400)
+        val dots = dots(shown, density)
         (1..frames).map { dither(src, dots, accent.toArgb(), it.toFloat() / frames) }
     } catch (e: Exception) { null }
 

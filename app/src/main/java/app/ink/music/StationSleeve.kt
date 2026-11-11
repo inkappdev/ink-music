@@ -67,8 +67,8 @@ object StationSleeve {
         0xFF7B6CF6, 0xFFC86DD7, 0xFFF26FA8, 0xFF9AD0EC, 0xFFEF7D57, 0xFF5BD6A0).map { it.toInt() }
     fun colorOf(id: String): Int = COLORS[Math.floorMod(id.hashCode() * 31 + 7, COLORS.size)]
 
-    /** Dots a side for a sleeve `px` across: 3 dp each, 56 to 160. */
-    fun cells(px: Float, density: Float) = (px / (3 * density)).roundToInt().coerceIn(56, 160)
+    /** Dots a side for a sleeve `px` across: a dither dot each (Looks.DOT), 56 to 160. */
+    fun cells(px: Float, density: Float) = (px / Looks.cell(density)).roundToInt().coerceIn(56, 160)
 
     /**
      * The rings, `cells` px a side (drawn up unfiltered). `clear` is how far down (0 to 1) the

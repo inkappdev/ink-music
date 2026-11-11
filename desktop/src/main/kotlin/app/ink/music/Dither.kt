@@ -39,11 +39,14 @@ object Dither {
     }
 
     /**
-     * A dot's size in the screen's own pixels: 3 dp of the screen, not of the zoom (the window's size, settings), so a
+     * A dot's size in the screen's own pixels: [DOT] dp of the screen, not of the zoom (the window's size, settings), so a
      * dither looks the same at every zoom, only more or fewer dots (2026-11-11: "dots still change" when they followed
-     * the zoom); 6 pixels on a Retina screen, 3 on an ordinary one. `density` the zoomed one, as Compose has it.
+     * the zoom); 5 pixels on a Retina screen, 3 on an ordinary one. `density` the zoomed one, as Compose has it.
      */
-    fun cell(density: Float, k: Float = 1f): Int = (3 * k * density / Size.of(Size.chosen.value)).roundToInt().coerceAtLeast(2)
+    /** A dot's side in the screen's dp: 2.5 (3 till 2026-11-11, Bronson: "15 percent more detail"), whole pixels on every common screen. */
+    const val DOT = 2.5f
+
+    fun cell(density: Float, k: Float = 1f): Int = (DOT * k * density / Size.of(Size.chosen.value)).roundToInt().coerceAtLeast(2)
 
     fun develop(art: ImageBitmap, accent: Color, dots: Int, frames: Int = 12): List<ImageBitmap>? = runCatching {
         val img = Image.makeFromBitmap(art.asSkiaBitmapCopy())

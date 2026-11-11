@@ -323,7 +323,7 @@ private object Shaders {
     fun effect(look: Look, accent: Color, density: Float, gain: Float, wide: Float): RenderEffect? = if (Build.VERSION.SDK_INT < 33) null else runCatching {
         val s = when (look) {
             Look.DITHER -> RuntimeShader(DITHER).apply {
-                setFloatUniform("cell", 3 * density); setFloatUniform("gain", gain)
+                setFloatUniform("cell", Looks.cell(density).toFloat()); setFloatUniform("gain", gain)
                 setFloatUniform("ink", accent.red, accent.green, accent.blue, 1f)
             }
             // a whole number of squares across the cover, about 18 dp each (an 18 dp square left a strip at the

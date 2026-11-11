@@ -113,6 +113,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import androidx.compose.ui.draw.clipToBounds
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.IntOffset
@@ -2095,9 +2096,16 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
         val shown = remember(frames) { Animatable(0f) }
         LaunchedEffect(frames) { if (frames != null) { if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, tween(900, easing = Motion.expo)) } }
         frames?.let { f ->
-            // the dots drawn as dots: unfiltered, as the player draws them
-            Image(f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)], null, Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
+            // the dots drawn as dots, each exactly a whole number of pixels (Looks.cell), the grid centered and cut by
+            // the edges, never stretched to fit (2026-11-11: dots of two sizes where a dot came to 7.5 pixels)
+            val cell = Looks.cell(density.density)
+            val frame = f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)]
+            androidx.compose.foundation.Canvas(Modifier.fillMaxSize().clipToBounds()) {
+                val w = frame.width * cell; val h = frame.height * cell
+                drawImage(frame, srcOffset = androidx.compose.ui.unit.IntOffset.Zero, srcSize = androidx.compose.ui.unit.IntSize(frame.width, frame.height),
+                    dstOffset = androidx.compose.ui.unit.IntOffset(((size.width - w) / 2).roundToInt(), ((size.height - h) / 2).roundToInt()),
+                    dstSize = androidx.compose.ui.unit.IntSize(w, h), filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
+            }
         }
     }
 }
