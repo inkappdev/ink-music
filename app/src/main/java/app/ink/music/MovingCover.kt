@@ -136,8 +136,8 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
     val shape by Moving.cover.collectAsState()
-    // a TV: one video at a time, the canvas first
-    if (Device.tv && Moving.canvasPlaying.collectAsState().value) return
+    // not on a TV (2026-11-10): Apple Music's moving covers were slow and heavy there; the cover's still
+    if (Device.tv) return
     val url by produceState<String?>(null, artist, album, title, whenOn) {
         // a song without its record's name (YouTube's search finds them so): the record found from the song
         value = if (Moving.wanted(ctx)) withContext(Dispatchers.IO) { if (album.isNotBlank()) MotionCover.of(artist, album) else MotionCover.ofSong(artist, title) } else null
@@ -153,6 +153,8 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
  */
 @Composable
 fun ArtistVideo(name: String, accent: Color, dithered: Boolean, modifier: Modifier = Modifier) {
+    // not on a TV, as moving covers aren't: their photo
+    if (Device.tv) return
     val ctx = LocalContext.current
     val whenOn by Moving.whenOn.collectAsState()
     val on by Moving.artistVideo.collectAsState()

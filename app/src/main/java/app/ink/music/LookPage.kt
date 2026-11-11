@@ -211,19 +211,15 @@ private fun ColumnScope.TvLookChoices(signed: Boolean, canvasOn: Boolean) {
     Part("BEHIND IT", "the cover across the whole player, in this effect", behind.map { it.word to (it == look) }) { Looks.set(ctx, behind[it]) }
     val covers = listOf<Look?>(null) + Moving.coverLooks.filter { it != Look.FLUTED }
     Part("THE COVER", "the record's cover beside the words", covers.map { (it?.word ?: "as it is") to (it == cover) }) { Moving.set(ctx, cover = covers[it]) }
-    if (Moving.available) {
-        val on = whenOn != Moving.OFF
-        Part("MOVING COVERS", "a record's animated cover where it has one. smooth on a fast tv; on a slow one, leave it off",
-            listOf("on" to on, "off" to !on)) { Moving.set(ctx, whenOn = if (it == 0) Moving.ALWAYS else Moving.OFF) }
-    }
     val marquee by Marquees.on.collectAsState()
     Part("THE NAME", "the artist's name running along the foot, or big and still over the cover's corner",
         listOf("moving" to marquee, "on the cover" to !marquee)) { Marquees.set(ctx, it == 0) }
     if (Spotify.available) {
         val ready = signed || Spotify.ready()
         if (!ready) Part("SPOTIFY CANVAS", "a song's looping clip behind the player. sign in to spotify on your phone, then it's here", emptyList()) {}
-        else Part("SPOTIFY CANVAS", "a song's looping clip behind the player, in the effect above" +
-            (if (Moving.available && whenOn == Moving.OFF) ". needs moving covers on" else ""),
-            listOf("on" to canvasOn, "off" to !canvasOn)) { Moving.set(ctx, canvasOn = it == 0) }
+        // the TV's one moving thing (Apple Music's covers cut there, 2026-11-10): on is canvas and moving both
+        else { val on = canvasOn && whenOn != Moving.OFF
+            Part("SPOTIFY CANVAS", "a song's looping clip behind the player, in the effect above. smooth on a fast tv; on a slow one, leave it off",
+                listOf("on" to on, "off" to !on)) { Moving.set(ctx, canvasOn = it == 0, whenOn = if (it == 0) Moving.ALWAYS else Moving.OFF) } }
     }
 }

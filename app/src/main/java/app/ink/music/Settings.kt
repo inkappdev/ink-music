@@ -848,7 +848,7 @@ fun TvSettingsPage(pages: Pages) {
                     onClick = felt { pages.open(Page.SettingsPart("look")) })) {
                     BasicText("THE LOOK", style = headline(32.sp), modifier = Modifier.carried("settings-look"))
                     Spacer(Modifier.height(4.dp))
-                    BasicText(listOfNotNull(look.word, if (Moving.available && moving != Moving.OFF) "moving covers" else null).joinToString(" · "),
+                    BasicText(listOfNotNull(look.word, if (Moving.available && moving != Moving.OFF && Moving.canvasOn.collectAsState().value) "spotify canvas" else null).joinToString(" · "),
                         style = pixel(12.sp, Ink.mid))
                 }
                 Spacer(Modifier.height(36.dp))
