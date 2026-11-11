@@ -221,10 +221,6 @@ fun TvFocus(content: @Composable () -> Unit) {
                     addRect(Rect(Offset.Zero, size)); addRect(lit)
                 }
                 drawPath(rest, androidx.compose.ui.graphics.Color.Black.copy(alpha = dim))
-                // and an ink line under it, sliding with it from one to the next (2026-11-10: a dark cover lit read
-                // little different from one dimmed; the line says which wherever it is)
-                if (dim > 0f) drawRect(Ink.ink.copy(alpha = dim / 0.6f), Offset(moving.left, lit.bottom + 2.dp.toPx()),
-                    androidx.compose.ui.geometry.Size(moving.width, 3.dp.toPx()))
             }
         }
     }
