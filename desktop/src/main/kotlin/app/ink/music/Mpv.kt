@@ -56,23 +56,33 @@ class Mpv(options: Map<String, String>) {
         check(api.mpv_initialize(h) >= 0) { "libmpv wouldn't initialize" }
     }
 
-    /** A command, as mpv's own words ("loadfile", path, "append"); its result (negative: an error). */
-    fun command(vararg args: String): Int = api.mpv_command(h, arrayOf(*args, null))
-
-    /** The same, not waited for (a file to load: mpv opens it on its own thread). */
-    fun commandAsync(vararg args: String) { api.mpv_command_async(h, 0, arrayOf(*args, null)) }
-
-    fun set(name: String, value: String) = api.mpv_set_property_string(h, name, value)
-
-    fun get(name: String): String? = api.mpv_get_property_string(h, name)?.let { p ->
-        try { p.getString(0, "UTF-8") } finally { api.mpv_free(p) }
+    // mpv let go only when no call is inside it, and never called after (2026-11-11: quitting, the crossfade thread
+    // asked mpv for a property as it was being destroyed: a crash, "ink music quit unexpectedly", every quit). Each call
+    // holds the lock to read; closing holds it alone. Waiting for an event isn't a call held: it returns at shutdown
+    private val lock = java.util.concurrent.locks.ReentrantReadWriteLock()
+    @Volatile private var closed = false
+    private inline fun <T> using(none: T, call: () -> T): T {
+        val r = lock.readLock(); r.lock()
+        try { return if (closed) none else call() } finally { r.unlock() }
     }
 
-    fun observe(name: String, format: Int) = api.mpv_observe_property(h, 0, name, format)
+    /** A command, as mpv's own words ("loadfile", path, "append"); its result (negative: an error). */
+    fun command(vararg args: String): Int = using(-1) { api.mpv_command(h, arrayOf(*args, null)) }
+
+    /** The same, not waited for (a file to load: mpv opens it on its own thread). */
+    fun commandAsync(vararg args: String) { using(Unit) { api.mpv_command_async(h, 0, arrayOf(*args, null)) } }
+
+    fun set(name: String, value: String) = using(-1) { api.mpv_set_property_string(h, name, value) }
+
+    fun get(name: String): String? = using(null) {
+        api.mpv_get_property_string(h, name)?.let { p -> try { p.getString(0, "UTF-8") } finally { api.mpv_free(p) } }
+    }
+
+    fun observe(name: String, format: Int) = using(-1) { api.mpv_observe_property(h, 0, name, format) }
 
     /** Asked before each file opens ("on_load"): [Hook] comes, and the file waits till [proceed]. */
-    fun hook(name: String) = api.mpv_hook_add(h, 0, name, 0)
-    fun proceed(id: Long) = api.mpv_hook_continue(h, id)
+    fun hook(name: String) = using(-1) { api.mpv_hook_add(h, 0, name, 0) }
+    fun proceed(id: Long) = using(-1) { api.mpv_hook_continue(h, id) }
 
     sealed interface Event
     data class Changed(val name: String, val value: Any?) : Event
@@ -111,7 +121,10 @@ class Mpv(options: Map<String, String>) {
         }
     }
 
-    fun close() = api.mpv_terminate_destroy(h)
+    fun close() {
+        val w = lock.writeLock(); w.lock()
+        try { if (closed) return; closed = true; api.mpv_terminate_destroy(h) } finally { w.unlock() }
+    }
 
     companion object {
         const val STRING = 1; const val FLAG = 3; const val INT64 = 4; const val DOUBLE = 5
