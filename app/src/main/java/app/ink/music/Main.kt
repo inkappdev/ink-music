@@ -539,6 +539,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // a TV shows the place on its own, no pager: a remote doesn't swipe, and a pager's pages took no focus from the
     // place's word above them (the onn, 2026-11-03: down went nowhere); places change from the menu
     val tv = onTv()
+    val placeIn = remember { androidx.compose.ui.focus.FocusRequester() }
     // a TV: back from deep in a place goes to the rail, on the place's own word (2026-11-10); from the rail, to listen
     BackHandler(backHome && (if (tv) TvKeys.railAt < 0 || tab != tabs[0] else pager.currentPage != 0)) {
         if (tv && TvKeys.railAt < 0 && TvKeys.railHome != null) { runCatching { TvKeys.railHome?.requestFocus() } }
@@ -773,7 +774,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
         }
        }
       }
-      if (tv) place(tabs.indexOf(tab).coerceAtLeast(0))
+      // (a TV: the place itself asked for, when its word in the rail is pressed)
+      if (tv) Box(Modifier.fillMaxSize().focusRequester(placeIn)) { place(tabs.indexOf(tab).coerceAtLeast(0)) }
       else {
         // pulled, the page follows the finger down and the words under the tab row say what letting go does
         PullHint(pull, Modifier.padding(top = (head - BAND).coerceAtLeast(0.dp)))
@@ -784,7 +786,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
       }
     }
     // a TV: the places as a rail down the left, ink tv's (2026-11-10, in place of the place's word and its menu)
-    if (tv) TvRail(tabs, tab, onPlace = { tab = it }, onFind = { pages.open(Page.Find) }, onPlayer = onPlayer,
+    if (tv) TvRail(tabs, tab, onPlace = { tab = it }, placeIn = placeIn, onFind = { pages.open(Page.Find) }, onPlayer = onPlayer,
         onSettings = { pages.open(Page.Settings) }, onYear = { pages.open(Page.Year) }, foot = foot)
     // the tab row on black; what scrolls up toward it softens just under it (not on a TV: the rail has the places)
     if (!tv) Column(Modifier.fillMaxWidth().onSizeChanged { head = with(density) { it.height.toDp() } }) {
@@ -3373,7 +3375,7 @@ private val TV_RAIL = 220.dp
  * place, left from the place's edge comes back here.
  */
 @Composable
-private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, onFind: () -> Unit, onPlayer: () -> Unit,
+private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, placeIn: androidx.compose.ui.focus.FocusRequester, onFind: () -> Unit, onPlayer: () -> Unit,
                    onSettings: () -> Unit, onYear: () -> Unit, foot: Dp) {
     val playing = Playback.now.collectAsState().value != null
     val fm = androidx.compose.ui.platform.LocalFocusManager.current
@@ -3381,7 +3383,12 @@ private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, o
     // a word pressed: its place, and the remote into it (2026-11-10: pressing did nothing, the place already showing)
     fun into(t: String) {
         onPlace(t)
-        scope.launch { delay(if (t == tab) 0L else Motion.ENTER.toLong()); fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Right) }
+        // its first thing, asked of the place (moving right from the word went down the rail to settings, 2026-11-10);
+        // a moment for a place just changed to come in, a few tries while its rows arrive
+        scope.launch {
+            delay(if (t == tab) 0L else Motion.ENTER.toLong())
+            repeat(6) { if (runCatching { placeIn.requestFocus() }.getOrDefault(false) && TvKeys.railAt < 0) return@launch; delay(150) }
+        }
     }
     // a little smaller, and scrolled if it must be, so settings stays above the mini player (it went under it)
     Column(Modifier.width(TV_RAIL).fillMaxHeight().padding(bottom = foot).verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 24.dp, bottom = 12.dp)) {
