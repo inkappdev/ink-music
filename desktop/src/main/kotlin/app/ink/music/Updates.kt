@@ -96,10 +96,11 @@ object Updates {
             if (!fresh) runCatching { file.writeText(k.put("at", System.currentTimeMillis()).put("seen", r).toString()) }
             val version = r.optString("tag_name").removePrefix("v")
             if (!newer(version, Keys.version) || (!now && version == k.optString("aside"))) { if (now) said.value = "up to date"; return@launch }
+            val assets = r.optJSONArray("assets")
+            val all = assets?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
+            // nothing for this computer in it (a release of the phone's alone): this is the newest there is
+            val it = all.firstOrNull { mine(it.optString("name")) } ?: run { if (now) said.value = "up to date"; return@launch }
             if (now) said.value = null
-            val assets = r.optJSONArray("assets") ?: return@launch
-            val all = (0 until assets.length()).map { assets.getJSONObject(it) }
-            val it = all.firstOrNull { mine(it.optString("name")) } ?: return@launch
             val notes = r.optString("body").lines().map { it.trim().removePrefix("-").trim().replace(asked, "") }.filter { it.isNotEmpty() }
             offer.value = Update(version, notes, it.getString("browser_download_url"), it.getString("name"),
                 all.firstOrNull { a -> a.optString("name") == "SHA256SUMS" }?.getString("browser_download_url"), it.optLong("size"))
@@ -260,8 +261,23 @@ object Updates {
     }
 
     /** The newest release of those that answer (the same shape from each: GitHub's). */
-    private fun latest(): JSONObject? = LATEST.mapNotNull { runCatching { JSONObject(get(it)) }.getOrNull() }
-        .reduceOrNull { a, b -> if (newer(b.optString("tag_name").removePrefix("v"), a.optString("tag_name").removePrefix("v"))) b else a }
+    /**
+     * The newest release with this computer's download: a release can be the phone's alone (2.1.14, phone and TV), and
+     * then the check found nothing to offer and said nothing at all, "check for an update doesn't work" (2026-11-11). So
+     * GitHub's recent releases looked through too, when the latest has nothing for this computer. None has: the newest.
+     */
+    private fun latest(): JSONObject? {
+        fun tag(r: JSONObject) = r.optString("tag_name").removePrefix("v")
+        fun newest(rs: List<JSONObject>) = rs.reduceOrNull { a, b -> if (newer(tag(b), tag(a))) b else a }
+        fun ours(r: JSONObject) = r.optJSONArray("assets")?.let { a -> (0 until a.length()).any { mine(a.getJSONObject(it).optString("name")) } } == true
+        val found = LATEST.mapNotNull { runCatching { JSONObject(get(it)) }.getOrNull() }
+        newest(found.filter(::ours))?.let { return it }
+        if (System.getProperty("ink.updates") != null) return newest(found)
+        val recent = runCatching { org.json.JSONArray(get("https://api.github.com/repos/inkappdev/ink-music/releases?per_page=15")) }.getOrNull()
+            ?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
+            .filter { !it.optBoolean("draft") && !it.optBoolean("prerelease") }
+        return newest(recent.filter(::ours)) ?: newest(found)
+    }
 
     private fun get(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
