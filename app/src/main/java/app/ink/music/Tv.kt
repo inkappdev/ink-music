@@ -209,7 +209,7 @@ fun TvFocus(content: @Composable () -> Unit) {
     ) {
         content()
         val r = at
-        val dim by androidx.compose.animation.core.animateFloatAsState(if (r != null && r.width > 0f && TvKeys.ownLight == 0) 0.45f else 0f,
+        val dim by androidx.compose.animation.core.animateFloatAsState(if (r != null && r.width > 0f && TvKeys.ownLight == 0) 0.6f else 0f,
             tween(Motion.ENTER, easing = Motion.expo), label = "dim")
         if (r != null && r.width > 0f || dim > 0f) {
             val moving by animateRectAsState(r ?: Rect.Zero, if (Moves.less.value) snap() else tween(Motion.ENTER, easing = Motion.expo), label = "focus")
@@ -221,6 +221,10 @@ fun TvFocus(content: @Composable () -> Unit) {
                     addRect(Rect(Offset.Zero, size)); addRect(lit)
                 }
                 drawPath(rest, androidx.compose.ui.graphics.Color.Black.copy(alpha = dim))
+                // and an ink line under it, sliding with it from one to the next (2026-11-10: a dark cover lit read
+                // little different from one dimmed; the line says which wherever it is)
+                if (dim > 0f) drawRect(Ink.ink.copy(alpha = dim / 0.6f), Offset(moving.left, lit.bottom + 2.dp.toPx()),
+                    androidx.compose.ui.geometry.Size(moving.width, 3.dp.toPx()))
             }
         }
     }
