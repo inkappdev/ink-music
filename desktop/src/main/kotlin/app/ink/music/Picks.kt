@@ -43,6 +43,8 @@ object Picks {
      * on any visit, not only the first: an app left open for days kept its first (2026-10-30).
      */
     fun start() {
+        // local files only: not started (Local)
+        if (Local.on) return
         if (readAt == 0L) {
             val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
             kept?.let { show(it) }
@@ -152,6 +154,8 @@ object Picks {
 
     /** Read again when it's half a day old. */
     fun startFriday() {
+        // local files only: not started (Local)
+        if (Local.on) return
         if (System.currentTimeMillis() - fridayAt < 12 * 3_600_000L) return
         fridayAt = System.currentTimeMillis()
         scope.launch { Curation.outThisFriday()?.let { friday.value = it } }
@@ -220,6 +224,8 @@ object Picks {
     @Volatile private var electronicAt = 0L
 
     fun startElectronic() {
+        // local files only: not started (Local)
+        if (Local.on) return
         if (System.currentTimeMillis() - electronicAt < 12 * 3_600_000L) return
         electronicAt = System.currentTimeMillis()
         scope.launch { Curation.electronic().takeIf { it.isNotEmpty() }?.let { electronic.value = it } }
@@ -235,6 +241,8 @@ object Picks {
      * shelf (2026-11-10: two left of six); a song it moves on to replaces it.
      */
     suspend fun air() {
+        // local files only: not started (Local)
+        if (Local.on) return
         val a = withContext(Dispatchers.IO) { Curation.onAir() }
         val now = System.currentTimeMillis()
         synchronized(heardOnAir) {
@@ -292,6 +300,8 @@ object Picks {
 
     /** The genres you open most, read ahead after start, so their pages open with their block there (Moods.counts). */
     fun warmGenres(names: List<String>) {
+        // local files only: not started (Local)
+        if (Local.on) return
         Thread({
             runCatching {
                 Thread.sleep(25_000)

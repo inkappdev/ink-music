@@ -21,6 +21,8 @@ object Follows {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun start() {
+        // local files only: not started (Local)
+        if (Local.on) return
         all.value = runCatching { JSONArray(file.readText()).let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { Who(it.getString("name"), it.optString("id")) } } }
             .getOrDefault(emptyList())
         scope.launch { TubeAccount.who.collect { if (it != null) fromYouTube() } }

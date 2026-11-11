@@ -40,6 +40,8 @@ object LiveSets {
     @Volatile private var started = false
 
     fun start() {
+        // local files only: not started (Local)
+        if (Local.on) return
         if (started) return
         started = true
         scope.launch {

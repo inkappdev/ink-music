@@ -84,6 +84,8 @@ object Updates {
      * in settings (2026-11-07): looked for at once, whatever was put aside, and said what it found.
      */
     fun check(now: Boolean = false) {
+        // local files only: not started (Local)
+        if (Local.on) return
         if (self == null || Keys.version.isEmpty()) return
         scope.launch {
             if (now) said.value = "looking"

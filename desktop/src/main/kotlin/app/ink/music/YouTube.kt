@@ -50,6 +50,8 @@ object YouTube {
      * YouTube Music didn't answer at all.
      */
     suspend fun search(q: String, all: Boolean = false): TubeFound? = withContext(Dispatchers.IO) {
+        // local files only: YouTube Music not asked (Local); found nothing, not "couldn't reach"
+        if (Local.on) return@withContext TubeFound()
         runCatching { Pipe.init() }.onFailure { Log.d("youtube: $it"); return@withContext null }
         val f = yt.searchQHFactory
         fun <T> ask(filter: String, what: String, read: (List<org.schabi.newpipe.extractor.InfoItem>) -> List<T>) = async {
@@ -79,6 +81,7 @@ object YouTube {
      */
     suspend fun album(record: TubeAlbum): List<Song> = withContext(Dispatchers.IO) {
         albums[record.url]?.let { return@withContext it }
+        if (Local.on) return@withContext emptyList()
         // as you when signed in (your own playlists are private)
         val tube = TubeAccount.tube() ?: InnerTube()
         val list = Regex("[?&]list=([^&]+)").find(record.url)?.groupValues?.get(1)
@@ -102,6 +105,7 @@ object YouTube {
      * YouTube Music hasn't it. Kept for the run.
      */
     suspend fun whole(title: String, artist: String): List<Song>? {
+        if (Local.on) return null
         val k = "$artist/$title".lowercase()
         wholes[k]?.let { return it }
         val found = search("$artist $title")?.albums?.firstOrNull { Pipe.same(it.title, it.artist, title, artist) } ?: return null
@@ -112,6 +116,7 @@ object YouTube {
     /** Songs like this one (blocking): YouTube Music's radio for it (its mix, "RDAMVM<id>"). Read once. */
     fun related(id: String): List<Song> {
         mixes[id]?.let { return it }
+        if (Local.on) return emptyList()
         val vid = id.removePrefix("y")
         val mix = runCatching {
             // as you, signed in: YouTube makes the radio from what you listen to
@@ -127,7 +132,7 @@ object YouTube {
     }
 
     /** YouTube Music's song by these words, if it has one (blocking). */
-    fun find(title: String, artist: String): Song? = runCatching {
+    fun find(title: String, artist: String): Song? = if (Local.on) null else runCatching {
         Pipe.init()
         SearchInfo.getInfo(yt, yt.searchQHFactory.fromQuery("$artist $title", listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "")).relatedItems
             .filterIsInstance<StreamInfoItem>().take(8).map { song(it) }

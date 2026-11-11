@@ -44,6 +44,8 @@ object Weekly {
     private var loaded = false
 
     fun load() {
+        // local files only: not started (Local)
+        if (Local.on) return
         if (loaded) return
         loaded = true
         scope.launch {

@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.sp
 
 /** The places, as the rail says them (the phone's tabs, with explore). */
 val PLACES = listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
+    // local files only: the places that are all online (INK, radio, podcasts) not there (Local)
+    .filter { !Local.on || it !in setOf("ink", "radio", "podcasts") }
 
 /** How the window's laid out by its width: a rail, the page and the now column; a rail and the page; the phone's. */
 enum class Frame { WIDE, MIDDLE, NARROW }

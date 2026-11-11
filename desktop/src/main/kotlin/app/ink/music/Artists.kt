@@ -58,6 +58,8 @@ object Artists {
 
     /** One read at a time for each: asked again while it's under way, the same read is waited on. */
     private suspend fun read(name: String, id: String, key: String): ArtistInfo? {
+        // local files only: not started (Local)
+        if (Local.on) return null
         val d = reads.computeIfAbsent(key) {
             scope.async(start = kotlinx.coroutines.CoroutineStart.LAZY) { fetch(name, id)?.also { keep(key, it) } }
         }

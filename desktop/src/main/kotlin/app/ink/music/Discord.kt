@@ -37,6 +37,8 @@ object Discord {
     fun nudge() { dirty = true }
 
     fun start() = scope.launch {
+        // local files only: not started (Local)
+        if (Local.on) return@launch
         if (APP.isEmpty()) return@launch
         // what's shown, said again when the song, playing, or the place in it changes (Discord takes five a 20 s)
         var said: String? = null

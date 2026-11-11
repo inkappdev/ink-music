@@ -35,6 +35,8 @@ object TubeAccount {
         it.optString("sync").ifEmpty { null }, it.optString("version").ifEmpty { InnerTube.VERSION }) }
 
     fun start() {
+        // local files only: not started (Local)
+        if (Local.on) return
         val o = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
         auth = o
         who.value = Who(o.optString("name"), o.optString("handle"))

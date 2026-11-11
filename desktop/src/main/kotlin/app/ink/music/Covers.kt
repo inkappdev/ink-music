@@ -47,7 +47,7 @@ object Covers {
 
     suspend fun of(song: Song, px: Int = 640): Cover? {
         // a YouTube song big (the player): the label's own art where Apple has it
-        if (song.tube && px >= SHARP) sharp(song)?.let { return it }
+        if (song.tube && px >= SHARP && !Local.on) sharp(song)?.let { return it }
         kept.get(song.albumId)?.takeIf { it.image.width >= px * 9 / 10 || song.albumId in whole }?.let { return it }
         if (song.albumId in none) return null
         missed[song.albumId]?.let { if (System.currentTimeMillis() - it < 60_000) return kept.get(song.albumId) }
@@ -123,8 +123,9 @@ object Covers {
                 missed[song.albumId] = System.currentTimeMillis(); return@withContext kept.get(song.albumId)
             } ?: (if (song.server || song.tube || song.episode) null else picture(File(song.path)))
                 // (an artist's face or photo, a song only in shape, is never looked for so)
-                ?: (if (song.station || song.episode || face(song)) null else found(song, px))
-                ?: (if (song.tube && !face(song)) frame(song, px) else null)
+                // local files only: no catalogs asked, no YouTube pictures (Local)
+                ?: (if (song.station || song.episode || face(song) || Local.on) null else found(song, px))
+                ?: (if (song.tube && !face(song) && !Local.on) frame(song, px) else null)
             val t1 = System.nanoTime()
             missed -= song.albumId
             val img = bytes?.let { runCatching { Image.makeFromEncoded(it) }.getOrNull() }

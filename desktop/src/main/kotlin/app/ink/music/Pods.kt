@@ -51,6 +51,8 @@ object Pods {
 
     /** The shows you follow read again from their feeds (those not read in the last hour), then the flows. */
     suspend fun refresh() {
+        // local files only: not started (Local)
+        if (Local.on) return
         load()
         withContext(Dispatchers.IO) { runCatching { Podcasts.refresh() } }
         load()

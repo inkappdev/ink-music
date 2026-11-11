@@ -27,6 +27,8 @@ object GenrePicks {
      * a library's worth the first time is a few minutes in the background, the songs page's genres filling as they come.
      */
     suspend fun tag(more: Collection<String> = emptyList()) = withContext(Dispatchers.IO) {
+        // local files only: the tags kept on disk read, none asked of Last.fm (Local)
+        if (Local.on) { if (!loaded) { runCatching { Genres.load(file.readText()) }; loaded = true; tagged.value++ }; return@withContext }
         // a second ask for the picks alone is the first's; one with more waits its turn
         if (one.isLocked && more.isEmpty()) return@withContext
         one.withLock {

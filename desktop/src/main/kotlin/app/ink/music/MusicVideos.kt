@@ -107,6 +107,8 @@ object MusicVideos {
     }
 
     fun start() {
+        // local files only: not started (Local)
+        if (Local.on) return
         if (started) return
         started = true
         scope.launch {

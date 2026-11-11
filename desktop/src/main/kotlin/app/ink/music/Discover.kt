@@ -72,6 +72,8 @@ object Discover {
 
     /** Once the library's read: what's kept at once, then whatever's out of date made again. */
     fun start(library: List<Song>) {
+        // local files only: not started (Local)
+        if (Local.on) return
         if (started || library.isEmpty()) return
         started = true
         scope.launch {

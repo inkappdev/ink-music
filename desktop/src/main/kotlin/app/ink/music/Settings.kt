@@ -114,6 +114,7 @@ fun SettingsPage(onClose: () -> Unit) {
                         "keys" -> KeysSetting()
                         else -> {
                             if (!Home.mac) { CloseSetting(); Spacer(Modifier.height(36.dp)) }
+                            LocalSetting(); Spacer(Modifier.height(36.dp))
                             if (Home.windows) { TitleBarSetting(); Spacer(Modifier.height(36.dp)) }
                             AboutSetting()
                         }
@@ -138,6 +139,26 @@ private fun CloseSetting() {
     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
         Word("quit", pixel(14.sp, if (!keep) Ink.ink else Ink.dim), touch = 8.dp) { Tucked.choose(false) }
         Word("keep playing in the tray", pixel(14.sp, if (keep) Ink.ink else Ink.dim), touch = 8.dp) { Tucked.choose(true) }
+    }
+}
+
+/**
+ * Local files only ([Local]): ink music kept to your files, your server, lyrics and your phone; everything else online
+ * (YouTube Music, INK, radio, podcasts, videos, Discord, the catalogs' covers) never started, lighter on memory and the
+ * network. Taken the whole way from the next time ink music opens.
+ */
+@Composable
+private fun LocalSetting() {
+    val wanted by Local.wanted.collectAsState()
+    BasicText("LOCAL FILES ONLY", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText((if (wanted) "your files and your server, lyrics and your phone; nothing else online, lighter on memory"
+        else "everything: youtube music, ink, radio, podcasts and the rest, with your files") +
+        (if (wanted != Local.on) ". from the next time ink music opens" else ""), style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+        Word("everything", pixel(14.sp, if (!wanted) Ink.ink else Ink.dim), touch = 8.dp) { Local.choose(false) }
+        Word("local files only", pixel(14.sp, if (wanted) Ink.ink else Ink.dim), touch = 8.dp) { Local.choose(true) }
     }
 }
 
