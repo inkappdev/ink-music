@@ -8,7 +8,11 @@ import kotlin.math.pow
  * played songs. Kept as a file each, so [Taste] counts them from the first day. `from` is said in the picks' reasons
  * ("from your last.fm").
  */
-data class Brought(val from: String, val user: String, val at: Long, val artists: Map<String, Double>, val songs: List<Pair<String, String>>) {
+data class Brought(
+    val from: String, val user: String, val at: Long, val artists: Map<String, Double>, val songs: List<Pair<String, String>>,
+    /** Whom you used to play: high in your all-time list, nowhere in the last year's (listen's "you used to love"). */
+    val past: List<String> = emptyList(),
+) {
     companion object {
         /**
          * Each range's artists with their play counts, and the most that range may say (all time .85, the year .95, the
@@ -28,6 +32,13 @@ data class Brought(val from: String, val user: String, val at: Long, val artists
             return out
         }
 
+        /** Whom you used to play: the first sixty of all time missing from the last year's list, thirty at most. */
+        fun past(allTime: List<Pair<String, Double>>, lastYear: List<Pair<String, Double>>): List<String> {
+            if (lastYear.isEmpty()) return emptyList()   // not worked out (ListenBrainz): can't say who's gone
+            val now = lastYear.map { Taste.bare(it.first) }.toHashSet()
+            return allTime.take(60).map { it.first }.filter { it.isNotBlank() && Taste.bare(it) !in now }.take(30)
+        }
+
         fun read(f: File, from: String): Brought? = runCatching {
             val o = JSONObject(f.readText())
             val a = o.getJSONObject("artists")
@@ -36,13 +47,15 @@ data class Brought(val from: String, val user: String, val at: Long, val artists
             val s = o.optJSONArray("songs")
             val songs = (0 until (s?.length() ?: 0)).map { i -> s!!.getJSONArray(i).let { it.getString(0) to it.getString(1) } }
             // one kept before the weighing changed (no "from" in it) counts as old: brought in again at once
-            Brought(o.optString("from", from), o.getString("user"), if (o.has("from")) o.getLong("at") else 0L, artists, songs)
+            val p = o.optJSONArray("past")
+            Brought(o.optString("from", from), o.getString("user"), if (o.has("from")) o.getLong("at") else 0L, artists, songs,
+                (0 until (p?.length() ?: 0)).map { p!!.getString(it) })
         }.getOrNull()
 
         fun write(f: File, b: Brought) {
             val a = JSONObject(); b.artists.forEach { (k, v) -> a.put(k, v) }
             val s = JSONArray(); b.songs.forEach { (ar, ti) -> s.put(JSONArray().put(ar).put(ti)) }
-            runCatching { Keep.write(f, JSONObject().put("from", b.from).put("user", b.user).put("at", b.at).put("artists", a).put("songs", s).toString()) }
+            runCatching { Keep.write(f, JSONObject().put("from", b.from).put("user", b.user).put("at", b.at).put("artists", a).put("songs", s).put("past", JSONArray().also { p -> b.past.forEach { p.put(it) } }).toString()) }
         }
     }
 }

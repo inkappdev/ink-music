@@ -329,7 +329,7 @@ object Discover {
         val daily = listOfNotNull(restOfTheRecord(all, library, heard), lovedLongAgo(all, library), aYearAgo(all, library), oneOfEach(library),
             thisHour(all, library), justAdded(library, heard), backOfTheShelf(library, heard), aDecade(library),
             runCatching { spotlight(topArtists, library) }.getOrNull(), runCatching { pickedForYou() }.getOrNull())
-            .let { d -> listOfNotNull(runCatching { favorites(c) }.getOrNull()) + d }
+            .let { d -> listOfNotNull(runCatching { onThisDay(c) }.getOrNull(), runCatching { favorites(c) }.getOrNull(), runCatching { usedToLove(c, all) }.getOrNull()) + d }
         mixes.value = weekly + daily
         out.put("mixes", JSONArray(mixes.value.map { m ->
             JSONObject().put("key", m.key).put("title", m.title).put("said", m.said).put("fresh", m.fresh).put("songs", JSONArray(m.songs.map { it.json() }))
@@ -523,13 +523,16 @@ object Discover {
     /** Your listening just brought in: your favorites mix made now, first among the mixes (not waiting for tomorrow). */
     fun addFavorites(c: Context) {
         val app = c.applicationContext
-        scope.launch { favorites(app)?.let { m -> mixes.value = listOf(m) + mixes.value.filter { it.key != m.key } } }
+        scope.launch {
+            for (make in listOf<suspend () -> Mix?>({ usedToLove(app, History.read(app)) }, { favorites(app) }, { onThisDay(app) }))
+                runCatching { make() }.getOrNull()?.let { m -> mixes.value = listOf(m) + mixes.value.filter { it.key != m.key } }
+        }
     }
 
     private suspend fun favorites(c: Context? = null): Mix? {
         if (!YouTubeMusic.available) return null
         // (read from their files when the taste isn't made yet: the mixes are made as the library's read)
-        val sources = Fresh.brought.value.ifEmpty { c?.let { listOfNotNull(LastFm.brought(it), ListenBrainz.brought(it)) }.orEmpty() }
+        val sources = broughtIn(c)
         if (sources.isEmpty()) return null
         // the sources' songs in turn, each one's order kept
         val all = (0 until sources.maxOf { it.songs.size }).flatMap { i -> sources.mapNotNull { it.songs.getOrNull(i) } }
@@ -542,6 +545,44 @@ object Discover {
         if (found.size < 6) return null
         val from = sources.joinToString(" and ") { it.from }
         return Mix("favorites", "your all-time favorites", "your most played on $from", Radio.apart(found, ""), "${found.size} songs, a new few each day")
+    }
+
+    /** Your listening brought in (Last.fm, ListenBrainz): the taste's, or read from their files before it's made. */
+    private fun broughtIn(c: Context?): List<Brought> =
+        Fresh.brought.value.ifEmpty { c?.let { listOfNotNull(LastFm.brought(it), ListenBrainz.brought(it)) }.orEmpty() }
+
+    /**
+     * You used to love (2026-11-11): whom you played most of all time and not at all the last year (Last.fm,
+     * ListenBrainz), and not lately here either; eight a day, three of their best known each.
+     */
+    private suspend fun usedToLove(c: Context?, all: List<History.Heard>): Mix? {
+        if (!YouTubeMusic.available) return null
+        val lately = all.filter { it.at > System.currentTimeMillis() - 90L * 86_400_000 }.map { Taste.bare(it.artist.substringBefore(", ")) }.toHashSet()
+        val past = broughtIn(c).flatMap { it.past }.distinctBy { Taste.bare(it) }.filter { Taste.bare(it) !in lately }
+        if (past.size < 3) return null
+        val today = past.shuffled(java.util.Random(LocalDate.now().toEpochDay())).take(8)
+        val songs = coroutineScope {
+            today.map { a -> async { withTimeoutOrNull(8_000) { YouTubeAccount.artist(a, "").firstOrNull { it != null } }?.top.orEmpty().filter { it.tube }.take(3) } }.awaitAll()
+        }.flatten().distinctBy { it.id }
+        if (songs.size < 6) return null
+        return Mix("used", "you used to love", "who you played most once, and haven't in a year", Radio.apart(songs, ""),
+            today.take(3).joinToString(", ") { it.lowercase() } + " and more")
+    }
+
+    /** On this day (2026-11-11): what you played on this date in years past, the newest year first, found on YouTube Music. */
+    private suspend fun onThisDay(c: Context?): Mix? {
+        if (!YouTubeMusic.available) return null
+        val b = broughtIn(c).firstOrNull() ?: return null
+        val years = OnThisDay.read(b, LastFm.key)
+        if (years.isEmpty()) return null
+        // each year's in turn, so a busy year doesn't fill it
+        val picked = (0 until years.maxOf { it.songs.size }).flatMap { i -> years.mapNotNull { it.songs.getOrNull(i) } }.distinctBy { (a, t) -> Radio.key(t, a) }.take(25)
+        val found = coroutineScope { picked.chunked(6).flatMap { g -> g.map { (a, t) -> async { runCatching { YouTubeMusic.find(t, a) }.getOrNull() } }.awaitAll() } }
+            .filterNotNull().distinctBy { it.id }
+        if (found.size < 4) return null
+        val ys = years.map { it.year }
+        return Mix("thisday", "on this day", "what you played on this date in " + ys.take(3).joinToString(", ") + if (ys.size > 3) " and before" else "",
+            found, "${found.size} songs from ${ys.size} ${if (ys.size == 1) "year" else "years"}")
     }
 
     /** The critics' and editors' songs nearest your taste, as one to play (found on YouTube Music: the full build). */

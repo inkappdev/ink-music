@@ -70,8 +70,10 @@ object LastFm {
             JSONObject(Curation.get("$API?method=$method&user=${urlEncode(user.trim())}&api_key=$key&format=json$extra"))
         fun counts(period: String, limit: Int) = read("user.gettopartists", "&period=$period&limit=$limit").optJSONObject("topartists")?.optJSONArray("artist")
             ?.let { l -> (0 until l.length()).map { l.getJSONObject(it).let { a -> a.optString("name") to (a.optString("playcount").toDoubleOrNull() ?: 0.0) } } }.orEmpty()
-        val ranges = runCatching { listOf(counts("overall", 200) to .85, counts("12month", 50) to .95, counts("1month", 20) to 1.0) }
+        // the year's 200 read for who's missing from it (you used to love), its first 50 weighed
+        val all = runCatching { Triple(counts("overall", 200), counts("12month", 200), counts("1month", 20)) }
             .onFailure { log("bring in: $it") }.getOrNull() ?: return@withContext null
+        val ranges = listOf(all.first to .85, all.second.take(50) to .95, all.third to 1.0)
         val loved = runCatching {
             val t = read("user.getlovedtracks", "&limit=200").optJSONObject("lovedtracks")?.optJSONArray("track")
             (0 until (t?.length() ?: 0)).map { t!!.getJSONObject(it).optJSONObject("artist")?.optString("name").orEmpty() }
@@ -83,7 +85,7 @@ object LastFm {
         }.getOrDefault(emptyList())
         val artists = Brought.weigh(ranges, loved)
         if (artists.isEmpty()) return@withContext null
-        val b = Brought("last.fm", user.trim(), nowMs(), artists, songs)
+        val b = Brought("last.fm", user.trim(), nowMs(), artists, songs, Brought.past(all.first, all.second))
         Brought.write(broughtFile(dir), b)
         log("brought in ${artists.size} artists, ${songs.size} songs from $user")
         b

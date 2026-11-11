@@ -77,7 +77,9 @@ object ListenBrainz {
             .onFailure { log("bring in $path: $it") }.getOrNull()
         fun counts(range: String, count: Int) = read("/stats/user/$u/artists?range=$range&count=$count")?.optJSONObject("payload")?.optJSONArray("artists")
             ?.let { l -> (0 until l.length()).map { l.getJSONObject(it).let { a -> a.optString("artist_name") to a.optDouble("listen_count", 0.0) } } }.orEmpty()
-        val ranges = listOf(counts("all_time", 200) to .85, counts("this_year", 50) to .95, counts("this_month", 20) to 1.0)
+        // the year's 200 read for who's missing from it (you used to love), its first 50 weighed
+        val allTime = counts("all_time", 200); val year = counts("this_year", 200)
+        val ranges = listOf(allTime to .85, year.take(50) to .95, counts("this_month", 20) to 1.0)
         val loved = read("/feedback/user/$u/get-feedback?score=1&count=200&metadata=true")?.optJSONArray("feedback")
             ?.let { f -> (0 until f.length()).map { f.getJSONObject(it).optJSONObject("track_metadata")?.optString("artist_name").orEmpty() } }.orEmpty()
         val songs = read("/stats/user/$u/recordings?range=all_time&count=100")?.optJSONObject("payload")?.optJSONArray("recordings")
@@ -85,7 +87,7 @@ object ListenBrainz {
             .orEmpty().filter { it.first.isNotBlank() && it.second.isNotBlank() }
         val artists = Brought.weigh(ranges, loved)
         if (artists.isEmpty()) return@withContext null
-        val b = Brought("listenbrainz", user.trim(), nowMs(), artists, songs)
+        val b = Brought("listenbrainz", user.trim(), nowMs(), artists, songs, Brought.past(allTime, year))
         Brought.write(broughtFile(dir), b)
         log("brought in ${artists.size} artists, ${songs.size} songs from $user")
         b
