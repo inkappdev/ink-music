@@ -595,3 +595,19 @@ fun Modifier.warmOnRest(song: Song?): Modifier {
     androidx.compose.runtime.LaunchedEffect(on, song.id) { if (on) { kotlinx.coroutines.delay(450); Playback.warm(song) } }
     return onFocusChanged { on = it.hasFocus }
 }
+
+/**
+ * A shelf on a TV: down or up into it lands on its first cover in view, never the one under where the remote was
+ * (2026-11-10: down from a shelf landed on the next one's second or third). Along it, as ever.
+ */
+@Composable
+fun Modifier.tvShelf(): Modifier {
+    if (!Device.tv) return this
+    val r = remember { androidx.compose.ui.focus.FocusRequester() }
+    return focusRequester(r).focusProperties {
+        onEnter = {
+            if (requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Down || requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Up)
+                r.requestFocus()
+        }
+    }.focusGroup()
+}

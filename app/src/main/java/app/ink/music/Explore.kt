@@ -121,7 +121,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             // who's on, said once: "kexp, kcrw and fip", "kexp, kcrw, fip and 3 more"
             val names = air.map { it.name }.distinct()
             Heading("on the air", if (names.size <= 3) names.joinToString(", ").replace(Regex(", ([^,]*)$"), " and $1") else names.take(3).joinToString(", ") + " and ${names.size - 3} more")
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(air, key = { it.station }) { a -> AiredTile(a) }
             }
             Spacer(Modifier.height(14.dp))
@@ -542,7 +542,7 @@ private fun OutThisFriday(w: Curation.Week, pages: Pages) {
         }
     }
     Spacer(Modifier.height(8.dp))
-    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+    LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Word("all", pixel(13.sp, if (kind == null) Ink.ink else Ink.dim), touch = 8.dp) { kind = null } }
         // each kind by its name alone: the total's said once, under the heading
         items(kinds, key = { it.first }) { (k, _) -> Word(k, pixel(13.sp, if (kind == k) Ink.ink else Ink.dim), touch = 8.dp) { kind = k } }
