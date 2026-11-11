@@ -52,7 +52,7 @@ def measure(path, rate):
     ro, eo = rises(old)
     # where both sound: the blend's middle (each over a tenth of its loudest)
     both = (en > en.max() * .1) & (eo > eo.max() * .1)
-    if both.sum() < 100:
+    if both.sum() < 40:
         return {"note": "one side has no bass where they overlap"}
     rn = np.where(both, rn, 0); ro = np.where(both, ro, 0)
     lags = range(-15, 16)
@@ -65,7 +65,7 @@ def measure(path, rate):
     best = int(np.argmax(score))
     away = [s for i, s in enumerate(score) if abs(i - best) >= 3]
     clear = score[best] / (max(away) + 1e-12) if away else 0
-    return {"apart": (best - 15) * 10, "clear": clear, "kicks": f"new {rn.sum() ** .5:.2g}, old {ro.sum() ** .5:.2g}"}
+    return {"apart": (best - 15) * 10, "clear": clear, "overlap": both.sum() / 100}
 
 
 def main():
@@ -85,7 +85,7 @@ def main():
         m = re.search(r"plan: (\S+) into (\S+): kicks (-?\d+) ms apart as planned \(sure ([\d.]+)[^)]*\)(.*)", line)
         if m:
             plans[m.group(2)] = f"planned {m.group(3)} ms (sure {m.group(4)}){', moved' if 'moved' in m.group(5) else ''}"
-    print(f"{'blend (new song)':<34} {'heard apart':>11} {'clear':>6}  plan")
+    print(f"{'blend (new song)':<34} {'heard apart':>11} {'clear':>6} {'bass over':>9}  plan")
     for n in sorted(names):
         m = re.match(r"(\d+)-(.+)-(\d+)-(\d+)-parts\.pcm", n)
         if not m:
@@ -96,7 +96,7 @@ def main():
         if "note" in r:
             print(f"{m.group(1)}-{m.group(2):<23} {r['note']}"); continue
         flam = "  FLAM" if abs(r["apart"]) >= 30 and r["clear"] >= 1.3 else ""
-        print(f"{m.group(1)}-{m.group(2):<23} {r['apart']:>8} ms {r['clear']:>6.2f}  {plans.get(m.group(2), '-')}{flam}")
+        print(f"{m.group(1)}-{m.group(2):<23} {r['apart']:>8} ms {r['clear']:>6.2f} {r['overlap']:>7.1f} s  {plans.get(m.group(2), '-')}{flam}")
 
 
 if __name__ == "__main__":

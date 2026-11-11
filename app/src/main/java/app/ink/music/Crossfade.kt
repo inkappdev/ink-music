@@ -132,8 +132,8 @@ class Crossfade(
         const val FADE = 6_000L
         /** How far ahead a playing song's cut must be: what's decoded and buffered for the sound mustn't have passed it. */
         const val AHEAD = 8_000L
-        /** How gathered on one spot in the beat both songs' kicks must be for a plan to move its cut to line them up. */
-        const val KICKS_SURE = .15
+        /** How clearly the kicks must line up (the best lag over the best a tenth of a beat away) for a plan to move its cut. */
+        const val KICKS_SURE = 1.5
         /** How long play waits for a never-measured song's end, begun on (ms). */
         const val FIRST_WAIT = 1_200L
         /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
@@ -744,8 +744,7 @@ class Crossfade(
         // very good"; Blend's nudge 2 s in only acts when sure in the mixed sound, and it read 1.1): each one's bass alone,
         // lined up over the blend; 20 ms or more apart, and sure, the cut moved by that much
         kicksApart(stretched, pcm.channels, pcm.rate, (cut - from) / speed, next.headLow, b.period)?.let { (apart, sure) ->
-            // moved when sure (the beat's kicks gather: 0.25), 20 ms or more and under a quarter beat (more: another beat
-            // in the bar, not a slip)
+            // moved when clear (1.5), 20 ms or more and under a quarter beat (more: another beat in the bar, not a slip)
             val move = sure >= KICKS_SURE && kotlin.math.abs(apart) >= 20 && kotlin.math.abs(apart) < b.period / 4
             android.util.Log.d("ink-crossfade", "plan: $oldId into $newId: kicks ${"%.0f".format(apart)} ms apart as planned (sure ${"%.2f".format(sure)}: $kicksSaid)" +
                 if (move) ", the cut moved ${"%.0f".format(apart * speed)} ms" else "")
@@ -779,37 +778,41 @@ class Crossfade(
     }
 
     /**
-     * Where the old end's kicks fall against the new start's (ms; positive, the old one's later), and how sure: each
-     * one's bass rises folded onto the shared beat (the old one stretched to the new one's tempo), the strength of each
-     * one's place in the beat (0, anywhere; 1, every rise on one spot), the lesser of the two. The new one's whole start
-     * read (20 s), the old one's stretched end where it's heard. (Matched over a 240 ms window first: a broad hump, never
-     * sure, 2026-11-11.) `zero` is where in the stretched samples (ms) the new one begins.
+     * Where the old end's kicks fall against the new start's (ms; positive, the old one's later), and how clearly: each
+     * one's bass energy each 10 ms, the new one's from its start and the old one's stretched end in the new one's time,
+     * only where both have bass (a tenth of their loudest), each step's rise squared; the lag (within 150 ms) where those
+     * line up best, and its score over the best a beat's tenth or more away. As tools/blends.py measures the blends heard
+     * (2026-11-11, 14 recorded: the beat folding before it guessed 181 ms for 10 heard, -117 for -10, -80 for -40; this way
+     * read the heard ones clearly, 2.2 to 3.9). `zero` is where in the stretched samples (ms) the new one begins.
      */
     private fun kicksApart(old: FloatArray, channels: Int, rate: Int, zero: Double, newLow: FloatArray, period: Double): Pair<Double, Double>? {
-        if (newLow.size < 400 || period < 200) return null
+        if (newLow.size < 100) return null
         val oldLow = lows(old, channels, rate)
-        // each 10 ms step's rise in bass energy, and where it falls in the beat
-        fun place(e: FloatArray, msOf: (Int) -> Double): Pair<Double, Double>? {
-            var x = 0.0; var y = 0.0; var w = 0.0
-            for (i in 1 until e.size) {
-                // squared: a kick's rise stands over a bass line's (a song's busy bass gathered 0.08, squared 0.14; a
-                // plain beat 0.48, squared 0.83: measured on two test songs, 2026-11-11)
-                val r = (e[i] - e[i - 1]).toDouble().let { if (it <= 0) 0.0 else it * it }
-                if (r <= 0) continue
-                val th = 2 * Math.PI * (((msOf(i) % period) + period) % period) / period
-                x += r * Math.cos(th); y += r * Math.sin(th); w += r
-            }
-            if (w <= 0) return null
-            return Math.atan2(y, x) to Math.hypot(x, y) / w
+        val z = Math.round(zero / 10).toInt()
+        val n = minOf(newLow.size, oldLow.size - z)
+        if (n < 60 || z < 0) return null
+        val en = DoubleArray(n) { newLow[it].toDouble() }
+        val eo = DoubleArray(n) { oldLow[it + z].toDouble() }
+        val mn = en.max(); val mo = eo.max()
+        if (mn <= 0 || mo <= 0) return null
+        val both = BooleanArray(n) { en[it] > mn * .1 && eo[it] > mo * .1 }
+        val overlap = both.count { it }
+        if (overlap < 40) { kicksSaid = "bass together ${overlap * 10} ms"; return null }
+        fun rises(e: DoubleArray) = DoubleArray(n) { i -> if (i == 0 || !both[i]) 0.0 else maxOf(0.0, e[i] - e[i - 1]).let { it * it } }
+        val rn = rises(en); val ro = rises(eo)
+        val range = 15
+        val score = DoubleArray(2 * range + 1) { k ->
+            val lag = k - range
+            var sc = 0.0
+            for (i in maxOf(0, -lag) until minOf(n, n - lag)) sc += rn[i] * ro[i + lag]
+            sc
         }
-        val (an, rn) = place(newLow) { it * 10.0 } ?: return null
-        // the old one's steps in the new one's time (the new one begins `zero` ms into the stretched samples)
-        val (ao, ro) = place(oldLow) { it * 10.0 - zero } ?: return null
-        var d = ao - an
-        while (d > Math.PI) d -= 2 * Math.PI
-        while (d <= -Math.PI) d += 2 * Math.PI
-        kicksSaid = "new %.2f, old %.2f".format(rn, ro)
-        return d / (2 * Math.PI) * period to minOf(rn, ro)
+        val best = score.indices.maxByOrNull { score[it] } ?: return null
+        val away = score.indices.filter { kotlin.math.abs(it - best) >= 3 }.maxOfOrNull { score[it] } ?: return null
+        if (score[best] <= 0) return null
+        val clear = score[best] / (away + 1e-18)
+        kicksSaid = "bass together ${overlap * 10} ms"
+        return (best - range) * 10.0 to clear
     }
     @Volatile private var kicksSaid = ""
 
