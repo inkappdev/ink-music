@@ -540,6 +540,13 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // place's word above them (the onn, 2026-11-03: down went nowhere); places change from the menu
     val tv = onTv()
     val placeIn = remember { androidx.compose.ui.focus.FocusRequester() }
+    // a TV: the week read and its covers drawn as it starts, so INK has them at once
+    if (tv) {
+        val libCtx = LocalContext.current
+        LaunchedEffect(Unit) { Weekly.load(libCtx) }
+        val weeks by Weekly.weeks.collectAsState()
+        LaunchedEffect(weeks.firstOrNull()?.week) { weeks.firstOrNull()?.let { w -> withContext(Dispatchers.IO) { TvMosaic.warm(libCtx, w.songs) } } }
+    }
     if (tv) androidx.compose.runtime.DisposableEffect(placeIn) { TvKeys.placeIn = placeIn; onDispose { if (TvKeys.placeIn === placeIn) TvKeys.placeIn = null } }
     // a TV: back from deep in a place goes to the rail, on the place's own word (2026-11-10); from the rail, to listen
     BackHandler(backHome && (if (tv) TvKeys.railAt < 0 || tab != tabs[0] else pager.currentPage != 0)) {
@@ -1763,9 +1770,51 @@ fun Mosaic(songs: List<Song>, modifier: Modifier) {
         val four = songs.distinctBy { it.art ?: it.albumId }.take(4)
         Column {
             for (r in 0..1) Row {
-                for (c in 0..1) four.getOrNull(r * 2 + c)?.let { Dithered(it, Modifier.size(cell), px = px) } ?: Spacer(Modifier.size(cell))
+                for (c in 0..1) four.getOrNull(r * 2 + c)?.let {
+                    if (Device.tv) TvDithered(it, Modifier.size(cell), px) else Dithered(it, Modifier.size(cell), px = px)
+                } ?: Spacer(Modifier.size(cell))
             }
         }
+    }
+}
+
+/**
+ * A TV's dithered cover, drawn once (no developing in: a dozen frames each on a slow box, every time INK opened, the
+ * week's covers always late; 2026-11-10) and kept, so a page come back to has it at once; a short fade the first time.
+ */
+object TvMosaic {
+    private val kept = android.util.LruCache<String, androidx.compose.ui.graphics.ImageBitmap>(12)
+    private fun key(s: Song, px: Int) = (s.art ?: s.albumId) + ":" + px
+    fun kept(s: Song, px: Int) = kept.get(key(s, px))
+
+    suspend fun draw(c: android.content.Context, s: Song, px: Int, density: Float): androidx.compose.ui.graphics.ImageBitmap? {
+        kept.get(key(s, px))?.let { return it }
+        val cover = Covers.of(c, s, px) ?: return null
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            Looks.draw(cover.image.asAndroidBitmap(), Look.DITHER, cover.accent, px.toFloat(), density)?.asImageBitmap()
+        }?.also { kept.put(key(s, px), it) }
+    }
+
+    /** This week's four drawn ahead, at the size INK shows them on a TV (half a header: [headerSide]). */
+    suspend fun warm(c: android.content.Context, songs: List<Song>) {
+        val m = c.resources.displayMetrics
+        val h = m.heightPixels / m.density
+        val px = (minOf(420f, h * .55f) / 2f * m.density).roundToInt()
+        songs.distinctBy { it.art ?: it.albumId }.take(4).forEach { runCatching { draw(c, it, px, m.density) } }
+    }
+}
+
+@Composable
+private fun TvDithered(s: Song, modifier: Modifier, px: Int) {
+    val ctx = LocalContext.current
+    val density = LocalDensity.current.density
+    val had = remember(s, px) { TvMosaic.kept(s, px) }
+    val img by androidx.compose.runtime.produceState(had, s, px) { if (value == null) value = TvMosaic.draw(ctx, s, px, density) }
+    val shown = remember(s, px) { Animatable(if (had != null) 1f else 0f) }
+    LaunchedEffect(img) { if (img != null) shown.animateTo(1f, tween(300)) }
+    Box(modifier.background(Ink.black)) {
+        img?.let { Image(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop,
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.None) }
     }
 }
 
