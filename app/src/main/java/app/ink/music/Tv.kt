@@ -668,3 +668,27 @@ fun tvRowState(): androidx.compose.foundation.lazy.LazyListState {
     }
     return state
 }
+
+/** Whether the app's first start has put the remote somewhere yet ([bootFirst]). */
+object TvBoot { @Volatile var done = false }
+
+/**
+ * Where the remote starts when the app opens on a TV: jump back in's first cover (2026-11-10), once it's come in, unless
+ * the remote has been moved off the rail's word already. Only the first time; it's listen's own first thing too.
+ */
+@Composable
+fun Modifier.bootFirst(): Modifier {
+    if (!Device.tv) return this
+    val r = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (TvBoot.done) return@LaunchedEffect
+        // a moment for jump back in to finish filling (songs come in ahead of the first a little after it shows)
+        kotlinx.coroutines.delay(1_200)
+        if (TvBoot.done) return@LaunchedEffect
+        // still on the rail's word (or nowhere): taken there; moved on into a place: left be
+        if (TvKeys.railAt >= 0 || !TvKeys.lit) runCatching { r.requestFocus() }
+        TvBoot.done = true
+    }
+    DisposableEffect(r) { TvKeys.placeFirst = r; onDispose { if (TvKeys.placeFirst === r) TvKeys.placeFirst = null } }
+    return focusRequester(r)
+}

@@ -712,8 +712,8 @@ fun TvListenPage(pages: Pages, state: LazyListState) {
         }
     }
     @Composable
-    fun Cover(song: Song?, name: String, said: String, onClick: () -> Unit) {
-        Column(Modifier.width(TV_TILE).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+    fun Cover(song: Song?, name: String, said: String, first: Boolean = false, onClick: () -> Unit) {
+        Column(Modifier.width(TV_TILE).then(if (first) Modifier.bootFirst() else Modifier).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
             CoverOf(song, name, Modifier.size(TV_TILE), px = 320)
             Spacer(Modifier.height(8.dp))
             UnderCover(name, said, pixel(12.sp, Ink.mid))
@@ -725,13 +725,13 @@ fun TvListenPage(pages: Pages, state: LazyListState) {
         }
         if (recent.isNotEmpty() || tubeRecent.isNotEmpty()) item(key = "back") {
             Row("jump back in") {
-                items(recent, key = { "r" + it.id }) { s ->
-                    Cover(s, s.album.ifEmpty { s.title }, s.artist) {
+                itemsIndexed(recent, key = { _, s -> "r" + s.id }) { i, s ->
+                    Cover(s, s.album.ifEmpty { s.title }, s.artist, first = i == 0) {
                         val record = albums.firstOrNull { it.id == s.albumId }
                         if (record != null) pages.open(Page.Record(record.id)) else Playback.play(listOf(s), 0)
                     }
                 }
-                itemsIndexed(tubeRecent, key = { _, s -> "t" + s.id }) { i, s -> Cover(s, s.title, s.artist) { Playback.play(tubeRecent, i) } }
+                itemsIndexed(tubeRecent, key = { _, s -> "t" + s.id }) { i, s -> Cover(s, s.title, s.artist, first = i == 0 && recent.isEmpty()) { Playback.play(tubeRecent, i) } }
             }
         }
         if (fromYours.isNotEmpty()) item(key = "yours-new") {
