@@ -181,9 +181,8 @@ fun TvFocus(content: @Composable () -> Unit) {
                     androidx.compose.ui.input.key.Key.DirectionUp -> railStep(-1)
                     androidx.compose.ui.input.key.Key.DirectionDown -> railStep(1)
                     // into the place, its first thing (the search right from listen went down the rail to settings)
-                    androidx.compose.ui.input.key.Key.DirectionRight ->
-                        // nothing to take it yet (the place still coming in): it stays, never the search
-                        { runCatching { TvKeys.placeIn?.requestFocus() }; true }()
+                    // (nothing to take it yet, the place still coming in: it stays, never the search)
+                    androidx.compose.ui.input.key.Key.DirectionRight -> { runCatching { TvKeys.placeIn?.requestFocus() }; true }
                     androidx.compose.ui.input.key.Key.DirectionLeft -> true
                     else -> false
                 }
