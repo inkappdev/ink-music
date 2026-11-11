@@ -1234,15 +1234,21 @@ fun TvBeside(frost: HazeState, top: Dp, list: androidx.compose.foundation.lazy.L
     BoxWithConstraints(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = (LocalFoot.current - BAND).coerceAtLeast(0.dp))) {
     // the cover as big as leaves its words room under it (a TV's screen is short): the side held still, whole
     val cover = (maxHeight - 250.dp).coerceIn(160.dp, 300.dp)
+    // right from the side: the list's first row in view (its top, opened), not whichever row is level with the word
+    // (2026-11-10: from radio it went to the fifth song)
+    val first = remember { androidx.compose.ui.focus.FocusRequester() }
     Row(Modifier.fillMaxSize()) {
-        Column(Modifier.width(300.dp).verticalScroll(rememberScrollState())) { side(cover) }
+        val into = remember(first) { { runCatching { first.requestFocus(); true }.getOrDefault(false) } }
+        androidx.compose.runtime.DisposableEffect(into) { onDispose { if (TvKeys.besideRight === into) TvKeys.besideRight = null } }
+        Column(Modifier.width(300.dp).onFocusChanged { f -> if (f.hasFocus) TvKeys.besideRight = into else if (TvKeys.besideRight === into) TvKeys.besideRight = null }
+            .verticalScroll(rememberScrollState())) { side(cover) }
         Spacer(Modifier.width(40.dp))
         // left from the list: the side's first press (play), not whichever word is level with the row (a playlist's
         // "delete from youtube", 2026-11-10)
         val start = LocalTvStart.current
         val go = remember(start) { { start?.first?.let { runCatching { it.requestFocus(); true }.getOrDefault(false) } ?: false } }
         androidx.compose.runtime.DisposableEffect(go) { onDispose { if (TvKeys.besideLeft === go) TvKeys.besideLeft = null } }
-        LazyColumn(state = list, modifier = Modifier.weight(1f).hazeSource(frost).feather(list, 28.dp, 44.dp)
+        LazyColumn(state = list, modifier = Modifier.weight(1f).focusRequester(first).hazeSource(frost).feather(list, 28.dp, 44.dp)
             .onFocusChanged { f -> if (f.hasFocus) TvKeys.besideLeft = go else if (TvKeys.besideLeft === go) TvKeys.besideLeft = null },
             contentPadding = PaddingValues(bottom = 24.dp)) { rows() }
     }
@@ -1677,13 +1683,13 @@ private fun TvLabel(text: String) = BasicText(text.uppercase(), style = headline
  */
 @Composable
 private fun TvArtistSide(name: String, i: ArtistInfo?, room: Dp, records: Int, yours: Int, playable: List<Song>, reading: Boolean) {
-    val dithered by Moving.artistDither.collectAsState()
     val side = room.coerceAtMost(240.dp)
     Box(Modifier.size(side)) {
         val photo = i?.photo
         if (photo != null) {
             val still = remember(photo) { photoSong(name, photo) }
-            if (dithered) Dithered(still, Modifier.fillMaxSize()) else AsItIs(still, Modifier.fillMaxSize())
+            // as it is on a TV (2026-11-10), whatever the phone's set
+            AsItIs(still, Modifier.fillMaxSize())
         } else Box(Modifier.fillMaxSize().background(Ink.black))
     }
     Spacer(Modifier.height(14.dp))

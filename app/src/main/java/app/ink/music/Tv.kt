@@ -112,6 +112,8 @@ object TvKeys {
     var railHome: androidx.compose.ui.focus.FocusRequester? = null
     /** A page side by side ([TvBeside]) with the remote in its list: left goes to its side's first press (play). */
     var besideLeft: (() -> Boolean)? = null
+    /** A side-by-side page with the remote on its side: right off it goes to its list's first row in view. */
+    var besideRight: (() -> Boolean)? = null
 }
 
 /** One of the library's rail ([TvKeys.rail]): its place in it, and whether it has the remote. */
@@ -184,7 +186,18 @@ fun TvFocus(content: @Composable () -> Unit) {
                     else -> false
                 }
                 // left from a side-by-side page's list: its side's first press (play), not the word level with the row
-                if (e.key == androidx.compose.ui.input.key.Key.DirectionLeft) TvKeys.besideLeft?.let { go -> if (go()) return@onPreviewKeyEvent true }
+                // (along a row of records first: only from its first, or off the list, 2026-11-10: left from the second
+                // record went to play)
+                if (e.key == androidx.compose.ui.input.key.Key.DirectionRight) TvKeys.besideRight?.let { go ->
+                    val moved = fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Right)
+                    if (!moved || TvKeys.besideRight !== go) go()
+                    return@onPreviewKeyEvent true
+                }
+                if (e.key == androidx.compose.ui.input.key.Key.DirectionLeft) TvKeys.besideLeft?.let { go ->
+                    val moved = fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Left)
+                    if (!moved || TvKeys.besideLeft !== go) go()
+                    return@onPreviewKeyEvent true
+                }
                 // left from the place: on along it where there's more; at its edge, the rail's word for the place shown
                 // (not whichever word is level with it: that one, rested on, showed another place, 2026-11-10)
                 if (e.key == androidx.compose.ui.input.key.Key.DirectionLeft && at < 0 && TvKeys.railHome != null) {
