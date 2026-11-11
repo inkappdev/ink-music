@@ -132,6 +132,8 @@ class Crossfade(
         const val FADE = 6_000L
         /** How far ahead a playing song's cut must be: what's decoded and buffered for the sound mustn't have passed it. */
         const val AHEAD = 8_000L
+        /** How gathered on one spot in the beat both songs' kicks must be for a plan to move its cut to line them up. */
+        const val KICKS_SURE = .25
         /** How long play waits for a never-measured song's end, begun on (ms). */
         const val FIRST_WAIT = 1_200L
         /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
@@ -741,11 +743,14 @@ class Crossfade(
         // its kicks against the new one's, before it's heard (2026-11-11: a blend went in 80 ms apart, a flam, "it wasn't
         // very good"; Blend's nudge 2 s in only acts when sure in the mixed sound, and it read 1.1): each one's bass alone,
         // lined up over the blend; 20 ms or more apart, and sure, the cut moved by that much
-        kicksApart(stretched, pcm.channels, pcm.rate, (cut - from) / speed, next.headLow, maxOf(b0, 0.0), fade.toDouble())?.let { (lag, sure) ->
-            android.util.Log.d("ink-crossfade", "plan: kicks ${lag * 10} ms apart as planned (sure ${"%.1f".format(sure)})" +
-                if (sure >= 2.0 && kotlin.math.abs(lag) >= 2) ", the cut moved ${"%.0f".format(lag * 10 * speed)} ms" else "")
-            if (sure >= 2.0 && kotlin.math.abs(lag) >= 2) {
-                val moved = cut + (lag * 10 * speed).toLong()
+        kicksApart(stretched, pcm.channels, pcm.rate, (cut - from) / speed, next.headLow, b.period)?.let { (apart, sure) ->
+            // moved when sure (the beat's kicks gather: 0.25), 20 ms or more and under a quarter beat (more: another beat
+            // in the bar, not a slip)
+            val move = sure >= KICKS_SURE && kotlin.math.abs(apart) >= 20 && kotlin.math.abs(apart) < b.period / 4
+            android.util.Log.d("ink-crossfade", "plan: kicks ${"%.0f".format(apart)} ms apart as planned (sure ${"%.2f".format(sure)})" +
+                if (move) ", the cut moved ${"%.0f".format(apart * speed)} ms" else "")
+            if (move) {
+                val moved = cut + (apart * speed).toLong()
                 if (moved >= pcm.start + 500 && moved >= a.first) {
                     cut = moved
                     start = (cut - 300).coerceAtLeast(pcm.start).toDouble()
@@ -774,31 +779,34 @@ class Crossfade(
     }
 
     /**
-     * The old end (stretched, interleaved) against the new start's bass over the blend: how many 10 ms steps the old
-     * one's kicks land after the new one's (negative, before), and how sure (the best match over the average one), as
-     * Blend measures it heard. `zero` is where in the stretched samples (ms) the new one begins.
+     * Where the old end's kicks fall against the new start's (ms; positive, the old one's later), and how sure: each
+     * one's bass rises folded onto the shared beat (the old one stretched to the new one's tempo), the strength of each
+     * one's place in the beat (0, anywhere; 1, every rise on one spot), the lesser of the two. The new one's whole start
+     * read (20 s), the old one's stretched end where it's heard. (Matched over a 240 ms window first: a broad hump, never
+     * sure, 2026-11-11.) `zero` is where in the stretched samples (ms) the new one begins.
      */
-    private fun kicksApart(old: FloatArray, channels: Int, rate: Int, zero: Double, newLow: FloatArray, inMs: Double, fade: Double): Pair<Int, Double>? {
-        if (newLow.isEmpty()) return null
+    private fun kicksApart(old: FloatArray, channels: Int, rate: Int, zero: Double, newLow: FloatArray, period: Double): Pair<Double, Double>? {
+        if (newLow.size < 400 || period < 200) return null
         val oldLow = lows(old, channels, rate)
-        val i0 = (inMs / 10).toInt(); val i1 = minOf(((inMs + fade) / 10).toInt(), newLow.size)
-        val z = (zero / 10).toInt()
-        fun rises(e: FloatArray, from: Int, to: Int) = DoubleArray(maxOf(0, to - from)) { k ->
-            val i = from + k
-            if (i <= 0 || i >= e.size) 0.0 else maxOf(0.0, Math.log(e[i] + 1e-9) - Math.log(e[i - 1] + 1e-9))
+        // each 10 ms step's rise in bass energy, and where it falls in the beat
+        fun place(e: FloatArray, msOf: (Int) -> Double): Pair<Double, Double>? {
+            var x = 0.0; var y = 0.0; var w = 0.0
+            for (i in 1 until e.size) {
+                val r = (e[i] - e[i - 1]).toDouble()
+                if (r <= 0) continue
+                val th = 2 * Math.PI * (((msOf(i) % period) + period) % period) / period
+                x += r * Math.cos(th); y += r * Math.sin(th); w += r
+            }
+            if (w <= 0) return null
+            return Math.atan2(y, x) to Math.hypot(x, y) / w
         }
-        val range = 12
-        val a = rises(newLow, i0, i1)
-        val b = rises(oldLow, z + i0 - range, z + i1 + range)
-        if (a.size < 200) return null
-        var best = 0; var bestS = Double.NEGATIVE_INFINITY; var sum = 0.0; var cnt = 0
-        for (lag in -range..range) {
-            var sc = 0.0
-            for (i in a.indices) sc += a[i] * b[i + range + lag]
-            sum += sc; cnt++
-            if (sc > bestS) { bestS = sc; best = lag }
-        }
-        return if (sum > 0) best to bestS / (sum / cnt) else null
+        val (an, rn) = place(newLow) { it * 10.0 } ?: return null
+        // the old one's steps in the new one's time (the new one begins `zero` ms into the stretched samples)
+        val (ao, ro) = place(oldLow) { it * 10.0 - zero } ?: return null
+        var d = ao - an
+        while (d > Math.PI) d -= 2 * Math.PI
+        while (d <= -Math.PI) d += 2 * Math.PI
+        return d / (2 * Math.PI) * period to minOf(rn, ro)
     }
 
     /** Samples played `speed` times as fast, their pitch kept (Media3's Sonic, offline). */
