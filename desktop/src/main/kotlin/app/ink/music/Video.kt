@@ -309,7 +309,7 @@ object Effects {
             Look.BLUR -> ImageFilter.makeBlur(40 * density * k, 40 * density * k, FilterTileMode.CLAMP)
             Look.DITHER -> ImageFilter.makeRuntimeShader(RuntimeShaderBuilder(effect(DITHER)).apply {
                 // whole pixels a dot, as Dither.cells (a zoom of 1.1 had made 6.6: dots of two sizes)
-                uniform("cell", (3 * density * k).roundToInt().coerceAtLeast(2).toFloat()); uniform("gain", gain)
+                uniform("cell", Dither.cell(density, k).toFloat()); uniform("gain", gain)
                 uniform("ink", accent.red, accent.green, accent.blue, 1f)
             }, "content", null)
             // a whole number of squares across, about 18 dp each (else a strip at the right and foot where none fit)

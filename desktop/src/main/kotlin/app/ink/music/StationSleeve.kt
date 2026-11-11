@@ -105,7 +105,7 @@ fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean =
         val density = LocalDensity.current.density
         val px = (side.value - 2) * density
         // whole pixels a dot (Dots): 3 dp, fewer and larger on a small sleeve so it has 56 at least
-        val cell = (3 * density).roundToInt().coerceAtLeast(1).let { c -> if (px / c < 56) (px / 56).toInt().coerceAtLeast(1) else c }
+        val cell = Dither.cell(density).let { c -> if (px / c < 56) (px / 56).toInt().coerceAtLeast(1) else c }
         val n = kotlin.math.ceil(px / cell).toInt().coerceIn(24, 400)
         val frames by produceState<List<ImageBitmap>?>(null, station.id, n, moving) {
             value = withContext(Dispatchers.Default) {

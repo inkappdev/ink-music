@@ -78,7 +78,7 @@ fun RadioHead() {
         val density = LocalDensity.current.density
         val wPx = maxWidth.value * density; val hPx = 340 * density
         // 3 dp dots, each a whole number of pixels (Dots), as many as cover it
-        val cell = (3 * density).roundToInt().coerceAtLeast(1)
+        val cell = Dither.cell(density)
         val w = kotlin.math.ceil(wPx / cell).toInt().coerceAtLeast(60); val h = kotlin.math.ceil(hPx / cell).toInt().coerceAtLeast(40)
         // the rings in the station's own colour while one's on
         val dot = station?.let { StationSleeve.colorOf(it.id) } ?: QUIET
