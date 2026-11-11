@@ -854,7 +854,8 @@ fun TvSettingsPage(pages: Pages) {
                 Spacer(Modifier.height(36.dp))
                 Head("ONE SONG INTO THE NEXT")
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    listOf(Crossfade.OFF to "one after another", Crossfade.CROSSFADE to "crossfade", Crossfade.AUTOMIX to "automix").forEach { (m, word) ->
+                    // (no automix on a TV: too much for a TV box, 2026-11-10)
+                    listOf(Crossfade.OFF to "one after another", Crossfade.CROSSFADE to "crossfade").forEach { (m, word) ->
                         Choice(word, mode == m) { Crossfade.set(ctx, m); mode = m }
                     }
                 }

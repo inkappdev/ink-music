@@ -72,7 +72,10 @@ class Crossfade(
     private data class Mix(val outBeat: Double, val inBeat: Double, val speed: Float, val inPeriod: Double, val outPeriod: Double)
 
     private val main = Handler(Looper.getMainLooper())
-    private val work = Executors.newSingleThreadExecutor()
+    // in the background's turn: a song read through end to end took the onn 16 to 18 s, the screen stalling under it
+    private val work = Executors.newSingleThreadExecutor { r ->
+        Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "ink-measure")
+    }
     private val ends = ConcurrentHashMap<String, Ends>()
     /** When each song's singing (ms), from its timed lyrics (Vocals): automix lays no voice over another. Empty: none known. */
     private val vocals = ConcurrentHashMap<String, List<LongRange>>()
@@ -129,7 +132,11 @@ class Crossfade(
         const val OFF = "off"; const val CROSSFADE = "crossfade"; const val AUTOMIX = "automix"
         /** Off, the crossfade, or automix (the crossfade with beats matched and the bass handed across). */
         fun mode(c: Context): String = runCatching { File(c.filesDir, "crossfade").readText().trim() }.getOrNull()
-            ?.let { if (it == AUTOMIX) AUTOMIX else CROSSFADE } ?: OFF
+            ?.let { if (it == AUTOMIX && !tv(c)) AUTOMIX else CROSSFADE } ?: OFF
+        // a TV: no automix (2026-11-10: its beats, keys, lyrics and the stretching as it plays slowed the onn right
+        // down); the crossfade. Asked of the system, not Device: the player runs in its own process
+        @Volatile private var isTvBox: Boolean? = null
+        private fun tv(c: Context) = isTvBox ?: isTv(c).also { isTvBox = it }
         fun set(c: Context, mode: String) { runCatching { File(c.filesDir, "crossfade").let { if (mode == OFF) it.delete() else it.writeText(mode) } } }
         /** How sure a beat must be to be matched (Beat's z-score). */
         const val SURE = Beat.SURE
