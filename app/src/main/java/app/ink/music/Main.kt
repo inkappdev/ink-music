@@ -101,6 +101,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1239,10 +1240,11 @@ fun TvBeside(frost: HazeState, top: Dp, list: androidx.compose.foundation.lazy.L
     // (2026-11-10: from radio it went to the fifth song)
     val first = remember { androidx.compose.ui.focus.FocusRequester() }
     Row(Modifier.fillMaxSize()) {
-        val into = remember(first) { { runCatching { first.requestFocus(); true }.getOrDefault(false) } }
-        androidx.compose.runtime.DisposableEffect(into) { onDispose { if (TvKeys.besideRight === into) TvKeys.besideRight = null } }
-        Column(Modifier.width(300.dp).onFocusChanged { f -> if (f.hasFocus) TvKeys.besideRight = into else if (TvKeys.besideRight === into) TvKeys.besideRight = null }
-            .verticalScroll(rememberScrollState())) { side(cover) }
+        // the side a group: right out of it goes straight to where the list was left (its restorer), never first to the
+        // row level with the word (each trip back landed a little higher, 2026-11-10)
+        Column(Modifier.width(300.dp).focusProperties {
+            onExit = { if (requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Right) first.requestFocus() }
+        }.focusGroup().verticalScroll(rememberScrollState())) { side(cover) }
         Spacer(Modifier.width(40.dp))
         // left from the list: the side's first press (play), not whichever word is level with the row (a playlist's
         // "delete from youtube", 2026-11-10)
