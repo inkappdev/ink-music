@@ -111,6 +111,9 @@ class Blend : BaseAudioProcessor() {
     @Volatile var tapStart: String? = null
     private val preroll = ArrayDeque<ByteArray>(); private var prerollBytes = 0
     private var capture: java.io.ByteArrayOutputStream? = null; private var captureLeft = 0L; private var captureName = ""
+    // the blend's two songs apart (16 bit, left the new one, right the old one, the first channel each), kept beside it as
+    // <name>-parts.pcm (2026-11-11: kicks measured in the mixed sound read sure 1.1-1.3 on every blend, noise)
+    private var parts: java.io.ByteArrayOutputStream? = null
     private var stretched: Stretched? = null
     private var sAt = 0.0          // where in the stretched samples
     // the old one pulled into step (2026-11-08: kicks 60 ms apart, sure 3.4): its kicks heard against the new one's over
@@ -199,6 +202,7 @@ class Blend : BaseAudioProcessor() {
             fadeFrames = (p.tail.fadeMs * format.sampleRate / 1000).coerceAtLeast(1)
             if (dumpDir?.let { java.io.File(it, "on").exists() } == true) {
                 capture = java.io.ByteArrayOutputStream().also { o -> preroll.forEach { o.write(it) } }
+                parts = java.io.ByteArrayOutputStream()
                 captureLeft = (fadeFrames + 3L * format.sampleRate) * format.bytesPerFrame
                 captureName = "${System.currentTimeMillis() / 1000}-$id-${format.sampleRate}-${format.channelCount}.pcm"
                 tapStart = "${System.currentTimeMillis() / 1000}-$id"
@@ -348,6 +352,10 @@ class Blend : BaseAudioProcessor() {
                         // the old one's own samples into its stretched ones, so the joining makes no click
                         // (with its gain too: left out, the old one rose 5-8 dB through every beats-matched blend, 2026-11-08)
                         old = old * (1 - join) + sample(st.pcm, t.channels, sAt, c) * oldGain * join
+                    }
+                    // each song alone, before the filters and the bass swap: what a blend's kicks are measured on after
+                    if (c == 0) parts?.let { pt -> for (v in doubleArrayOf(s, old)) { val q = (v * 32768).toInt().coerceIn(-32768, 32767); pt.write(q and 0xff); pt.write((q shr 8) and 0xff) } }
+                    if (st != null) {
                         if (c < 8) {
                             val ln = filter(lowNew, c, s); s = (s - ln) + ln * swap
                             val lo = filter(lowOld, c, old); old = (old - lo) + lo * (1 - swap)
@@ -424,10 +432,13 @@ class Blend : BaseAudioProcessor() {
         if (captureLeft <= 0) {
             capture = null
             val bytes = c.toByteArray(); val name = captureName
+            val apart = parts?.toByteArray(); parts = null
             Thread {
                 runCatching {
                     java.io.File(dir, name).writeBytes(bytes)
-                    dir.listFiles { f -> f.name.endsWith(".pcm") }?.sortedByDescending { it.name }?.drop(6)?.forEach { it.delete() }
+                    apart?.let { java.io.File(dir, name.removeSuffix(".pcm") + "-parts.pcm").writeBytes(it) }
+                    // the last 30 blends (each its sound and its parts)
+                    dir.listFiles { f -> f.name.endsWith(".pcm") }?.sortedByDescending { it.name }?.drop(60)?.forEach { it.delete() }
                 }
             }.start()
         }

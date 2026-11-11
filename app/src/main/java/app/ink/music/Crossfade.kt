@@ -747,7 +747,7 @@ class Crossfade(
             // moved when sure (the beat's kicks gather: 0.25), 20 ms or more and under a quarter beat (more: another beat
             // in the bar, not a slip)
             val move = sure >= KICKS_SURE && kotlin.math.abs(apart) >= 20 && kotlin.math.abs(apart) < b.period / 4
-            android.util.Log.d("ink-crossfade", "plan: kicks ${"%.0f".format(apart)} ms apart as planned (sure ${"%.2f".format(sure)}: $kicksSaid)" +
+            android.util.Log.d("ink-crossfade", "plan: $oldId into $newId: kicks ${"%.0f".format(apart)} ms apart as planned (sure ${"%.2f".format(sure)}: $kicksSaid)" +
                 if (move) ", the cut moved ${"%.0f".format(apart * speed)} ms" else "")
             if (move) {
                 val moved = cut + (apart * speed).toLong()
