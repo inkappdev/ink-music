@@ -103,9 +103,11 @@ fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean =
     BoxWithConstraints(modifier.background(Ink.black).border(1.dp, Ink.ink)) {
         val side = maxWidth
         val density = LocalDensity.current.density
-        val px = side.value * density
-        val frames by produceState<List<ImageBitmap>?>(null, station.id, px, moving) {
-            val n = StationSleeve.cells(px, density)
+        val px = (side.value - 2) * density
+        // whole pixels a dot (Dots): 3 dp, fewer and larger on a small sleeve so it has 56 at least
+        val cell = (3 * density).roundToInt().coerceAtLeast(1).let { c -> if (px / c < 56) (px / 56).toInt().coerceAtLeast(1) else c }
+        val n = kotlin.math.ceil(px / cell).toInt().coerceIn(24, 400)
+        val frames by produceState<List<ImageBitmap>?>(null, station.id, n, moving) {
             value = withContext(Dispatchers.Default) {
                 (0 until if (moving) StationSleeve.FRAMES else 1).map { StationSleeve.rings(station.id, n, .96f, it) }
             }
@@ -116,7 +118,7 @@ fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean =
             while (moving && count > 1) { delay(220); frame = (frame + 1) % count }
         }
         frames?.let { f ->
-            Image(f[frame % f.size], null, Modifier.fillMaxSize().padding(1.dp), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
+            Dots(f[frame % f.size], cell, Modifier.fillMaxSize().padding(1.dp))
         }
         Box(Modifier.fillMaxSize().padding(start = 1.dp, bottom = side / 12), contentAlignment = Alignment.BottomStart) {
             // as big as the sleeve allows, but its longest word whole on a line (CASHMERE broke as CASHME / RE)

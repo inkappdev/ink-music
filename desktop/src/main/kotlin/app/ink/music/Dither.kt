@@ -1,5 +1,6 @@
 package app.ink.music
 
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asSkiaBitmap
@@ -27,9 +28,18 @@ object Dither {
     fun kept(key: String): List<ImageBitmap>? = made.get(key)
     fun keep(key: String, frames: List<ImageBitmap>) { made.put(key, frames) }
 
-    fun develop(art: ImageBitmap, accent: Color, shown: Float, density: Float, frames: Int = 12): List<ImageBitmap>? = runCatching {
+    /**
+     * Each dot a whole number of the screen's pixels, about 3 dp (2026-11-11: zoomed in or out, a dot was 6.6 pixels,
+     * some drawn 6 and some 7, and the pattern lost its evenness; "at fit they look normal"): how many pixels, and how
+     * many dots cover `shown` pixels at that size (the last one cut by the edge).
+     */
+    fun cells(shown: Float, density: Float): Pair<Int, Int> {
+        val cell = (3 * density).roundToInt().coerceAtLeast(2)
+        return cell to kotlin.math.ceil(shown / cell).toInt().coerceIn(24, 400)
+    }
+
+    fun develop(art: ImageBitmap, accent: Color, dots: Int, frames: Int = 12): List<ImageBitmap>? = runCatching {
         val img = Image.makeFromBitmap(art.asSkiaBitmapCopy())
-        val dots = (shown / (3 * density)).roundToInt().coerceIn(24, 400)
         val small = (dots / 3).coerceAtLeast(16)
         val soft = pixels(img, small).also { px -> repeat(3) { blur(px, small, 1, true); blur(px, small, 1, false) } }
         val px = pixels(image(soft, small), dots)
@@ -81,5 +91,19 @@ object Dither {
             }
             for (i in 0 until n) px[if (rows) line * n + i else i * n + line] = out[i]
         }
+    }
+}
+
+/**
+ * A picture of dots drawn `cell` whole pixels a dot: the grid centered on whole pixels and cut by the edges, never
+ * stretched to fit (a stretch of 1.1 made dots of two sizes, 2026-11-11). Covers, sleeves, the radio tower.
+ */
+@androidx.compose.runtime.Composable
+fun Dots(frame: ImageBitmap, cell: Int, modifier: androidx.compose.ui.Modifier) {
+    androidx.compose.foundation.Canvas(modifier.clipToBounds()) {
+        val w = frame.width * cell; val h = frame.height * cell
+        drawImage(frame, srcOffset = androidx.compose.ui.unit.IntOffset.Zero, srcSize = androidx.compose.ui.unit.IntSize(frame.width, frame.height),
+            dstOffset = androidx.compose.ui.unit.IntOffset(((size.width - w) / 2).roundToInt(), ((size.height - h) / 2).roundToInt()),
+            dstSize = androidx.compose.ui.unit.IntSize(w, h), filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
     }
 }

@@ -1,5 +1,6 @@
 package app.ink.music
 
+import kotlin.math.roundToInt
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -76,8 +77,9 @@ fun RadioHead() {
     BoxWithConstraints(Modifier.fillMaxWidth().height(340.dp)) {
         val density = LocalDensity.current.density
         val wPx = maxWidth.value * density; val hPx = 340 * density
-        // 3 dp dots
-        val w = (wPx / (3 * density)).toInt().coerceAtLeast(60); val h = (hPx / (3 * density)).toInt().coerceAtLeast(40)
+        // 3 dp dots, each a whole number of pixels (Dots), as many as cover it
+        val cell = (3 * density).roundToInt().coerceAtLeast(1)
+        val w = kotlin.math.ceil(wPx / cell).toInt().coerceAtLeast(60); val h = kotlin.math.ceil(hPx / cell).toInt().coerceAtLeast(40)
         // the rings in the station's own colour while one's on
         val dot = station?.let { StationSleeve.colorOf(it.id) } ?: QUIET
         val frames by produceState<List<ImageBitmap>?>(null, w, h, moving, dot) {
@@ -106,7 +108,7 @@ fun RadioHead() {
             if (taps >= 3) { taps = 0; struck = t }
         }
         val shownFrame = if (flash) bolt else frames?.let { f -> f[frame % f.size] }
-        shownFrame?.let { Image(it, null, tower, contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None) }
+        shownFrame?.let { Dots(it, cell, tower) }
         // the words, on black, at the right
         // on a black tab, as a sleeve's name is: the rings run behind it, and type over the dots doesn't read
         Column(Modifier.fillMaxWidth(.5f).align(Alignment.BottomEnd).padding(bottom = 18.dp).background(Ink.black).padding(start = 18.dp, top = 12.dp, bottom = 10.dp)) {

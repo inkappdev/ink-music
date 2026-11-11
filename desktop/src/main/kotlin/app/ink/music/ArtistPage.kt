@@ -1,5 +1,7 @@
 package app.ink.music
 
+import androidx.compose.ui.draw.clipToBounds
+import kotlin.math.roundToInt
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -360,18 +362,20 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
     val cover = rememberCover(photo, px)
     val density = LocalDensity.current
     BoxWithConstraints(modifier.background(Ink.black)) {
-        val side = with(density) { maxWidth.toPx() }
+        val side = with(density) { maxOf(maxWidth, maxHeight).toPx() }
+        // whole pixels to a dot at this zoom, and as many dots as cover the tile (Dither.cells)
+        val (cell, dots) = remember(side, density.density) { Dither.cells(side, density.density) }
         val born = remember { System.nanoTime() }
         // a picture's frames kept for the session: a tile seen before (scrolled back to, listen opened again) is there at
         // once, not developed all over (2026-11-09: "the dithered ... loading in slow"; each was 25 ms in coming and 7 ms
         // to make, then 900 ms of developing, every time it came into sight)
-        val key = remember(cover, side) { cover?.let { "${photo.id}|${photo.albumId}|${side.toInt()}|${it.accent.value}" } }
+        val key = remember(cover, dots) { cover?.let { "${photo.id}|${photo.albumId}|$dots|${it.accent.value}" } }
         val ready = remember(key) { key?.let { Dither.kept(it) } }
         val frames by produceState(ready, cover) {
             val c = cover ?: return@produceState
             if (value != null) return@produceState
             val t = System.nanoTime()
-            value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, side, density.density) }?.also { f -> key?.let { Dither.keep(it, f) } }
+            value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, dots) }?.also { f -> key?.let { Dither.keep(it, f) } }
             if (Log.on) Log.d("dither: ${photo.album.take(20)} cover ${(t - born) / 1_000_000} ms after shown, frames ${(System.nanoTime() - t) / 1_000_000} ms")
         }
         val shown = remember(key) { Animatable(if (ready != null) 1f else 0f) }
@@ -379,8 +383,9 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
         LaunchedEffect(frames) { if (frames != null && shown.value < 1f) shown.animateTo(1f, tween(450, easing = Motion.expo)) }
         frames?.let { f ->
             // the dots drawn as dots: unfiltered, as the player draws them
-            Image(f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)], null, Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop, filterQuality = FilterQuality.None)
+            // each dot exactly `cell` pixels, the grid centered on whole pixels and cut by the tile's edges (never
+            // stretched to fit: a stretch of 1.1 made dots of two sizes)
+            Dots(f[((shown.value * f.size).toInt()).coerceIn(0, f.size - 1)], cell, Modifier.fillMaxSize())
         }
     }
 }
