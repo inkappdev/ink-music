@@ -32,6 +32,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -429,6 +430,8 @@ private fun App() {
                 }
                 when {
                     k.key == Key.Spacebar -> { Watching.toggle?.invoke() ?: Player.toggle(); true }
+                    // the song selected in a list (one click), played (SongRow)
+                    (k.key == Key.Enter || k.key == Key.NumPadEnter) && Selected.play != null -> { Selected.play?.invoke(); true }
                     // a video open: the arrows move through it, f is full screen, esc leaves it (not the music under it)
                     k.key == Key.DirectionRight && Watching.seekBy != null -> { Watching.seekBy?.invoke(10_000); true }
                     k.key == Key.DirectionLeft && Watching.seekBy != null -> { Watching.seekBy?.invoke(-10_000); true }
@@ -901,10 +904,15 @@ fun SongRow(
     val pickedNow by Picking.picked.collectAsState()
     val picking = pickedNow.isNotEmpty()
     val picked = picking && pickedNow.any { it.id == s.id }
-    val color = (if (on || options || picked) Ink.ink else if (dim) Ink.dim else Ink.mid).let { if (over) brighter(it) else it }
+    // a click selects it (lit), a double-click plays it, as the computer's players do (Spotify's, Apple Music's): a stray
+    // click had played a song (2026-11-10, a Reddit report); the ▶ on hover, or enter, plays the selected one at once
+    val selected = Selected.id == s.id
+    val color = (if (on || options || picked || selected) Ink.ink else if (dim) Ink.dim else Ink.mid).let { if (over) brighter(it) else it }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().hoverable(src).clickable(src, indication = null, onClick = felt { options = false; if (picking) Picking.toggle(s) else onClick() })
+            Modifier.fillMaxWidth().hoverable(src).combinedClickable(src, indication = null,
+                onDoubleClick = felt { options = false; if (!picking) { Selected.choose(s.id, onClick); onClick() } },
+                onClick = felt { options = false; if (picking) Picking.toggle(s) else Selected.choose(s.id, onClick) })
                 // a right click (the phone's hold): its options in a menu where it was clicked
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
@@ -929,7 +937,11 @@ fun SongRow(
             if (picking) { Box(Modifier.size(12.dp).then(if (picked) Modifier.background(Ink.ink) else Modifier.border(1.dp, Ink.mid))); Spacer(Modifier.width(14.dp)) }
             // its record's cover beside it, small and square (a list's covers word)
             if (cover) { CoverOf(s, s.album.ifEmpty { s.title }, Modifier.size(44.dp), px = 160); Spacer(Modifier.width(14.dp)) }
-            if (number != null) BasicText(number, style = pixel(12.sp, color), modifier = Modifier.width(36.dp))
+            // under the mouse, a ▶ where its number is (or, with none, where its length is): one click plays
+            val play = over && !picking
+            if (number != null) Box(Modifier.width(36.dp)) {
+                if (play) PlayNow(onClick) else BasicText(number, style = pixel(12.sp, color))
+            }
             Column(Modifier.weight(1f)) {
                 // the song playing, its name the progress line, filling from the left in its cover's colour as it plays
                 // (the queue's, 2026-11-09; a wash behind the row was tried first, too much of a box). Every list's since
@@ -941,12 +953,29 @@ fun SongRow(
                 if (said != null) BasicText(said, style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // a length not known (YouTube's top songs come without one): none said
-            if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (dim) Ink.dim else Ink.mid), modifier = Modifier.padding(start = 16.dp))
+            if (number == null && play) Box(Modifier.padding(start = 16.dp).widthIn(min = 32.dp), contentAlignment = Alignment.CenterEnd) { PlayNow(onClick) }
+            else if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (dim) Ink.dim else Ink.mid),
+                modifier = Modifier.padding(start = 16.dp).widthIn(min = 32.dp))
         }
         // its options, in a menu where it was clicked (2026-11-09: they were a row of nine words under the song, too
         // much to read, wrapping in narrow places and pushing the list down)
         if (options) SongMenu(s, open, onRemove, clickAt, playing = on) { options = false }
     }
+}
+
+/** The song selected (one click on a row), and what plays it: enter plays it ([SongRow]). */
+object Selected {
+    var id by mutableStateOf<String?>(null)
+    @Volatile var play: (() -> Unit)? = null
+    fun choose(song: String, plays: () -> Unit) { id = song; play = plays }
+}
+
+/** A row's ▶ under the mouse: ink, small, a click plays the song at once. */
+@Composable
+private fun PlayNow(onClick: () -> Unit) {
+    Box(Modifier.size(20.dp).pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
+        .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)),
+        contentAlignment = Alignment.CenterStart) { Sprite(PLAY, Ink.ink, 1.5.dp) }
 }
 
 /**
