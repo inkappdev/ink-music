@@ -646,3 +646,11 @@ fun intoPlace() {
     val own = TvKeys.placeFirst?.let { runCatching { it.requestFocus() }.getOrDefault(false) } == true
     if (!own) runCatching { TvKeys.placeIn?.requestFocus() }
 }
+
+/**
+ * A shelf's place along it on a TV: from its start each time its page comes in, never remembered (2026-11-10: jump back
+ * in opened far along). The phone keeps its place.
+ */
+@Composable
+fun tvRowState(): androidx.compose.foundation.lazy.LazyListState =
+    if (Device.tv) remember { androidx.compose.foundation.lazy.LazyListState() } else androidx.compose.foundation.lazy.rememberLazyListState()

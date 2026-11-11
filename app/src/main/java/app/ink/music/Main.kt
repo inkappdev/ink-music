@@ -1614,7 +1614,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         }
         if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) item {
             Label("records")
-            LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(150.dp)) {
                     pages.open(Page.Record(a.id, (i?.albums.orEmpty() + i?.singles.orEmpty()).firstOrNull { it.title.equals(a.title, ignoreCase = true) }))
                 } }
@@ -1625,7 +1625,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         i?.singles?.takeIf { it.isNotEmpty() }?.let { singles ->
             item {
                 Label("singles and eps")
-                LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(130.dp)) { pages.open(Page.Tube(r)) } }
                 }
                 Spacer(Modifier.height(18.dp))
@@ -1663,7 +1663,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         i?.featured?.takeIf { it.isNotEmpty() }?.let { lists ->
             item(key = "featured") {
                 Label("on playlists")
-                LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     items(lists, key = { it.id }) { l -> Box(Modifier.width(130.dp)) { Tile(null, l.name, "youtube music", face = l.art, dither = true) { pages.open(Page.TubeList(l)) } } }
                 }
                 Spacer(Modifier.height(18.dp))
@@ -1672,7 +1672,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
             item {
                 Label("fans also like")
-                LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     items(like, key = { it.id.ifEmpty { it.name } }) { a ->
                         Column(Modifier.width(130.dp).clickable(remember { MutableInteractionSource() }, indication = null,
                             onClick = felt { pages.open(Page.TubeArtist(a)) })) {
@@ -2239,7 +2239,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         }
         if (foundRecords.isNotEmpty()) item {
             Label("records")
-            LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(foundRecords, key = { it.id }) { a -> RecordTile(a, Modifier.width(130.dp)) { pages.open(Page.Record(a.id)) } }
             }
             Spacer(Modifier.height(10.dp))
@@ -2259,7 +2259,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         }
         if (stations.isNotEmpty()) item {
             Label("radio")
-            LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(stations, key = { "r" + it.id }) { s -> StationTile(s, false, false, s.artist) { Playback.play(listOf(s), 0) } }
             }
             Spacer(Modifier.height(10.dp))
@@ -2267,7 +2267,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         // what YouTube Music has: its artists, records, songs, then playlists
         if (tubeArtists.isNotEmpty()) item {
             Label("artists on youtube music")
-            LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(tubeArtists, key = { "f" + it.id.ifEmpty { it.name } }) { a ->
                     Column(Modifier.width(130.dp).clickable(remember { MutableInteractionSource() }, indication = null,
                         onClick = felt { pages.open(if (a.id.isNotEmpty()) Page.TubeArtist(a) else Page.Artist(a.name)) })) {
@@ -2281,7 +2281,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         }
         if (tube.albums.isNotEmpty()) item {
             Label("records on youtube music")
-            LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(tube.albums, key = { "ta" + it.url }) { a -> TubeTile(a, Modifier.width(130.dp)) { pages.open(Page.Tube(a)) } }
             }
             Spacer(Modifier.height(10.dp))
@@ -2292,7 +2292,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         }
         if (tube.lists.isNotEmpty()) item {
             Label("playlists on youtube music")
-            LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 items(tube.lists, key = { "tp" + it.url }) { a -> TubeTile(a, Modifier.width(130.dp)) { pages.open(Page.Tube(a)) } }
             }
             Spacer(Modifier.height(10.dp))

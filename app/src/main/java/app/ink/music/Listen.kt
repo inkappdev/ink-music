@@ -346,7 +346,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     sections["madeForYou"] = { MadeForYouShelf() }
     if (uRecent.isNotEmpty() || uTubeRecent.isNotEmpty()) sections["jumpBack"] = {
         Label("jump back in")
-        LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             // the library's songs only, found first: one skipped inside the row left its gap, pushing the row right
             items(uRecent) { s ->
                 Tile(s, s.album.ifEmpty { s.title }, s.artist) {
@@ -363,7 +363,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     // the shows you follow, their newest episodes not yet heard through: a tap plays from where you stopped
     if (episodes.isNotEmpty()) sections["episodes"] = {
         Label("new episodes")
-        LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             items(episodes.take(10), key = { it.id }) { e -> Tile(e, e.title, e.album) { Playback.play(listOf(e), 0) } }
         }
         Spacer(Modifier.height(10.dp))
@@ -593,7 +593,7 @@ fun InkRadioPage(pages: Pages) {
 /** A shelf: a row of tiles, sliding sideways, the page's margins at its ends. */
 @Composable
 internal fun <T> Shelf(items: List<T>, tile: @Composable (T) -> Unit) {
-    LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         items(items) { tile(it) }
     }
     Spacer(Modifier.height(10.dp))
@@ -601,7 +601,7 @@ internal fun <T> Shelf(items: List<T>, tile: @Composable (T) -> Unit) {
 
 @Composable
 internal fun <T> ShelfIndexed(items: List<T>, tile: @Composable (Int, T) -> Unit) {
-    LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         itemsIndexed(items) { i, it -> tile(i, it) }
     }
     Spacer(Modifier.height(10.dp))
@@ -611,7 +611,7 @@ internal fun <T> ShelfIndexed(items: List<T>, tile: @Composable (Int, T) -> Unit
 @Composable
 private fun KeptShelf(records: List<Album>, label: String, pages: Pages) {
     Label(label)
-    LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
     }
     Spacer(Modifier.height(10.dp))
@@ -708,7 +708,7 @@ fun TvListenPage(pages: Pages, state: LazyListState) {
     fun Row(title: String, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
         Column(Modifier.padding(bottom = 26.dp)) {
             BasicText(title.uppercase(), style = headline(20.sp), modifier = Modifier.padding(start = 20.dp, bottom = 10.dp))
-            LazyRow(Modifier.tvShelf(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), content = content)
+            LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), content = content)
         }
     }
     @Composable
