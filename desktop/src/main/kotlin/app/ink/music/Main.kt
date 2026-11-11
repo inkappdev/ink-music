@@ -1240,10 +1240,30 @@ fun Critics(title: String, artist: String, most: Int = 3, across: Boolean = fals
     }
 }
 
+/**
+ * A record's songs, yours and the rest of it from YouTube Music's tracklist ([YouTube.whole]): its order, yours in
+ * their places (matched by name, a version in brackets aside), what you haven't from YouTube Music, yours not on it
+ * after. Not the same record (under half of yours found in it), or nothing more to it: yours as they are.
+ */
+private fun filled(mine: List<Song>, whole: List<Song>?): List<Song> {
+    if (whole == null || whole.size <= mine.size) return mine
+    fun plain(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
+    val left = mine.toMutableList()
+    val out = whole.map { t -> left.firstOrNull { plain(it.title) == plain(t.title) }?.also { left.remove(it) } ?: t }
+    if (mine.size - left.size < (mine.size + 1) / 2) return mine
+    return out + left
+}
+
 @Composable
 private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
     val albums by Library.albums.collectAsState()
     val a = albums.firstOrNull { it.id == id } ?: return Close(onClose)
+    // the record whole: what you have of it, and the rest from YouTube Music in its place in the record's order, dimmed
+    // (2026-11-10, Bronson: "youtube music doesn't fill in the rest of the full album")
+    val whole by androidx.compose.runtime.produceState<List<Song>?>(null, a.id) { value = YouTube.whole(a.title, a.artist) }
+    val shown = remember(a.songs, whole) { filled(a.songs, whole) }
+    val yours = remember(a.songs) { a.songs.mapTo(HashSet()) { it.id } }
+    val more = shown.size > a.songs.size
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         BoxWithConstraints(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 16.dp)) {
@@ -1260,13 +1280,16 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                 Word(a.artist.lowercase(), pixel(14.sp)) { open(Page.Artist(a.artist)) }
                 Spacer(Modifier.height(4.dp))
                 BasicText(
-                    listOfNotNull(a.year.takeIf { it > 0 }?.toString(), "${a.songs.size} ${if (a.songs.size == 1) "song" else "songs"}", clock(a.length),
+                    listOfNotNull(a.year.takeIf { it > 0 }?.toString(),
+                        if (more) "${a.songs.size} of ${shown.size} songs here" else "${a.songs.size} ${if (a.songs.size == 1) "song" else "songs"}",
+                        clock(if (more) shown.sumOf { it.duration } else a.length),
                         a.songs.first().quality.takeIf { it.isNotEmpty() }).joinToString("  ·  "),
                     style = pixel(12.sp, Ink.mid),
                 )
+                if (more) BasicText("the rest from youtube music", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                    Word("play", pixel(14.sp), touch = 8.dp) { Player.play(a.songs) }
+                    Word("play", pixel(14.sp), touch = 8.dp) { Player.play(shown) }
                     KeepOffline(a.songs)
                 }
             }
@@ -1274,9 +1297,12 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
         val list = pageList()
         val discs = a.songs.map { it.disc }.distinct().size > 1
         val songs: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
-            itemsIndexed(a.songs, key = { _, s -> s.id }) { i, s ->
-                val n = if (s.track > 0) (if (discs) "${s.disc}.${s.track}" else "${s.track}") else "${i + 1}"
-                SongRow(s, number = n, said = s.artist.takeIf { it != a.artist }?.lowercase(), open = open) { Player.play(a.songs, i) }
+            itemsIndexed(shown, key = { _, s -> s.id }) { i, s ->
+                val mine = s.id in yours
+                // filled in, its place in the record; yours, its own number
+                val n = if (more || s.track <= 0) "${i + 1}" else if (discs) "${s.disc}.${s.track}" else "${s.track}"
+                SongRow(s, number = n, said = if (!mine) "youtube music" else s.artist.takeIf { it != a.artist }?.lowercase(), open = open,
+                    dim = !mine) { Player.play(shown, i) }
             }
             item { Around(a, albums, open) }
         }

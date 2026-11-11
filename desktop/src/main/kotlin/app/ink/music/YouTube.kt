@@ -96,6 +96,19 @@ object YouTube {
         songs.also { if (it.isNotEmpty()) albums[record.url] = it }
     }
 
+    /**
+     * A record's whole tracklist on YouTube Music, for one you have only part of (2026-11-10, Bronson: the rest of an
+     * album filled in): found by its name and whose it is (the same record, never another of that name); null where
+     * YouTube Music hasn't it. Kept for the run.
+     */
+    suspend fun whole(title: String, artist: String): List<Song>? {
+        val k = "$artist/$title".lowercase()
+        wholes[k]?.let { return it }
+        val found = search("$artist $title")?.albums?.firstOrNull { Pipe.same(it.title, it.artist, title, artist) } ?: return null
+        return album(found).takeIf { it.isNotEmpty() }?.also { wholes[k] = it }
+    }
+    private val wholes = ConcurrentHashMap<String, List<Song>>()
+
     /** Songs like this one (blocking): YouTube Music's radio for it (its mix, "RDAMVM<id>"). Read once. */
     fun related(id: String): List<Song> {
         mixes[id]?.let { return it }
