@@ -513,8 +513,8 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
         EggsNow.line(t.song)?.let { BasicText(it, style = pixel(SMALL, Ink.ink)); Spacer(Modifier.height(4.dp)) }
         // on a speaker: what reaches it ("flac 24/96 on dining room speaker"); a tap, its signal path
         if (t.device.isNotEmpty()) {
-            Word(listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" "),
-                pixel(SMALL, SAID), onClick = onHeard)
+            val said = listOf(t.quality, "on ${t.device.lowercase()}").filter { it.isNotBlank() }.joinToString(" ")
+            if (Device.tv) BasicText(said, style = pixel(SMALL, SAID)) else Word(said, pixel(SMALL, SAID), onClick = onHeard)
             Spacer(Modifier.height(4.dp))
         }
         // the artist and the record, each a way to its page
@@ -1339,7 +1339,9 @@ private fun HeardWord(n: Now, typing: Boolean, onOpen: () -> Unit) {
     if (h != null) last = h
     androidx.compose.animation.AnimatedVisibility(h != null && !typing,
         enter = fadeIn(tween(SETTLE, easing = SETTLING)), exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
-        last?.let { Word(it.word, pixel(SMALL, if (it.lossless) Ink.ink else SAID), Modifier.tvLit(), onClick = onOpen) }
+        // a TV: only said, not a way into the sound's path (2026-11-10: one stop fewer for the remote)
+        last?.let { if (Device.tv) BasicText(it.word, style = pixel(SMALL, if (it.lossless) Ink.ink else SAID))
+            else Word(it.word, pixel(SMALL, if (it.lossless) Ink.ink else SAID), Modifier.tvLit(), onClick = onOpen) }
     }
 }
 
@@ -1372,7 +1374,7 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         val full = LocalContext.current.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
         // only its top shown: the cover and the title (under them are the player's own controls, the same whatever's chosen)
-        val top = full.second * .92f
+        val top = if (Device.tv) full.second else full.second * .92f
         val k = minOf(maxWidth / full.first, maxHeight / top, 1f)
         val d = LocalDensity.current
         Box(Modifier.size(full.first * k, top * k).clipToBounds().border(1.dp, Ink.line)) {
@@ -1383,7 +1385,20 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
                 Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredSize(full.first, full.second)) {
                     val cover = rememberCover(n.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
                     Box(Modifier.fillMaxSize().background(Ink.black)) { Backdrop(cover, n) }
-                    Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 110.dp)) {
+                    // a TV: its own player, the cover at the left, the words beside it, the name along the foot
+                    if (Device.tv) Column(Modifier.fillMaxSize().padding(top = 60.dp)) {
+                        Row(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp)) {
+                            val side = (full.second - 60.dp - 150.dp).coerceIn(160.dp, 460.dp)
+                            Sleeve(n, side, Modifier.padding(top = 36.dp))
+                            Spacer(Modifier.width(48.dp))
+                            Column(Modifier.weight(1f).padding(top = 72.dp)) {
+                                BasicText(n.title.uppercase(), style = headline(44.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Spacer(Modifier.height(10.dp))
+                                BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
+                            }
+                        }
+                        Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 72.sp)
+                    } else Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 110.dp)) {
                         val side = minOf(full.first - 40.dp, 420.dp)
                         Sleeve(n, side, Modifier)
                         Spacer(Modifier.height(20.dp))

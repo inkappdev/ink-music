@@ -47,9 +47,9 @@ import kotlin.math.roundToInt
  * wifi only (the default), always, or off. The effects over a moving picture are Android 13's shaders (before, as it is).
  */
 object Moving {
-    // not on a TV (2026-11-10): a video behind the player, blurred each frame, or in the cover's place, is more than a
-    // slow box can draw while it plays; there the cover's still, in its look
-    val available get() = BuildConfig.FLAVOR == "full" && !Device.tv
+    // a TV too, but off till it's chosen (2026-11-10): a video behind the player, its effect drawn each frame, is more
+    // than a slow box can draw while it plays; a fast one can, so it's there in the look to try
+    val available get() = BuildConfig.FLAVOR == "full"
     const val WIFI = "on wifi"; const val ALWAYS = "always"; const val OFF = "off"
 
     /** The effects a cover takes (blur would hide it; plain is as it is). */
@@ -80,7 +80,7 @@ object Moving {
     fun start(c: Context) {
         MotionCover.dir = c.cacheDir
         val said = runCatching { file(c).readText().lines() }.getOrDefault(emptyList())
-        _when.value = said.getOrNull(0)?.takeIf { it == WIFI || it == ALWAYS || it == OFF } ?: WIFI
+        _when.value = said.getOrNull(0)?.takeIf { it == WIFI || it == ALWAYS || it == OFF } ?: if (Device.tv) OFF else WIFI
         // the first builds' words: "in the look" (or "dithered") meant the background's look; it's taken as it was then
         val look = Looks.on.value
         _cover.value = when (val w = said.getOrNull(1)) {

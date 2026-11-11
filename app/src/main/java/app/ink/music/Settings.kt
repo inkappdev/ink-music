@@ -842,10 +842,14 @@ fun TvSettingsPage(pages: Pages) {
                 BasicText(if (on.isEmpty()) "nothing yet: sign in on your phone, then pair it above" else on.joinToString("  ·  "), style = pixel(15.sp))
                 BasicText("change these on your phone", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
                 Spacer(Modifier.height(36.dp))
-                Head("THE LOOK")
-                BasicText("behind the player", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 6.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    Look.entries.forEach { l -> Choice(l.word, look == l) { Looks.set(ctx, l) } }
+                // the look: its own page, the player beside its choices, each showing there at once (2026-11-10)
+                val moving by Moving.whenOn.collectAsState()
+                Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                    onClick = felt { pages.open(Page.SettingsPart("look")) })) {
+                    BasicText("THE LOOK", style = headline(32.sp), modifier = Modifier.carried("settings-look"))
+                    Spacer(Modifier.height(4.dp))
+                    BasicText(listOfNotNull(look.word, if (Moving.available && moving != Moving.OFF) "moving covers" else null).joinToString(" · "),
+                        style = pixel(12.sp, Ink.mid))
                 }
                 Spacer(Modifier.height(36.dp))
                 Head("ONE SONG INTO THE NEXT")

@@ -64,7 +64,7 @@ fun LookPage(pages: Pages) {
             }
         }
         // the choices, each layer its own: a heading, its line, its words
-        val sections: @Composable ColumnScope.() -> Unit = {
+        val sections: @Composable ColumnScope.() -> Unit = if (tv) ({ TvLookChoices(signed, canvasOn) }) else ({
             // three layers, each its own effect, none following another (2026-10-30): the cover, the
             // still background, spotify's canvas over it; each a row of words, the chosen one lit
             @Composable
@@ -152,7 +152,7 @@ fun LookPage(pages: Pages) {
                     }
                 }
             }
-        }
+        })
         val title: @Composable () -> Unit = {
             Row(Modifier.fillMaxWidth()) {
                 BasicText("THE LOOK", style = headline(52.sp), modifier = Modifier.weight(1f).carried("settings-look"))
@@ -183,5 +183,47 @@ fun LookPage(pages: Pages) {
                 sections()
             }
         }
+    }
+}
+
+/**
+ * The look on a TV (2026-11-10), fewer words: what's behind the player, the cover, whether covers move (Apple Music's
+ * moving ones), Spotify's canvas. No fluted glass (a pane the remote's light read badly through), no artist pages or
+ * name; each shows in the player beside it at once. Moving starts off on a TV: a fast box can, a slow one stutters.
+ */
+@Composable
+private fun ColumnScope.TvLookChoices(signed: Boolean, canvasOn: Boolean) {
+    val ctx = LocalContext.current
+    val look by Looks.on.collectAsState()
+    val cover by Moving.cover.collectAsState()
+    val whenOn by Moving.whenOn.collectAsState()
+    @Composable
+    fun Part(head: String, said: String, words: List<Pair<String, Boolean>>, pick: (Int) -> Unit) {
+        BasicText(head, style = headline(28.sp))
+        Spacer(Modifier.height(4.dp))
+        BasicText(said, style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(10.dp))
+        FlowRow {
+            words.forEachIndexed { i, (w, lit) ->
+                Word(w, pixel(16.sp, if (lit) Ink.ink else Ink.dim), Modifier.padding(end = 28.dp, bottom = 4.dp), touch = 10.dp) { pick(i) }
+            }
+        }
+        Spacer(Modifier.height(34.dp))
+    }
+    val behind = Look.entries.filter { it != Look.FLUTED }
+    Part("BEHIND IT", "the cover across the whole player, in this effect", behind.map { it.word to (it == look) }) { Looks.set(ctx, behind[it]) }
+    val covers = listOf<Look?>(null) + Moving.coverLooks.filter { it != Look.FLUTED }
+    Part("THE COVER", "the record's cover beside the words", covers.map { (it?.word ?: "as it is") to (it == cover) }) { Moving.set(ctx, cover = covers[it]) }
+    if (Moving.available) {
+        val on = whenOn != Moving.OFF
+        Part("MOVING COVERS", "a record's animated cover where it has one. smooth on a fast tv; on a slow one, leave it off",
+            listOf("on" to on, "off" to !on)) { Moving.set(ctx, whenOn = if (it == 0) Moving.ALWAYS else Moving.OFF) }
+    }
+    if (Spotify.available) {
+        val ready = signed || Spotify.ready()
+        if (!ready) Part("SPOTIFY CANVAS", "a song's looping clip behind the player. sign in to spotify on your phone, then it's here", emptyList()) {}
+        else Part("SPOTIFY CANVAS", "a song's looping clip behind the player, in the effect above" +
+            (if (Moving.available && whenOn == Moving.OFF) ". needs moving covers on" else ""),
+            listOf("on" to canvasOn, "off" to !canvasOn)) { Moving.set(ctx, canvasOn = it == 0) }
     }
 }
