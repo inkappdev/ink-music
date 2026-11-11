@@ -109,7 +109,10 @@ object Fresh {
             // your listening elsewhere, brought in (Last.fm): counted from the first day
             val brought = listOfNotNull(LastFm.brought(app), ListenBrainz.brought(app))
             this@Fresh.brought.value = brought
-            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app), brought = brought)
+            // the artists you picked (the first open, settings): near from the day you picked them, said "from your picks"
+            val picks = Seeds.artists.value.map { it.name }.takeIf { it.isNotEmpty() }
+                ?.let { Brought("picks", "", builtAt, it.associateWith { .8 }, emptyList()) }
+            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app), brought = brought + listOfNotNull(picks))
             val first = of(emptyMap())
             taste.value = first
             val related = first.top(12).map { bareName ->

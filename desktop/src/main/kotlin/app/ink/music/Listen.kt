@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOn
@@ -93,6 +94,7 @@ fun ListenPage(open: (Page) -> Unit) {
     val friday by Picks.friday.collectAsState()
     val electronic by Picks.electronic.collectAsState()
     val brought by Fresh.brought.collectAsState()
+    var knowMeShut by remember { mutableStateOf(java.io.File(Home.dir, "know-me-shut").exists()) }
     val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, heard, songs, brought) { Picks.yours(heard, songs, brought) }
     val taste by Fresh.taste.collectAsState()
     val pickedForYou = remember(pickedRecords, pickedSongs, fromYours, taste) {
@@ -119,6 +121,8 @@ fun ListenPage(open: (Page) -> Unit) {
         // a year in (or two...): your first song here, on the day (an easter egg)
         firstHeard?.takeIf { Eggs.anniversary(it.at) > 0 }?.let { f -> item(key = "anniversary") { Anniversary(f) } }
         // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: that's INK's)
+        // knowing nothing of you yet (little played here, nothing brought in): your listening elsewhere asked for
+        if (!Local.on && brought.isEmpty() && heard.plays.size < 40 && !knowMeShut) item(key = "know-me") { KnowMe { knowMeShut = true } }
         if (fromYours.isNotEmpty()) item { NewFromYours(fromYours, open) }
         // picked for you: the critics' records and songs in your order, seven near and three a stretch (Fresh), once
         // there's a taste to order them by
@@ -221,6 +225,37 @@ fun ListenPage(open: (Page) -> Unit) {
             }
         }
     }}
+}
+
+/**
+ * Know me (2026-11-11): your listening on Last.fm or ListenBrainz, brought in by name, so INK, listen and the mixes
+ * know you from today; "not now" puts it away for good (settings has it too).
+ */
+@Composable
+private fun KnowMe(shut: () -> Unit) {
+    var where by remember { mutableStateOf("last.fm") }
+    var name by remember { mutableStateOf("") }
+    var bringing by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    fun go() {
+        if (bringing || name.isBlank()) return
+        bringing = true; said = null
+        Fresh.bringIn(name, brainz = where == "listenbrainz") { b -> bringing = false; if (b == null) said = "$where has no listening under that name" }
+    }
+    Column(Modifier.widthIn(max = 560.dp)) {
+        Section("DO YOU SCROBBLE?", "your listening on last.fm or listenbrainz, brought in by your name, so ink music knows you from today. nothing's sent, no password")
+        Row {
+            for (w in listOf("last.fm", "listenbrainz"))
+                Word(w, pixel(14.sp, if (where == w) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { where = w }
+        }
+        Spacer(Modifier.height(10.dp))
+        Field("your $where name", name, { name = it }, "", onEnter = ::go)
+        said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(8.dp)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Word(if (bringing) "BRINGING IT IN" else "BRING IT IN", headline(28.sp, if (name.isBlank() || bringing) Ink.dim else Ink.ink), Modifier.padding(end = 28.dp), touch = 8.dp) { go() }
+            Word("not now", pixel(13.sp, Ink.mid), touch = 8.dp) { runCatching { java.io.File(Home.dir, "know-me-shut").writeText("") }; shut() }
+        }
+    }
 }
 
 /** New from your artists: each pick by someone you play, its cover, why it's here (out friday, or who picked it, and how often you've played them). */

@@ -107,7 +107,9 @@ fun Welcome(onAllowed: () -> Unit, onDone: () -> Unit) {
         ) { s ->
             when (s) {
                 0 -> Hello { step = 1 }
-                1 -> Sources(onAllowed) { step = 2 }
+                1 -> Sources(onAllowed) { step = if (YouTubeMusic.available && LastFm.available) 2 else 3 }
+                // your listening elsewhere, so ink music knows you from the first day (2026-11-11)
+                2 -> KnowMe { step = 3 }
                 else -> if (YouTubeMusic.available) ArtistPicker("PICK A FEW ARTISTS YOU LOVE", skip = true, onDone = { finish() })
                     else GenrePicker { finish() }
             }
@@ -359,6 +361,47 @@ private fun Sources(onAllowed: () -> Unit, onNext: () -> Unit) {
     }
 }
 
+/**
+ * Your listening elsewhere (2026-11-11: someone new was a stranger to ink music however many years they'd played):
+ * Last.fm or ListenBrainz, by your name alone, brought in ([Brought]) so INK, listen and the mixes know you today;
+ * the artists picked next start from it. Or skipped.
+ */
+@Composable
+private fun KnowMe(onNext: () -> Unit) {
+    val ctx = LocalContext.current
+    var where by remember { mutableStateOf("last.fm") }
+    var name by remember { mutableStateOf("") }
+    var bringing by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf<String?>(null) }
+    fun go() {
+        if (bringing || name.isBlank()) return
+        bringing = true; said = null
+        Fresh.bringIn(ctx, name, brainz = where == "listenbrainz") { b ->
+            bringing = false
+            if (b == null) said = "$where has no listening under that name" else onNext()
+        }
+    }
+    Column(Modifier.fillMaxSize().windowInsetsPadding(bars).navigationBarsPadding().padding(horizontal = 28.dp, vertical = 24.dp)) {
+        BasicText("DO YOU SCROBBLE?", style = headline(40.sp))
+        Spacer(Modifier.height(8.dp))
+        BasicText("your listening on last.fm or listenbrainz, brought in by your name, so ink music knows you from today. " +
+            "nothing's sent there, and no password", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(26.dp))
+        Row {
+            for (w in listOf("last.fm", "listenbrainz"))
+                Word(w.uppercase(), headline(30.sp, if (where == w) Ink.ink else Ink.dim), Modifier.padding(end = 24.dp), touch = 8.dp) { where = w }
+        }
+        Spacer(Modifier.height(18.dp))
+        Field("your $where name", name, { name = it }, "", androidx.compose.ui.text.input.KeyboardType.Text)
+        said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
+        Spacer(Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Word("skip", pixel(13.sp, Ink.mid), Modifier.padding(end = 28.dp), touch = 10.dp, onClick = onNext)
+            Word(if (bringing) "BRINGING IT IN" else "BRING IT IN", headline(40.sp, if (name.isBlank() || bringing) Ink.dim else Ink.ink), touch = 10.dp) { go() }
+        }
+    }
+}
+
 /** A source: its name big, lit when it's there (selection is brightness), a line on it under. */
 @Composable
 private fun Source(name: String, said: String, on: Boolean, onClick: () -> Unit) {
@@ -395,6 +438,16 @@ fun ArtistPicker(title: String, skip: Boolean, onDone: () -> Unit) {
             if (yours.none { it.equals(a.name, ignoreCase = true) }) {
                 yours.add(a.name)
                 if (skip && picked.none { it.equals(a.name, ignoreCase = true) }) picked.add(a.name)
+            }
+        }
+    }
+    // your listening brought in (the step before): your nearest there offered, and on the first open picked
+    val brought by Fresh.brought.collectAsState()
+    LaunchedEffect(brought) {
+        brought.flatMap { it.artists.entries }.sortedByDescending { it.value }.map { it.key }.distinctBy { it.lowercase() }.take(12).forEach { n ->
+            if (yours.none { it.equals(n, ignoreCase = true) }) {
+                yours.add(n)
+                if (skip && picked.none { it.equals(n, ignoreCase = true) }) picked.add(n)
             }
         }
     }

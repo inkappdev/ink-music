@@ -394,7 +394,7 @@ private fun SignIn() {
 
 /** A word to type: its name above, a hairline under; in Archivo as typed (an address is case sensitive). */
 @Composable
-private fun Field(name: String, value: String, onValue: (String) -> Unit, hint: String, secret: Boolean = false, onEnter: () -> Unit) {
+internal fun Field(name: String, value: String, onValue: (String) -> Unit, hint: String, secret: Boolean = false, onEnter: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         BasicText(name, style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(6.dp))
