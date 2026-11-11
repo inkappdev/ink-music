@@ -3283,10 +3283,21 @@ private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, o
                     .onFocusChanged { focused = it.isFocused }.padding(vertical = 1.dp), touch = 4.dp) { onPlace(t) }
         }
         Spacer(Modifier.height(22.dp))
+        // the small words: lit white with a square before them while the remote's on one (2026-11-10: grey to begin
+        // with, the screen's dim round them hardly showed which)
+        @Composable
+        fun Small(word: String, i: Int, onClick: () -> Unit) {
+            var on by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).background(if (on) Ink.ink else Ink.black))
+                Spacer(Modifier.width(8.dp))
+                Word(word, pixel(15.sp, if (on) Ink.ink else Ink.mid), Modifier.railItem(i).onFocusChanged { on = it.isFocused }, touch = 6.dp, onClick = onClick)
+            }
+        }
         var at = tabs.size
-        Word("find", pixel(13.sp, Ink.mid), Modifier.railItem(at++), touch = 6.dp, onClick = onFind)
-        if (playing) Word("now playing", pixel(13.sp, Ink.mid), Modifier.railItem(at++), touch = 6.dp, onClick = onPlayer) else at++
-        Word("your year", pixel(13.sp, Ink.mid), Modifier.railItem(at++), touch = 6.dp, onClick = onYear)
-        Word("settings", pixel(13.sp, Ink.mid), Modifier.railItem(at), touch = 6.dp, onClick = onSettings)
+        Small("find", at++, onFind)
+        if (playing) Small("now playing", at++, onPlayer) else at++
+        Small("your year", at++, onYear)
+        Small("settings", at, onSettings)
     }
 }
