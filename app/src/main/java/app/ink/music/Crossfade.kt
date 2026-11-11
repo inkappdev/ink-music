@@ -133,7 +133,7 @@ class Crossfade(
         /** How far ahead a playing song's cut must be: what's decoded and buffered for the sound mustn't have passed it. */
         const val AHEAD = 8_000L
         /** How gathered on one spot in the beat both songs' kicks must be for a plan to move its cut to line them up. */
-        const val KICKS_SURE = .25
+        const val KICKS_SURE = .15
         /** How long play waits for a never-measured song's end, begun on (ms). */
         const val FIRST_WAIT = 1_200L
         /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
@@ -747,7 +747,7 @@ class Crossfade(
             // moved when sure (the beat's kicks gather: 0.25), 20 ms or more and under a quarter beat (more: another beat
             // in the bar, not a slip)
             val move = sure >= KICKS_SURE && kotlin.math.abs(apart) >= 20 && kotlin.math.abs(apart) < b.period / 4
-            android.util.Log.d("ink-crossfade", "plan: kicks ${"%.0f".format(apart)} ms apart as planned (sure ${"%.2f".format(sure)})" +
+            android.util.Log.d("ink-crossfade", "plan: kicks ${"%.0f".format(apart)} ms apart as planned (sure ${"%.2f".format(sure)}: $kicksSaid)" +
                 if (move) ", the cut moved ${"%.0f".format(apart * speed)} ms" else "")
             if (move) {
                 val moved = cut + (apart * speed).toLong()
@@ -792,7 +792,9 @@ class Crossfade(
         fun place(e: FloatArray, msOf: (Int) -> Double): Pair<Double, Double>? {
             var x = 0.0; var y = 0.0; var w = 0.0
             for (i in 1 until e.size) {
-                val r = (e[i] - e[i - 1]).toDouble()
+                // squared: a kick's rise stands over a bass line's (a song's busy bass gathered 0.08, squared 0.14; a
+                // plain beat 0.48, squared 0.83: measured on two test songs, 2026-11-11)
+                val r = (e[i] - e[i - 1]).toDouble().let { if (it <= 0) 0.0 else it * it }
                 if (r <= 0) continue
                 val th = 2 * Math.PI * (((msOf(i) % period) + period) % period) / period
                 x += r * Math.cos(th); y += r * Math.sin(th); w += r
@@ -806,8 +808,10 @@ class Crossfade(
         var d = ao - an
         while (d > Math.PI) d -= 2 * Math.PI
         while (d <= -Math.PI) d += 2 * Math.PI
+        kicksSaid = "new %.2f, old %.2f".format(rn, ro)
         return d / (2 * Math.PI) * period to minOf(rn, ro)
     }
+    @Volatile private var kicksSaid = ""
 
     /** Samples played `speed` times as fast, their pitch kept (Media3's Sonic, offline). */
     private fun stretch(pcm: FloatArray, channels: Int, rate: Int, speed: Double): FloatArray? {
