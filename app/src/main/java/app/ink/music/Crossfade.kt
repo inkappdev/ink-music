@@ -76,6 +76,14 @@ class Crossfade(
     private val work = Executors.newSingleThreadExecutor { r ->
         Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "ink-measure")
     }
+    // the plans on their own: behind the measuring and the lyrics' lookups, a song skipped to waited 15 s for its cut
+    // (a lyrics miss took 9.5 s; 2026-11-11, "skipped, tick came 20 seconds in")
+    private val plans = Executors.newSingleThreadExecutor { r ->
+        Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "ink-plan")
+    }
+    private val lyrics = Executors.newSingleThreadExecutor { r ->
+        Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "ink-sung")
+    }
     private val ends = ConcurrentHashMap<String, Ends>()
     /** When each song's singing (ms), from its timed lyrics (Vocals): automix lays no voice over another. Empty: none known. */
     private val vocals = ConcurrentHashMap<String, List<LongRange>>()
@@ -222,7 +230,7 @@ class Crossfade(
     }
     private fun replanSoon() { main.removeCallbacks(replan); main.postDelayed(replan, 300) }
 
-    fun release() { main.removeCallbacks(tick); end(); work.shutdown() }
+    fun release() { main.removeCallbacks(tick); end(); work.shutdown(); plans.shutdown(); lyrics.shutdown() }
 
     /** This song and the next: may one go into the other? */
     private fun allowed(): Boolean {
@@ -564,8 +572,10 @@ class Crossfade(
         // song waited for the one after it, a few seconds, and one skipped to meanwhile had no cut at all; Brave waited
         // on Cloudy Day, which ran out of memory twice, till it played)
         val waiting = !ends.containsKey(following.mediaId) && following.mediaId in asked && following.mediaId !in unread
+        // the one playing: planned once, so once the one after it is measured (planned again as it is)
+        if (playing && waiting) return
         planning += id
-        work.execute {
+        plans.execute {
             // the one after it as measured by now (measured on this same thread, so done if it was asked first)
             val m = (if (waiting) null else runCatching { matched(e, ends[following.mediaId], pcm, all, pcmEnd, id, following.mediaId) }.onFailure { android.util.Log.d("ink-crossfade", "$id: beats: $it") }.getOrNull())
                 // a beats-matched plan running past the decoded end: the plain one in its place, not none (2026-11-08)
@@ -821,7 +831,8 @@ class Crossfade(
             work.execute {
                 val e = runCatching { ends(uri, id) }.onFailure { android.util.Log.d("ink-crossfade", "$id: $it"); why(id, "its end couldn't be read ($it)") }.getOrNull()
                 // automix: when it's sung, from its timed lyrics (the lyrics' own cache; lrclib, Better Lyrics, YouTube)
-                if (e != null && mode(c) == AUTOMIX && !vocals.containsKey(id)) runCatching { sung(item, e.duration) }?.getOrNull()?.let { vocals[id] = it }
+                // (on their own thread: a lookup that misses takes seconds, and the next song's measuring waited on it)
+                if (e != null && mode(c) == AUTOMIX && !vocals.containsKey(id)) lyrics.execute { runCatching { sung(item, e.duration) }.getOrNull()?.let { vocals[id] = it } }
                 if (e != null) main.post {
                     ends[id] = e; keepCut(id, e); cut(); tailOfPrecut(id)
                     // its beat, for the counter; and its loudness, for even volume: the next song's too, so its gain's set
@@ -832,7 +843,9 @@ class Crossfade(
                     // the song begun on, heard for the first time: it can't be cut now it plays (from the next one on, they run together)
                     // the song begun on, heard for the first time: cut now, where it plays (2026-11-11; it had ended as
                     // it would, "the first song never mixes")
-                    if (id == exo.currentMediaItem?.mediaId && id !in cutSongs && !precut.containsKey(id) && exo.nextMediaItemIndex != C.INDEX_UNSET)
+                    // (or the one after it measured now, which it waited for)
+                    val playing = exo.currentMediaItem?.mediaId
+                    if (playing != null && playing !in cutSongs && !precut.containsKey(playing) && ends.containsKey(playing) && exo.nextMediaItemIndex != C.INDEX_UNSET)
                         cut(playing = true)
                 }
                 // not read (a stream that wouldn't open, a decode too slow): asked again a little later, twice at most
