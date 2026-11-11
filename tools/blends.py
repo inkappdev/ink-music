@@ -79,7 +79,9 @@ def main():
         if not os.path.exists(os.path.join(HERE, n)):
             adb("pull", f"{DIR}/{n}", HERE)
     plans = {}
-    for line in adb("logcat", "-d", "-s", "ink-crossfade:D").splitlines():
+    # the phone's log, or one kept as it ran (BLENDS_LOG: adb logcat -s ink-crossfade:D > file), its own may have rolled on
+    log = open(os.environ["BLENDS_LOG"]).read() if os.environ.get("BLENDS_LOG") else adb("logcat", "-d", "-s", "ink-crossfade:D")
+    for line in log.splitlines():
         m = re.search(r"plan: (\S+) into (\S+): kicks (-?\d+) ms apart as planned \(sure ([\d.]+)[^)]*\)(.*)", line)
         if m:
             plans[m.group(2)] = f"planned {m.group(3)} ms (sure {m.group(4)}){', moved' if 'moved' in m.group(5) else ''}"
