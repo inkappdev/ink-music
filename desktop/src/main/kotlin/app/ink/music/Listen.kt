@@ -93,6 +93,11 @@ fun ListenPage(open: (Page) -> Unit) {
     val friday by Picks.friday.collectAsState()
     val electronic by Picks.electronic.collectAsState()
     val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, heard, songs) { Picks.yours(heard, songs) }
+    val taste by Fresh.taste.collectAsState()
+    val pickedForYou = remember(pickedRecords, pickedSongs, fromYours, taste) {
+        val above = fromYours.map { Curation.key(it.pick) }.toSet()
+        Fresh.rank((pickedRecords + pickedSongs).filter { Curation.key(it.pick) !in above }, taste).take(16)
+    }
     val continued = continueOffer()
     val firstHeard by EggsNow.first.collectAsState()
     val made by Discover.mixes.collectAsState()
@@ -114,6 +119,9 @@ fun ListenPage(open: (Page) -> Unit) {
         firstHeard?.takeIf { Eggs.anniversary(it.at) > 0 }?.let { f -> item(key = "anniversary") { Anniversary(f) } }
         // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: that's INK's)
         if (fromYours.isNotEmpty()) item { NewFromYours(fromYours, open) }
+        // picked for you: the critics' records and songs in your order, seven near and three a stretch (Fresh), once
+        // there's a taste to order them by
+        if (!taste.empty && pickedForYou.isNotEmpty()) item(key = "for-you") { PickedForYou(pickedForYou, open) }
         // their new music videos (MusicVideos.kt), shown once some are found
         item(key = "videos") { NewVideos(open) }
         // live DJ sets from four channels that film them (LiveSets.kt)
@@ -223,6 +231,20 @@ private fun NewFromYours(list: List<Picks.Shown>, open: (Page) -> Unit) {
             items(list, key = { it.pick.from + it.pick.artist + it.pick.title }) { s ->
                 val art by produceState(s.art, s) { value = Picks.artOf(s, s.pick.record) }
                 Box(Modifier.width(176.dp)) { PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, open) }
+            }
+        }
+    }
+}
+
+/** Picked for you: the critics' picks in your order, each saying why (a stretch, you love them, from your last.fm). */
+@Composable
+private fun PickedForYou(list: List<ForYou.Placed<Picks.Shown>>, open: (Page) -> Unit) {
+    val taste by Fresh.taste.collectAsState()
+    Column {
+        Section("PICKED FOR YOU", "the critics' favorites, nearest you first, with a few stretches")
+        Shelf {
+            items(list, key = { "fy" + Curation.key(it.item.pick) }) { p ->
+                Box(Modifier.width(176.dp)) { PickTile(p.item, open, why = Fresh.reason(p.item, p.stretch, taste)) }
             }
         }
     }

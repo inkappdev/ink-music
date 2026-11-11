@@ -153,6 +153,8 @@ fun main() {
     Follows.start()
     Colours.start()
     Player.start()
+    // your taste (Fresh): INK's picks in your order
+    Fresh.opened()
     // ink's icon on every window Java makes, not Java's own (Duke): Windows' restart screen showed Duke beside ink music
     // (a PC, 2026-10-29); Swing's hidden owner of a window with none (the folder chooser's) and any other
     runCatching {
@@ -193,7 +195,8 @@ fun main() {
             LaunchedEffect(Unit) {
                 // back to the front: the music folder read again (a song added meanwhile shows)
                 window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
-                    override fun windowGainedFocus(e: java.awt.event.WindowEvent?) = Library.freshen()
+                    // and your taste made again, after ten minutes away (Fresh)
+                    override fun windowGainedFocus(e: java.awt.event.WindowEvent?) { Library.freshen(); Fresh.opened() }
                 })
             }
             // where the window is, written down as it's moved or sized (and on closing)
@@ -237,6 +240,7 @@ fun quit(): Nothing {
     runCatching { SyncHub.close() }
     runCatching { TubeAccount.stop() }
     runCatching { Casting.stopFinding() }
+    runCatching { Fresh.left() }
     kotlin.system.exitProcess(0)
 }
 

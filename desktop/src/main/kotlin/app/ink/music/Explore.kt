@@ -131,9 +131,12 @@ fun ExplorePage(open: (Page) -> Unit) {
                 MixAt("your music", "MIX YOUR MUSIC", "what you play, love and keep, at a tempo, each into the next on the beat") { TempoMixes.yours(it) }
             }
             if (records.isNotEmpty()) item(key = "picked") {
+                // in your order (Fresh): seven near you and three a stretch of every ten, each saying why
+                val taste by Fresh.taste.collectAsState()
+                val ranked = remember(records, taste) { Fresh.rank(records, taste) }
                 Column {
-                    Section("NEW RECORDS, PICKED BY CRITICS", "the critics' favorites lately")
-                    records.take(across * 2).chunked(across).forEach { row -> TileRow(row, across) { s -> PickTile(s, open) } }
+                    Section("NEW RECORDS, PICKED BY CRITICS", if (taste.empty) "the critics' favorites lately" else "the critics' favorites lately, in your order")
+                    ranked.take(across * 2).chunked(across).forEach { row -> TileRow(row, across) { p -> PickTile(p.item, open, why = Fresh.reason(p.item, p.stretch, taste)) } }
                 }
             }
             friday?.let { w -> item(key = "friday") { OutThisFriday(w, open) } }
@@ -360,13 +363,16 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
 
 /** A record or song someone picked: its cover, its name, who picked it; a click opens the record or plays the song. */
 @Composable
-internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit, from: List<Picks.Shown>? = null) {
+internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit, from: List<Picks.Shown>? = null, why: String? = null) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember(s) { mutableStateOf<String?>(null) }
+    // shown, for Seen: one passed over a while steps back (Fresh)
+    androidx.compose.runtime.LaunchedEffect(s) { Fresh.seen.shown(Fresh.key(s.pick)) }
     // never out to the review (2026-10-29: The War on Drugs' "Who's That", a song, sent you to Pitchfork
     // while YouTube Music had it): a song picked plays; a record opens, and one not there yet plays its song of the
     // same name (its single) where there is one
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null) {
+        Fresh.tapped(Fresh.key(s.pick))
         scope.launch {
             said = "finding it"
             // a shelf to play from (a genre page's songs): this one and the ones after it
@@ -383,6 +389,8 @@ internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit, from: List<Picks.Sho
         Spacer(Modifier.height(8.dp))
         UnderCover(s.pick.title, s.pick.artist)
         BasicText(said ?: s.by.joinToString(" · "), style = pixel(12.sp, if (s.by.size > 1) Ink.ink else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // why it's here, for you (a stretch, you love them, if you like ..., from your last.fm)
+        why?.let { BasicText(it, style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
 
@@ -421,8 +429,11 @@ private fun PickedRow(place: Int?, move: String, face: Song?, title: String, art
 
 /** The songs the critics picked: ten, who picked each, play all. */
 @Composable
-private fun PickedSongs(songs: List<Picks.Shown>, modifier: Modifier) {
-    if (songs.isEmpty()) return
+private fun PickedSongs(all: List<Picks.Shown>, modifier: Modifier) {
+    if (all.isEmpty()) return
+    // in your order (Fresh)
+    val taste by Fresh.taste.collectAsState()
+    val songs = remember(all, taste) { Fresh.rank(all, taste).map { it.item } }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
     Column(modifier) {

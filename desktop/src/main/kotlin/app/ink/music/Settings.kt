@@ -458,6 +458,10 @@ private fun ListenBrainzSetting() {
 private fun LastFmSetting() {
     val scope = rememberCoroutineScope()
     val account by LastFm.account.collectAsState()
+    var brought by remember { mutableStateOf(LastFm.brought(Home.dir)) }
+    var bringing by remember { mutableStateOf(false) }
+    // connected just now: brought in meanwhile, read again when it lands
+    androidx.compose.runtime.LaunchedEffect(account) { if (account != null) repeat(20) { if (brought != null) return@LaunchedEffect; kotlinx.coroutines.delay(1_000); brought = LastFm.brought(Home.dir) } }
     BasicText("LAST.FM", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     val a = account
@@ -471,7 +475,8 @@ private fun LastFmSetting() {
             trying = true; said = null
             scope.launch {
                 said = when (LastFm.connect(Home.dir, name, password)) {
-                    LastFm.Connect.OK -> { password = ""; null }
+                    // connected: your listening there brought in at once, so INK knows you from today
+                    LastFm.Connect.OK -> { password = ""; Fresh.bringIn(name); null }
                     LastFm.Connect.WRONG -> "last.fm didn't take that name and password"
                     LastFm.Connect.UNREACHABLE -> "couldn't reach last.fm. try again in a moment"
                 }
@@ -484,11 +489,25 @@ private fun LastFmSetting() {
         Field("password", password, { password = it }, "", secret = true, onEnter = ::go)
         said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
         Word(if (trying) "CONNECTING" else "CONNECT", headline(40.sp, if (trying) Ink.mid else Ink.ink), touch = 10.dp) { go() }
+        // or only your name: what you've played there brought in, nothing scrobbled (2026-11-11)
+        Spacer(Modifier.height(10.dp))
+        Word(if (bringing) "bringing your listening in" else "or just bring my listening in, by name", pixel(14.sp, Ink.mid), touch = 8.dp) {
+            if (bringing || name.isBlank()) { if (name.isBlank()) said = "your last.fm name first"; return@Word }
+            bringing = true; said = null
+            Fresh.bringIn(name) { b -> bringing = false; said = if (b == null) "last.fm has no listening under that name" else null; brought = b }
+        }
     } else {
         BasicText(a.name.lowercase(), style = pixel(13.sp))
         BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(8.dp))
         Word("disconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { LastFm.disconnect(Home.dir); SyncHub.kept.signed("lastfm", System.currentTimeMillis()) }
+    }
+    // what's been brought in from there, and a way to let it go
+    brought?.let { b ->
+        Spacer(Modifier.height(14.dp))
+        BasicText("${b.artists.size} artists from ${b.user.lowercase()}'s listening, brought in, so INK knows you from the first day", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(6.dp))
+        Word("let them go", pixel(14.sp, Ink.mid), touch = 8.dp) { LastFm.forget(Home.dir); brought = null; Fresh.build() }
     }
 }
 
