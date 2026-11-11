@@ -521,7 +521,8 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
             }
           }
             // the song's link to send; held, its poster for a story
-            ShareWord(Modifier.padding(start = 12.dp).tvLit(), onShare, onPoster)
+            // (not on a TV: a link sent from a TV has nowhere to go)
+            if (!Device.tv) ShareWord(Modifier.padding(start = 12.dp).tvLit(), onShare, onPoster)
         }
     }
 }
@@ -584,7 +585,8 @@ private fun Backdrop(cover: Cover?, n: Now) {
         // the song's spotify canvas in its place, moving, in the same look (signed in to spotify: settings, the look)
         if (n.song?.station != true && n.song?.episode != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
         // the grain over the look (not dither's, nor as it is)
-        if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN) Grain()
+        // (not on a TV: a blend across the whole screen, again each time anything over it moves)
+        if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN && !Device.tv) Grain()
     }
 }
 

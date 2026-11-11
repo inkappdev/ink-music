@@ -47,7 +47,9 @@ import kotlin.math.roundToInt
  * wifi only (the default), always, or off. The effects over a moving picture are Android 13's shaders (before, as it is).
  */
 object Moving {
-    val available = BuildConfig.FLAVOR == "full"
+    // not on a TV (2026-11-10): a video behind the player, blurred each frame, or in the cover's place, is more than a
+    // slow box can draw while it plays; there the cover's still, in its look
+    val available get() = BuildConfig.FLAVOR == "full" && !Device.tv
     const val WIFI = "on wifi"; const val ALWAYS = "always"; const val OFF = "off"
 
     /** The effects a cover takes (blur would hide it; plain is as it is). */
