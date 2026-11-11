@@ -31,7 +31,22 @@ object Fresh {
     /** At the start, and again when the window comes back after ten minutes: your taste made again; Last.fm's monthly. */
     private var first = true
 
+    /** A visit: a new one at the start and on coming back after twenty minutes away (listen's shelves ordered anew). */
+    val visit = MutableStateFlow(0)
+    /** When you left last, if it was a while ago: what's new is new since then (listen's "since you were here"). */
+    val since = MutableStateFlow<Long?>(null)
+    private val leftFile = File(Home.dir, "left-at")
+
+    /** The window put away or left (focus gone): when, and what was seen, written down. */
+    fun away() {
+        runCatching { leftFile.writeText(System.currentTimeMillis().toString()) }
+        left()
+    }
+
     fun opened() {
+        // away a while (the window left twenty minutes and more): what's new is since then, the shelves ordered afresh
+        val left = runCatching { leftFile.readText().trim().toLong() }.getOrNull()
+        if (left != null && System.currentTimeMillis() - left > 20 * 60_000L && since.value != left) { since.value = left; visit.value++ }
         // local files only: no picks to order, nothing brought in
         if (Local.on) return
         // the library read in after the start: made again then, its loves and records counted
@@ -95,6 +110,36 @@ object Fresh {
     }
 
     fun key(p: Curation.Pick) = "pick:" + Curation.key(p)
+
+    /**
+     * Listen's shelves in the moment's order, as the phone's: each by its usual place, moved up for the time of day and
+     * the kind of day (mornings new music, evenings records and mixes, late nights the quiet ones, Fridays what's out,
+     * weekends whole records), down when shown a week and never opened, up when opened lately; a day's small shuffle.
+     */
+    fun order(keys: List<String>, now: Moment.Now = Moment.now()): List<String> {
+        val boost = HashMap<String, Double>()
+        fun b(k: String, v: Double) { boost[k] = (boost[k] ?: 0.0) + v }
+        when (now.part) {
+            Moment.Part.MORNING -> { b("fromYours", -3.0); b("forYou", -3.0); b("newest", -8.0); b("episodes", -6.0) }
+            Moment.Part.DAY -> { b("madeForYou", -2.0); b("mixes", -3.0); b("because", -3.0); b("newToYou", -4.0) }
+            Moment.Part.EVENING -> { b("liveSets", -3.0); b("tubeMixes", -4.0); b("mixes", -4.0); b("yours", -5.0); b("because", -3.0) }
+            Moment.Part.LATE -> { b("liveSets", -5.0); b("forgotten", -9.0); b("inkRadio", -7.0); b("fromYours", 3.0) }
+        }
+        if (now.friday) { b("fromYours", -6.0); b("forYou", -5.0); b("newest", -9.0) }
+        if (now.weekend) { b("liveSets", -2.0); b("yours", -5.0); b("forgotten", -4.0) }
+        val day = Moment.issue().toLong()
+        val place = keys.withIndex().associate { (i, k) ->
+            val shelf = "shelf:$k"
+            val opened = seen.tappedAt(shelf)
+            val use = when {
+                opened > System.currentTimeMillis() - 14 * Seen.DAY -> -minOf(seen.taps(shelf), 4) * .75
+                seen.days(shelf) >= 7 && seen.taps(shelf) == 0 -> 4.0
+                else -> 0.0
+            }
+            k to i + (boost[k] ?: 0.0) + use + java.util.Random(day * 7919 + k.hashCode()).nextDouble() * 1.5
+        }
+        return keys.sortedBy { place[it] }
+    }
 
     fun tapped(key: String) = seen.tapped(key)
 

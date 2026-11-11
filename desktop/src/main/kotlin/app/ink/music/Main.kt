@@ -198,6 +198,8 @@ fun main() {
                 window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
                     // and your taste made again, after ten minutes away (Fresh)
                     override fun windowGainedFocus(e: java.awt.event.WindowEvent?) { Library.freshen(); Fresh.opened() }
+                    // left: when, for "since you were here" (Fresh)
+                    override fun windowLostFocus(e: java.awt.event.WindowEvent?) = Fresh.away()
                 })
             }
             // where the window is, written down as it's moved or sized (and on closing)
@@ -241,7 +243,7 @@ fun quit(): Nothing {
     runCatching { SyncHub.close() }
     runCatching { TubeAccount.stop() }
     runCatching { Casting.stopFinding() }
-    runCatching { Fresh.left() }
+    runCatching { Fresh.away() }
     kotlin.system.exitProcess(0)
 }
 
