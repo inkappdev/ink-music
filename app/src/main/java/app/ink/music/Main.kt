@@ -728,7 +728,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                     item { ListsView() }
                     item {
                         if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", heart = true) { pages.open(Page.Loved) }
-                        ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
+                        if (!tv) ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
                         // what's on the phone to play with no signal (your server's, YouTube's)
                         val keptIds by Offline.kept.collectAsState()
                         if (keptIds.isNotEmpty()) ListRow("kept on this phone", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}, offline") { pages.open(Page.Kept) }
@@ -2811,7 +2811,8 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
         if (lovedIds.isNotEmpty()) item(key = "loved") {
             ListTile("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", { pages.open(Page.Loved) }, heart = true) { Mosaic(loved, "loved") }
         }
-        item(key = "year") {
+        // (not on a TV: your year's a phone's thing, 2026-11-10)
+        if (!Device.tv) item(key = "year") {
             ListTile("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "", { pages.open(Page.Year) }) {
                 YearArt(minutes ?: 0)
             }
@@ -3297,7 +3298,7 @@ private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, o
         var at = tabs.size
         Small("find", at++, onFind)
         if (playing) Small("now playing", at++, onPlayer) else at++
-        Small("your year", at++, onYear)
+        // (your year not on a TV, 2026-11-10: a phone's thing, read up close)
         Small("settings", at, onSettings)
     }
 }
