@@ -121,6 +121,8 @@ class Crossfade(
 
     companion object {
         const val FADE = 6_000L
+        /** How far ahead a playing song's cut must be: what's decoded and buffered for the sound mustn't have passed it. */
+        const val AHEAD = 8_000L
         /** How long play waits for a never-measured song's end, begun on (ms). */
         const val FIRST_WAIT = 1_200L
         /** How far ahead of the handover the tail's started (it's heard a moment after it says it plays). */
@@ -141,6 +143,8 @@ class Crossfade(
         /** How sure a beat must be to be matched (Beat's z-score). */
         const val SURE = Beat.SURE
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
+        /** A song that can be cut for a blend (not a station, not an episode). */
+        fun cuttable(id: String) = id.isNotEmpty() && !id.startsWith("e") && !id.startsWith("s")
         const val SAID = "crossfade-said"
         /** The last song mixed into the next, or why the last one wasn't (for settings). */
         fun said(c: Context): String? = history(c).firstOrNull()
@@ -177,6 +181,8 @@ class Crossfade(
                 precut.keys.removeAll { it != now }
                 letGo(now, next)
                 cut()
+                // skipped to (or come to uncut), measured already: its own end cut where it plays
+                if (now != null && now !in cutSongs && !precut.containsKey(now) && ends.containsKey(now)) cut(playing = true)
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { if (!playWhenReady) end() }
             // the queue changed under the song playing (songs added after it, moved, shuffle turned): another song may be
@@ -524,10 +530,11 @@ class Crossfade(
      * can't be changed). Only a song decoded to its end, 16 bit, with a song after it that isn't an episode, a station,
      * or its own record's next song in order.
      */
-    private fun cut() {
+    private fun cut(playing: Boolean = false) {
         val b = blend ?: return
         if (!on(c) || Exact.inUse(c)) { if (on(c)) why("-", "exact to a usb dac is on, and the dac is plugged in"); cutSongs.keys.toList().forEach(::uncut); return }
-        val n = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET } ?: return
+        // the next song, or (once measured) the one playing, begun on or skipped to: its end moved where it plays
+        val n = (if (playing) exo.currentMediaItemIndex else exo.nextMediaItemIndex).takeIf { it != C.INDEX_UNSET } ?: return
         var item = exo.getMediaItemAt(n)
         val id = item.mediaId
         if (id.startsWith("e") || id.startsWith("s")) return
@@ -565,8 +572,13 @@ class Crossfade(
                 ?.takeIf { pcm.start <= it.cut && pcmEnd >= it.cut + it.fade }
             main.post {
                 planning -= id
-                if (exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId } != id || id in cutSongs) return@post
+                if (id in cutSongs) return@post
                 val at = m?.cut ?: e.handover
+                // next still, or playing now (skipped to while it was planned, or the song begun on) with its cut far
+                // enough ahead that what's decoded hasn't passed it
+                val next = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId } == id
+                val now = !next && exo.currentMediaItem?.mediaId == id && exo.currentPosition < at - AHEAD
+                if (!next && !now) return@post
                 // not beats matched: the filter fade (Blend), and a short one when their keys clash (both sure)
                 val clash = Key.clash(e.tailKey, ends[following.mediaId]?.headKey)
                 val fade = m?.fade ?: (e.lastSound - at).coerceIn(2_000, 12_000).let { if (clash) it.coerceAtMost(5_000) else it }
@@ -579,10 +591,11 @@ class Crossfade(
                 cutSongs[id] = item
                 // cut for now: and if the one after it was measured meanwhile (the planning waited behind its measuring on
                 // the same thread, so it nearly always is), planned again at once (2026-11-08: none ever was, no beats matched)
-                if (waiting) { provisional += id; if (ends.containsKey(following.mediaId)) main.post { cut() } }
-                swap(n, item.buildUpon().setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(at).build()).build())
+                if (waiting && next) { provisional += id; if (ends.containsKey(following.mediaId)) main.post { cut() } }
+                val clipped = item.buildUpon().setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(at).build()).build()
+                if (next) swap(exo.nextMediaItemIndex, clipped) else inPlace(exo.currentMediaItemIndex, clipped)
                 android.util.Log.d("ink-crossfade", "$id cut at ${at / 1000.0}s of ${e.duration / 1000.0}s, its end to be mixed in over ${fade / 1000.0}s" +
-                    (if (waiting) " (for now: the one after it still being measured)" else "") +
+                    (if (now) " (as it plays)" else "") + (if (waiting && next) " (for now: the one after it still being measured)" else "") +
                     (if (hold > .05) ", the new one's intro quiet: the old one held over ${"%.0f".format(hold * 100)}%" else "") +
                     (if (ride < -.5) ", the new one ridden in ${"%.1f".format(ride)} dB" else "") +
                     (m?.let { ", beats matched into ${following.mediaId}: its end at ${"%.3f".format(it.speed)}x (${"%.1f".format(60_000 / it.period)} bpm), the bass handed across${if (it.clash) ", the old one filtered (keys clash)" else ""}" }
@@ -759,6 +772,16 @@ class Crossfade(
      * the same address is only updated, and its cut never took: 2026-11-01); with shuffle on it stays where it was in
      * the order, next if it was next (else it'd go last).
      */
+    /**
+     * The song playing given its new end where it plays: Media3 updates a clipped song's period in place (the player's
+     * sources clip in the period, every song wrapped from the start), no restart, no gap.
+     */
+    private fun inPlace(i: Int, item: MediaItem) {
+        android.util.Log.d("ink-seek", "in place ${item.mediaId} at $i, its end now ${item.clippingConfiguration.endPositionMs} ms, at ${exo.currentPosition} ms")
+        swapping = true
+        try { exo.replaceMediaItem(i, item) } finally { swapping = false }
+    }
+
     private fun swap(i: Int, item: MediaItem) {
         android.util.Log.d("ink-seek", "swap ${item.mediaId} at $i (playing ${exo.currentMediaItemIndex}, next ${exo.nextMediaItemIndex}), " +
             "its end now ${item.clippingConfiguration.endPositionMs.takeIf { it != C.TIME_END_OF_SOURCE }?.let { "${it} ms" } ?: "whole"}, at ${exo.currentPosition} ms of the one playing")
@@ -807,8 +830,10 @@ class Crossfade(
                     val next = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId }
                     if (id == exo.currentMediaItem?.mediaId || id == next) onChange()
                     // the song begun on, heard for the first time: it can't be cut now it plays (from the next one on, they run together)
+                    // the song begun on, heard for the first time: cut now, where it plays (2026-11-11; it had ended as
+                    // it would, "the first song never mixes")
                     if (id == exo.currentMediaItem?.mediaId && id !in cutSongs && !precut.containsKey(id) && exo.nextMediaItemIndex != C.INDEX_UNSET)
-                        why(id, "the first song is measured as it plays and ends as it would. the ones after it run together")
+                        cut(playing = true)
                 }
                 // not read (a stream that wouldn't open, a decode too slow): asked again a little later, twice at most
                 // (it was asked once and never again: that song never blended)
@@ -970,7 +995,14 @@ class Crossfade(
             x.selectTrack(track)
             val format = x.getTrackFormat(track)
             x.seekTo(fromMs * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-            val codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
+            // Android's own decoder first, as the player picks (PlayerService): a phone maker's own (Xiaomi's, Realme's,
+            // Samsung's) can say one thing and give another, and the end measured wasn't the end played (2026-11-11)
+            val mime = format.getString(MediaFormat.KEY_MIME)!!
+            val own = runCatching {
+                android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos
+                    .firstOrNull { !it.isEncoder && it.name.startsWith("c2.android.") && it.supportedTypes.any { t -> t.equals(mime, true) } }?.name
+            }.getOrNull()
+            val codec = own?.let { runCatching { MediaCodec.createByCodecName(it) }.getOrNull() } ?: MediaCodec.createDecoderByType(mime)
             codec.configure(format, null, null, 0)
             codec.start()
             // the decoder's own rate and channels once it says them: phones' decoders differ from the file (an HE-AAC

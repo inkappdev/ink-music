@@ -606,8 +606,17 @@ class PlayerService : MediaLibraryService() {
                 androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(mime, secure, tunneling)
                     .sortedBy { if (mime.startsWith("audio/") && !it.name.startsWith("c2.android.")) 1 else 0 }
             }
+        // a playing song's end can be moved where it plays (Crossfade cuts the song begun on, and one skipped to, for a
+        // blend: 2026-11-11, "a song doesn't get a tick until the 3rd song"): clipped in its period, and every song
+        // wrapped for clipping from the start (a song without a clipping can't be given one in place: it would restart)
+        sources.setEnableClippingInMediaPeriod(true)
+        val clippable = object : androidx.media3.exoplayer.source.MediaSource.Factory by sources {
+            override fun createMediaSource(mediaItem: MediaItem) = sources.createMediaSource(
+                if (mediaItem.clippingConfiguration != MediaItem.ClippingConfiguration.UNSET || !Crossfade.cuttable(mediaItem.mediaId)) mediaItem
+                else mediaItem.buildUpon().setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setRelativeToDefaultPosition(true).build()).build())
+        }
         val player = ExoPlayer.Builder(this, renderers)
-            .setMediaSourceFactory(sources)
+            .setMediaSourceFactory(clippable)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)   // headphones out: pause
             .setWakeMode(C.WAKE_MODE_LOCAL)
