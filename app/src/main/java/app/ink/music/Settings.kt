@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -694,6 +695,10 @@ private fun LastFmSetting() {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val account by LastFm.account.collectAsState()
+    var brought by remember { mutableStateOf(LastFm.brought(ctx)) }
+    var bringing by remember { mutableStateOf(false) }
+    // connected just now: brought in meanwhile, read again when it lands
+    LaunchedEffect(account) { if (account != null) repeat(20) { if (brought != null) return@LaunchedEffect; kotlinx.coroutines.delay(1_000); brought = LastFm.brought(ctx) } }
     BasicText("LAST.FM", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     val a = account
@@ -712,12 +717,20 @@ private fun LastFmSetting() {
             trying = true; said = null
             scope.launch {
                 said = when (LastFm.connect(ctx, name, password)) {
-                    LastFm.Connect.OK -> { password = ""; null }
+                    // connected: your listening there brought in at once, so ink music knows you from today
+                    LastFm.Connect.OK -> { password = ""; Fresh.bringIn(ctx, name); null }
                     LastFm.Connect.WRONG -> "last.fm didn't take that name and password"
                     LastFm.Connect.UNREACHABLE -> "couldn't reach last.fm. try again in a moment"
                 }
                 trying = false
             }
+        }
+        // or only your name: what you've played there brought in, nothing scrobbled (2026-11-11: knowing someone new)
+        Spacer(Modifier.height(10.dp))
+        Word(if (bringing) "bringing your listening in" else "or just bring my listening in, by name", pixel(14.sp, Ink.mid), touch = 8.dp) {
+            if (bringing || name.isBlank()) { if (name.isBlank()) said = "your last.fm name first"; return@Word }
+            bringing = true; said = null
+            Fresh.bringIn(ctx, name) { b -> bringing = false; said = if (b == null) "last.fm has no listening under that name" else null; brought = b }
         }
     } else {
         Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
@@ -727,6 +740,16 @@ private fun LastFmSetting() {
             BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(4.dp))
             BasicText("hold forgets it", style = pixel(12.sp, Ink.mid))
+        }
+    }
+    // what's been brought in from there, and a way to let it go
+    brought?.let { b ->
+        Spacer(Modifier.height(14.dp))
+        Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+            onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); LastFm.forget(ctx); brought = null; Fresh.build(ctx) },
+            onClick = {})) {
+            BasicText("${b.artists.size} artists from ${b.user.lowercase()}'s listening, brought in", style = pixel(12.sp, Ink.mid))
+            BasicText("so picks know you from the first day. hold lets them go", style = pixel(12.sp, Ink.mid))
         }
     }
 }

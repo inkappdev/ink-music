@@ -52,6 +52,68 @@ object LastFm {
 
     fun disconnect(dir: File) { file(dir).delete(); waiting(dir).delete(); _account.value = null }
 
+    /**
+     * Your listening as Last.fm has kept it, brought in (2026-11-11: someone new knew nothing to ink music, however many
+     * years they'd scrobbled): whom you play most, of all time, the last year and the last month, and whose songs you
+     * loved, each artist a strength from 0 to 1; and your most played songs. Read by your name alone (Last.fm's public
+     * reads, the app's key), kept in lastfm-taste.json, so Taste counts them from the first day.
+     */
+    data class Brought(val user: String, val at: Long, val artists: Map<String, Double>, val songs: List<Pair<String, String>>)
+
+    private fun broughtFile(dir: File) = File(dir, "lastfm-taste.json")
+
+    fun brought(dir: File): Brought? = runCatching {
+        val o = JSONObject(broughtFile(dir).readText())
+        val a = o.getJSONObject("artists")
+        val artists = HashMap<String, Double>()
+        a.keys().forEach { artists[it] = a.getDouble(it) }
+        val s = o.optJSONArray("songs")
+        val songs = (0 until (s?.length() ?: 0)).map { i -> s!!.getJSONArray(i).let { it.getString(0) to it.getString(1) } }
+        Brought(o.getString("user"), o.getLong("at"), artists, songs)
+    }.getOrNull()
+
+    fun forget(dir: File) { broughtFile(dir).delete() }
+
+    /** Read from Last.fm and kept (null: no such name, nothing played, or Last.fm unreachable). */
+    suspend fun bringIn(dir: File, user: String): Brought? = withContext(Dispatchers.IO) {
+        if (key.isEmpty() || user.isBlank()) return@withContext null
+        fun read(method: String, extra: String) =
+            JSONObject(Curation.get("$API?method=$method&user=${urlEncode(user.trim())}&api_key=$key&format=json$extra"))
+        val artists = HashMap<String, Double>()
+        runCatching {
+            // the further back, the less it says of now: all time .85 at most, the year .95, the month all of it
+            for ((period, most, limit) in listOf(Triple("overall", .85, 200), Triple("12month", .95, 100), Triple("1month", 1.0, 50))) {
+                val list = read("user.gettopartists", "&period=$period&limit=$limit").optJSONObject("topartists")?.optJSONArray("artist") ?: continue
+                val counts = (0 until list.length()).map { list.getJSONObject(it).let { a -> a.optString("name") to a.optString("playcount").toDoubleOrNull().orZero() } }
+                val top = counts.maxOfOrNull { it.second }?.takeIf { it > 0 } ?: continue
+                // the square root: the tenth most played is still near (an artist played a quarter as much, half as near)
+                for ((name, n) in counts) if (name.isNotBlank()) artists[name] = maxOf(artists[name] ?: 0.0, most * kotlin.math.sqrt(n / top))
+            }
+        }.onFailure { log("bring in: $it"); return@withContext null }
+        // whose songs you loved there: near, at least
+        runCatching {
+            val loved = read("user.getlovedtracks", "&limit=200").optJSONObject("lovedtracks")?.optJSONArray("track")
+            for (i in 0 until (loved?.length() ?: 0)) {
+                val name = loved!!.getJSONObject(i).optJSONObject("artist")?.optString("name").orEmpty()
+                if (name.isNotBlank()) artists[name] = maxOf(artists[name] ?: 0.0, .55)
+            }
+        }
+        val songs = runCatching {
+            val t = read("user.gettoptracks", "&period=overall&limit=100").optJSONObject("toptracks")?.optJSONArray("track")
+            (0 until (t?.length() ?: 0)).map { i -> t!!.getJSONObject(i).let { (it.optJSONObject("artist")?.optString("name").orEmpty()) to it.optString("name") } }
+                .filter { it.first.isNotBlank() && it.second.isNotBlank() }
+        }.getOrDefault(emptyList())
+        if (artists.isEmpty()) return@withContext null
+        val b = Brought(user.trim(), nowMs(), artists, songs)
+        val o = JSONObject().put("user", b.user).put("at", b.at)
+        val a = JSONObject(); artists.forEach { (k, v) -> a.put(k, v) }
+        val s = JSONArray(); songs.forEach { (ar, ti) -> s.put(JSONArray().put(ar).put(ti)) }
+        runCatching { Keep.write(broughtFile(dir), o.put("artists", a).put("songs", s).toString()) }
+        log("brought in ${artists.size} artists, ${songs.size} songs from $user")
+        b
+    }
+    private fun Double?.orZero() = this ?: 0.0
+
     /** What's playing now (blocking: the player's thread); not kept if it fails. */
     fun playingNow(dir: File, s: ListenBrainz.Said) {
         val a = read(dir) ?: return

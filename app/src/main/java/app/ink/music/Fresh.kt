@@ -69,6 +69,20 @@ object Fresh {
         // away a while: what's new since then, and the shelves ordered afresh for the moment
         if (left != null && now - left > 20 * 60_000L) { since.value = left; Listen.visit++ }
         if (now - builtAt > 10 * 60_000L) build(c)
+        // Last.fm connected: your listening there brought in, the first time and then each month
+        val a = LastFm.account.value
+        val b = LastFm.brought(c)
+        if (a != null && (b == null || now - b.at > 30 * 86_400_000L)) bringIn(c, a.name)
+    }
+
+    /** Your Last.fm listening brought in by name, then your taste made again with it (null: nothing found). */
+    fun bringIn(c: Context, user: String, done: (LastFm.Brought?) -> Unit = {}) {
+        val app = c.applicationContext
+        scope.launch {
+            val b = LastFm.bringIn(app, user)
+            if (b != null) build(app)
+            kotlinx.coroutines.withContext(Dispatchers.Main) { done(b) }
+        }
     }
 
     /** Left (Main.onStop): when, and what was seen, written down. */
@@ -89,14 +103,18 @@ object Fresh {
             val loved = (library.filter { it.id in Loved.ids.value } + Loved.tube.value + YouTubeAccount.liked.value).map { it.artist }
             val kept = library.map { it.albumArtist }.distinct()
             // first a taste without the fans' favorites (at once), then with them: each of your nearest's page as kept
-            val first = Taste.of(plays, skips, loved, kept, refused = refused(app))
+            // your listening elsewhere, brought in (Last.fm): counted from the first day
+            val b = LastFm.brought(app)
+            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app),
+                brought = b?.artists.orEmpty(), broughtAt = b?.at ?: System.currentTimeMillis())
+            val first = of(emptyMap())
             taste.value = first
             val related = first.top(12).map { bareName ->
                 val name = (heard.asReversed().firstOrNull { Taste.bare(it.artist.substringBefore(", ")) == bareName }?.artist?.substringBefore(", ")) ?: bareName
                 async { name to (withTimeoutOrNull(4_000) { YouTubeAccount.artist(name, "").firstOrNull { it != null } }?.like.orEmpty().map { it.name }) }
             }.awaitAll().filter { it.second.isNotEmpty() }.toMap()
-            if (related.isNotEmpty()) taste.value = Taste.of(plays, skips, loved, kept, related, refused(app))
-            android.util.Log.d("ink-picks", "taste: ${plays.size} listens, ${skips.size} skips, ${loved.size} loves, ${related.size} artists' fans; nearest ${taste.value.top(5)}")
+            if (related.isNotEmpty()) taste.value = of(related)
+            android.util.Log.d("ink-picks", "taste: ${plays.size} listens, ${skips.size} skips, ${loved.size} loves, ${related.size} artists' fans, ${b?.artists?.size ?: 0} brought in; nearest ${taste.value.top(5)}")
         }
     }
 
@@ -144,6 +162,7 @@ object Fresh {
         return when (val w = t.why(s.pick.artist)) {
             Taste.Why.Loved -> "you love them"
             is Taste.Why.Like -> "if you like ${w.of.lowercase()}"
+            is Taste.Why.Brought -> "from your ${w.from}"
             else -> null
         }
     }
