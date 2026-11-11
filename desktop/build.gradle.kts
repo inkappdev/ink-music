@@ -78,6 +78,11 @@ compose.desktop {
         jvmArgs += listOf("-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua")
         // Linux: linuxWindow() sets AWT's own name and window-manager fields
         jvmArgs += listOf("--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED")
+        // memory kept down (2026-11-10, a Reddit report: near 1 GB): ink's live heap is ~45 MB, but Java took a 64th of
+        // the RAM to start (520 MB here) and could grow to a quarter (8 GB), so its garbage sat uncollected. Started
+        // small, kept under 768 MB, and what's idle handed back to the system every 20 s; repeated strings shared
+        jvmArgs += listOf("-Xms64m", "-Xmx768m", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=20000",
+            "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=30", "-XX:+UseStringDeduplication")
         nativeDistributions {
             // each made on its own system (the Action's): the Mac's dmg, Windows' msi, Linux's deb and rpm
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)

@@ -22,8 +22,8 @@ import kotlin.math.roundToInt
 object Dither {
     private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
 
-    /** Pictures' frames as developed, the last 48 MB of them, by picture, size and colour ([Dithered]). */
-    private val made = Lru<String, List<ImageBitmap>>(48 * 1024 * 1024) { f -> f.sumOf { it.width * it.height * 4 } }
+    /** Pictures' frames as developed, the last 32 MB of them (48 till 2026-11-10's memory pass), by picture, size and colour ([Dithered]). */
+    private val made = Lru<String, List<ImageBitmap>>(32 * 1024 * 1024) { f -> f.sumOf { it.width * it.height * 4 } }
     fun kept(key: String): List<ImageBitmap>? = made.get(key)
     fun keep(key: String, frames: List<ImageBitmap>) { made.put(key, frames) }
 

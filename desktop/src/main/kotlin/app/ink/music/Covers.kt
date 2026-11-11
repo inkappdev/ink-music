@@ -31,7 +31,9 @@ class Cover(val image: ImageBitmap, val accent: Color)
  * (cover.jpg, folder.jpg...). Read and scaled off the main thread, the last few dozen kept.
  */
 object Covers {
-    private val kept = Lru<String, Cover>(256 * 1024 * 1024) { it.image.width * it.image.height * 4 }
+    // 128 MB of covers as drawn (~200 grid tiles, or ~20 of the player's), outside Java's heap; 256 till 2026-11-10's
+    // memory pass (a Reddit report: near 1 GB). One gone is read again from the disk
+    private val kept = Lru<String, Cover>(128 * 1024 * 1024) { it.image.width * it.image.height * 4 }
     private val none = java.util.Collections.synchronizedSet(HashSet<String>())   // records with no picture, not asked again
     private val missed = java.util.concurrent.ConcurrentHashMap<String, Long>()   // the server couldn't say: when, asked again a minute on
     private val whole = java.util.Collections.synchronizedSet(HashSet<String>())  // records whose picture is smaller than asked: as big as it gets
