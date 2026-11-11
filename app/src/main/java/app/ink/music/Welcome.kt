@@ -93,6 +93,7 @@ fun Welcome(onAllowed: () -> Unit, onDone: () -> Unit) {
         Seeds.welcome()
         if (android.os.Build.VERSION.SDK_INT >= 33) notify.launch(Manifest.permission.POST_NOTIFICATIONS) else onDone()
     }
+    if (onTv()) { TvWelcome { finish() }; return }
     Box(Modifier.fillMaxSize().background(Ink.black)) {
         AnimatedContent(
             targetState = step,
@@ -111,6 +112,55 @@ fun Welcome(onAllowed: () -> Unit, onDone: () -> Unit) {
                     else GenrePicker { finish() }
             }
         }
+    }
+}
+
+/**
+ * The first open on a TV (2026-11-10, minimal): INK MUSIC on black and the one word to go on (no field of covers: two
+ * dozen drawn in the dither was a long wait on a slow box); the phone paired, its code big, the one way a TV is signed
+ * in; then a few artists. Each a fade, nothing sliding.
+ */
+@Composable
+private fun TvWelcome(onDone: () -> Unit) {
+    var step by rememberSaveable { mutableStateOf(0) }
+    Box(Modifier.fillMaxSize().background(Ink.black)) {
+        AnimatedContent(step, transitionSpec = {
+            ContentTransform(fadeIn(tween(Motion.ENTER, easing = Motion.expo)), fadeOut(tween(Motion.EXIT)))
+        }, label = "welcome") { s ->
+            when (s) {
+                0 -> TvHello { step = 1 }
+                1 -> TvPair { step = 2 }
+                else -> ArtistPicker("A FEW ARTISTS YOU LOVE", skip = true, onDone = onDone)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvHello(onNext: () -> Unit) {
+    val words = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { delay(300); words.animateTo(1f, tween(900, easing = WAVE)) }
+    Column(Modifier.fillMaxSize().padding(horizontal = 72.dp).graphicsLayer { alpha = words.value }, verticalArrangement = Arrangement.Center) {
+        BasicText("INK", style = headline(120.sp).copy(lineHeight = 116.sp))
+        BasicText("MUSIC", style = pixel(44.sp), modifier = Modifier.padding(top = 4.dp))
+        Spacer(Modifier.height(48.dp))
+        Word("BEGIN", headline(32.sp), touch = 12.dp, onClick = onNext)
+    }
+}
+
+@Composable
+private fun TvPair(onNext: () -> Unit) {
+    val ctx = LocalContext.current
+    SyncPhone.start(ctx)
+    val phones by SyncPhone.peers.collectAsState()
+    val paired = phones.firstOrNull { !it.hub }
+    Column(Modifier.fillMaxSize().padding(horizontal = 72.dp), verticalArrangement = Arrangement.Center) {
+        BasicText("YOUR PHONE", style = headline(48.sp))
+        Spacer(Modifier.height(18.dp))
+        if (paired != null) BasicText("paired with ${paired.name.lowercase()}. everything it's signed in to is here too", style = pixel(14.sp))
+        else PairPhone()
+        Spacer(Modifier.height(44.dp))
+        Word(if (paired != null) "NEXT" else "LATER", headline(32.sp, if (paired != null) Ink.ink else Ink.mid), touch = 12.dp, onClick = onNext)
     }
 }
 
@@ -376,7 +426,8 @@ fun ArtistPicker(title: String, skip: Boolean, onDone: () -> Unit) {
                     BasicText(if (yours.isNotEmpty() && skip) "yours from youtube music, picked. your listen page grows from them: their mixes, their records"
                         else "your listen page grows from them: their mixes, their records", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // (no find on a TV: typed with a remote)
+                    if (!onTv()) Row(verticalAlignment = Alignment.CenterVertically) {
                         BasicText("find > ", style = pixel(14.sp, Ink.dim))
                         BasicTextField(query, { query = it }, singleLine = true, textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { find() }),
