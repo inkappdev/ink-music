@@ -652,5 +652,19 @@ fun intoPlace() {
  * in opened far along). The phone keeps its place.
  */
 @Composable
-fun tvRowState(): androidx.compose.foundation.lazy.LazyListState =
-    if (Device.tv) remember { androidx.compose.foundation.lazy.LazyListState() } else androidx.compose.foundation.lazy.rememberLazyListState()
+fun tvRowState(): androidx.compose.foundation.lazy.LazyListState {
+    if (!Device.tv) return androidx.compose.foundation.lazy.rememberLazyListState()
+    val state = remember { androidx.compose.foundation.lazy.LazyListState() }
+    // and back to its start when what's on it changes: a list held its place on the cover it showed, so songs coming in
+    // ahead of it (jump back in filling) left the newest off to the left
+    androidx.compose.runtime.LaunchedEffect(state) {
+        // (not once the remote's moved along it: a move is the place changing with the count the same)
+        var count = -1
+        var moved = false
+        androidx.compose.runtime.snapshotFlow { state.layoutInfo.totalItemsCount to state.firstVisibleItemIndex }.collect { (n, at) ->
+            if (n != count) { count = n; if (at > 0 && !moved) state.scrollToItem(0) }
+            else moved = at > 0
+        }
+    }
+    return state
+}
