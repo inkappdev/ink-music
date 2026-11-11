@@ -52,6 +52,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -240,8 +244,11 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         // nothing, the grain's overlay blend came out lighter, a light strip over the bar)
         Box(Modifier.fillMaxSize().hazeSource(frost).background(Ink.black)) { Backdrop(cover, n) }
         val sing by Lyrics.on.collectAsState()
-        val lines = rememberLines(n, sing)
-        val lyric = rememberLyric(n, lines)
+        // a TV looks them up with lyrics off too: its lyrics word is there only for a song with timed lines (2026-11-10)
+        val tv = onTv()
+        val lines = rememberLines(n, sing || tv)
+        val lyric = rememberLyric(n, lines)?.takeIf { sing || !tv }
+        val timed = lines?.firstOrNull()?.let { it.at >= 0 } == true
         // the artist read ahead (their name, here, is a way to their page)
         val artist = artistOf(n)
         LaunchedEffect(artist) { artist?.let { YouTubeAccount.warm(ctx, it) } }
@@ -286,7 +293,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             val none = sing && lines?.isEmpty() == true
             Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
                 if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
-                added = added, onAdd = if (canAddToList(airedSong ?: n.song)) ({ addUp = true }) else null, episode = episode)
+                added = added, onAdd = if (canAddToList(airedSong ?: n.song)) ({ addUp = true }) else null, episode = episode,
+                lyricsWord = !tv || episode || timed)
         }
         // a TV: what opens over the player (the queue, the speakers, a list, what's heard) has the remote; the player under it none
         val over = queueUp || addUp || playOnUp || heardUp
@@ -389,12 +397,15 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
  * The player's second row, smaller: up next, lyrics, into a playlist, stop (sleep gone: 2026-10-29).
  */
 @Composable
-private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null, episode: Boolean = false) {
+private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null, episode: Boolean = false, lyricsWord: Boolean = true) {
     val style = 14.sp
     // the words with no drawing everyone reads, stop last, away from next (it ends everything and closes the player)
-    Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+    // a TV: the words together from the left under shuffle, not spread the width (they sat oddly far apart, 2026-11-10)
+    val tv = onTv()
+    Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = if (tv) 14.dp else 20.dp),
+        horizontalArrangement = if (tv) Arrangement.spacedBy(44.dp) else Arrangement.SpaceBetween) {
         Word("up next", pixel(style, SAID), Modifier.tvLit(), touch = 10.dp, onClick = onQueue)
-        Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp) { Lyrics.toggle() }
+        if (lyricsWord) Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp) { Lyrics.toggle() }
         // into one of your playlists (lit a moment once it's in)
         if (onAdd != null) Word(if (added != null) "added" else "playlist", pixel(style, if (added != null) Ink.ink else SAID), Modifier.tvLit(), touch = 10.dp, onClick = onAdd)
         // an episode: its pauses skipped, lit when on (one choice for every episode)
@@ -947,7 +958,7 @@ fun rememberLyric(n: Now?, lines: List<Line>?): Lyric? {
  * read the rest of a long song's words, 2026-11-01). Words with no times: all of them, scrolled.
  */
 @Composable
-private fun LyricsBlock(l: Lyric, modifier: Modifier) {
+private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
     val drift = with(LocalDensity.current) { Motion.drift.roundToPx() }
     val scroll = androidx.compose.foundation.rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -964,8 +975,8 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier) {
     }
     // the lines to come run out of room at the foot: feathered, never cut
     BoxWithConstraints(
-        modifier.clipToBounds().feather({ if (touched != 0L || (untimed && scroll.value > 0)) 1f else 0f }, { 1f })
-            .draggable(drag, androidx.compose.foundation.gestures.Orientation.Vertical, onDragStopped = { v ->
+        modifier.clipToBounds().then(if (!edge) Modifier else Modifier.feather({ if (touched != 0L || (untimed && scroll.value > 0)) 1f else 0f }, { 1f })
+            ).draggable(drag, androidx.compose.foundation.gestures.Orientation.Vertical, onDragStopped = { v ->
                 touched = android.os.SystemClock.elapsedRealtime()
                 scope.launch { scroll.animateScrollBy(-v * .25f, tween(Motion.ENTER * 3, easing = Motion.expo)) }
             }),
@@ -1427,6 +1438,42 @@ private fun TvPlayer(
         onDispose { if (own) TvKeys.ownLight-- }
     }
     androidx.compose.runtime.CompositionLocalProvider(LocalTvOwnLight provides own) {
+    // lyrics on and the song has timed lines: only the cover and the words, nothing else (2026-11-10). OK plays and
+    // pauses, left and right go back and on, back puts the lyrics away
+    val clean = sing && notes == null && lyric != null && lyric.lines.firstOrNull()?.let { it.at >= 0 } == true
+    androidx.activity.compose.BackHandler(clean && own) { Lyrics.toggle() }
+    if (clean && lyric != null) {
+        val hold = remember { androidx.compose.ui.focus.FocusRequester() }
+        LaunchedEffect(own) { if (own) runCatching { hold.requestFocus() } }
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = 56.dp, vertical = 40.dp).focusRequester(hold)
+                .onPreviewKeyEvent { e ->
+                    if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (e.key) {
+                        androidx.compose.ui.input.key.Key.DirectionCenter, androidx.compose.ui.input.key.Key.Enter,
+                        androidx.compose.ui.input.key.Key.NumPadEnter -> { Playback.toggle(); true }
+                        androidx.compose.ui.input.key.Key.DirectionLeft -> { Playback.previous(); true }
+                        androidx.compose.ui.input.key.Key.DirectionRight -> { Playback.next(); true }
+                        androidx.compose.ui.input.key.Key.DirectionUp, androidx.compose.ui.input.key.Key.DirectionDown -> true
+                        else -> false
+                    }
+                }.focusable(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BoxWithConstraints(Modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
+                val room = maxHeight.coerceIn(160.dp, 460.dp)
+                Column(Modifier.width(room)) {
+                    androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
+                        Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { }
+                    }
+                }
+            }
+            Spacer(Modifier.width(64.dp))
+            // no feathered foot: on a TV it's drawn on black, a black band over the look
+            LyricsBlock(lyric, Modifier.weight(1f).fillMaxHeight().padding(vertical = 24.dp), edge = false)
+        }
+        return@CompositionLocalProvider
+    }
     Column(Modifier.fillMaxSize()) {
         Centred(
             start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), Modifier.tvLit(), touch = 10.dp, onClick = onQueue) },
@@ -1453,15 +1500,10 @@ private fun TvPlayer(
                     sing && notes != null -> { NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp)); controls() }
                     sing && lyric != null -> { LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp)); controls() }
                     // no lyrics: the controls right under the song (2026-11-10, as Prism's TV: they sat at the foot, a
-                    // band of nothing between), then what plays next, quietly
+                    // band of nothing between); what plays next left to the up next word
                     else -> {
                         Spacer(Modifier.height(36.dp))
                         controls()
-                        val q by Playback.queue.collectAsState()
-                        q.getOrNull(n.index + 1)?.song?.let { next ->
-                            BasicText("up next: ${next.title} · ${next.artist}".lowercase(), style = pixel(SMALL, SAID), maxLines = 1,
-                                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 14.dp, top = 18.dp))
-                        }
                         Spacer(Modifier.weight(1f))
                     }
                 }
