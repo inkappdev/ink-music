@@ -185,7 +185,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val electronic by Picks.electronic.collectAsState()
     val listened by Listened.now.collectAsState()
     val allSongs by Library.songs.collectAsState()
-    val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, listened, allSongs) { Picks.yours(listened, allSongs) }
+    val brought by Fresh.brought.collectAsState()
+    val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, listened, allSongs, brought) { Picks.yours(listened, allSongs, brought) }
     // your server's records kept on the phone: with no signal they come first, "no data? no problem"
     val kept by Offline.kept.collectAsState()
     val keptRecords = remember(kept, albums) { albums.filter { a -> a.songs.any { it.id in kept } } }
@@ -698,7 +699,8 @@ fun TvListenPage(pages: Pages, state: LazyListState) {
     val listened by Listened.now.collectAsState()
     val allSongs by Library.songs.collectAsState()
     val pickedRecords by Picks.records.collectAsState()
-    val fromYours = remember(pickedRecords, listened, allSongs) { Picks.yours(listened, allSongs) }
+    val broughtIn by Fresh.brought.collectAsState()
+    val fromYours = remember(pickedRecords, listened, allSongs, broughtIn) { Picks.yours(listened, allSongs, broughtIn) }
     LaunchedEffect(Unit) { LiveSets.start(ctx) }
     val sets by LiveSets.clips.collectAsState()
     val ink = remember { Stations.curated(ctx).sortedByDescending { it.star } }

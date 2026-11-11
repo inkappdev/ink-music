@@ -107,6 +107,8 @@ object Discover {
         fun who(a: String) = a.substringBefore(", ").trim()
         val topArtists = recent.groupBy { who(it.artist).lowercase() }.entries.sortedByDescending { e -> e.value.sumOf { it.ms } }.map { who(it.value.last().artist) }
             .filter { it.isNotBlank() && it != "unknown" }
+            // nothing played here yet: your listening brought in (Last.fm, ListenBrainz), then what you have most of
+            .ifEmpty { Fresh.brought.value.flatMap { it.artists.entries }.sortedByDescending { it.value }.map { it.key }.distinct() }
             .ifEmpty { library.groupBy { it.albumArtist }.entries.sortedByDescending { it.value.size }.map { it.key }.filter { it.isNotBlank() && it != "unknown" } }
             .take(8)
 
@@ -120,7 +122,7 @@ object Discover {
         }
 
         // ---- each day: the rest from your own plays, because you loved, new to you ----
-        val daily = listOfNotNull(restOfTheRecord(all, library, heard), lovedLongAgo(all, library), aYearAgo(all, library), oneOfEach(library))
+        val daily = listOfNotNull(runCatching { favorites() }.getOrNull(), restOfTheRecord(all, library, heard), lovedLongAgo(all, library), aYearAgo(all, library), oneOfEach(library))
         mixes.value = weekly + daily
         out.put("mixes", JSONArray(mixes.value.map { m ->
             JSONObject().put("key", m.key).put("title", m.title).put("said", m.said).put("fresh", m.fresh).put("songs", JSONArray(m.songs.map { it.json() }))
@@ -137,6 +139,29 @@ object Discover {
     }
 
     /** Songs from these seeds' radios, the ones more of them lead to first: never heard, not yours, two an artist at most. */
+    /**
+     * Your all-time favorites (2026-11-11): your most played songs on Last.fm and ListenBrainz (brought in), found on
+     * YouTube Music, 25 a day from the hundred, a new 25 each day: something of yours to play the first time ink music opens.
+     */
+    /** Your listening just brought in: your favorites mix made now, first among the mixes (not waiting for tomorrow). */
+    fun addFavorites() { scope.launch { favorites()?.let { m -> mixes.value = listOf(m) + mixes.value.filter { it.key != m.key } } } }
+
+    private suspend fun favorites(): Mix? {
+        if (Local.on) return null
+        // (read from their files when the taste isn't made yet: the mixes are made as the library's read)
+        val sources = Fresh.brought.value.ifEmpty { listOfNotNull(LastFm.brought(Home.dir), ListenBrainz.brought(Home.dir)) }
+        if (sources.isEmpty()) return null
+        val all = (0 until sources.maxOf { it.songs.size }).flatMap { i -> sources.mapNotNull { it.songs.getOrNull(i) } }
+            .distinctBy { (a, t) -> Radio.key(t, a) }
+        if (all.size < 6) return null
+        val today = all.shuffled(java.util.Random(java.time.LocalDate.now().toEpochDay())).take(25)
+        val found = coroutineScope { today.chunked(6).flatMap { g -> g.map { (a, t) -> async(Dispatchers.IO) { runCatching { YouTube.find(t, a) }.getOrNull() } }.awaitAll() } }
+            .filterNotNull().distinctBy { it.id }
+        if (found.size < 6) return null
+        val from = sources.joinToString(" and ") { it.from }
+        return Mix("favorites", "your all-time favorites", "your most played on $from", Radio.apart(found, ""), "${found.size} songs, a new few each day")
+    }
+
     private suspend fun fromRadios(seeds: List<Radio.Seed>, heard: Set<String>, mine: Set<String>, n: Int): List<Song> = coroutineScope {
         val lists = seeds.map { async { runCatching { Radio.related(it) }.getOrDefault(emptyList()) } }.awaitAll()
         val score = LinkedHashMap<String, Pair<Song, Float>>()

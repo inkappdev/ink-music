@@ -92,7 +92,8 @@ fun ListenPage(open: (Page) -> Unit) {
     val pickedSongs by Picks.songs.collectAsState()
     val friday by Picks.friday.collectAsState()
     val electronic by Picks.electronic.collectAsState()
-    val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, heard, songs) { Picks.yours(heard, songs) }
+    val brought by Fresh.brought.collectAsState()
+    val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, heard, songs, brought) { Picks.yours(heard, songs, brought) }
     val taste by Fresh.taste.collectAsState()
     val pickedForYou = remember(pickedRecords, pickedSongs, fromYours, taste) {
         val above = fromYours.map { Curation.key(it.pick) }.toSet()

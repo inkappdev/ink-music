@@ -46,6 +46,8 @@ object Fresh {
     lateinit var seen: Seen
         private set
     val taste = MutableStateFlow(Taste.of(emptyList()))
+    /** Your listening brought in from Last.fm and ListenBrainz (listen's "new from your artists", your favorites mix). */
+    val brought = MutableStateFlow<List<Brought>>(emptyList())
     /** When you left last, if it was a while ago (twenty minutes and more): what's new is new since then. */
     val since = MutableStateFlow<Long?>(null)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -81,7 +83,7 @@ object Fresh {
         val app = c.applicationContext
         scope.launch {
             val b = if (brainz) ListenBrainz.bringIn(app, user) else LastFm.bringIn(app, user)
-            if (b != null) build(app)
+            if (b != null) { build(app); Discover.addFavorites(app) }
             kotlinx.coroutines.withContext(Dispatchers.Main) { done(b) }
         }
     }
@@ -106,6 +108,7 @@ object Fresh {
             // first a taste without the fans' favorites (at once), then with them: each of your nearest's page as kept
             // your listening elsewhere, brought in (Last.fm): counted from the first day
             val brought = listOfNotNull(LastFm.brought(app), ListenBrainz.brought(app))
+            this@Fresh.brought.value = brought
             fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app), brought = brought)
             val first = of(emptyMap())
             taste.value = first

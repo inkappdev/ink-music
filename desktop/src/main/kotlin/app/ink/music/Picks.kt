@@ -205,15 +205,22 @@ object Picks {
      * Everything picked lately (the critics' records and songs, out this Friday, electronic's) by artists you've played
      * or keep, the most played first, each said why: out friday, or who picked it, and how often you've played them.
      */
-    fun yours(listened: Listening, library: List<Song>): List<Shown> {
+    fun yours(listened: Listening, library: List<Song>, brought: List<Brought> = emptyList()): List<Shown> {
         val known = HashMap<String, Int>()
         library.forEach { known.putIfAbsent(it.albumArtist.lowercase(), 0) }
-        listened.plays.forEach { (k, n) -> if (k.startsWith("a:")) known[k.removePrefix("a:")] = n }
+        // and the near ones of your listening brought in (Last.fm, ListenBrainz): someone new has a first shelf on day
+        // one (2026-11-11); ranked as a little played, so what's played here comes first
+        val elsewhere = HashMap<String, String>()
+        for (b in brought) for ((a, v) in b.artists) if (v >= ForYou.NEAR) {
+            val k = a.lowercase()
+            known[k] = maxOf(known[k] ?: 0, (v * 10).toInt()); elsewhere.putIfAbsent(k, b.from)
+        }
+        listened.plays.forEach { (k, n) -> if (k.startsWith("a:")) { known[k.removePrefix("a:")] = n; elsewhere.remove(k.removePrefix("a:")) } }
         val friday = friday.value?.releases.orEmpty().map { Curation.Pick(true, it.title, it.artist, "out friday", "", it.link, 0, null) }
         val all = friday + records.value.map { it.pick } + songs.value.map { it.pick } + electronic.value
         return Curation.yours(all, known).take(16).map { y ->
             // short, to fit under a tile: "stereogum · 40 plays", "out friday · yours"
-            Shown(y.pick, y.pick.art, listOf("${y.pick.from} · " + if (y.plays > 0) "${y.plays} plays" else "yours"))
+            Shown(y.pick, y.pick.art, listOf("${y.pick.from} · " + (elsewhere[y.artist.lowercase()]?.let { "from your $it" } ?: if (y.plays > 0) "${y.plays} plays" else "yours")))
         }
     }
 

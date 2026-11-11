@@ -23,6 +23,8 @@ import java.io.File
 object Fresh {
     val seen = Seen(File(Home.dir, "seen.json"))
     val taste = MutableStateFlow(Taste.of(emptyList()))
+    /** Your listening brought in from Last.fm and ListenBrainz (listen's "new from your artists", your favorites mix). */
+    val brought = MutableStateFlow<List<Brought>>(emptyList())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var builtAt = 0L
 
@@ -45,7 +47,7 @@ object Fresh {
     fun bringIn(user: String, brainz: Boolean = false, done: (Brought?) -> Unit = {}) {
         scope.launch {
             val b = if (brainz) ListenBrainz.bringIn(Home.dir, user) else LastFm.bringIn(Home.dir, user)
-            if (b != null) build()
+            if (b != null) { build(); Discover.addFavorites() }
             kotlinx.coroutines.withContext(Dispatchers.Main) { done(b) }
         }
     }
@@ -65,6 +67,7 @@ object Fresh {
             val loved = (library.filter { it.id in Loved.ids.value } + Loved.tube.value + TubeAccount.liked.value).map { it.artist }
             val kept = library.map { it.albumArtist.ifBlank { it.artist } }.distinct()
             val brought = listOfNotNull(LastFm.brought(Home.dir), ListenBrainz.brought(Home.dir))
+            this@Fresh.brought.value = brought
             fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(), brought = brought)
             val first = of(emptyMap())
             taste.value = first
