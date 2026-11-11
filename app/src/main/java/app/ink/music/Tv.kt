@@ -119,7 +119,9 @@ object TvKeys {
 fun Modifier.railItem(i: Int, home: Boolean = false): Modifier {
     if (!Device.tv) return this
     val r = remember { androidx.compose.ui.focus.FocusRequester() }
-    DisposableEffect(r) {
+    // kept by place, and moved when the place changes (2026-11-10: the library's places come a moment after the rest,
+    // pushing find and settings down; kept where they first were, down from lists went straight to settings)
+    DisposableEffect(r, i) {
         TvKeys.rail[i] = r
         onDispose { if (TvKeys.rail[i] === r) TvKeys.rail[i] = null; if (TvKeys.railAt == i) TvKeys.railAt = -1 }
     }
