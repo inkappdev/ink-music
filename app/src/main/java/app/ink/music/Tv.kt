@@ -552,21 +552,19 @@ fun TvPhoneSetting() {
     SyncPhone.start(ctx)
     val peers by SyncPhone.peers.collectAsState()
     var pairing by remember { mutableStateOf(false) }
+    // only the phones it's linked to and itself (2026-11-10): the computers in step through the phone, and forgetting,
+    // are the phone's to show and do
+    val phones = peers.filter { !it.hub }
     BasicText("YOUR PHONE", style = headline(32.sp))
-    Spacer(Modifier.height(6.dp))
-    BasicText("your phone signs this tv in and keeps it in step", style = pixel(13.sp, Ink.mid))
     Spacer(Modifier.height(10.dp))
     val tick by androidx.compose.runtime.produceState(System.currentTimeMillis()) { while (true) { kotlinx.coroutines.delay(30_000); value = System.currentTimeMillis() } }
-    peers.forEach { p ->
-        Row(verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) {
-                BasicText(p.name.uppercase(), style = headline(22.sp))
-                BasicText(if (p.seen == 0L) (if (p.hub) "paired through your phone" else "paired, not in step yet") else "in step " + ago(tick - p.seen), style = pixel(12.sp, Ink.mid))
-            }
-            Word("forget", pixel(13.sp, Ink.mid), touch = 8.dp) { TvHub.forget(p.id) }
-        }
+    phones.forEach { p ->
+        BasicText(p.name.uppercase(), style = headline(22.sp))
+        BasicText(if (p.seen == 0L) "linked, not in step yet" else "linked, in step " + ago(tick - p.seen), style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(10.dp))
     }
+    BasicText("this tv: ${TvHub.name.removePrefix("ink music on ")}", style = pixel(13.sp, Ink.mid))
+    Spacer(Modifier.height(14.dp))
     if (pairing) PairPhone()
-    else Word(if (peers.isEmpty()) "SIGN IN FROM YOUR PHONE" else "PAIR ANOTHER PHONE", headline(28.sp), touch = 10.dp) { pairing = true }
+    else Word(if (phones.isEmpty()) "SIGN IN FROM YOUR PHONE" else "LINK ANOTHER PHONE", headline(24.sp), touch = 10.dp) { pairing = true }
 }
