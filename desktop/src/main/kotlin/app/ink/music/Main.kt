@@ -64,6 +64,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -1157,8 +1158,27 @@ private fun PlayingTitle(title: String, base: Color, accent: Color) {
     val now by Player.now.collectAsState()
     val pos by Player.position.collectAsState()
     val len = now?.duration ?: 0L
-    val target = if (len > 0) (pos.toFloat() / len).coerceIn(0f, 1f) else 0f
-    val k by androidx.compose.animation.core.animateFloatAsState(target, tween(450, easing = androidx.compose.animation.core.LinearEasing), label = "filled")
+    val playing = now?.playing == true
+    // where the fill is, moved every frame from the last place the player said (2026-11-11: the player says it twice
+    // a second, and each said restarted a short slide: it moved, stopped, moved, "smooth the effect out"); a place said
+    // within a second and a half of where it's got to is taken as the same (never stepping back), more is a jump: a
+    // fifth of a second's glide there
+    var at by remember { mutableStateOf(pos.toDouble()) }
+    LaunchedEffect(pos, playing, len) {
+        if (len <= 0) return@LaunchedEffect
+        if (kotlin.math.abs(pos - at) > 1_500) {
+            val from = at; val to = pos.toDouble(); val t0 = withFrameMillis { it }
+            while (true) {
+                val f = withFrameMillis { t -> ((t - t0) / 200.0).coerceAtMost(1.0) }
+                at = from + (to - from) * (1 - Math.pow(1 - f, 3.0))
+                if (f >= 1.0) break
+            }
+        }
+        if (!playing) return@LaunchedEffect
+        var last = withFrameMillis { it }
+        while (true) withFrameMillis { t -> at = (at + (t - last)).coerceAtMost(len.toDouble()); last = t }
+    }
+    val k = if (len > 0) (at / len).toFloat().coerceIn(0f, 1f) else 0f
     val c by androidx.compose.animation.animateColorAsState(accent, tween(Motion.ENTER * 2, easing = Motion.expo), label = "fill")
     Box {
         BasicText(title, style = headline(17.sp, base), maxLines = 1, overflow = TextOverflow.Ellipsis)

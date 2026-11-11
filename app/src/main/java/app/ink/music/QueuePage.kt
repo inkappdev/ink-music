@@ -234,9 +234,13 @@ private fun PlayingTitle(title: String, base: androidx.compose.ui.graphics.Color
 @Composable
 private fun FilledTitle(title: String, base: androidx.compose.ui.graphics.Color, song: Song?, length: Long, moves: Boolean, key: Any?, at: () -> Long) {
     var pos by remember { mutableLongStateOf(at()) }
-    LaunchedEffect(key) { while (true) { pos = at(); if (!moves) break; delay(250) } }
-    val target = if (length > 0) (pos.toFloat() / length).coerceIn(0f, 1f) else 0f
-    val k by animateFloatAsState(target, tween(300, easing = androidx.compose.animation.core.LinearEasing), label = "filled")
+    // asked every frame while it moves (2026-11-11: four times a second, each a short slide: it moved in steps); with
+    // less motion, once a second
+    val less by Moves.less.collectAsState()
+    LaunchedEffect(key, less) {
+        while (true) { pos = at(); if (!moves) break; if (less) delay(1_000) else androidx.compose.runtime.withFrameMillis { } }
+    }
+    val k = if (length > 0) (pos.toFloat() / length).coerceIn(0f, 1f) else 0f
     val accent = rememberCover(song, 300)?.accent ?: Ink.ink
     val c by androidx.compose.animation.animateColorAsState(accent, tween(Motion.ENTER * 2, easing = Motion.expo), label = "fill")
     Box {
