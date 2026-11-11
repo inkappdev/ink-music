@@ -108,6 +108,8 @@ object TvKeys {
     val rail = arrayOfNulls<androidx.compose.ui.focus.FocusRequester>(16)
     /** Which of the rail has the remote (-1: none). */
     var railAt by mutableStateOf(-1)
+    /** The shelf the remote was last on in the place: where right from the rail goes back to, on its cover. */
+    var lastShelf: androidx.compose.ui.focus.FocusRequester? = null
     /** The place shown beside the rail: where right from the rail goes, its first thing (2026-11-10). */
     var placeIn: androidx.compose.ui.focus.FocusRequester? = null
     /** The rail's word for the place shown: where left from the place lands. */
@@ -138,7 +140,7 @@ fun Modifier.railItem(i: Int, home: Boolean = false): Modifier {
  * clickable; what was missing was seeing which), drawn over everything and taking no touches. Elsewhere the content
  * alone. A line under it was tried first (2026-11-03) and turned down: a rule, and a giant one under the place's word.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun TvFocus(content: @Composable () -> Unit) {
     if (!onTv()) { content(); return }
@@ -182,7 +184,13 @@ fun TvFocus(content: @Composable () -> Unit) {
                     androidx.compose.ui.input.key.Key.DirectionDown -> railStep(1)
                     // into the place, its first thing (the search right from listen went down the rail to settings)
                     // (nothing to take it yet, the place still coming in: it stays, never the search)
-                    androidx.compose.ui.input.key.Key.DirectionRight -> { runCatching { TvKeys.placeIn?.requestFocus() }; true }
+                    // back to the shelf and cover it came from (2026-11-10: from the critics' records, left and back,
+                    // it went to the festivals at the top); a place not yet gone into, its first thing
+                    androidx.compose.ui.input.key.Key.DirectionRight -> {
+                        val back = TvKeys.lastShelf?.let { sh -> runCatching { sh.restoreFocusedChild() || sh.requestFocus() }.getOrDefault(false) } == true
+                        if (!back) runCatching { TvKeys.placeIn?.requestFocus() }
+                        true
+                    }
                     androidx.compose.ui.input.key.Key.DirectionLeft -> true
                     else -> false
                 }
@@ -605,6 +613,7 @@ fun Modifier.warmOnRest(song: Song?): Modifier {
 fun Modifier.tvShelf(): Modifier {
     if (!Device.tv) return this
     val r = remember { androidx.compose.ui.focus.FocusRequester() }
+    DisposableEffect(r) { onDispose { if (TvKeys.lastShelf === r) TvKeys.lastShelf = null } }
     // the cover it was on, kept as the remote leaves it: up, back into it, lands there again (the way it came);
     // down into it, its first in view
     return focusRequester(r).focusProperties {
@@ -616,5 +625,5 @@ fun Modifier.tvShelf(): Modifier {
                 else -> {}
             }
         }
-    }.focusGroup()
+    }.focusGroup().onFocusChanged { if (it.hasFocus) TvKeys.lastShelf = r }
 }
