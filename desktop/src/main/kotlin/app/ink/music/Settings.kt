@@ -418,6 +418,9 @@ private fun Field(name: String, value: String, onValue: (String) -> Unit, hint: 
 private fun ListenBrainzSetting() {
     val scope = rememberCoroutineScope()
     val account by ListenBrainz.account.collectAsState()
+    var brought by remember { mutableStateOf(ListenBrainz.brought(Home.dir)) }
+    var bringing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(account) { if (account != null) repeat(20) { if (brought != null) return@LaunchedEffect; kotlinx.coroutines.delay(1_000); brought = ListenBrainz.brought(Home.dir) } }
     BasicText("LISTENBRAINZ", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     val a = account
@@ -430,7 +433,8 @@ private fun ListenBrainzSetting() {
             trying = true; said = null
             scope.launch {
                 said = when (ListenBrainz.connect(Home.dir, token)) {
-                    ListenBrainz.Connect.OK -> { token = ""; null }
+                    // connected: your listening there brought in at once (Fresh)
+                    ListenBrainz.Connect.OK -> { token = ""; ListenBrainz.account.value?.let { Fresh.bringIn(it.user, brainz = true) }; null }
                     ListenBrainz.Connect.WRONG -> "listenbrainz didn't know that token"
                     ListenBrainz.Connect.UNREACHABLE -> "couldn't reach listenbrainz. try again in a moment"
                 }
@@ -445,11 +449,26 @@ private fun ListenBrainzSetting() {
         Field("user token", token, { token = it }, "", secret = true, onEnter = ::go)
         said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
         Word(if (trying) "CONNECTING" else "CONNECT", headline(40.sp, if (trying) Ink.mid else Ink.ink), touch = 10.dp) { go() }
+        // or only your name: what you've played there brought in, nothing sent (2026-11-11)
+        var name by remember { mutableStateOf("") }
+        Spacer(Modifier.height(18.dp))
+        Field("or your listenbrainz name", name, { name = it }, "", onEnter = {})
+        Word(if (bringing) "bringing your listening in" else "bring my listening in, by name", pixel(14.sp, Ink.mid), touch = 8.dp) {
+            if (bringing || name.isBlank()) return@Word
+            bringing = true; said = null
+            Fresh.bringIn(name, brainz = true) { b -> bringing = false; said = if (b == null) "listenbrainz has no listening worked out under that name yet" else null; brought = b }
+        }
     } else {
         BasicText(a.user.lowercase(), style = pixel(13.sp))
         BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(8.dp))
         Word("disconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { ListenBrainz.disconnect(Home.dir); SyncHub.kept.signed("listenbrainz", System.currentTimeMillis()) }
+    }
+    brought?.let { b ->
+        Spacer(Modifier.height(14.dp))
+        BasicText("${b.artists.size} artists from ${b.user.lowercase()}'s listening, brought in, so INK knows you from the first day", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(6.dp))
+        Word("let them go", pixel(14.sp, Ink.mid), touch = 8.dp) { ListenBrainz.forget(Home.dir); brought = null; Fresh.build() }
     }
 }
 

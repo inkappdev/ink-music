@@ -56,6 +56,41 @@ object ListenBrainz {
         _account.value = null
     }
 
+    /**
+     * Your listening as ListenBrainz has kept it, brought in ([Brought], 2026-11-11): its public statistics, by your name
+     * alone: whom you play most, of all time, this year and this month, whose songs you loved (feedback), your most
+     * played songs. ListenBrainz works its statistics out in batches: a range not worked out yet answers empty (a new
+     * account, the month's first days), and is left out. Kept in listenbrainz-taste.json.
+     */
+    private fun broughtFile(dir: File) = File(dir, "listenbrainz-taste.json")
+
+    fun brought(dir: File): Brought? = Brought.read(broughtFile(dir), "listenbrainz")
+
+    fun forget(dir: File) { broughtFile(dir).delete() }
+
+    /** Read from ListenBrainz and kept (null: no such name, nothing worked out yet, or ListenBrainz unreachable). */
+    suspend fun bringIn(dir: File, user: String): Brought? = withContext(Dispatchers.IO) {
+        if (user.isBlank()) return@withContext null
+        val u = urlEncode(user.trim())
+        // an empty answer (not worked out yet) or a missing name: nothing from that read
+        fun read(path: String): JSONObject? = runCatching { Curation.get("$API$path").takeIf { it.isNotBlank() }?.let { JSONObject(it) } }
+            .onFailure { log("bring in $path: $it") }.getOrNull()
+        fun counts(range: String, count: Int) = read("/stats/user/$u/artists?range=$range&count=$count")?.optJSONObject("payload")?.optJSONArray("artists")
+            ?.let { l -> (0 until l.length()).map { l.getJSONObject(it).let { a -> a.optString("artist_name") to a.optDouble("listen_count", 0.0) } } }.orEmpty()
+        val ranges = listOf(counts("all_time", 200) to .85, counts("this_year", 50) to .95, counts("this_month", 20) to 1.0)
+        val loved = read("/feedback/user/$u/get-feedback?score=1&count=200&metadata=true")?.optJSONArray("feedback")
+            ?.let { f -> (0 until f.length()).map { f.getJSONObject(it).optJSONObject("track_metadata")?.optString("artist_name").orEmpty() } }.orEmpty()
+        val songs = read("/stats/user/$u/recordings?range=all_time&count=100")?.optJSONObject("payload")?.optJSONArray("recordings")
+            ?.let { r -> (0 until r.length()).map { r.getJSONObject(it).let { x -> x.optString("artist_name") to x.optString("track_name") } } }
+            .orEmpty().filter { it.first.isNotBlank() && it.second.isNotBlank() }
+        val artists = Brought.weigh(ranges, loved)
+        if (artists.isEmpty()) return@withContext null
+        val b = Brought("listenbrainz", user.trim(), nowMs(), artists, songs)
+        Brought.write(broughtFile(dir), b)
+        log("brought in ${artists.size} artists, ${songs.size} songs from $user")
+        b
+    }
+
     /** What's playing now (blocking: the player's thread). Not kept if it fails: it's only now. */
     fun playingNow(dir: File, s: Said) {
         val a = read(dir) ?: return

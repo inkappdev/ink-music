@@ -70,16 +70,17 @@ object Fresh {
         if (left != null && now - left > 20 * 60_000L) { since.value = left; Listen.visit++ }
         if (now - builtAt > 10 * 60_000L) build(c)
         // Last.fm connected: your listening there brought in, the first time and then each month
-        val a = LastFm.account.value
-        val b = LastFm.brought(c)
-        if (a != null && (b == null || now - b.at > 30 * 86_400_000L)) bringIn(c, a.name)
+        // Last.fm and ListenBrainz connected: your listening there brought in, the first time and then each month
+        val month = 30 * 86_400_000L
+        LastFm.account.value?.let { a -> if ((LastFm.brought(c)?.at ?: 0L) < now - month) bringIn(c, a.name) }
+        ListenBrainz.account.value?.let { a -> if ((ListenBrainz.brought(c)?.at ?: 0L) < now - month) bringIn(c, a.user, brainz = true) }
     }
 
-    /** Your Last.fm listening brought in by name, then your taste made again with it (null: nothing found). */
-    fun bringIn(c: Context, user: String, done: (LastFm.Brought?) -> Unit = {}) {
+    /** Your listening on Last.fm (or ListenBrainz) brought in by name, then your taste made again (null: nothing found). */
+    fun bringIn(c: Context, user: String, brainz: Boolean = false, done: (Brought?) -> Unit = {}) {
         val app = c.applicationContext
         scope.launch {
-            val b = LastFm.bringIn(app, user)
+            val b = if (brainz) ListenBrainz.bringIn(app, user) else LastFm.bringIn(app, user)
             if (b != null) build(app)
             kotlinx.coroutines.withContext(Dispatchers.Main) { done(b) }
         }
@@ -104,9 +105,8 @@ object Fresh {
             val kept = library.map { it.albumArtist }.distinct()
             // first a taste without the fans' favorites (at once), then with them: each of your nearest's page as kept
             // your listening elsewhere, brought in (Last.fm): counted from the first day
-            val b = LastFm.brought(app)
-            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app),
-                brought = b?.artists.orEmpty(), broughtAt = b?.at ?: System.currentTimeMillis())
+            val brought = listOfNotNull(LastFm.brought(app), ListenBrainz.brought(app))
+            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app), brought = brought)
             val first = of(emptyMap())
             taste.value = first
             val related = first.top(12).map { bareName ->
@@ -114,7 +114,7 @@ object Fresh {
                 async { name to (withTimeoutOrNull(4_000) { YouTubeAccount.artist(name, "").firstOrNull { it != null } }?.like.orEmpty().map { it.name }) }
             }.awaitAll().filter { it.second.isNotEmpty() }.toMap()
             if (related.isNotEmpty()) taste.value = of(related)
-            android.util.Log.d("ink-picks", "taste: ${plays.size} listens, ${skips.size} skips, ${loved.size} loves, ${related.size} artists' fans, ${b?.artists?.size ?: 0} brought in; nearest ${taste.value.top(5)}")
+            android.util.Log.d("ink-picks", "taste: ${plays.size} listens, ${skips.size} skips, ${loved.size} loves, ${related.size} artists' fans, ${brought.sumOf { it.artists.size }} brought in; nearest ${taste.value.top(5)}")
         }
     }
 

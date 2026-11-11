@@ -62,14 +62,26 @@ class TasteTest {
 
     @Test fun broughtInCountsFromTheFirstDayAndFades() {
         val now = 1_800_000_000_000L
-        val fresh = Taste.of(emptyList(), brought = mapOf("Big Thief" to 1.0, "Wednesday" to .4), broughtAt = now, now = now)
+        val fresh = Taste.of(emptyList(), brought = listOf(Brought("last.fm", "me", now, mapOf("Big Thief" to 1.0, "Wednesday" to .4), emptyList())), now = now)
         assertTrue(fresh.of("Big Thief") > .85)
         assertTrue(fresh.of("Wednesday") in .35..0.45)
         assertTrue(fresh.why("Big Thief") is Taste.Why.Brought)
-        val later = Taste.of(emptyList(), brought = mapOf("Big Thief" to 1.0), broughtAt = now, now = now + 180L * 86_400_000L)
+        val later = Taste.of(emptyList(), brought = listOf(Brought("last.fm", "me", now, mapOf("Big Thief" to 1.0), emptyList())), now = now + 180L * 86_400_000L)
         assertTrue(later.of("Big Thief") in .4..0.55)
         // played here, it's played: listening here leads
-        val played = Taste.of(List(10) { Taste.Play("Big Thief", now, 200_000) }, brought = mapOf("Big Thief" to .3), broughtAt = now, now = now)
+        val played = Taste.of(List(10) { Taste.Play("Big Thief", now, 200_000) }, brought = listOf(Brought("last.fm", "me", now, mapOf("Big Thief" to .3), emptyList())), now = now)
         assertTrue(played.why("Big Thief") is Taste.Why.Played)
+    }
+
+    @Test fun broughtWeighsPlaysAndLovesModestly() {
+        // real listening falls off more gently than 1/rank (a real top 200: 43 near under this weighing)
+        val counts = (1..200).map { "a$it" to 2000.0 / Math.sqrt(it.toDouble()) }
+        val w = Brought.weigh(listOf(counts to .85), loved = listOf("someone loved once"))
+        val near = w.count { it.value >= ForYou.NEAR }
+        assertTrue("near: $near", near in 20..80)
+        assertEquals(.15, w.getValue("someone loved once"), 1e-9)
+        // two sources: the stronger says where it's from
+        val t = Taste.of(emptyList(), brought = listOf(Brought("last.fm", "me", 0, mapOf("Xiu Xiu" to .4), emptyList()), Brought("listenbrainz", "me", 0, mapOf("Xiu Xiu" to .7), emptyList())), now = 0)
+        assertEquals(Taste.Why.Brought("listenbrainz"), t.why("Xiu Xiu"))
     }
 }

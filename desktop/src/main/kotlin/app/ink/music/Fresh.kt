@@ -36,15 +36,15 @@ object Fresh {
         if (first) { first = false; scope.launch { Library.songs.first { it.isNotEmpty() }; build() } }
         val now = System.currentTimeMillis()
         if (now - builtAt > 10 * 60_000L) build()
-        val a = LastFm.account.value
-        val b = LastFm.brought(Home.dir)
-        if (a != null && (b == null || now - b.at > 30 * Seen.DAY)) bringIn(a.name)
+        // Last.fm and ListenBrainz connected: brought in the first time and then each month
+        LastFm.account.value?.let { a -> if ((LastFm.brought(Home.dir)?.at ?: 0L) < now - 30 * Seen.DAY) bringIn(a.name) }
+        ListenBrainz.account.value?.let { a -> if ((ListenBrainz.brought(Home.dir)?.at ?: 0L) < now - 30 * Seen.DAY) bringIn(a.user, brainz = true) }
     }
 
-    /** Your Last.fm listening brought in by name, then your taste made again (null: nothing found). */
-    fun bringIn(user: String, done: (LastFm.Brought?) -> Unit = {}) {
+    /** Your listening on Last.fm (or ListenBrainz) brought in by name, then your taste made again (null: nothing found). */
+    fun bringIn(user: String, brainz: Boolean = false, done: (Brought?) -> Unit = {}) {
         scope.launch {
-            val b = LastFm.bringIn(Home.dir, user)
+            val b = if (brainz) ListenBrainz.bringIn(Home.dir, user) else LastFm.bringIn(Home.dir, user)
             if (b != null) build()
             kotlinx.coroutines.withContext(Dispatchers.Main) { done(b) }
         }
@@ -64,19 +64,18 @@ object Fresh {
             val library = Library.songs.value
             val loved = (library.filter { it.id in Loved.ids.value } + Loved.tube.value + TubeAccount.liked.value).map { it.artist }
             val kept = library.map { it.albumArtist.ifBlank { it.artist } }.distinct()
-            val b = LastFm.brought(Home.dir)
-            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(),
-                brought = b?.artists.orEmpty(), broughtAt = b?.at ?: System.currentTimeMillis())
+            val brought = listOfNotNull(LastFm.brought(Home.dir), ListenBrainz.brought(Home.dir))
+            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(), brought = brought)
             val first = of(emptyMap())
             taste.value = first
             // then with whom your nearest's fans also like (each one's page as kept, or read)
             val related = first.top(12).map { bareName ->
                 val name = heard.asReversed().firstOrNull { Taste.bare(it.artist.substringBefore(", ")) == bareName }?.artist?.substringBefore(", ")
-                    ?: b?.artists?.keys?.firstOrNull { Taste.bare(it) == bareName } ?: bareName
+                    ?: brought.firstNotNullOfOrNull { src -> src.artists.keys.firstOrNull { Taste.bare(it) == bareName } } ?: bareName
                 async { name to (withTimeoutOrNull(4_000) { Artists.of(name).firstOrNull { it != null } }?.like.orEmpty().map { it.name }) }
             }.awaitAll().filter { it.second.isNotEmpty() }.toMap()
             if (related.isNotEmpty()) taste.value = of(related)
-            System.err.println("ink taste: ${plays.size} listens, ${loved.size} loves, ${related.size} artists' fans, ${b?.artists?.size ?: 0} brought in; nearest ${taste.value.top(5)}")
+            System.err.println("ink taste: ${plays.size} listens, ${loved.size} loves, ${related.size} artists' fans, ${brought.sumOf { it.artists.size }} brought in; nearest ${taste.value.top(5)}")
         }
     }
 

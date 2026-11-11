@@ -62,7 +62,7 @@ class Taste private constructor(
         fun of(
             plays: List<Play>, skips: List<Play> = emptyList(), loved: Collection<String> = emptyList(), kept: Collection<String> = emptyList(),
             related: Map<String, List<String>> = emptyMap(), refused: Collection<String> = emptyList(), now: Long = nowMs(),
-            brought: Map<String, Double> = emptyMap(), broughtAt: Long = now, broughtFrom: String = "last.fm",
+            brought: List<Brought> = emptyList(),
         ): Taste {
             val weight = HashMap<String, Double>()
             val times = HashMap<String, Int>()
@@ -78,10 +78,13 @@ class Taste private constructor(
             weight.forEach { (n, w) -> near[n] = 1 - exp(-w / 3.0); why[n] = Why.Played(times[n] ?: 0) }
             // brought in from elsewhere: as near as it was there, from the first day, fading by half over six months
             // (by then what's played here says it); never more than .9, so what's played here can still lead
-            val fade = exp(-((now - broughtAt).coerceAtLeast(0) / DAY.toDouble()) / 260.0)
-            for ((a, v) in brought) for (n in names(a).take(1)) {
-                val b = min(.9, v * fade)
-                if (b > (near[n] ?: 0.0)) { near[n] = b; why[n] = Why.Brought(broughtFrom) }
+            // (each source by itself; an artist in two takes the stronger, and says where from)
+            for (src in brought) {
+                val fade = exp(-((now - src.at).coerceAtLeast(0) / DAY.toDouble()) / 260.0)
+                for ((a, v) in src.artists) for (n in names(a).take(1)) {
+                    val b = min(.9, v * fade)
+                    if (b > (near[n] ?: 0.0)) { near[n] = b; why[n] = Why.Brought(src.from) }
+                }
             }
             for (a in loved) for (n in names(a).take(1)) { near[n] = min(1.0, (near[n] ?: 0.0) + .35); if (why[n] == null || (near[n] ?: 0.0) < .5) why[n] = Why.Loved }
             for (a in kept) for (n in names(a).take(1)) if ((near[n] ?: 0.0) < .15) { near[n] = .15; if (n !in why) why[n] = Why.Kept }

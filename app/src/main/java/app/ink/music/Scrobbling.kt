@@ -28,3 +28,6 @@ fun LastFm.love(c: Context, s: Song, on: Boolean) = love(c.scrobbling(), s.artis
 suspend fun LastFm.bringIn(c: Context, user: String) = bringIn(c.scrobbling(), user)
 fun LastFm.brought(c: Context) = brought(c.scrobbling())
 fun LastFm.forget(c: Context) = forget(c.scrobbling())
+suspend fun ListenBrainz.bringIn(c: Context, user: String) = bringIn(c.scrobbling(), user)
+fun ListenBrainz.brought(c: Context) = brought(c.scrobbling())
+fun ListenBrainz.forget(c: Context) = forget(c.scrobbling())

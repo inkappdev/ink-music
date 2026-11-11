@@ -648,6 +648,9 @@ private fun ListenBrainzSetting() {
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val account by ListenBrainz.account.collectAsState()
+    var brought by remember { mutableStateOf(ListenBrainz.brought(ctx)) }
+    var bringing by remember { mutableStateOf(false) }
+    LaunchedEffect(account) { if (account != null) repeat(20) { if (brought != null) return@LaunchedEffect; kotlinx.coroutines.delay(1_000); brought = ListenBrainz.brought(ctx) } }
     BasicText("LISTENBRAINZ", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
     val a = account
@@ -669,12 +672,22 @@ private fun ListenBrainzSetting() {
             trying = true; said = null
             scope.launch {
                 said = when (ListenBrainz.connect(ctx, token)) {
-                    ListenBrainz.Connect.OK -> { token = ""; null }
+                    // connected: your listening there brought in at once (Fresh)
+                    ListenBrainz.Connect.OK -> { token = ""; ListenBrainz.account.value?.let { Fresh.bringIn(ctx, it.user, brainz = true) }; null }
                     ListenBrainz.Connect.WRONG -> "listenbrainz didn't know that token"
                     ListenBrainz.Connect.UNREACHABLE -> "couldn't reach listenbrainz. try again in a moment"
                 }
                 trying = false
             }
+        }
+        // or only your name: what you've played there brought in, nothing sent (2026-11-11)
+        var name by remember { mutableStateOf("") }
+        Spacer(Modifier.height(18.dp))
+        Field("or your listenbrainz name", name, { name = it }, "", KeyboardType.Text)
+        Word(if (bringing) "bringing your listening in" else "bring my listening in, by name", pixel(14.sp, Ink.mid), touch = 8.dp) {
+            if (bringing || name.isBlank()) return@Word
+            bringing = true; said = null
+            Fresh.bringIn(ctx, name, brainz = true) { b -> bringing = false; said = if (b == null) "listenbrainz has no listening worked out under that name yet" else null; brought = b }
         }
     } else {
         Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
@@ -684,6 +697,15 @@ private fun ListenBrainzSetting() {
             BasicText("every song you play, but radio", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(4.dp))
             BasicText("hold forgets it", style = pixel(12.sp, Ink.mid))
+        }
+    }
+    brought?.let { b ->
+        Spacer(Modifier.height(14.dp))
+        Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+            onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); ListenBrainz.forget(ctx); brought = null; Fresh.build(ctx) },
+            onClick = {})) {
+            BasicText("${b.artists.size} artists from ${b.user.lowercase()}'s listening, brought in", style = pixel(12.sp, Ink.mid))
+            BasicText("so picks know you from the first day. hold lets them go", style = pixel(12.sp, Ink.mid))
         }
     }
 }
