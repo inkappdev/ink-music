@@ -160,12 +160,21 @@ object Updates {
         """)
     }
 
-    /** Once this one has quit (its files in use till then), the msi with its progress bar alone, then ink music again. */
+    /**
+     * Once this one has quit (its files in use till then), the msi with its progress bar alone, then ink music again.
+     * msiexec's own log kept beside update.log (msi.log), and its answer in update.log: 2026-11-11, a tester's update
+     * uninstalled the old and put nothing in, and nothing said why (up to 2.1.12 the msi sat in the cache, then inside
+     * the install folder the upgrade empties first).
+     */
     private fun windows(msi: File) {
         fun ps(s: String) = "'" + s.replace("'", "''") + "'"
+        val log = File(Home.dir, "msi.log")
+        val notes = File(Home.dir, "update.log")
+        note("windows: ${msi.path} (${msi.length()} bytes), msiexec once ${ProcessHandle.current().pid()} has quit")
         val script = """
             Wait-Process -Id ${ProcessHandle.current().pid()} -ErrorAction SilentlyContinue
-            Start-Process msiexec -ArgumentList '/i', ${ps("\"" + msi.path + "\"")}, '/passive', '/norestart' -Wait
+            ${'$'}p = Start-Process msiexec -ArgumentList '/i', ${ps("\"" + msi.path + "\"")}, '/passive', '/norestart', '/l*v', ${ps("\"" + log.path + "\"")} -Wait -PassThru
+            Add-Content -LiteralPath ${ps(notes.path)} -Value ((Get-Date -Format s) + '  windows: msiexec said ' + ${'$'}p.ExitCode)
             Start-Process ${ps(self!!)}
         """.trimIndent()
         val encoded = java.util.Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
