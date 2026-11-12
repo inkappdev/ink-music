@@ -117,10 +117,10 @@ object Lyrics {
         val lines = if (id == "lrclib") {
             val result = ask(artist, t.title, t.album, t.duration / 1000) ?: return null
             parse(result.first).ifEmpty { plain(result.second) }
-        } else LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000)
+        } else LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
         if (lines != null) runCatching {
             dir.mkdirs()
-            File("${base.path}.$id.lrc").writeText(lrcOf(lines))
+            File("${base.path}.$id.lrc").writeText(sourceText(lines))
         }
         return lines
     }
