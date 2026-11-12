@@ -171,8 +171,8 @@ object Radio {
         .replace(Regex("""\((official|audio|video|lyrics?)[^)]*\)""", RegexOption.IGNORE_CASE), "").trim()
 
     /**
-     * Offline only: the files on this computer nearest the seed by what's known of their sound: the same artist, the
-     * same genre tags (Last.fm's), a tempo near (where it's been read), the same folder; scored and the best taken, the
+     * Offline only: the files on this computer nearest the seed by what's known of their sound: the same artist, artists
+     * Last.fm's listeners hear as near, the same genre tags (Last.fm's), a tempo near (where it's been read), the same folder; scored and the best taken, the
      * rest of the library after, so it never stops while there's a file to play.
      */
     fun offline(s: Seed): List<Song> {
@@ -184,9 +184,13 @@ object Radio {
         val myTags = Genres.tags(s.artist)?.take(5).orEmpty().toSet()
         val myTempo = Tempos.kept(s.id)?.takeIf { it.bpm > 0 }?.bpm
         val folder = seed?.path?.let { java.io.File(it).parent }
+        // your artists Last.fm's listeners hear as near this one (only who's near is asked; what plays is all yours)
+        val kin = if (me.isNotEmpty() && me != "unknown" && !Local.on) runCatching { Similar.lastFmArtists(s.artist.substringBefore(", "), LastFm.key, 50) }
+            .getOrDefault(emptyList()).associate { who(it.first) to it.second } else emptyMap()
         val scored = all.map { x ->
             var score = 0.0
             if (me.isNotEmpty() && me != "unknown" && who(x.artist) == me) score += 3
+            kin[who(x.artist)]?.let { score += 2.5 * it }
             Genres.tags(x.artist)?.take(5)?.let { t -> score += 1.5 * t.count { it in myTags } }
             if (myTempo != null) Tempos.kept(x.id)?.takeIf { it.bpm > 0 }?.let { if (Tempos.fits(it.bpm, myTempo, .06)) score += 1 }
             if (folder != null && java.io.File(x.path).parent == folder) score += 1
