@@ -77,10 +77,16 @@ object Firewall {
     /** PowerShell's -EncodedCommand: the script as UTF-16LE in base64, so nothing in it needs quoting. */
     private fun encoded(script: String) = java.util.Base64.getEncoder().encodeToString(script.trimIndent().toByteArray(Charsets.UTF_16LE))
 
+    /**
+     * The script's last line out, or null when it failed. Its progress kept quiet and its errors left out: PowerShell 5.1
+     * with its output taken writes "preparing modules for first use" to the error stream as XML (#< CLIXML), which
+     * mixed in made a LET IT IN that worked read "not let in", and the firewall's reading say shut (2026-11-12).
+     */
     private fun powershell(script: String): String? = runCatching {
-        val proc = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded(script))
-            .redirectErrorStream(true).start()
+        val proc = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+            encoded("\$ProgressPreference = 'SilentlyContinue'\n" + script.trimIndent()))
+            .redirectError(ProcessBuilder.Redirect.DISCARD).start()
         val out = proc.inputStream.bufferedReader().readText()
-        if (proc.waitFor() == 0) out else null
+        if (proc.waitFor() == 0) out.lines().lastOrNull { it.isNotBlank() } else null
     }.getOrNull()
 }
