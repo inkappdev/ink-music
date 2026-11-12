@@ -8,7 +8,7 @@ public interface IDiscordRpcConnection extends android.os.IInterface {
     abstract class Stub extends android.os.Binder implements IDiscordRpcConnection {
         static final int TRANSACTION_sendFrame = android.os.IBinder.FIRST_CALL_TRANSACTION;
         static final int TRANSACTION_disconnect = android.os.IBinder.FIRST_CALL_TRANSACTION + 1;
-        Stub() { attachInterface(this, DESCRIPTOR); }
+        public Stub() { attachInterface(this, DESCRIPTOR); }
         public static IDiscordRpcConnection asInterface(android.os.IBinder binder) {
             if (binder == null) return null;
             android.os.IInterface local = binder.queryLocalInterface(DESCRIPTOR);
@@ -18,7 +18,7 @@ public interface IDiscordRpcConnection extends android.os.IInterface {
         @Override public boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply, int flags) throws android.os.RemoteException {
             if (code == TRANSACTION_sendFrame) { data.enforceInterface(DESCRIPTOR); sendFrame(data.readString()); reply.writeNoException(); return true; }
             if (code == TRANSACTION_disconnect) { data.enforceInterface(DESCRIPTOR); disconnect(); reply.writeNoException(); return true; }
-            if (code == INTERFACE_TRANSACTION) { reply.writeString(DESCRIPTOR); return true; }
+            if (code == android.os.IBinder.INTERFACE_TRANSACTION) { reply.writeString(DESCRIPTOR); return true; }
             return super.onTransact(code, data, reply, flags);
         }
         private static final class Proxy implements IDiscordRpcConnection {
