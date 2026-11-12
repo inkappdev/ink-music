@@ -100,7 +100,7 @@ object AddonMusic {
                 Triple(track, difference, (if (foundArtist == wantedArtist) 0 else 2) + albumPenalty)
             }.sortedWith(compareBy<Triple<JSONObject, Long, Int>> { it.second }.thenBy { it.third })
             val track = candidates.firstOrNull()?.first ?: return@runCatching null
-            val direct = track.optString("streamURL").takeIf { it.startsWith("http") }
+            val direct = playableUrl(track)
             if (direct != null) return@runCatching direct
             val id = track.getString("id")
             val stream = request(ctx, "$base/stream/${Uri.encode(id)}", params)
