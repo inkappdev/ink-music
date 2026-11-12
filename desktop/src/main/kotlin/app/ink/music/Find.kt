@@ -339,7 +339,17 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                         }
                     }
                     // kept on the computer: its own line under the row (beside play, mix and covers it was cut to "keep o...")
-                    Box(Modifier.padding(top = 10.dp)) { KeepOffline(s) }
+                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                        KeepOffline(s)
+                        // a copy as a list of yours, every song, kept here even if whoever made it takes theirs down
+                        // (2026-11-12, a tester: a 300-song playlist found and lost when its owner deleted it)
+                        val here by HereLists.all.collectAsState()
+                        val copy = here.firstOrNull { it.name == a.title && it.songs.size == s.size }
+                        Word(if (copy != null) "your list" else "keep as your list", pixel(14.sp, if (copy != null) Ink.ink else Ink.mid), touch = 8.dp) {
+                            if (copy != null) open(Page.List(copy.id, copy.name))
+                            else HereLists.make(a.title, s)
+                        }
+                    }
                 }
                 // the mix as it's found: its tempo beating, the songs dropping in
                 if (playlist) MixProgress(a.title)
