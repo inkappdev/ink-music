@@ -760,7 +760,7 @@ private fun KeptSetting() {
     // the most played kept, refreshed daily (KeepMost): off at first
     val most by KeepMost.on.collectAsState()
     Spacer(Modifier.height(18.dp))
-    BasicText("keep what you play most: your ${KeepMost.N} most played of the last three months, kept on this computer and changed as they change", style = pixel(12.sp, Ink.mid))
+    BasicText("keep what you play most: the ${KeepMost.N} songs most in your rotation these days (this week counts more than the summer), kept on this computer and changed as they change", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
         Word("off", pixel(14.sp, if (!most) Ink.ink else Ink.dim), touch = 8.dp) { KeepMost.set(false) }

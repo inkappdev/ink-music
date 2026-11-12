@@ -2,6 +2,7 @@ package app.ink.music
 
 import kotlin.math.exp
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Your taste, as near as listening says it (2026-11-07): how close any artist is to you (0 never heard of, to 1 the ones
@@ -14,6 +15,13 @@ import kotlin.math.min
 class Taste private constructor(
     private val near: Map<String, Double>,
     private val why: Map<String, Why>,
+    /**
+     * How much of what's shown should be a stretch, as your listening says you want one now (2026-11-11, after Flow's
+     * "discovery appetite"): .3 to start, up toward .5 as you play new artists' songs through, down toward .1 as you
+     * leave them in their first seconds; the last month's listening, each listen of an artist new to you (first heard
+     * within three weeks of it). Made from what's kept, so nothing to store: [ForYou.order]'s `stretch`.
+     */
+    val appetite: Double = ForYou.STRETCH,
 ) {
     /** A listen (or a skip): who, when (ms), how long it played (ms). */
     data class Play(val artist: String, val at: Long, val ms: Long)
@@ -102,14 +110,26 @@ class Taste private constructor(
                 }
             }
             for (a in refused) for (n in names(a).take(1)) { near[n] = -1.0; why[n] = Why.NotForYou }
-            return Taste(near, why)
+            return Taste(near, why, appetite(plays, skips, now))
+        }
+
+        /** [appetite], from listens and skips: new artists played through (2.5 min or more) against new ones left at once. */
+        fun appetite(plays: List<Play>, skips: List<Play>, now: Long = nowMs()): Double {
+            val first = HashMap<String, Long>()
+            for (p in plays) names(p.artist).firstOrNull()?.let { n -> first[n] = minOf(first[n] ?: Long.MAX_VALUE, p.at) }
+            fun new(p: Play) = names(p.artist).firstOrNull()?.let { n -> first[n]?.let { p.at - it < 21 * DAY } ?: true } ?: false
+            val month = now - 30 * DAY
+            val through = plays.count { it.at >= month && it.ms >= 150_000 && new(it) }
+            val left = skips.count { it.at >= month && new(it) }
+            // a handful either way moves it; it never leaves the room between a tenth and a half
+            return (ForYou.STRETCH + .2 * kotlin.math.tanh((through - 1.5 * left) / 8.0)).coerceIn(.1, .5)
         }
     }
 }
 
 /**
  * The 70/30 (2026-11-07): of every ten shown, seven near your taste and three on purpose outside it, so what's picked for
- * you stays yours and still opens a door. Each scored by how near (taste), how many picked it (several critics, a
+ * you stays yours and still opens a door; since 2026-11-11 the three moves with your [Taste.appetite], one to five. Each scored by how near (taste), how many picked it (several critics, a
  * chart: `picked`, 0 to 1), how new (`fresh`, 0 to 1), less for being shown and passed over (`tired`, 1 to 0), with a
  * day's own small shuffle so the same day holds still and the next one doesn't.
  */
@@ -120,9 +140,12 @@ object ForYou {
     /** Below this an artist is a stranger: what's shown of them is a stretch. */
     const val NEAR = .2
 
+    /** The stretch to start from, and to come back to: three of ten. */
+    const val STRETCH = .3
+
     fun <T> order(
         items: List<T>, taste: (T) -> Double, picked: (T) -> Double, fresh: (T) -> Double, tired: (T) -> Double,
-        day: Long, stretch: Double = .3,
+        day: Long, stretch: Double = STRETCH,
     ): List<Placed<T>> {
         val r = kotlin.random.Random(day * 31 + items.size)
         val jitter = items.associateWith { r.nextDouble() * .08 }
@@ -133,10 +156,12 @@ object ForYou {
             .sortedByDescending { (.6 * picked(it) + .4 * fresh(it) + jitter.getValue(it)) * tired(it) }
         val out = ArrayList<Placed<T>>(shown.size)
         var i = 0; var j = 0
-        // three of every ten a stretch: places 3, 6 and 9 of each ten (never first: the first is yours)
+        // the stretch's share of every ten (one to five; at .3, places 3, 6 and 8), spread out, never first: the first is yours
+        val many = if (stretch <= 0) 0 else (stretch * 10).roundToInt().coerceIn(1, 5)
+        val slots = (1..many).map { it * 10 / (many + 1) }.toSet()
         while (i < near.size || j < far.size) {
             val slot = out.size % 10
-            val wantFar = stretch > 0 && (slot == 2 || slot == 5 || slot == 8)
+            val wantFar = slot in slots
             if ((wantFar && j < far.size) || i >= near.size) out.add(Placed(far[j++], true)) else out.add(Placed(near[i++], false))
         }
         return out

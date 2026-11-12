@@ -13,8 +13,8 @@ import java.io.File
 import java.time.LocalDate
 
 /**
- * Keep what you play most, the computer's (settings, kept offline; the phone's KeepMost): your 50 most played of the
- * last three months kept on this computer, looked at again once a day; one that's dropped out let go, unless a love or
+ * Keep what you play most, the computer's (settings, kept offline; the phone's KeepMost): the 50 most in your rotation (lately
+ * counts more) kept on this computer, looked at again once a day; one that's dropped out let go, unless a love or
  * your own hand kept it too. Off at first. Kept in keep-most.json.
  */
 object KeepMost {

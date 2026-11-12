@@ -351,7 +351,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         // the most played kept, refreshed daily on wifi (KeepMost): off at first
                         Spacer(Modifier.height(18.dp))
                         val most by KeepMost.on.collectAsState()
-                        BasicText("keep what you play most: your ${KeepMost.N} most played of the last three months, kept on this ${Device.word} and changed as they change (on wifi)", style = pixel(12.sp, Ink.mid))
+                        BasicText("keep what you play most: the ${KeepMost.N} songs most in your rotation these days (this week counts more than the summer), kept on this ${Device.word} and changed as they change (on wifi)", style = pixel(12.sp, Ink.mid))
                         Spacer(Modifier.height(6.dp))
                         Row {
                             Word("off", pixel(14.sp, if (!most) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { KeepMost.set(ctx, false) }

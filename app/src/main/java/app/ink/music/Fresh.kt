@@ -120,7 +120,7 @@ object Fresh {
                 async { name to (withTimeoutOrNull(4_000) { YouTubeAccount.artist(name, "").firstOrNull { it != null } }?.like.orEmpty().map { it.name }) }
             }.awaitAll().filter { it.second.isNotEmpty() }.toMap()
             if (related.isNotEmpty()) taste.value = of(related)
-            android.util.Log.d("ink-picks", "taste: ${plays.size} listens, ${skips.size} skips, ${loved.size} loves, ${related.size} artists' fans, ${brought.sumOf { it.artists.size }} brought in; nearest ${taste.value.top(5)}")
+            android.util.Log.d("ink-picks", "taste: ${plays.size} listens, ${skips.size} skips, ${loved.size} loves, ${related.size} artists' fans, ${brought.sumOf { it.artists.size }} brought in; nearest ${taste.value.top(5)}, appetite %.2f".format(taste.value.appetite))
         }
     }
 
@@ -154,10 +154,10 @@ object Fresh {
     /** How new, 1 today to 0 a month old (a pick with no date: half). */
     private fun fresh(s: Picks.Shown) = if (s.pick.at <= 0) .5 else (1 - (System.currentTimeMillis() - s.pick.at) / (30.0 * Seen.DAY)).coerceIn(0.0, 1.0)
 
-    /** Picks in your order: seven near you, three a stretch, of every ten; passed-over ones stepping back. */
+    /** Picks in your order: of every ten, most near you, the rest a stretch (as many as your appetite says: one to five); passed-over ones stepping back. */
     fun rank(list: List<Picks.Shown>, t: Taste = taste.value): List<ForYou.Placed<Picks.Shown>> =
         ForYou.order(list.distinctBy { Curation.key(it.pick) }, { t.of(it.pick.artist) }, ::picked, ::fresh,
-            { if (::seen.isInitialized) seen.fresh(key(it.pick)) else 1.0 }, Moment.issue().toLong())
+            { if (::seen.isInitialized) seen.fresh(key(it.pick)) else 1.0 }, Moment.issue().toLong(), stretch = t.appetite)
 
     /**
      * Why it's here, when that's worth a line (2026-11-07: less text): a stretch, someone you love, whom your artists'

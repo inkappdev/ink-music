@@ -16,8 +16,8 @@ import java.io.File
 import java.time.LocalDate
 
 /**
- * Keep what you play most, the phone's (settings, offline; 2026-11-11, after SimpMusic's smart downloads): your 50 most
- * played of the last three months ([LoveKeeping.mostPlayed], from what you've heard), kept on the phone, looked at again
+ * Keep what you play most, the phone's (settings, offline; 2026-11-11, after SimpMusic's smart downloads): the 50 most
+ * in your rotation ([LoveKeeping.mostPlayed]: lately counts more), kept on the phone, looked at again
  * once a day on wifi; one that's dropped out let go, unless a love or your own hand kept it too. Off at first (it's a
  * lot to fetch unasked). Kept in files/keep-most.json: on, the songs kept for it, the day last looked.
  */
