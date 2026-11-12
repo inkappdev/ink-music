@@ -165,6 +165,7 @@ class Main : ComponentActivity() {
         Moments.start(this)
         Looks.start(this)
         Marquees.start(this)
+        CoverPrint.start(this)
         ListCovers.start(this)
         ListsGrid.start(this)
         Loved.start(this)
@@ -1772,7 +1773,7 @@ fun Mosaic(songs: List<Song>, modifier: Modifier) {
         Column {
             for (r in 0..1) Row {
                 for (c in 0..1) four.getOrNull(r * 2 + c)?.let {
-                    if (Device.tv) TvDithered(it, Modifier.size(cell), px) else Dithered(it, Modifier.size(cell), px = px)
+                    if (Device.tv) TvDithered(it, Modifier.size(cell), px) else Covered(it, Modifier.size(cell), px = px)
                 } ?: Spacer(Modifier.size(cell))
             }
         }
@@ -2079,18 +2080,19 @@ fun pullQuote(about: String): Pair<String?, String> = Bio.pullQuote(about)
 
 /**
  * A picture in the dither (the player's), in its own colour, developing from black (the brightest dots first) once
- * it's read: an artist's photo, and YouTube's mixes and playlists (their own lettering made ink's, a colour to see).
+ * it's read: an artist's photo, and YouTube's mixes and playlists (their own lettering made ink's, a colour to see), these
+ * in the look chosen for them ([Covered]).
  */
 @Composable
-fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
+fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER) {
     val cover = rememberCover(photo, px)
     val density = LocalDensity.current
     BoxWithConstraints(modifier.background(androidx.compose.ui.graphics.Color.Black)) {
         val side = with(density) { maxWidth.toPx() }
-        val frames by androidx.compose.runtime.produceState<List<androidx.compose.ui.graphics.ImageBitmap>?>(null, cover) {
+        val frames by androidx.compose.runtime.produceState<List<androidx.compose.ui.graphics.ImageBitmap>?>(null, cover, print) {
             val c = cover ?: return@produceState
             value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                Looks.develop(c.image.asAndroidBitmap(), c.accent, side, density.density)?.map { it.asImageBitmap() }
+                Looks.develop(c.image.asAndroidBitmap(), c.accent, side, density.density, print = print, word = photo.title.removePrefix("mood "))?.map { it.asImageBitmap() }
             }
         }
         val shown = remember(frames) { Animatable(0f) }
@@ -2109,6 +2111,10 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
         }
     }
 }
+
+/** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither, tiles, contours or letters. */
+@Composable
+fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value)
 
 /** A picture as it is, filling its space (an artist's photo with the dither off). */
 @Composable
@@ -2330,7 +2336,7 @@ fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
     val face = remember(a.url) { tubeFace(a) }
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         // YouTube's own playlists (its mixes, charts, editors' lists) in the dither, its lettering made ink's
-        if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Dithered(face, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Covered(face, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         else CoverOf(face, a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
         UnderCover(a.title, a.artist, pixel(12.sp, Ink.mid), gap = 3.dp)
@@ -2361,7 +2367,7 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             BoxWithConstraints(Modifier.bleed(20.dp), contentAlignment = Alignment.Center) {
                 // YouTube's own (its mixes, liked music...): in the dither, as on its tile, never its branding
                 val face = remember(a.url) { tubeFace(a) }
-                if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Dithered(face, Modifier.size(headerSide(maxWidth)), px = 1080)
+                if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Covered(face, Modifier.size(headerSide(maxWidth)), px = 1080)
                 else CoverOf(face, a.title, Modifier.size(headerSide(maxWidth)))
             }
             Spacer(Modifier.height(18.dp))
@@ -2996,7 +3002,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
                 val a = remember(pl.id) { TubeAlbum("https://music.youtube.com/playlist?list=${pl.id}", pl.name, "", pl.art) }
                 val face = remember(pl.id) { tubeFace(a) }
                 if (pl.art == null) Lettered(pl.name)
-                else if (Curation.tubeBranded(a.url, pl.said)) Dithered(face, Modifier.fillMaxSize(), px = 400)
+                else if (Curation.tubeBranded(a.url, pl.said)) Covered(face, Modifier.fillMaxSize(), px = 400)
                 else CoverOf(face, pl.name, Modifier.fillMaxSize(), px = 480)
             }
         }

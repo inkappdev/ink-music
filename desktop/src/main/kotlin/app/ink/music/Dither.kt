@@ -48,8 +48,18 @@ object Dither {
 
     fun cell(density: Float, k: Float = 1f): Int = (DOT * k * density / Size.of(Size.chosen.value)).roundToInt().coerceAtLeast(2)
 
-    fun develop(art: ImageBitmap, accent: Color, dots: Int, frames: Int = 12): List<ImageBitmap>? = runCatching {
+    fun develop(art: ImageBitmap, accent: Color, dots: Int, frames: Int = 12, print: Print = Print.DITHER, word: String = ""): List<ImageBitmap>? = runCatching {
         val img = Image.makeFromBitmap(art.asSkiaBitmapCopy())
+        if (print != Print.DITHER) {
+            // the other looks (Prints in core) from the cover drawn a pixel a dot
+            val px = pixels(img, dots)
+            val a = accent.toArgb()
+            return@runCatching when (print) {
+                Print.TILES -> Prints.tiles(px, dots, frames)
+                Print.CONTOURS -> Prints.contours(px, dots, a, frames)
+                else -> Prints.letters(px, dots, a, word, frames)
+            }.map { image(it, dots).toComposeImageBitmap() }
+        }
         // softened less since 2026-11-11 (half the dots, blurred once; were a third, three times): faces and type come back
         val small = (dots / 2).coerceAtLeast(16)
         val soft = pixels(img, small).also { px -> blur(px, small, 1, true); blur(px, small, 1, false) }

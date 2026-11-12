@@ -126,6 +126,16 @@ fun LookPage(pages: Pages) {
                 Choices(listOf("moving" to marquee, "still" to !marquee)) { Marquees.set(ctx, it == 0) }
                 Spacer(Modifier.height(40.dp))
             }
+            // how mixes and lists are drawn from their covers (artists' photos stay in the dither)
+            Column(Modifier.cascade(5)) {
+                val print by CoverPrint.on.collectAsState()
+                BasicText("COVERS", style = headline(24.sp))
+                Spacer(Modifier.height(6.dp))
+                BasicText("how mixes and lists are drawn from their covers", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(10.dp))
+                Choices(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(ctx, Print.entries[it]) }
+                Spacer(Modifier.height(40.dp))
+            }
             // an artist's page: their photo or their moving one (apple music's), dithered or as it is (both alike)
             Column(Modifier.cascade(5)) {
                 val video by Moving.artistVideo.collectAsState()

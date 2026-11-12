@@ -978,7 +978,7 @@ fun InkMoodsShelf() {
         Column(Modifier.width(if (big) 200.dp else 150.dp).heightIn(min = tallest)
             .onSizeChanged { with(density) { it.height.toDp() }.let { h -> if (h > tallest) tallest = h } }.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { go(m) })) {
             Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.BottomStart) {
-                kept[m.key]?.art?.let { art -> Dithered(remember(art) { faceSong("mood " + m.key, art) }, Modifier.fillMaxSize(), px = 400) }
+                kept[m.key]?.art?.let { art -> Covered(remember(art) { faceSong("mood " + m.key, art) }, Modifier.fillMaxSize(), px = 400) }
                 // its name on a black tab in the corner (pale dithers swallowed it)
                 BasicText(m.name.uppercase(), style = headline(if (big) 26.sp else 20.sp), maxLines = 2,
                     modifier = Modifier.background(Ink.black).padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 2.dp))

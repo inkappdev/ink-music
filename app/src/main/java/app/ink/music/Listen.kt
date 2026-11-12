@@ -668,7 +668,7 @@ internal fun Tile(song: Song?, name: String, said: String, face: String? = null,
     val shown = remember(song, face) { if (face != null) faceSong(name, face) else song }
     Column(Modifier.width(140.dp).warmOnRest(song).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         // a mix or a playlist: its picture in the dither (YouTube's lettering on it made ink's)
-        if (dither && shown?.art != null) Dithered(shown, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        if (dither && shown?.art != null) Covered(shown, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         else CoverOf(shown, name, Modifier.fillMaxWidth().aspectRatio(1f), px = TILE_PX)
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Top) {

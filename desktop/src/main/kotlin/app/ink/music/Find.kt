@@ -282,7 +282,7 @@ val TubeAlbum.branded: Boolean get() = Curation.tubeBranded(url, artist)
 @Composable
 fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
     androidx.compose.foundation.layout.Column(modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
-        if (a.branded && a.art != null) Dithered(face(a), Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        if (a.branded && a.art != null) Covered(face(a), Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         else CoverOf(face(a), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(a.title, a.artist)
@@ -303,7 +303,7 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
         Close(onClose)
         Row(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 16.dp)) {
             androidx.compose.foundation.layout.Column(Modifier.width(320.dp)) {
-                if (a.branded && a.art != null) Dithered(face(a), Modifier.size(320.dp), px = 640)
+                if (a.branded && a.art != null) Covered(face(a), Modifier.size(320.dp), px = 640)
                 else CoverOf(face(a), a.title, Modifier.size(320.dp))
                 Spacer(Modifier.height(16.dp))
                 BasicText(a.title.uppercase(), style = headline(30.sp), maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)

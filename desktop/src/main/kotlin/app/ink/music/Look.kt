@@ -54,6 +54,14 @@ object Moving {
     }
 }
 
+/** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither, tiles, contours or letters. */
+object CoverPrint {
+    private val _on = MutableStateFlow(Print.DITHER)
+    val on: StateFlow<Print> = _on
+    fun set(print: Print) { _on.value = print; LookFile.save() }
+    internal fun put(print: Print) { _on.value = print }
+}
+
 /** Whether the big names (the player's artist along the foot, ink weekly's, a long one on an artist's page) move. */
 object Marquees {
     private val _on = MutableStateFlow(true)
@@ -90,6 +98,7 @@ internal object LookFile {
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true),
             o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true))
         Marquees.put(o.optBoolean("marquee", true))
+        CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") } ?: Print.DITHER)
         ListCovers.put(o.optBoolean("listCovers", false))
         ListsGrid.put(o.optBoolean("listsGrid", false))
     }
@@ -98,7 +107,7 @@ internal object LookFile {
         runCatching {
             file.writeText(JSONObject().put("behind", Looks.on.value.name).put("moving", Moving.on.value)
                 .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value)
-                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).toString())
+                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).put("print", CoverPrint.on.value.name).toString())
         }
     }
 }

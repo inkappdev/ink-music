@@ -199,7 +199,7 @@ fun Mosaic(songs: List<Song>, modifier: Modifier) {
         val four = songs.distinctBy { it.art ?: it.albumId }.take(4)
         Column {
             for (r in 0..1) Row {
-                for (c in 0..1) four.getOrNull(r * 2 + c)?.let { Dithered(it, Modifier.size(cell), px = px) } ?: Spacer(Modifier.size(cell))
+                for (c in 0..1) four.getOrNull(r * 2 + c)?.let { Covered(it, Modifier.size(cell), px = px) } ?: Spacer(Modifier.size(cell))
             }
         }
     }

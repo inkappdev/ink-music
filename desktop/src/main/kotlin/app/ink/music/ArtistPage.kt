@@ -358,7 +358,7 @@ private fun BigName(name: String, room: androidx.compose.ui.unit.Dp) {
  * it's read: an artist's photo.
  */
 @Composable
-fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
+fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER) {
     val cover = rememberCover(photo, px)
     val density = LocalDensity.current
     BoxWithConstraints(modifier.background(Ink.black)) {
@@ -369,7 +369,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
         // a picture's frames kept for the session: a tile seen before (scrolled back to, listen opened again) is there at
         // once, not developed all over (2026-11-09: "the dithered ... loading in slow"; each was 25 ms in coming and 7 ms
         // to make, then 900 ms of developing, every time it came into sight)
-        val key = remember(cover, dots) { cover?.let { "${photo.id}|${photo.albumId}|$dots|${it.accent.value}" } }
+        val key = remember(cover, dots, print) { cover?.let { "${photo.id}|${photo.albumId}|$dots|${it.accent.value}|$print" } }
         val ready = remember(key) { key?.let { Dither.kept(it) } }
         // made anew for each size (the zoom, the window): keyed on the key, not the cover alone (2026-11-11: zoomed, the
         // old size's frames were kept as made, the new ones never were, and the develop stopped at its first frame, one
@@ -378,7 +378,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
             val c = cover ?: return@produceState
             if (ready != null) { value = ready; return@produceState }
             val t = System.nanoTime()
-            value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, dots) }?.also { f -> key?.let { Dither.keep(it, f) } }
+            value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, dots, print = print, word = photo.title.removePrefix("mood ")) }?.also { f -> key?.let { Dither.keep(it, f) } }
             if (Log.on) Log.d("dither: ${photo.album.take(20)} cover ${(t - born) / 1_000_000} ms after shown, frames ${(System.nanoTime() - t) / 1_000_000} ms")
         }
         // developed in the first time it's seen (450 ms); a size changed after, there at once (the picture's, not the size's)
@@ -392,6 +392,10 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080) {
         }
     }
 }
+
+/** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither, tiles, contours or letters. */
+@Composable
+fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value)
 
 /** A picture as it is, filling its space (an artist's photo with the dither off). */
 @Composable

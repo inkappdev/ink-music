@@ -173,7 +173,7 @@ fun InkMoodsShelf() {
 fun MoodTile(m: InkMoods.Mood, art: String?, side: androidx.compose.ui.unit.Dp = 170.dp, onClick: () -> Unit) {
     Column(Modifier.width(side).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.BottomStart) {
-            if (art != null) Dithered(remember(art) { faceSong("mood " + m.key, art, photo = true) }, Modifier.fillMaxSize(), px = 340)
+            if (art != null) Covered(remember(art) { faceSong("mood " + m.key, art, photo = true) }, Modifier.fillMaxSize(), px = 340)
             // its name on a black tab in the corner (a sleeve's label: pale dithers swallowed it)
             BasicText(m.name.uppercase(), style = headline(if (side > 200.dp) 30.sp else 22.sp), maxLines = 2,
                 modifier = Modifier.background(Ink.black).padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 4.dp))

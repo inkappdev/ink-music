@@ -239,7 +239,7 @@ fun ListenPage(open: (Page) -> Unit) {
                 Shelf {
                     itemsIndexed(mixes, key = { _, m -> m.name }) { _, m ->
                         Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { mixScope.launch { Mixes.play(m) } })) {
-                            Dithered(m.face, Modifier.fillMaxWidth().aspectRatio(1f), px = 340)
+                            Covered(m.face, Modifier.fillMaxWidth().aspectRatio(1f), px = 340)
                             Spacer(Modifier.height(8.dp))
                             UnderCover(m.name, "mix")
                         }
@@ -518,7 +518,7 @@ private fun ListsTiles(open: (Page) -> Unit) {
         gridItems(tubeLists, key = { it.url }) { t ->
             ListTile(t.title, listOf("youtube music", t.artist.lowercase()).filter { it.isNotEmpty() }.joinToString("  ·  "), { open(Page.Tube(t)) }) {
                 if (t.art == null) Lettered(t.title)
-                else if (t.branded) Dithered(face(t), Modifier.fillMaxSize(), px = 400)
+                else if (t.branded) Covered(face(t), Modifier.fillMaxSize(), px = 400)
                 else CoverOf(face(t), t.title, Modifier.fillMaxSize(), px = 480)
             }
         }

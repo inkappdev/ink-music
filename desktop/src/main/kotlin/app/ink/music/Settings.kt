@@ -867,6 +867,18 @@ private fun LookSetting() {
         Word("off", pixel(14.sp, if (!moving) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(on = false) }
     }
     Spacer(Modifier.height(36.dp))
+    // how mixes and lists are drawn from their covers (artists' photos stay in the dither)
+    val print by CoverPrint.on.collectAsState()
+    BasicText("COVERS", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("how mixes and lists are drawn from their covers", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(12.dp))
+    Row {
+        Print.entries.forEach { p ->
+            Word(p.word, pixel(14.sp, if (p == print) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { CoverPrint.set(p) }
+        }
+    }
+    Spacer(Modifier.height(36.dp))
     val artistVideo by Moving.artistVideo.collectAsState()
     val artistDither by Moving.artistDither.collectAsState()
     BasicText("ARTIST PAGES", style = headline(24.sp))
