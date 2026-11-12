@@ -194,6 +194,10 @@ object AddonMusic {
         } finally { connection.disconnect() }
     }
 
+    /** Headers for the audio GET itself when its URL is a token-bearing LastWave route. */
+    fun signedHeaders(ctx: Context, url: String): Map<String, String> =
+        sign(ctx, url)?.let { (ts, signature) -> mapOf("X-LW-TS" to ts, "X-LW-Sign" to signature) }.orEmpty()
+
     /** LastWave's optional signature: timestamp, method, path and the /a/{token} path token. */
     private fun sign(ctx: Context, url: String): Pair<String, String>? {
         val key = secret(ctx)
