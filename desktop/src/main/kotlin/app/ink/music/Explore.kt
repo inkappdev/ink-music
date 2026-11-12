@@ -573,6 +573,12 @@ object Moods {
         }
     }
 
+    /** A genre picked as liked (the welcome): counted as opened a few times, so it leads among the genres. */
+    fun lean(title: String) {
+        counts.value = counts.value + (title to (counts.value[title] ?: 0) + 3)
+        runCatching { Home.write(opened, org.json.JSONObject(counts.value).toString()) }
+    }
+
     fun open(m: InnerTube.Mood) {
         counts.value = counts.value + (m.title to (counts.value[m.title] ?: 0) + 1)
         runCatching { Home.write(opened, org.json.JSONObject(counts.value).toString()) }

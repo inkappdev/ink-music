@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -82,9 +83,9 @@ fun WelcomePage() {
         }, label = "welcome") { s ->
             when (s) {
                 Step.HELLO -> Hello { step = Step.PHONE }
-                Step.PHONE -> PhoneStep(onPaired = { Welcome.finish() }, onSkip = { step = Step.MUSIC })
-                Step.MUSIC -> MusicStep { step = Step.LIKE }
-                Step.LIKE -> LikeStep { Welcome.finish() }
+                Step.PHONE -> PhoneStep(onPaired = { Welcome.finish() }, onSkip = { step = Step.MUSIC }, onBack = { TubeAccount.stop(); step = Step.HELLO })
+                Step.MUSIC -> MusicStep(onBack = { step = Step.PHONE }) { step = Step.LIKE }
+                Step.LIKE -> LikeStep(onBack = { step = Step.MUSIC }) { Welcome.finish() }
             }
         }
     }
@@ -95,8 +96,10 @@ fun WelcomePage() {
  * faces), its words along the foot.
  */
 @Composable
-private fun StepFrame(heading: String, foot: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit, fill: Boolean = false, body: @Composable () -> Unit) {
+private fun StepFrame(heading: String, onBack: () -> Unit, foot: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit, fill: Boolean = false, body: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 64.dp, vertical = 56.dp)) {
+        // back a step: the arrow at the top left (the rail's own, bigger)
+        Pixel(FOLD_LEFT, "back", Ink.mid, Modifier.padding(bottom = 24.dp), cell = 4.dp, onClick = onBack)
         if (!fill) Spacer(Modifier.weight(1f))
         BasicText(heading, style = headline(56.sp).copy(lineHeight = 60.sp))
         Spacer(Modifier.height(32.dp))
@@ -170,7 +173,7 @@ private fun Drift(modifier: Modifier) {
 
 /** The phone: its camera on the code, and paired, everything it has comes over: done. */
 @Composable
-private fun PhoneStep(onPaired: () -> Unit, onSkip: () -> Unit) {
+private fun PhoneStep(onPaired: () -> Unit, onSkip: () -> Unit, onBack: () -> Unit) {
     LaunchedEffect(Unit) { if (TubeAccount.code.value == null) TubeAccount.await() }
     val code by TubeAccount.code.collectAsState()
     val link by TubeAccount.link.collectAsState()
@@ -179,7 +182,7 @@ private fun PhoneStep(onPaired: () -> Unit, onSkip: () -> Unit) {
     LaunchedEffect(paired) { if (paired) { delay(1_400); onPaired() } }
     // ten minutes up with no phone: the code made again while this is open
     LaunchedEffect(code) { if (code == null && !paired) { delay(500); TubeAccount.await() } }
-    StepFrame(if (paired) "PAIRED" else "ON YOUR PHONE TOO?", foot = {
+    StepFrame(if (paired) "PAIRED" else "ON YOUR PHONE TOO?", onBack, foot = {
         if (!paired) Word("no phone", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop(); onSkip() }
     }) {
         if (!paired) Column {
@@ -196,14 +199,14 @@ private fun PhoneStep(onPaired: () -> Unit, onSkip: () -> Unit) {
 
 /** Your music: the folder found (how many songs in it), another, or your server. */
 @Composable
-private fun MusicStep(onNext: () -> Unit) {
+private fun MusicStep(onBack: () -> Unit, onNext: () -> Unit) {
     val songs by Library.songs.collectAsState()
     val at by Library.folderAt.collectAsState()
     val account by Server.account.collectAsState()
     var server by remember { mutableStateOf(false) }
     val files = songs.count { !it.server }
     val fromServer = songs.count { it.server }
-    StepFrame("WHERE'S YOUR MUSIC?", foot = {
+    StepFrame("WHERE'S YOUR MUSIC?", onBack, foot = {
         Word("NEXT", headline(40.sp), touch = 10.dp, onClick = onNext)
     }) {
         Column(Modifier.verticalScroll(rememberScrollState()).widthIn(max = 640.dp)) {
@@ -223,12 +226,19 @@ private fun MusicStep(onNext: () -> Unit) {
     }
 }
 
+/** The genres to pick: the word shown, and YouTube Music's genre it is (Moods; its lowercase is Genres' and the map's). */
+private val GENRE_WORDS = listOf("indie" to "Indie & alternative", "electronic" to "Dance & electronic", "hip-hop" to "Hip-hop",
+    "soul" to "R&B & soul", "pop" to "Pop", "rock" to "Rock", "jazz" to "Jazz", "folk" to "Folk & acoustic", "latin" to "Latin",
+    "classical" to "Classical", "metal" to "Metal", "country" to "Country & Americana", "blues" to "Blues", "african" to "African",
+    "caribbean" to "Reggae & caribbean", "brazilian" to "Brazilian", "k-pop" to "K-Pop", "j-pop" to "J-Pop", "soundtracks" to "Soundtracks & musicals")
+
 /**
- * Whom you like, as faces: your library's most-kept first, then well-loved ones across kinds of music (the phone's
- * offer). Picked are lit; done follows them (Follows), and their mixes lead listen.
+ * What you like: kinds of music as words, then artists as faces (your library's most-kept first, then well-loved ones
+ * across kinds of music, the phone's offer); beside them your ink mapped land rising as you pick (InkMap: a hill for
+ * each, placed by its sound). Done follows the artists (their mixes lead listen) and leans the genres to the front.
  */
 @Composable
-private fun LikeStep(onDone: () -> Unit) {
+private fun LikeStep(onBack: () -> Unit, onDone: () -> Unit) {
     val songs by Library.songs.collectAsState()
     val mine = remember(songs) {
         songs.flatMap { it.artist.split(", ") }.filter { it.isNotBlank() && it.lowercase() != "unknown" }.groupingBy { it }.eachCount()
@@ -236,26 +246,99 @@ private fun LikeStep(onDone: () -> Unit) {
     }
     val offered = remember(mine) { (mine + OFFERED).distinctBy { it.lowercase() }.take(24) }
     val picked = remember { mutableStateListOf<String>() }
-    StepFrame("WHAT DO YOU LIKE?", fill = true, foot = {
-        BasicText(if (picked.isEmpty()) "" else "${picked.size}", style = pixel(13.sp, Ink.mid), modifier = Modifier.weight(1f))
+    val genres = remember { mutableStateListOf<String>() }
+    // the picked artists' tags read (Last.fm's), so their hills stand where their sound is; a bump redraws the map
+    var tagsRead by remember { mutableStateOf(0) }
+    LaunchedEffect(picked.toList()) {
+        val now = System.currentTimeMillis()
+        val missing = picked.filter { Genres.tags(it) == null }
+        if (missing.isNotEmpty() && LastFm.key.isNotEmpty()) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            missing.forEach { runCatching { Genres.read(it, LastFm.key, now) } }
+        }
+        tagsRead++
+    }
+    StepFrame("WHAT DO YOU LIKE?", onBack, fill = true, foot = {
+        BasicText(if (picked.isEmpty() && genres.isEmpty()) "" else "${picked.size + genres.size}", style = pixel(13.sp, Ink.mid), modifier = Modifier.weight(1f))
         Word("skip", pixel(14.sp, Ink.mid), Modifier.padding(end = 28.dp), touch = 8.dp, onClick = onDone)
-        Word("DONE", headline(40.sp, if (picked.isEmpty()) Ink.mid else Ink.ink), touch = 10.dp) {
+        val any = picked.isNotEmpty() || genres.isNotEmpty()
+        Word("DONE", headline(40.sp, if (any) Ink.ink else Ink.mid), touch = 10.dp) {
             picked.reversed().forEach { Follows.set(it, "", true) }
+            genres.forEach { w -> GENRE_WORDS.firstOrNull { it.first == w }?.let { Moods.lean(it.second) } }
             onDone()
         }
     }) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val across = (maxWidth / 150.dp).toInt().coerceIn(4, 8)
-            val side = (maxWidth - 18.dp * (across - 1)) / across
-            FlowRow(Modifier.verticalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                offered.forEach { name ->
-                    val on = name in picked
-                    Face(name, on, Modifier.width(side)) { if (on) picked.remove(name) else picked.add(name) }
+        Row(Modifier.fillMaxSize()) {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                val across = (maxWidth / 150.dp).toInt().coerceIn(3, 6)
+                val side = (maxWidth - 18.dp * (across - 1)) / across
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        GENRE_WORDS.forEach { (w, _) ->
+                            val on = w in genres
+                            Word(w.uppercase(), headline(26.sp, if (on) Ink.ink else Ink.dim), touch = 4.dp) { if (on) genres.remove(w) else genres.add(w) }
+                        }
+                    }
+                    Spacer(Modifier.height(32.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        offered.forEach { name ->
+                            val on = name in picked
+                            Face(name, on, Modifier.width(side)) { if (on) picked.remove(name) else picked.add(name) }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.width(48.dp))
+            // your land, as it grows: each pick a hill (artists highest, the genres a little lower), placed by its sound
+            val hills = remember(picked.toList(), genres.toList(), tagsRead) {
+                picked.mapIndexed { i, n -> n to (1.0 - i * .02).coerceAtLeast(.6) } +
+                    genres.mapNotNull { w -> GENRE_WORDS.firstOrNull { it.first == w }?.let { it.first to .75 } }
+            }
+            val genreTags = remember(genres.toList()) { genres.associateWith { w -> GENRE_WORDS.first { it.first == w }.second.let { g -> listOfNotNull(Genres.tagOf(g)) } } }
+            Column(Modifier.width(420.dp).fillMaxHeight()) {
+                LandOf(hills, { n -> genreTags[n] ?: Genres.tags(n) }, Modifier.fillMaxWidth().aspectRatio(1f))
+                Spacer(Modifier.height(12.dp))
+                BasicText(if (hills.isEmpty()) "your ink, mapped: pick and it rises" else "your ink, mapped", style = pixel(12.sp, Ink.mid))
+            }
+        }
+    }
+}
+
+/**
+ * Ink mapped's land drawn from `hills` (a name and how near, nearest first), in ink on black, its highest named; each
+ * new drawing faded in over the last. Nothing yet: black.
+ */
+@Composable
+fun LandOf(hills: List<Pair<String, Double>>, tags: (String) -> List<String>?, modifier: Modifier, accent: androidx.compose.ui.graphics.Color = Ink.ink, named: Int = 3) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    BoxWithConstraints(modifier) {
+        val px = with(density) { maxWidth.toPx() }.toInt().coerceIn(200, 1100)
+        val drawn by produceState<Pair<androidx.compose.ui.graphics.ImageBitmap, InkMap.Drawn>?>(null, hills, px, accent) {
+            if (hills.isEmpty()) { value = null; return@produceState }
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val d = InkMap.draw(hills, .5, accent.toArgbInt(), px, named = named, tags = tags)
+                val img = java.awt.image.BufferedImage(d.side, d.side, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+                img.setRGB(0, 0, d.side, d.side, d.pixels, 0, d.side)
+                img.toComposeImageBitmap() to d
+            }
+        }
+        val w = maxWidth
+        AnimatedContent(drawn, transitionSpec = { fadeIn(tween(600, easing = Motion.expo)) togetherWith fadeOut(tween(600)) }, label = "land") { m ->
+            Box(Modifier.fillMaxSize()) {
+                m?.let { (img, d) ->
+                    androidx.compose.foundation.Image(img, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                    // the summits' names, and the regions' (fainter), where they stand
+                    d.peaks.forEach { p -> BasicText(p.name.lowercase(), style = pixel(12.sp, Ink.ink), maxLines = 1, softWrap = false,
+                        modifier = Modifier.offset(x = w * p.x - 20.dp, y = w * p.y - 22.dp)) }
+                    d.regions.forEach { r -> BasicText(r.name.uppercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, softWrap = false,
+                        modifier = Modifier.offset(x = w * r.x - 24.dp, y = w * r.y)) }
                 }
             }
         }
     }
 }
+
+private fun androidx.compose.ui.graphics.Color.toArgbInt(): Int =
+    ((alpha * 255).toInt() shl 24) or ((red * 255).toInt() shl 16) or ((green * 255).toInt() shl 8) or (blue * 255).toInt()
 
 /** An artist's face (found by name; ink's sleeve with the name till then), the name under it; dimmed till picked. */
 @Composable
