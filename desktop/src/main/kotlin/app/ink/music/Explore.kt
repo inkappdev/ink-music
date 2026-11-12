@@ -697,8 +697,7 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
                         listOfNotNull(
                             if (listed) listSongs.size.takeIf { it > 0 }?.let { "$it from ${from.size} editors' ${if (from.size == 1) "list" else "lists"}" }
                             else picks.size.takeIf { it > 0 }?.let { "$it picked by ${from.size} ${if (from.size == 1) "critic or curator" else "critics and curators"}" },
-                            shelves?.let { "${it.size} flavors on youtube music" },
-                        ).joinToString("   ").ifEmpty { "reading youtube music" },
+                        ).joinToString("   ").ifEmpty { if (shelves == null) "reading youtube music" else "" },
                         style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f),
                     )
                     Word("start station", pixel(14.sp), touch = 8.dp) { scope.launch { Moods.station(m) } }
