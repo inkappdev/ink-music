@@ -8,10 +8,6 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  ANDROID_HOME: /usr/local/lib/android/sdk
-  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -23,11 +19,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Add Android command-line tools to PATH
-        run: echo "$ANDROID_HOME/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
-      - name: Install Android SDK and native build tools
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.31.6"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Install Android platform and native build tools
+        run: sdkmanager "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.31.6"
       - name: Build full debug APK and run unit tests
         run: ./gradlew --no-daemon :app:assembleFullDebug :app:testFullDebugUnitTest
