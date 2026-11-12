@@ -116,6 +116,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     }
     // what's said of them: its first sentence pulled out big, as a lyric is; the rest small under it, a click for the rest
     val about = @Composable { quote: androidx.compose.ui.unit.TextUnit, lines: Int ->
+      Column {
         // its source line ("From Wikipedia ... under Creative Commons") off, a quiet credit under it instead
         // with no bio anywhere, a line ink writes from what it knows (Bio.facts): never an empty space
         val picked by Picks.said.collectAsState()
@@ -144,6 +145,18 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                 // where it's from: not on the page (2026-11-09, Bronson: cut it); the licence's credit closes the whole bio (Reading)
             }
         }
+        // their own places (Socials: Instagram, TikTok, Bandcamp, their site...), words that open them in the browser;
+        // read once the page knows their records, which tell one of a shared name
+        val ready = i != null || !waiting
+        val titles = remember(records, i) { records.map { it.title } + i?.albums.orEmpty().map { it.title } }
+        val socials by produceState(emptyList<Socials.Link>(), name, ready) {
+            if (ready) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Socials.of(java.io.File(Home.cache, "socials"), name, titles) }
+        }
+        if (socials.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(Modifier.widthIn(max = 720.dp).padding(top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            socials.forEach { l -> Word(l.word, pixel(13.sp, Ink.mid), touch = 6.dp) { browse(l.url) } }
+        }
+      }
     }
     // how many listen, their records, how many of theirs you have; then play, shuffle, radio, follow
     val counts = @Composable {

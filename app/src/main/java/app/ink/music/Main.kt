@@ -1692,6 +1692,25 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 Spacer(Modifier.height(22.dp))
             }
         }
+        // their own places (Socials: Instagram, TikTok, Bandcamp, their site...), words that open them; read once the
+        // page knows their records, which tell one of a shared name
+        item(key = "socials") {
+            val ready = i != null || !waiting
+            val titles = remember(records, i) { records.map { it.title } + i?.albums.orEmpty().map { it.title } }
+            val socials by androidx.compose.runtime.produceState(emptyList<Socials.Link>(), name, ready) {
+                if (ready) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Socials.of(java.io.File(ctx.cacheDir, "socials"), name, titles) }
+            }
+            if (socials.isNotEmpty()) {
+                androidx.compose.foundation.layout.FlowRow(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 22.dp),
+                    horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    socials.forEach { l ->
+                        Word(l.word, pixel(14.sp, Ink.mid), touch = 8.dp) {
+                            runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(l.url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }
+                    }
+                }
+            }
+        }
         // the playlists they're on (YouTube Music's "featured on", and their own), each opening as any list
         i?.featured?.takeIf { it.isNotEmpty() }?.let { lists ->
             item(key = "featured") {
