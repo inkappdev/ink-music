@@ -881,9 +881,10 @@ private fun LookSetting() {
     Spacer(Modifier.height(36.dp))
     val artistVideo by Moving.artistVideo.collectAsState()
     val artistDither by Moving.artistDither.collectAsState()
+    val artistGrain by Moving.artistGrain.collectAsState()
     BasicText("ARTIST PAGES", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
-    BasicText("the picture an artist's page opens on: their photo, or their moving one where apple music has one, in the dither or as it is",
+    BasicText("the picture an artist's page opens on: their photo, or their moving one where apple music has one, in the dither, in grain or as it is",
         style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     Row {
@@ -892,8 +893,9 @@ private fun LookSetting() {
     }
     Spacer(Modifier.height(8.dp))
     Row {
-        Word("dithered", pixel(14.sp, if (artistDither) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistDither = true) }
-        Word("as it is", pixel(14.sp, if (!artistDither) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(artistDither = false) }
+        Word("dithered", pixel(14.sp, if (artistDither && !artistGrain) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistDither = true, artistGrain = false) }
+        Word("grain", pixel(14.sp, if (artistGrain) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistDither = false, artistGrain = true) }
+        Word("as it is", pixel(14.sp, if (!artistDither && !artistGrain) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(artistDither = false, artistGrain = false) }
     }
     Spacer(Modifier.height(36.dp))
     BasicText("THE NAME", style = headline(24.sp))

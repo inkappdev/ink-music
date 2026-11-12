@@ -51,9 +51,8 @@ object Dither {
     fun develop(art: ImageBitmap, accent: Color, dots: Int, frames: Int = 12, print: Print = Print.DITHER): List<ImageBitmap>? = runCatching {
         val img = Image.makeFromBitmap(art.asSkiaBitmapCopy())
         if (print != Print.DITHER) {
-            // tiles or grain (Prints in core) from the cover drawn a pixel a dot
-            val px = pixels(img, dots)
-            return@runCatching (if (print == Print.GRAIN) Prints.grain(px, dots, frames) else Prints.tiles(px, dots, frames)).map { image(it, dots).toComposeImageBitmap() }
+            // tiles (Prints in core) from the cover drawn a pixel a dot (grain is drawn apart: Grainy)
+            return@runCatching Prints.tiles(pixels(img, dots), dots, frames).map { image(it, dots).toComposeImageBitmap() }
         }
         // softened less since 2026-11-11 (half the dots, blurred once; were a third, three times): faces and type come back
         val small = (dots / 2).coerceAtLeast(16)
@@ -76,7 +75,7 @@ object Dither {
     private fun ImageBitmap.asSkiaBitmapCopy(): org.jetbrains.skia.Bitmap = asSkiaBitmap()
 
     /** The picture drawn `n` px square (smoothly), as ARGB ints. */
-    private fun pixels(img: Image, n: Int): IntArray {
+    internal fun pixels(img: Image, n: Int): IntArray {
         val s = Surface.makeRaster(ImageInfo(n, n, ColorType.BGRA_8888, ColorAlphaType.OPAQUE))
         s.canvas.drawImageRect(img, Rect.makeWH(img.width.toFloat(), img.height.toFloat()), Rect.makeWH(n.toFloat(), n.toFloat()),
             SamplingMode.LINEAR, org.jetbrains.skia.Paint(), true)
@@ -89,7 +88,7 @@ object Dither {
     }
 
     /** ARGB ints as a Skia image (BGRA bytes, little-endian: the same memory). */
-    private fun image(px: IntArray, n: Int): Image {
+    internal fun image(px: IntArray, n: Int): Image {
         val bytes = java.nio.ByteBuffer.allocate(px.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply { asIntBuffer().put(px) }.array()
         return Image.makeRaster(ImageInfo(n, n, ColorType.BGRA_8888, ColorAlphaType.OPAQUE), bytes, n * 4)
     }

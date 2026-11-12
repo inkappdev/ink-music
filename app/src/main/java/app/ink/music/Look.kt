@@ -80,10 +80,10 @@ object Looks {
         val dots = dots(shown, density)
         if (print == Print.DITHER) (1..frames).map { dither(src, dots, accent.toArgb(), it.toFloat() / frames) }
         else {
-            // tiles or grain (Prints in core) from the cover drawn a pixel a dot
+            // tiles (Prints in core) from the cover drawn a pixel a dot (grain is drawn apart: Grainy)
             val px = IntArray(dots * dots)
             Bitmap.createScaledBitmap(src, dots, dots, true).getPixels(px, 0, dots, 0, 0, dots, dots)
-            (if (print == Print.GRAIN) Prints.grain(px, dots, frames) else Prints.tiles(px, dots, frames)).map { Bitmap.createBitmap(it, dots, dots, Bitmap.Config.ARGB_8888) }
+            Prints.tiles(px, dots, frames).map { Bitmap.createBitmap(it, dots, dots, Bitmap.Config.ARGB_8888) }
         }
     } catch (e: Exception) { null }
 

@@ -1,16 +1,16 @@
 package app.ink.music
 
 /**
- * How mixes and lists are drawn from their covers (settings, the look, COVERS; 2026-11-11): the dither, tiles or grain,
- * each in dots the dither's size, so each app draws them as it draws the dither (a whole number of pixels a dot) and
- * they develop the same way, frame by frame. Artists' photos, the player and 1-bit mode stay in the dither. (Contours
- * and letters were tried on the phone the same day and left out.)
+ * How mixes and lists are drawn from their covers (settings, the look, COVERS; 2026-11-11): the dither, tiles or grain.
+ * Tiles in dots the dither's size, so each app draws them as it draws the dither (a whole number of pixels a dot) and
+ * they develop the same way, frame by frame; grain a lens's blur with film's grain over it, a screen pixel a grain.
+ * The player and 1-bit mode stay in the dither. (Contours and letters were tried on the phone the same day and left out.)
  */
 enum class Print(val word: String) {
     DITHER("dither"),
     // the cover in square blocks of its own six colours, black between: the only one in full colour
     TILES("tiles"),
-    // the cover far out of focus, in its own colours, with film's grain over it (Bronson's ask, 2026-11-11)
+    // the cover out of focus as a lens has it, film's grain over it (Bronson's ask, 2026-11-11: "a soft bokeh with a nice film like grain")
     GRAIN("grain"),
 }
 
@@ -43,26 +43,48 @@ object Prints {
     }
 
     /**
-     * The cover blurred to its colours' shapes (a box of a twelfth of the side, three passes), a dot's worth of grain
-     * over each (the same grain every time for the same size: lighter or darker, all three colours alike); developing
-     * as grain does, its dots arriving in a scatter.
+     * The cover out of focus as a lens has it (the computer's and the phone's grain look, 2026-11-11): each pixel the
+     * average of a disc around it, a tenth of the side less a tenth across, the light counting more than the dark
+     * (as light through a lens does), so bright spots open into soft discs. Small (`n` about 120): drawn up smoothly.
      */
-    fun grain(px: IntArray, n: Int, frames: Int = 12): List<IntArray> {
-        val r = maxOf(1, n / 12)
-        val ch = Array(3) { c -> FloatArray(n * n) { i -> (px[i] shr (16 - 8 * c) and 255).toFloat() } }
-        val tmp = FloatArray(n * n); val d = 2 * r + 1
-        for (a in ch) repeat(3) {
-            for (y in 0 until n) for (x in 0 until n) { var s = 0f; for (k in -r..r) s += a[y * n + (x + k).coerceIn(0, n - 1)]; tmp[y * n + x] = s / d }
-            for (y in 0 until n) for (x in 0 until n) { var s = 0f; for (k in -r..r) s += tmp[(y + k).coerceIn(0, n - 1) * n + x]; a[y * n + x] = s / d }
+    fun bokeh(px: IntArray, n: Int): IntArray {
+        val r = maxOf(2, (n * .09f).toInt())
+        val disc = ArrayList<Int>()
+        for (dy in -r..r) for (dx in -r..r) if (dx * dx + dy * dy <= r * r + r) { disc.add(dx); disc.add(dy) }
+        // linear light (gamma 2.4), each pixel weighed up by how bright it is past the middle
+        val lin = Array(3) { c -> FloatArray(n * n) { i -> pow24((px[i] shr (16 - 8 * c) and 255) / 255f) } }
+        val w = FloatArray(n * n) { i -> val l = .3f * lin[0][i] + .59f * lin[1][i] + .11f * lin[2][i]; 1f + 18f * pow15(maxOf(0f, l - .55f)) }
+        return IntArray(n * n) { i ->
+            val x = i % n; val y = i / n
+            var r0 = 0f; var g0 = 0f; var b0 = 0f; var sum = 0f
+            var k = 0
+            while (k < disc.size) {
+                val j = (y + disc[k + 1]).coerceIn(0, n - 1) * n + (x + disc[k]).coerceIn(0, n - 1)
+                val q = w[j]; r0 += lin[0][j] * q; g0 += lin[1][j] * q; b0 += lin[2][j] * q; sum += q
+                k += 2
+            }
+            rgb(back(r0 / sum), back(g0 / sum), back(b0 / sum))
         }
-        val rnd = kotlin.random.Random(n)
-        val done = IntArray(n * n) { i ->
-            val g = rnd.nextInt(-20, 21)
-            rgb((ch[0][i] + g).toInt().coerceIn(0, 255), (ch[1][i] + g).toInt().coerceIn(0, 255), (ch[2][i] + g).toInt().coerceIn(0, 255))
-        }
-        val order = FloatArray(n * n) { rnd.nextFloat() }
-        return (1..frames).map { f -> val k = f.toFloat() / frames; IntArray(n * n) { i -> if (order[i] < k) done[i] else BLACK } }
     }
+
+    /**
+     * Film's grain, a `side` square tile to repeat a screen pixel a pixel over a picture: each pixel white or black at an
+     * alpha of a bell curve's draw (a heavy grain, Bronson's pick: pushed film), so it lightens and darkens alike and
+     * shows most in the midtones. The same tile for the same `seed`.
+     */
+    fun grainTile(side: Int = 256, seed: Int = 7, strength: Float = .075f): IntArray {
+        val rnd = kotlin.random.Random(seed)
+        return IntArray(side * side) {
+            // a bell curve's draw from two uniform ones (Box-Muller)
+            val g = kotlin.math.sqrt(-2f * kotlin.math.ln(rnd.nextFloat().coerceAtLeast(1e-6f))) * kotlin.math.cos(6.2831855f * rnd.nextFloat())
+            val a = (kotlin.math.abs(g) * strength * 255).toInt().coerceIn(0, 255)
+            (a shl 24) or (if (g > 0) 0xFFFFFF else 0)
+        }
+    }
+
+    private fun pow24(v: Float) = kotlin.math.exp(2.4f * kotlin.math.ln(v.coerceAtLeast(1e-4f)))
+    private fun pow15(v: Float) = v * kotlin.math.sqrt(v)
+    private fun back(v: Float) = (255 * kotlin.math.exp(kotlin.math.ln(v.coerceIn(1e-5f, 1f)) / 2.4f)).toInt().coerceIn(0, 255)
 
     private const val TILE = 6
 

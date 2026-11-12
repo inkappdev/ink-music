@@ -95,12 +95,19 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     val picture = @Composable { side: androidx.compose.ui.unit.Dp ->
         val photo = i?.photo
         if (photo != null) Box(Modifier.size(side)) {
-            val dithered by Moving.artistDither.collectAsState()
+            val grain by Moving.artistGrain.collectAsState()
+            val dithered = Moving.artistDither.collectAsState().value && !grain
             val still = remember(photo) { faceSong(name, photo, photo = true) }
-            if (dithered) Dithered(still, Modifier.fillMaxSize()) else AsItIs(still, Modifier.fillMaxSize())
+            when {
+                grain -> Grainy(still, Modifier.fillMaxSize())
+                dithered -> Dithered(still, Modifier.fillMaxSize())
+                else -> AsItIs(still, Modifier.fillMaxSize())
+            }
             val c = rememberCover(still, 1080)
-            ArtistVideo(shown, c?.accent ?: Ink.ink, dithered, Modifier.fillMaxSize())
-            // as it is, a light photo held down so the name over its foot reads (nameDim)
+            // in the grain look their clip moves under the grain, out of focus (the player's blur)
+            ArtistVideo(shown, c?.accent ?: Ink.ink, when { grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }, Modifier.fillMaxSize())
+            if (grain) FilmGrain(Modifier.fillMaxSize(), moving = true)
+            // as it is (or in the grain), a light photo held down so the name over its foot reads (nameDim)
             if (!dithered && c != null) {
                 val dim = remember(c) { nameDim(c.image) }
                 if (dim < 1f) Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = 1f - dim)))
@@ -359,6 +366,8 @@ private fun BigName(name: String, room: androidx.compose.ui.unit.Dp) {
  */
 @Composable
 fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER) {
+    // the grain look is a picture, not dots: drawn apart
+    if (print == Print.GRAIN) return Grainy(photo, modifier, px)
     val cover = rememberCover(photo, px)
     val density = LocalDensity.current
     BoxWithConstraints(modifier.background(Ink.black)) {

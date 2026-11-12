@@ -140,13 +140,16 @@ fun LookPage(pages: Pages) {
             Column(Modifier.cascade(5)) {
                 val video by Moving.artistVideo.collectAsState()
                 val dithered by Moving.artistDither.collectAsState()
+                val grain by Moving.artistGrain.collectAsState()
                 BasicText("ARTIST PAGES", style = headline(24.sp))
                 Spacer(Modifier.height(6.dp))
                 BasicText(if (Moving.available) "the picture an artist's page opens on: their photo, or their moving one where apple music has one, " +
-                    "in the dither or as it is" else "an artist's photo across their page, in the dither or as it is", style = pixel(12.sp, Ink.mid))
+                    "in the dither, in grain or as it is" else "an artist's photo across their page, in the dither, in grain or as it is", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(10.dp))
                 if (Moving.available) Choices(listOf("video" to video, "photo" to !video)) { Moving.set(ctx, artistVideo = it == 0) }
-                Choices(listOf("dithered" to dithered, "as it is" to !dithered)) { Moving.set(ctx, artistDither = it == 0) }
+                Choices(listOf("dithered" to (dithered && !grain), "grain" to grain, "as it is" to (!dithered && !grain))) {
+                    Moving.set(ctx, artistDither = it == 0, artistGrain = it == 1)
+                }
                 Spacer(Modifier.height(40.dp))
             }
             // whether covers and canvases move: they're video, so on wifi unless you say

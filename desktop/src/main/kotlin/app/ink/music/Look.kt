@@ -45,12 +45,16 @@ object Moving {
     private val _artistDither = MutableStateFlow(true)
     /** An artist's photo and clip in the dither (the player's), or as they are. */
     val artistDither: StateFlow<Boolean> = _artistDither
+    private val _artistGrain = MutableStateFlow(false)
+    /** An artist's photo and clip out of focus with film's grain over them (Grainy), whatever [artistDither] says. */
+    val artistGrain: StateFlow<Boolean> = _artistGrain
     fun set(on: Boolean = _on.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value,
-            artistVideo: Boolean = _artistVideo.value, artistDither: Boolean = _artistDither.value) {
-        put(on, cover, canvasOn, artistVideo, artistDither); LookFile.save()
+            artistVideo: Boolean = _artistVideo.value, artistDither: Boolean = _artistDither.value, artistGrain: Boolean = _artistGrain.value) {
+        put(on, cover, canvasOn, artistVideo, artistDither, artistGrain); LookFile.save()
     }
-    internal fun put(on: Boolean, cover: Look?, canvasOn: Boolean, artistVideo: Boolean, artistDither: Boolean) {
+    internal fun put(on: Boolean, cover: Look?, canvasOn: Boolean, artistVideo: Boolean, artistDither: Boolean, artistGrain: Boolean = false) {
         _on.value = on; _cover.value = cover; _canvasOn.value = canvasOn; _artistVideo.value = artistVideo; _artistDither.value = artistDither
+        _artistGrain.value = artistGrain
     }
 }
 
@@ -96,7 +100,7 @@ internal object LookFile {
         val o = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
         Looks.put(Look.entries.firstOrNull { it.name == o.optString("behind") } ?: Look.PLAIN)
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true),
-            o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true))
+            o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true), o.optBoolean("artistGrain", false))
         Marquees.put(o.optBoolean("marquee", true))
         CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") } ?: Print.DITHER)
         ListCovers.put(o.optBoolean("listCovers", false))
@@ -107,7 +111,7 @@ internal object LookFile {
         runCatching {
             file.writeText(JSONObject().put("behind", Looks.on.value.name).put("moving", Moving.on.value)
                 .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value)
-                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).put("print", CoverPrint.on.value.name).toString())
+                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("artistGrain", Moving.artistGrain.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).put("print", CoverPrint.on.value.name).toString())
         }
     }
 }

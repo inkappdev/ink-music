@@ -175,7 +175,7 @@ fun MovingCover(artist: String, album: String, title: String, accent: Color, pla
  * is; nothing where they have none, or moving covers or artist videos are off. Always moving: it's the page's picture.
  */
 @Composable
-fun ArtistVideo(name: String, accent: Color, dithered: Boolean, modifier: Modifier = Modifier) {
+fun ArtistVideo(name: String, accent: Color, look: Look?, modifier: Modifier = Modifier) {
     val on by Moving.on.collectAsState()
     val wanted by Moving.artistVideo.collectAsState()
     val url by produceState<String?>(null, name, on, wanted) {
@@ -183,7 +183,7 @@ fun ArtistVideo(name: String, accent: Color, dithered: Boolean, modifier: Modifi
         Log.d("moving artist $name: ${if (value != null) "found" else "none"}")
     }
     val u = url ?: return
-    Loop(u, true, if (dithered) Look.DITHER else null, accent, 1f, crop = true, modifier)
+    Loop(u, true, look, accent, 1f, crop = true, modifier)
 }
 
 /**
