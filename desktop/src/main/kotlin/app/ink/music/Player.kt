@@ -140,6 +140,8 @@ object Player {
     const val UNTAGGED = -7f
     @Volatile private var paused = true
     @Volatile private var index = -1
+    /** Automix's handover putting the queue in around the song it readied: each move shifts mpv's playlist-pos (become). */
+    @Volatile private var rebuilding = false
     @Volatile private var duration = 0L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -287,7 +289,9 @@ object Player {
                             else -> (e.value as? String)?.takeIf { it != s.title && "://" !in it && !STREAM_FILE.containsMatchIn(it) }?.let { OnAir.parse(it, s.title) }
                         }
                     }
-                    "playlist-pos" -> { index = (e.value as? Long)?.toInt() ?: -1; heard.value = heard.value?.takeIf { it.id == _queue.value.getOrNull(index)?.id }; tell() }
+                    // read live, not the event's value: a handover's moves (become) left a trail of passing positions,
+                    // each told to ListenBrainz as the song playing (the one 1, 2, 3 places in)
+                    "playlist-pos" -> if (!rebuilding) { index = m.get("playlist-pos")?.toIntOrNull() ?: (e.value as? Long)?.toInt() ?: -1; heard.value = heard.value?.takeIf { it.id == _queue.value.getOrNull(index)?.id }; tell() }
                     "duration" -> { duration = ((e.value as? Double) ?: 0.0).times(1000).toLong(); tell() }
                     "time-pos" -> if (!casting) {
                         val ms = ((e.value as? Double) ?: 0.0).times(1000).toLong()
@@ -770,6 +774,7 @@ object Player {
     internal fun become(b: Mpv, at: Int) {
         val a = mpv ?: return
         val q = _queue.value
+        rebuilding = true
         mpv = b; spareDeck = a
         index = at
         duration = ((b.get("duration")?.toDoubleOrNull() ?: 0.0) * 1000).toLong()
@@ -777,6 +782,7 @@ object Player {
         // the songs before it, each put in ahead of it; then the ones after
         for (j in 0 until at) { b.command("loadfile", where(q[j]), "append"); b.command("playlist-move", (j + 1).toString(), j.toString()) }
         for (j in at + 1 until q.size) b.command("loadfile", where(q[j]), "append")
+        rebuilding = false
         b.set("loop-playlist", if (repeat.value == 1) "inf" else "no")
         b.set("loop-file", if (repeat.value == 2) "inf" else "no")
         // the system's media keys follow the deck that plays (mpv's own, where they're mpv's)
