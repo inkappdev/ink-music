@@ -696,11 +696,19 @@ object Moods {
         return "a ${t.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH).lowercase()} $part in $season"
     }
 
-    suspend fun station(m: TubeMood) {
-        val songs = withContext(Dispatchers.IO) { YouTubeMusic.moodStation(m.params) }
-        if (songs.isEmpty()) return
+    /**
+     * A station from a mood or a genre: its page's picks found on YouTube Music leading, your songs that fit the genre,
+     * YouTube Music's own playlists a quarter of it ([GenreStation]); radio after. False when there was nothing to play.
+     */
+    suspend fun station(m: TubeMood, picked: List<Picks.Shown> = emptyList()): Boolean = kotlinx.coroutines.coroutineScope {
+        val theirs = async(Dispatchers.IO) { runCatching { YouTubeMusic.moodStation(m.params) }.getOrDefault(emptyList()) }
+        val finds = picked.shuffled().take(30).map { s -> async(Dispatchers.IO) { runCatching { YouTubeMusic.find(s.pick.title, s.pick.artist) }.getOrNull() } }
+        val yours = if (m.genre) Library.songs.value.filter { Genres.fits(it.artist, m.title) }.shuffled().take(24) else emptyList()
+        val songs = GenreStation.blend(finds.map { it.await() }.filterNotNull(), yours, theirs.await(), { "${it.title}|${it.artist}".lowercase() })
+        if (songs.isEmpty()) return@coroutineScope false
         Playback.radio(true)
         Playback.play(songs, 0)
+        true
     }
 }
 
@@ -793,7 +801,11 @@ fun MoodPage(m: TubeMood, pages: Pages) {
                     style = pixel(12.sp, Ink.mid),
                 )
                 Spacer(Modifier.height(12.dp))
-                Word("start station", pixel(14.sp), touch = 8.dp) { scope.launch { Moods.station(m) } }
+                // finding the page's picks takes a moment: said meanwhile
+                var finding by remember(m.params) { mutableStateOf(false) }
+                Word(if (finding) "finding songs" else "start station", pixel(14.sp, if (finding) Ink.mid else Ink.ink), touch = 8.dp) {
+                    if (!finding) scope.launch { finding = true; try { Moods.station(m, pickedSongs) } finally { finding = false } }
+                }
                 Spacer(Modifier.height(6.dp))
             }
         }

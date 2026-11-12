@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.items
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.async
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.key
@@ -602,14 +603,23 @@ object Moods {
         return "a ${t.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH).lowercase()} $part in $season"
     }
 
-    /** A station from a mood: the first playlist of each of its first flavors, their songs taken in turn, radio after. */
-    suspend fun station(m: InnerTube.Mood) {
-        val songs = withContext(Dispatchers.IO) {
-            val lists = InnerTube().mood(m.params).take(4).mapNotNull { it.items.firstOrNull { i -> i.kind == InnerTube.Kind.PLAYLIST } }
-            val each = lists.map { runCatching { InnerTube().tracks(it.id, 30).map(YouTube::song).shuffled() }.getOrDefault(emptyList()) }
-            (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }.distinctBy { it.id }.take(80)
+    /**
+     * A station from a mood or a genre: its page's picks found on YouTube Music leading, your songs that fit the genre,
+     * YouTube Music's own playlists a quarter of it (the first playlist of each of its first four flavors, in turn:
+     * [GenreStation]); radio after.
+     */
+    suspend fun station(m: InnerTube.Mood, picked: List<Picks.Shown> = emptyList()) = kotlinx.coroutines.coroutineScope {
+        val theirs = async(Dispatchers.IO) {
+            runCatching {
+                val lists = InnerTube().mood(m.params).take(4).mapNotNull { it.items.firstOrNull { i -> i.kind == InnerTube.Kind.PLAYLIST } }
+                val each = lists.map { runCatching { InnerTube().tracks(it.id, 30).map(YouTube::song).shuffled() }.getOrDefault(emptyList()) }
+                (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }
+            }.getOrDefault(emptyList())
         }
-        if (songs.isEmpty()) return
+        val finds = picked.shuffled().take(30).map { s -> async(Dispatchers.IO) { YouTube.find(s.pick.title, s.pick.artist) } }
+        val yours = if (m.genre) Library.songs.value.filter { Genres.fits(it.artist, m.title) }.shuffled().take(24) else emptyList()
+        val songs = GenreStation.blend(finds.map { it.await() }.filterNotNull(), yours, theirs.await(), { "${it.title}|${it.artist}".lowercase() })
+        if (songs.isEmpty()) return@coroutineScope
         if (!Player.radio.value) Player.radio(true)
         Player.play(songs)
     }
@@ -700,7 +710,11 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
                         ).joinToString("   ").ifEmpty { if (shelves == null) "reading youtube music" else "" },
                         style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f),
                     )
-                    Word("start station", pixel(14.sp), touch = 8.dp) { scope.launch { Moods.station(m) } }
+                    // finding the page's picks takes a moment: said meanwhile
+                    var finding by remember(m.params) { mutableStateOf(false) }
+                    Word(if (finding) "finding songs" else "start station", pixel(14.sp, if (finding) Ink.mid else Ink.ink), touch = 8.dp) {
+                        if (!finding) scope.launch { finding = true; try { Moods.station(m, pickedSongs) } finally { finding = false } }
+                    }
                 }
                 Spacer(Modifier.height(GAP / 2))
             }
