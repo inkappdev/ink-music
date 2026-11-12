@@ -302,7 +302,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             val none = sing && lines?.isEmpty() == true
             Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
                 if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
-                added = added, onAdd = if (canAddToList(airedSong ?: n.song)) ({ addUp = true }) else null, episode = episode,
+                added = added, onAdd = if ((airedSong ?: n.song) != null) ({ addUp = true }) else null, episode = episode,
                 lyricsWord = !tv || episode || timed, onLyricsSources = { lyricsSourcesUp = true })
         }
         // a TV: what opens over the player (the queue, the speakers, a list, what's heard) has the remote; the player under it none
