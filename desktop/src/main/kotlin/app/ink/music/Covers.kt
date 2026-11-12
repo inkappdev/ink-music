@@ -235,6 +235,8 @@ object Covers {
      * catalogs; a song with no record named, by its own name.
      */
     private fun found(song: Song, px: Int): ByteArray? {
+        // a file that names no one: nothing to look for by (a title alone found someone else's cover), ink's sleeve
+        if (song.artist.isBlank() || song.artist == "unknown") return null
         val record = song.album.ifBlank { song.title }
         val whose = song.albumArtist.ifBlank { song.artist }.substringBefore(", ")
         val url = FoundCovers.link(File(Home.cache, "covers"), record, whose) { a, by ->

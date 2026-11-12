@@ -1016,7 +1016,7 @@ private fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?, 
             ("play next" to { Player.playNext(s) }).takeIf { !playing },
             ("add to queue" to { Player.add(s) }).takeIf { !playing },
             // radio: this song, then more like it as the queue runs out
-            ("radio" to { Player.startRadio(s) }).takeIf { !s.station && !s.episode },
+            ("radio" to { Player.radioFrom(s) }).takeIf { !s.station && !s.episode },
         ),
         listOfNotNull(
             ((if (s.id in loved) "unlove" else "love") to { Loved.toggle(s) }).takeIf { !s.station && !s.episode },

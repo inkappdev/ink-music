@@ -177,7 +177,9 @@ object Library {
             title = tag(FieldKey.TITLE).ifEmpty { f.nameWithoutExtension },
             artist = artist,
             album = album,
-            albumId = "la" + hash(plain(album) + "/" + plain(albumArtist)),
+            // no record named: its own (2026-11-11, a tester's Video 1: every untagged file was one record, "" by "unknown",
+            // and the first cover found for any showed on all of them)
+            albumId = if (album.isBlank()) "lf" + hash(f.path) else "la" + hash(plain(album) + "/" + plain(albumArtist)),
             albumArtist = albumArtist,
             duration = (h.preciseTrackLength * 1000).toLong(),
             disc = tag(FieldKey.DISC_NO).substringBefore('/').trim().toIntOrNull()?.coerceAtLeast(1) ?: 1,
@@ -204,7 +206,9 @@ object Library {
             title = r?.of("TITLE")?.ifEmpty { null } ?: f.nameWithoutExtension,
             artist = artist,
             album = album,
-            albumId = "la" + hash(plain(album) + "/" + plain(albumArtist)),
+            // no record named: its own (2026-11-11, a tester's Video 1: every untagged file was one record, "" by "unknown",
+            // and the first cover found for any showed on all of them)
+            albumId = if (album.isBlank()) "lf" + hash(f.path) else "la" + hash(plain(album) + "/" + plain(albumArtist)),
             albumArtist = albumArtist,
             duration = r?.durationMs ?: 0L,
             disc = r?.of("DISCNUMBER")?.substringBefore('/')?.trim()?.toIntOrNull()?.coerceAtLeast(1) ?: 1,

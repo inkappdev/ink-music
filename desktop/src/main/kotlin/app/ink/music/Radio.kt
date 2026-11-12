@@ -73,12 +73,33 @@ object Radio {
         return apart(picked, seeds.first().artist)
     }
 
-    /** One seed's songs: the server's similar, else YouTube Music's radio from it. */
-    fun related(s: Seed): List<Song> =
-        if (s.id.startsWith("y")) YouTube.related(s.id)
-        else Server.similar(s.id, s.title, s.artist).ifEmpty {
+    /**
+     * One seed's songs: the server's similar, else YouTube Music's radio from it; a song YouTube doesn't know (2026-11-11,
+     * a tester's Video 2: radio came only for the better-known of their files), the artist's own radio there, then your
+     * own songs by them and from the same folder: radio always starts.
+     */
+    fun related(s: Seed): List<Song> {
+        if (s.id.startsWith("y")) return YouTube.related(s.id)
+        Server.similar(s.id, s.title, s.artist).ifEmpty {
             YouTube.find(s.title, s.artist)?.let { YouTube.related(it.id) }.orEmpty()
-        }
+        }.takeIf { it.isNotEmpty() }?.let { return it }
+        val known = s.artist.isNotBlank() && s.artist != "unknown"
+        val by = s.artist.substringBefore(", ").trim()
+        if (known && !Local.on) runCatching { kotlinx.coroutines.runBlocking { YouTube.search(by) }?.songs?.firstOrNull { it.artist.substringBefore(", ").trim().equals(by, true) } }
+            .getOrNull()?.let { YouTube.related(it.id) }?.takeIf { it.isNotEmpty() }?.let { return it }
+        return yours(s)
+    }
+
+    /** Your own songs near a seed: the same artist's, then the same folder's, shuffled; the seed itself left out. */
+    private fun yours(s: Seed): List<Song> {
+        val all = Library.songs.value
+        val seed = all.firstOrNull { it.id == s.id }
+        val who = s.artist.lowercase().substringBefore(",").trim()
+        val same = if (who.isNotEmpty() && who != "unknown") all.filter { it.id != s.id && it.artist.lowercase().substringBefore(",").trim() == who } else emptyList()
+        val folder = seed?.path?.takeIf { it.isNotEmpty() }?.let { java.io.File(it).parent }
+        val near = if (folder != null) all.filter { it.id != s.id && it.path.isNotEmpty() && java.io.File(it.path).parent == folder } else emptyList()
+        return (same.shuffled() + near.shuffled()).distinctBy { it.id }.take(30)
+    }
 
     /** The same order, but no artist twice in a row (nor straight after the song before them), where it can be helped. */
     fun apart(songs: List<Song>, before: String): List<Song> {
@@ -98,4 +119,16 @@ object Radio {
     /** A song as said, whatever it's from: its title and first artist, case and marks aside. */
     fun key(title: String, artist: String) =
         title.lowercase().substringBefore(" (").filter { it.isLetterOrDigit() } + "/" + artist.lowercase().substringBefore(",").filter { it.isLetterOrDigit() }
+}
+
+/**
+ * Radio from a song (2026-11-11, a tester: "the song immediately restarts from the beginning ... as if the feature
+ * punishes you for using it"): the one playing plays on, the songs queued after it let go and radio's following it;
+ * any other song begins, radio after it, as before.
+ */
+fun Player.radioFrom(s: Song) {
+    if (now.value?.song?.id != s.id) return startRadio(s)
+    for (i in queue.value.size - 1 downTo index() + 1) remove(i)
+    // (on already: asked again, it fills after this song)
+    radio(true)
 }

@@ -521,7 +521,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit)
                     Spacer(Modifier.height(18.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                         if (i.top.isNotEmpty()) Word("play", pixel(14.sp), touch = 8.dp) { Player.play(i.top) }
-                        if (i.top.isNotEmpty()) Word("station", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.startRadio(i.top.first()) }
+                        if (i.top.isNotEmpty()) Word("station", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.radioFrom(i.top.first()) }
                         Word("their page", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Artist(i.name, i.id)) }
                     }
                 }
