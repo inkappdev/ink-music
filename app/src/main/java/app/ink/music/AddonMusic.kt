@@ -40,7 +40,7 @@ object AddonMusic {
                 val params = settings(ctx, base)
                 params["q"] = query
                 val result = request(ctx, "$base/search", params)
-                val tracks = result.optJSONArray("tracks") ?: return@runCatching emptyList()
+                val tracks = tracksArray(result) ?: return@runCatching emptyList()
                 buildList {
                     for (i in 0 until tracks.length()) {
                         val track = tracks.optJSONObject(i) ?: continue
@@ -49,7 +49,7 @@ object AddonMusic {
                         if (id.isBlank() || title.isBlank()) continue
                         val artist = track.optString("artist")
                         val album = track.optString("album")
-                        val streamUrl = track.optString("streamURL").takeIf { it.startsWith("http") }.orEmpty()
+                        val streamUrl = playableUrl(track).orEmpty()
                         val payload = JSONObject().put("base", base).put("id", id).put("stream", streamUrl)
                         val encoded = Base64.encodeToString(payload.toString().toByteArray(Charsets.UTF_8),
                             Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
@@ -78,7 +78,7 @@ object AddonMusic {
             val params = settings(ctx, base)
             params["q"] = listOf(title, artist, album).filter { it.isNotBlank() }.joinToString(" ")
             val response = request(ctx, "$base/search", params)
-            val tracks = response.optJSONArray("tracks") ?: return@runCatching null
+            val tracks = tracksArray(response) ?: return@runCatching null
             fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
                 .replace(Regex("\\p{M}+"), "").lowercase()
                 .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
@@ -141,7 +141,7 @@ object AddonMusic {
     /** Accept direct and wrapped stream response shapes used by addon servers. */
     private fun playableUrl(response: JSONObject): String? {
         fun find(value: JSONObject): String? {
-            for (key in listOf("url", "streamURL", "streamUrl", "audioUrl", "mediaUrl")) {
+            for (key in listOf("url", "streamURL", "streamUrl", "audioUrl", "mediaUrl", "directUrl", "downloadUrl", "dataUrl")) {
                 value.optString(key).takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { return it }
             }
             for (key in listOf("stream", "data", "result")) {
@@ -153,6 +153,18 @@ object AddonMusic {
             return null
         }
         return find(response)
+    }
+
+    /** BitChord/Lokal addons may return an array directly or wrap it in data/results/items. */
+    private fun tracksArray(response: JSONObject): org.json.JSONArray? {
+        response.optJSONArray("tracks")?.let { return it }
+        for (key in listOf("data", "results", "items")) {
+            when (val nested = response.opt(key)) {
+                is org.json.JSONArray -> return nested
+                is JSONObject -> nested.optJSONArray("tracks")?.let { return it }
+            }
+        }
+        return null
     }
 
     private fun settings(ctx: Context, base: String): LinkedHashMap<String, String> {
@@ -185,12 +197,12 @@ object AddonMusic {
                 (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.opt("value")?.toString()?.trim('"') }
                     .firstOrNull { it.equals(tier, true) || words.any { word -> word in it.lowercase() } }
             }
-            result["quality"] = match ?: tier
+            result["quality"] = match ?: tier.lowercase()
         }.onFailure { result.putIfAbsent("quality", "LOSSLESS") }
         // Avoid spatial-audio variants unless the addon explicitly configures them.
         result.putIfAbsent("atmos", "none")
         result.putIfAbsent("quality", when (Quality.now(ctx)) {
-            Quality.SAVER -> "LOW"; Quality.HIGH -> "HIGH"; else -> "LOSSLESS"
+            Quality.SAVER -> "low"; Quality.HIGH -> "high"; else -> "lossless"
         })
         return result
     }
@@ -204,7 +216,8 @@ object AddonMusic {
         connection.readTimeout = 12_000
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "application/json")
-        connection.setRequestProperty("User-Agent", "INK-Music/2")
+        connection.setRequestProperty("User-Agent", "Ink-Music/1.0")
+        if (Uri.parse(target).path.orEmpty().contains("/stream/")) connection.setRequestProperty("X-LW-Intent", "stream")
         sign(ctx, target)?.let { (ts, signature) ->
             connection.setRequestProperty("X-LW-TS", ts)
             connection.setRequestProperty("X-LW-Sign", signature)
