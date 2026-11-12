@@ -308,6 +308,29 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                             Word("as they are", pixel(14.sp, if (!small) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { small = false; Offline.mp3(ctx, false) }
                             Word("smaller", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { small = true; Offline.mp3(ctx, true) }
                         }
+                        // a song loved, kept (KeepLoved): off, on wifi, always; the loves from before offered once
+                        Spacer(Modifier.height(18.dp))
+                        val keepMode by KeepLoved.mode.collectAsState()
+                        val offered by KeepLoved.offered.collectAsState()
+                        BasicText("keep what you love: a song you love is kept on this ${Device.word}, to play with no signal", style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.height(6.dp))
+                        Row {
+                            for (m in listOf(LoveKeeping.OFF, LoveKeeping.WIFI, LoveKeeping.ALWAYS))
+                                Word(m, pixel(14.sp, if (keepMode == m) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { KeepLoved.set(ctx, m) }
+                        }
+                        if (keepMode != LoveKeeping.OFF && !offered) {
+                            val before = remember(kept) { KeepLoved.before() }
+                            if (before.isNotEmpty()) {
+                                val size = remember(before, small) { before.sumOf { LoveKeeping.about(it.duration / 1000, small, it.tube) } }
+                                Spacer(Modifier.height(10.dp))
+                                BasicText("keep the ${before.size} you've loved already? ${LoveKeeping.said(size)}", style = pixel(12.sp, Ink.mid))
+                                Spacer(Modifier.height(6.dp))
+                                Row {
+                                    Word("keep them", pixel(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { KeepLoved.answer(ctx, true) }
+                                    Word("just new ones", pixel(14.sp, Ink.mid), touch = 8.dp) { KeepLoved.answer(ctx, false) }
+                                }
+                            }
+                        }
                         if (kept.isNotEmpty()) {
                             Spacer(Modifier.height(10.dp))
                             var sure by remember { mutableStateOf(false) }

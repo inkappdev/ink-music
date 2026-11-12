@@ -95,6 +95,8 @@ object Loved {
         }
         publish()
         keep()
+        // unloved: let go of what the love kept
+        if (!on) KeepLoved.unloved(s.id)
         // and on Last.fm, beside the scrobbles
         scope.launch { LastFm.love(Home.dir, s.artist, s.title, on) }
         // told to a paired phone at its next call

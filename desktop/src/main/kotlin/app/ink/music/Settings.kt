@@ -733,6 +733,29 @@ private fun KeptSetting() {
         Word("as they are", pixel(14.sp, if (!small) Ink.ink else Ink.dim), touch = 8.dp) { Offline.small(false) }
         Word("smaller", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { Offline.small(true) }
     }
+    // a song loved, kept (KeepLoved): on or off; the loves from before offered once
+    val keepOn by KeepLoved.on.collectAsState()
+    val offered by KeepLoved.offered.collectAsState()
+    Spacer(Modifier.height(18.dp))
+    BasicText("keep what you love: a song you love is kept on this computer, to play with no signal", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        Word("on", pixel(14.sp, if (keepOn) Ink.ink else Ink.dim), touch = 8.dp) { KeepLoved.set(true) }
+        Word("off", pixel(14.sp, if (!keepOn) Ink.ink else Ink.dim), touch = 8.dp) { KeepLoved.set(false) }
+    }
+    if (keepOn && !offered) {
+        val before = remember(kept) { KeepLoved.before() }
+        if (before.isNotEmpty()) {
+            val size = remember(before, small) { before.sumOf { LoveKeeping.about(it.duration / 1000, small, it.tube) } }
+            Spacer(Modifier.height(10.dp))
+            BasicText("keep the ${before.size} you've loved already? ${LoveKeeping.said(size)}", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                Word("keep them", pixel(14.sp), touch = 8.dp) { KeepLoved.answer(true) }
+                Word("just new ones", pixel(14.sp, Ink.mid), touch = 8.dp) { KeepLoved.answer(false) }
+            }
+        }
+    }
     if (kept.isNotEmpty()) {
         // the list of them (lists, kept on this computer): to play, or let one go by its right click
         Word("see them", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { Nav.open(Page.List(KEPT, "kept on this computer")) }

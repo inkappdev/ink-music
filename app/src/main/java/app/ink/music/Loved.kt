@@ -118,6 +118,8 @@ object Loved {
         } else {
             local = if (on) local + s.id else local - s.id
         }
+        // unloved: let go of what the love kept (the server's copy, where it was that one kept)
+        if (!on) { KeepLoved.unloved(s.id); star?.let(KeepLoved::unloved) }
         app?.let { prefs(it).edit().putStringSet("ids", local)
             .putString("tube", JSONArray().apply { _tube.value.forEach { put(it.json()) } }.toString()).apply() }
         publish()

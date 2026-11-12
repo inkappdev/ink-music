@@ -47,8 +47,12 @@ object Offline {
     /** What's kept and what's being fetched, read from the folder and the download manager. */
     fun start(c: Context) = refresh(c)
 
-    /** The songs (your server's, YouTube Music's) kept: each not kept or on its way asked for; a YouTube song's stream found first. */
-    fun keep(c: Context, songs: List<Song>) {
+    /**
+     * The songs (your server's, YouTube Music's) kept: each not kept or on its way asked for; a YouTube song's stream
+     * found first. `forLove`: kept because they're loved ([KeepLoved]); by hand, they're yours to let go, not the love's.
+     */
+    fun keep(c: Context, songs: List<Song>, forLove: Boolean = false) {
+        if (!forLove) KeepLoved.byHand(songs.map { it.id })
         val tube = songs.filter { it.tube && YouTubeMusic.available && it.id !in _kept.value && it.id !in _keeping.value }
         if (tube.isNotEmpty()) scope.launch { keepTube(c, tube) }
         val dm = c.getSystemService(DownloadManager::class.java) ?: return

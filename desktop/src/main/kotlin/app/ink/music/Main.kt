@@ -144,6 +144,7 @@ fun main() {
     LastFm.start(Home.dir)
     Listened.read()
     Loved.start()
+    KeepLoved.start()
     TubeAccount.start()
     // a paired phone kept in step, over the wifi (Sync)
     // podcasts (Pods): the shows followed and where each episode was left, kept here and carried by sync with the phone
