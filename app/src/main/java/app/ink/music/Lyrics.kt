@@ -102,24 +102,35 @@ object Lyrics {
         return lines
     }
 
-    private suspend fun additional(t: Now, base: File, ids: List<String>): List<Line>? {
-        for (id in ids) {
-            val file = File("${base.path}.$id.lrc")
-            if (file.exists()) {
-                val kept = runCatching { parse(file.readText()).ifEmpty { plain(file) } }.getOrNull()
-                if (!kept.isNullOrEmpty()) return kept
-                continue
+    private suspend fun additional(t: Now, base: File, ids: List<String>): List<Line>? =
+        kotlinx.coroutines.coroutineScope {
+            // Start every provider together, but inspect answers in the configured priority order.
+            // This avoids making a slow catalogue hold up every source behind it.
+            val jobs = ids.map { id ->
+                kotlinx.coroutines.async {
+                    val file = File("${base.path}.$id.lrc")
+                    if (file.exists()) {
+                        id to runCatching { parse(file.readText()).ifEmpty { plain(file) } }.getOrNull()
+                    } else {
+                        val artist = t.artist.split(',').first().trim()
+                        val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
+                        if (!lines.isNullOrEmpty()) {
+                            runCatching { dir.mkdirs(); file.writeText(lrcOf(lines)) }
+                            android.util.Log.d("ink-lyrics", "${t.artist} - ${t.title}: ${lines.size} lines from $id")
+                        }
+                        id to lines
+                    }
+                }
             }
-            val artist = t.artist.split(',').first().trim()
-            val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
-            if (!lines.isNullOrEmpty()) {
-                runCatching { dir.mkdirs(); file.writeText(lrcOf(lines)) }
-                android.util.Log.d("ink-lyrics", "${t.artist} - ${t.title}: ${lines.size} lines from $id")
-                return lines
+            for (job in jobs) {
+                val (_, lines) = job.await()
+                if (!lines.isNullOrEmpty()) {
+                    jobs.filter { it !== job }.forEach { it.cancel() }
+                    return@coroutineScope lines
+                }
             }
+            null
         }
-        return null
-    }
 
     /** The song's lines (synced, or else untimed: at -1); empty when there are none; null when lrclib couldn't be reached. */
     suspend fun of(t: Now): List<Line>? = withContext(Dispatchers.IO) {
