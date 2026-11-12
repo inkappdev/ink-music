@@ -470,7 +470,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 }
             }
         } else Column {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val side = minOf(maxWidth, 420.dp, LocalCoverRoom.current)
                 Sleeve(t, side, Modifier.clickwheel({ live }, scrub))
                 Box(Modifier.size(side)) { over(t) }
