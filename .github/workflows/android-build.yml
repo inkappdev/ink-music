@@ -24,7 +24,8 @@ jobs:
         with:
           packages: platform-tools
       - name: Install Android platform and native build tools
-        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.31.6"
+        run: |
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.31.6"
           # AGP resolves compileSdk 37 as android-37 while the SDK package is named android-37.0.
           ln -sfn android-37.0 "$ANDROID_HOME/platforms/android-37"
       - name: Build full debug APK and run unit tests
