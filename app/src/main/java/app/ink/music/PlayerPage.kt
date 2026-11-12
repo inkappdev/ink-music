@@ -1571,6 +1571,7 @@ private fun LyricsSourcesDialog(selected: String, onDismiss: () -> Unit, onSelec
                 value = spicyKey,
                 onValueChange = { spicyKey = it },
                 singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                 textStyle = pixel(12.sp, Ink.ink),
                 modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
             )
