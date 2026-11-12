@@ -330,13 +330,26 @@ fun Backdrop(cover: Cover?, look: Look, song: Song? = null, playing: Boolean = f
     if (c != null && !(canvasUp && canvasOn)) {
         val fade = remember(c.image) { Animatable(0f) }
         LaunchedEffect(c.image, look) { fade.animateTo(look.alpha, tween(600)) }
-        androidx.compose.foundation.Image(c.image, null, Modifier.fillMaxSize().graphicsLayer {
+        if (look == Look.BLUR) {
+            // a lens's blur, the covers' and artist pages' (2026-11-11: one blur), its film grain under the same fade
+            val key = "backdrop|${System.identityHashCode(c.image)}"
+            val lens by androidx.compose.runtime.produceState(Grain.kept(key), key) {
+                if (value == null) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { Grain.bokeh(key, c.image) }
+            }
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
+                lens?.let { androidx.compose.foundation.Image(it, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    filterQuality = androidx.compose.ui.graphics.FilterQuality.High) }
+                FilmGrain(Modifier.fillMaxSize())
+            }
+        } else androidx.compose.foundation.Image(c.image, null, Modifier.fillMaxSize().graphicsLayer {
             alpha = fade.value
             renderEffect = Effects.of(look, c.accent, density, 1f, size.width, big = true)
         }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
     }
     // the song's spotify canvas in its place, moving, in the same look
     if (song != null && !song.station && !song.episode) CanvasBehind(song.title, song.artist.substringBefore(", "), c?.accent ?: Ink.ink, playing, Modifier.fillMaxSize()) { canvasUp = true }
+    // a canvas in the blur: film's grain over it, moving with it, as faint as it is
+    if (look == Look.BLUR && canvasUp && canvasOn) FilmGrain(Modifier.fillMaxSize().graphicsLayer { alpha = look.alpha }, moving = playing)
 }
 
 /**

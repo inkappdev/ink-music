@@ -61,7 +61,8 @@ object Looks {
     fun draw(art: Bitmap, look: Look, accent: Color, shown: Float, density: Float): Bitmap? = if (look == Look.PLAIN) null else try {
         val src = if (art.config == Bitmap.Config.HARDWARE) art.copy(Bitmap.Config.ARGB_8888, false) else art
         when (look) {
-            Look.BLUR -> soft(src, 48, 2)
+            // a lens's blur (the covers' and artist pages' too, 2026-11-11: one blur), its film grain drawn over it in the player
+            Look.BLUR -> Grain.lens(src)
             Look.PIXELS -> pixels(src, (shown / (18 * density)).roundToInt().coerceIn(4, 80))
             Look.DITHER -> dither(src, dots(shown, density), accent.toArgb())
             Look.AS_IS -> src

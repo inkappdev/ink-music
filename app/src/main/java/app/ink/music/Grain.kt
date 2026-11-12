@@ -46,16 +46,19 @@ object Grain {
 
     fun kept(key: String): ImageBitmap? = made.get(key)
 
-    /** The picture out of focus, drawn up to 480 px smoothly (it's all soft shapes: no more is needed), or null. */
-    fun bokeh(key: String, art: Bitmap): ImageBitmap? = runCatching {
+    /** The picture out of focus, drawn up to 480 px smoothly (it's all soft shapes: no more is needed), kept, or null. */
+    fun bokeh(key: String, art: Bitmap): ImageBitmap? = runCatching { lens(art).asImageBitmap().also { made.put(key, it) } }.getOrNull()
+
+    /** The picture out of focus as a lens has it, 480 px (the player's blur too, behind it, since 2026-11-11). */
+    fun lens(art: Bitmap): Bitmap {
         val src = if (art.config == Bitmap.Config.HARDWARE) art.copy(Bitmap.Config.ARGB_8888, false) else art
         val px = IntArray(SMALL * SMALL)
         Bitmap.createScaledBitmap(src, SMALL, SMALL, true).getPixels(px, 0, SMALL, 0, 0, SMALL, SMALL)
         val small = Bitmap.createBitmap(Prints.bokeh(px, SMALL), SMALL, SMALL, Bitmap.Config.ARGB_8888)
         // up in two steps, each smooth, so no edge of the small one shows
         val mid = Bitmap.createScaledBitmap(small, SMALL * 2, SMALL * 2, true)
-        Bitmap.createScaledBitmap(mid, SMALL * 4, SMALL * 4, true).asImageBitmap().also { made.put(key, it) }
-    }.getOrNull()
+        return Bitmap.createScaledBitmap(mid, SMALL * 4, SMALL * 4, true)
+    }
 
     /** Film's grain, one tile for every picture, repeated. */
     val tile: ImageBitmap by lazy {

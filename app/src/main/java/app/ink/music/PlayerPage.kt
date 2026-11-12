@@ -588,17 +588,23 @@ private fun Backdrop(cover: Cover?, n: Now) {
         drawn?.takeIf { !canvasShown }?.let { (img, shape) ->
             val fade = remember(img) { Animatable(0f) }
             LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
-            Image(
-                img, null, Modifier.fillMaxSize().graphicsLayer { alpha = fade.value },
-                contentScale = ContentScale.Crop,
-                filterQuality = if (shape.crisp) FilterQuality.None else FilterQuality.Low,
-            )
+            // the blur's film grain under the same fade, so it's as faint as the picture (over black at full it glittered)
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
+                Image(
+                    img, null, Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    filterQuality = if (shape.crisp) FilterQuality.None else FilterQuality.Low,
+                )
+                if (shape == Look.BLUR) FilmGrain(Modifier.fillMaxSize())
+            }
         }
         // the song's spotify canvas in its place, moving, in the same look (signed in to spotify: settings, the look)
         if (n.song?.station != true && n.song?.episode != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
-        // the grain over the look (not dither's, nor as it is)
+        // a canvas in the blur: film's grain over it, moving with it, as faint as it is
+        if (canvasShown && look == Look.BLUR && !Device.tv) FilmGrain(Modifier.fillMaxSize().graphicsLayer { alpha = look.alpha }, moving = n.moving)
+        // ink's fine grain over the other looks (not dither's, nor as it is; the blur has its own)
         // (not on a TV: a blend across the whole screen, again each time anything over it moves)
-        if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN && !Device.tv) Grain()
+        if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN && look != Look.BLUR && !Device.tv) Grain()
     }
 }
 
