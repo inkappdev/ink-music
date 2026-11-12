@@ -111,6 +111,12 @@ fun SettingsPage(onClose: () -> Unit) {
                         "the look" -> {
                             val size by Size.chosen.collectAsState()
                             SettingRow("SIZE", size?.let(::pct) ?: "fit", opened) { SizeSetting() }
+                            // the places shown in the rail (2026-11-11): lit, shown; a click hides or shows one
+                            val hidden by Places.hidden.collectAsState()
+                            SettingRow("PLACES", if (hidden.isEmpty()) "all" else "${PLACES.size - hidden.size} of ${PLACES.size}", opened,
+                                "the places along the side; a click hides or shows one" + if (Local.on) ". local files only: ink, radio and podcasts are away already" else "") {
+                                Pick(PLACES.map { it to (it !in hidden) }) { i -> Places.show(PLACES[i], PLACES[i] in hidden) }
+                            }
                             LookSetting(opened)
                         }
                         "sound" -> {

@@ -775,7 +775,7 @@ private fun PlaceMenu(tab: String, shown: Boolean, modifier: Modifier, onFold: (
                 .onKeyEvent { k -> if (k.type == KeyEventType.KeyDown && k.key == Key.Escape) { onFold(); true } else false }
                 .padding(start = SIDE, end = SIDE, top = 8.dp),
         ) {
-            PLACES.forEachIndexed { i, t ->
+            Places.shown().forEachIndexed { i, t ->
                 MenuPlace(i, shown) { Word(t.uppercase(), headline(40.sp, if (t == tab) Ink.ink else Ink.mid), touch = 4.dp) { onPlace(t) } }
             }
             Spacer(Modifier.height(24.dp))
@@ -802,7 +802,8 @@ private fun PlaceMenu(tab: String, shown: Boolean, modifier: Modifier, onFold: (
 private fun MenuPlace(place: Int, shown: Boolean, content: @Composable () -> Unit) {
     val a = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(shown) {
-        if (shown) { a.snapTo(0f); kotlinx.coroutines.delay(Motion.STAGGER.toLong() * place); a.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
+        // all at once (one after another till 2026-11-11: the last place came long after the first)
+        if (shown) { a.snapTo(0f); a.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
     }
     Box(Modifier.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * Motion.drift.toPx() }) { content() }
 }

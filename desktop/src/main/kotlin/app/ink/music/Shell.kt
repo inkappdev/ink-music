@@ -47,6 +47,30 @@ val PLACES = listOf("listen", "ink", "albums", "artists", "songs", "radio", "pod
     // local files only: the places that are all online (INK, radio, podcasts) not there (Local)
     .filter { !Local.on || it !in setOf("ink", "radio", "podcasts") }
 
+/**
+ * The places the rail and the places menu show (2026-11-11, a tester: let people decide what they see; "there's no point
+ * in overwhelming users with online features they can't even access"): the ones hidden in settings (the look, places)
+ * left out ([PLACES] has no online ones with local files only). Kept in places-hidden, a place a line.
+ */
+object Places {
+    private val file = java.io.File(Home.dir, "places-hidden")
+    val hidden = kotlinx.coroutines.flow.MutableStateFlow(runCatching { file.readLines().map { it.trim() }.filter { it in PLACES }.toSet() }.getOrDefault(emptySet()))
+
+    /** A place shown or hidden (never the last one shown). */
+    fun show(p: String, on: Boolean) {
+        val now = if (on) hidden.value - p else hidden.value + p
+        if (PLACES.none { it !in now }) return
+        hidden.value = now
+        runCatching { file.writeText(now.joinToString("\n")) }
+    }
+
+    @androidx.compose.runtime.Composable
+    fun shown(): List<String> {
+        val h by hidden.collectAsState()
+        return PLACES.filter { it !in h }
+    }
+}
+
 /** How the window's laid out by its width: a rail, the page and the now column; a rail and the page; the phone's. */
 enum class Frame { WIDE, MIDDLE, NARROW }
 
@@ -61,7 +85,7 @@ fun frameOf(width: Dp) = when {
 fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSettings: () -> Unit) {
     Column(Modifier.width(RAIL).fillMaxHeight().padding(start = SIDE, top = TOP + 40.dp, bottom = 20.dp)) {
         // each word rising in as the rail opens, 40 ms after the one before (the places menu's motion)
-        PLACES.forEachIndexed { i, p ->
+        Places.shown().forEachIndexed { i, p ->
           if (i == 0) Row(Modifier.rising(0), verticalAlignment = Alignment.CenterVertically) {
             Word(p.uppercase(), headline(22.sp, if (p == place) Ink.ink else Ink.dim), Modifier.padding(vertical = 2.dp), touch = 6.dp) { onPlace(p) }
             Spacer(Modifier.weight(1f))
@@ -97,11 +121,14 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
 }
 
 val RAIL = 210.dp
-/** Rising in as it first shows, `order` steps of 40 ms after the first (the rail's words as it opens). */
+/**
+ * Rising in as it first shows (the rail's words as it opens), all at once: 40 ms a word one after another till 2026-11-11
+ * (a tester: "remove or shorten the animation delay when opening the side panel"; the last word came a third of a second late).
+ */
 @Composable
-private fun Modifier.rising(order: Int): Modifier {
+private fun Modifier.rising(@Suppress("UNUSED_PARAMETER") order: Int): Modifier {
     val shown = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(order * 40L); shown.animateTo(1f, androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) }
+    LaunchedEffect(Unit) { shown.animateTo(1f, androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) }
     return graphicsLayer { alpha = shown.value; translationY = (1f - shown.value) * Motion.drift.toPx() * .6f }
 }
 
