@@ -52,8 +52,9 @@ import java.io.File
  */
 object Welcome {
     private val said = File(Home.dir, "welcomed")
+    // what someone who's used it leaves (sync.json and window.json are written on every start, so not those)
     val showing = kotlinx.coroutines.flow.MutableStateFlow(
-        !said.exists() && !File(Home.dir, "heard.jsonl").exists() && !File(Home.dir, "sync.json").exists())
+        !said.exists() && listOf("heard.jsonl", "loved.json", "folder", "following.json").none { File(Home.dir, it).exists() })
 
     fun finish() {
         showing.value = false
@@ -84,13 +85,17 @@ fun WelcomePage() {
     }
 }
 
-/** A step's frame: the page's edge, its heading big, what it holds, and its words along the foot. */
+/**
+ * A step's frame: its heading big and what it holds, held in the window's middle (`fill`: down to the foot, for the
+ * faces), its words along the foot.
+ */
 @Composable
-private fun StepFrame(heading: String, foot: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit, body: @Composable () -> Unit) {
+private fun StepFrame(heading: String, foot: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit, fill: Boolean = false, body: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 64.dp, vertical = 56.dp)) {
+        if (!fill) Spacer(Modifier.weight(1f))
         BasicText(heading, style = headline(56.sp).copy(lineHeight = 60.sp))
         Spacer(Modifier.height(32.dp))
-        Box(Modifier.weight(1f).fillMaxWidth()) { body() }
+        if (fill) Box(Modifier.weight(1f).fillMaxWidth()) { body() } else { Box(Modifier.fillMaxWidth()) { body() }; Spacer(Modifier.weight(1.3f)) }
         Spacer(Modifier.height(20.dp))
         Row(verticalAlignment = Alignment.CenterVertically) { foot() }
     }
@@ -124,7 +129,7 @@ private fun PhoneStep(onPaired: () -> Unit, onSkip: () -> Unit) {
             BasicText("point its camera here", style = pixel(13.sp, Ink.mid))
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                link?.let { QrCode(it, Modifier.size(240.dp)) } ?: Box(Modifier.size(240.dp))
+                link?.let { QrCode(it, Modifier.size(280.dp)) } ?: Box(Modifier.size(280.dp))
                 Spacer(Modifier.width(28.dp))
                 code?.let { BasicText(it, style = pixel(13.sp, Ink.mid)) }
             }
@@ -174,7 +179,7 @@ private fun LikeStep(onDone: () -> Unit) {
     }
     val offered = remember(mine) { (mine + OFFERED).distinctBy { it.lowercase() }.take(24) }
     val picked = remember { mutableStateListOf<String>() }
-    StepFrame("WHAT DO YOU LIKE?", foot = {
+    StepFrame("WHAT DO YOU LIKE?", fill = true, foot = {
         BasicText(if (picked.isEmpty()) "" else "${picked.size}", style = pixel(13.sp, Ink.mid), modifier = Modifier.weight(1f))
         Word("skip", pixel(14.sp, Ink.mid), Modifier.padding(end = 28.dp), touch = 8.dp, onClick = onDone)
         Word("DONE", headline(40.sp, if (picked.isEmpty()) Ink.mid else Ink.ink), touch = 10.dp) {
