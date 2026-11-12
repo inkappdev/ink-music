@@ -199,6 +199,13 @@ object DiscordAndroidPresence {
             connecting = false
             serviceConnection = null
             Log.w(TAG, "Discord RPC bindService returned false")
+        } else {
+            main.postDelayed({
+                if (connecting && rpc == null && serviceConnection === connection) {
+                    Log.w(TAG, "Discord RPC service bind timed out")
+                    disconnect()
+                }
+            }, 5_000L)
         }
     }
 
