@@ -638,13 +638,20 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             if (tab != "songs") emptyList()
             else Genres.names.map { g -> g to pool.count { Genres.fits(it.artist, g) } }.filter { it.second > 0 }.sortedByDescending { it.second }
         }
+        // the folders your files are in, each by itself (2026-11-12, a tester: "browse the songs within each directory
+        // separately" to make a playlist of one), said from your music folder down, most first
+        val folders = remember(pool, tab) {
+            if (tab != "songs") emptyList()
+            else pool.filter { it.path.isNotEmpty() && !it.server && !it.tube }.groupingBy { java.io.File(it.path).parent.orEmpty() }.eachCount()
+                .entries.sortedBy { it.key.lowercase() }.map { it.key to it.value }
+        }
         // one row (2026-11-12, it was two, the orders ten words across): the order in use, dropped down; the songs' sources
         // and genre after a hairline; then shuffle all, add music, and list or grid
         if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) Row(Modifier.padding(horizontal = SIDE).padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS })
-            if (tab == "songs" && (counts.size > 1 || genres.isNotEmpty())) {
+            if (tab == "songs" && (counts.size > 1 || genres.isNotEmpty() || folders.size > 1)) {
                 Box(Modifier.padding(horizontal = 20.dp).width(1.dp).height(14.dp).background(Ink.line))
-                FilterRow(counts, genres, Modifier.weight(1f).padding(end = 20.dp))
+                FilterRow(counts, genres, folders, Modifier.weight(1f).padding(end = 20.dp))
             } else Spacer(Modifier.weight(1f))
             // everything shuffled, at once, and music added from a folder, here where the music is (2026-11-11, a tester:
             // "importing songs shouldn't require users to navigate through the settings"; "add your songs, hit shuffle")
@@ -725,10 +732,12 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             else -> {
                 val from by SongsFrom.chosen.collectAsState()
                 val genre by SongsFrom.genre.collectAsState()
-                val every = remember(pool, from, genre, kept, tagged, sc, seed, heard, minute) {
+                val folder by SongsFrom.folder.collectAsState()
+                val every = remember(pool, from, genre, folder, kept, tagged, sc, seed, heard, minute) {
                     val shown = pool.filter { s ->
                         (from == "all" || from !in counts || (if (from == "kept") s.id in kept else SongsFrom.of(s) == from)) &&
-                            (genre.isEmpty() || Genres.fits(s.artist, genre))
+                            (genre.isEmpty() || Genres.fits(s.artist, genre)) &&
+                            (folder.isEmpty() || (s.path.isNotEmpty() && java.io.File(s.path).parent == folder))
                     }
                     Sorts.order(shown, sc, seed, { it.id },
                         compareBy<Song>({ Library.sortName(it.albumArtist.ifBlank { it.artist }) }, { it.year }, { Library.sortName(it.album) }, { it.disc }, { it.track })) { s ->
@@ -2078,6 +2087,8 @@ object SongsFrom {
     val chosen = kotlinx.coroutines.flow.MutableStateFlow(runCatching { file.readText().trim() }.getOrDefault("").ifEmpty { "all" })
     /** The genre shown, "" for every one. */
     val genre = kotlinx.coroutines.flow.MutableStateFlow(runCatching { genreFile.readText().trim() }.getOrDefault(""))
+    /** The one folder shown, its whole path ("" for all of them); not kept past a restart. */
+    val folder = kotlinx.coroutines.flow.MutableStateFlow("")
     // "kept": kept offline, from wherever it came (2026-11-10, Bronson: "a marked offline category, just youtube")
     val WORDS = listOf("all" to "everything", "computer" to "this computer", "server" to "your server", "youtube" to "youtube", "kept" to "kept offline")
 
@@ -2102,9 +2113,10 @@ object SongsFrom {
  */
 @Composable
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>, modifier: Modifier) {
+private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>, folders: List<Pair<String, Int>>, modifier: Modifier) {
     val from by SongsFrom.chosen.collectAsState()
     val genre by SongsFrom.genre.collectAsState()
+    val folder by SongsFrom.folder.collectAsState()
     val now = if (from in counts) from else "all"
     @Composable
     fun Choice(word: String, count: Int?, lit: Boolean, onClick: () -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2125,6 +2137,18 @@ private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>,
             DropWord(genre.ifEmpty { "every genre" }, genre.isNotEmpty(),
                 listOf(DropRow("every genre", null, genre.isEmpty()) { SongsFrom.setGenre("") }) +
                     all.map { (g, n) -> DropRow(g, n, g == genre) { SongsFrom.setGenre(g) } })
+        }
+        // each folder by itself, dropped down from one word as the genres are: said from your music folder down
+        if (folders.size > 1) {
+            val roots = Library.folders
+            fun short(path: String): String {
+                val root = roots.firstOrNull { path.startsWith(it.path) }
+                return if (root != null) (java.io.File(root.path).name + path.removePrefix(root.path)).replace('\\', '/').lowercase()
+                    else Library.said(java.io.File(path))
+            }
+            DropWord(if (folder.isEmpty()) "every folder" else short(folder).substringAfterLast('/'), folder.isNotEmpty(),
+                listOf(DropRow("every folder", null, folder.isEmpty()) { SongsFrom.folder.value = "" }) +
+                    folders.map { (f, n) -> DropRow(short(f), n, f == folder) { SongsFrom.folder.value = f } })
         }
     }
 }
