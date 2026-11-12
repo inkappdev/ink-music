@@ -2194,6 +2194,18 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Searches.keep(pages.query) } }
     val typed = query.trim()
     val q = Search.fold(typed)
+    var addonConfigUp by remember { mutableStateOf(false) }
+    val addonBase = AddonMusic.baseUrl(ctx)
+    val addonSongs by androidx.compose.runtime.produceState(emptyList<Song>(), q, addonBase) {
+        if (addonBase.isBlank() || q.length < 2) { value = emptyList(); return@produceState }
+        kotlinx.coroutines.delay(300)
+        value = AddonMusic.search(ctx, typed)
+    }
+    if (addonConfigUp) AddonConfigDialog(
+        ctx = ctx,
+        onDismiss = { addonConfigUp = false },
+        onSave = { addonConfigUp = false },
+    )
     // YouTube Music too (the full build), once the typing rests
     val tube by androidx.compose.runtime.produceState(TubeFound(), q) {
         if (!YouTubeMusic.available || q.length < 2) { value = TubeFound(); return@produceState }
@@ -2223,7 +2235,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             .distinctBy { it.name.lowercase() }.take(8)
     }
     // go plays what's found: your songs, else YouTube Music's
-    val go = foundSongs.ifEmpty { tube.songs }
+    val go = foundSongs.ifEmpty { tube.songs.ifEmpty { addonSongs } }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val list = pageList()
@@ -2248,12 +2260,13 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                     modifier = Modifier.weight(1f).focusRequester(focus),
                 )
                 if (query.isNotEmpty()) Word("clear", pixel(12.sp, Ink.mid), Modifier.padding(end = 14.dp), touch = 10.dp) { onQuery("") }
+                Word("addon", pixel(11.sp, Ink.mid), Modifier.padding(end = 10.dp), touch = 8.dp) { addonConfigUp = true }
                 CloseArrow { pages.close() }
             }
             Spacer(Modifier.height(18.dp))
             // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
             if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() &&
-                foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty())
+                foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty() && addonSongs.isEmpty())
                 BasicText("nothing called that", style = pixel(12.sp, Ink.mid), modifier = row)
             // what you looked for lately, a tap to look again
             if (q.isEmpty() && recent.isNotEmpty()) FlowRow(row, horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2318,6 +2331,10 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         if (tube.songs.isNotEmpty()) item { Label("songs on youtube music") }
         itemsIndexed(tube.songs, key = { _, s -> "t" + s.id }) { i, s ->
             Box(row) { SongRow(s, pages = pages) { Playback.play(tube.songs, i) } }
+        }
+        if (addonSongs.isNotEmpty()) item { Label("songs from addon") }
+        itemsIndexed(addonSongs, key = { _, s -> "a" + s.id }) { i, s ->
+            Box(row) { SongRow(s, pages = pages) { Playback.play(addonSongs, i) } }
         }
         if (tube.lists.isNotEmpty()) item {
             Label("playlists on youtube music")
@@ -3501,5 +3518,39 @@ private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, p
         if (playing) Small("now playing", at++, onPlayer) else at++
         // (your year not on a TV, 2026-11-10: a phone's thing, read up close)
         Small("settings", at, onSettings)
+    }
+}
+
+
+/** Configure a BitChord-compatible addon. A LastWave path token may optionally be signed with its HMAC secret. */
+@Composable
+private fun AddonConfigDialog(ctx: android.content.Context, onDismiss: () -> Unit, onSave: () -> Unit) {
+    var url by remember { mutableStateOf(AddonMusic.baseUrl(ctx)) }
+    var secret by remember { mutableStateOf(AddonMusic.secret(ctx)) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().background(Ink.black).border(1.dp, Ink.mid).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            BasicText("BITCHORD ADDON", style = headline(18.sp))
+            BasicText("Addon base URL or manifest.json URL", style = pixel(10.sp, Ink.mid))
+            BasicTextField(
+                value = url, onValueChange = { url = it }, singleLine = true,
+                textStyle = pixel(12.sp, Ink.ink),
+                modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
+            )
+            BasicText("Optional LastWave HMAC secret", style = pixel(10.sp, Ink.mid))
+            BasicTextField(
+                value = secret, onValueChange = { secret = it }, singleLine = true,
+                textStyle = pixel(12.sp, Ink.ink),
+                modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
+            )
+            BasicText("Leave the secret empty for standard BitChord addons. It is used only for /a/{token} LastWave URLs.", style = pixel(10.sp, Ink.mid))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Word("save", pixel(12.sp, Ink.ink), onClick = { AddonMusic.configure(ctx, url, secret); onSave() })
+                Word("clear", pixel(12.sp, Ink.mid), onClick = { AddonMusic.configure(ctx, "", ""); url = ""; secret = ""; onSave() })
+                Word("cancel", pixel(12.sp, Ink.mid), onClick = onDismiss)
+            }
+        }
     }
 }
