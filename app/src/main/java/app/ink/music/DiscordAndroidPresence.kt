@@ -103,6 +103,8 @@ object DiscordAndroidPresence {
         val title = md.title?.toString()?.trim().orEmpty()
         val artist = md.artist?.toString()?.trim().orEmpty()
         val album = md.albumTitle?.toString()?.trim().orEmpty()
+        val artwork = sequenceOf(md.artworkUri?.toString(), Library.song(item?.mediaId.orEmpty())?.art)
+            .filterNotNull().firstOrNull { it.startsWith("https://") || it.startsWith("http://") }
         val active = enabled(ctx) && !Private.on(ctx) && p.isPlaying && item != null &&
             !item.mediaId.startsWith("s") && !item.mediaId.startsWith("e") && title.isNotBlank()
         if (!active) {
@@ -124,11 +126,17 @@ object DiscordAndroidPresence {
         if (key == lastKey && now - lastPush < PUSH_MS) return
         val activity = JSONObject().apply {
             put("type", 2)
+            put("name", if (title.isBlank()) "Ink Music" else "Ink Music · ${title.take(96)}")
             put("details", title.take(128))
             val byline = listOf(artist.takeIf { it.isNotBlank() && it != "unknown" }, album.takeIf { it.isNotBlank() })
                 .filterNotNull().joinToString(" · ")
             if (byline.isNotBlank()) put("state", byline.take(128))
-            if (album.isNotBlank()) put("assets", JSONObject().put("large_image", "ink").put("large_text", album.take(128)))
+            put("assets", JSONObject().apply {
+                put("large_image", artwork ?: "ink")
+                put("large_text", if (album.isNotBlank()) album.take(128) else title.take(128))
+                put("small_image", "ink")
+                put("small_text", "Ink Music")
+            })
             if (duration > 0) put("timestamps", JSONObject().put("start", start / 1000L).put("end", (start + duration) / 1000L))
             put("buttons", JSONArray().put(JSONObject().put("label", "get ink music").put("url", "https://inkhome.app/music")))
         }
