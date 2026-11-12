@@ -1694,6 +1694,16 @@ fun RadioWord(modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Word("radio", pixel(13.sp, if (radio) Ink.ink else Ink.dim), touch = 8.dp) { Player.radio(!radio) }
         BasicText(if (radio) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
+        // what's up next, a shuffle or a radio run you liked, kept as a list of yours (2026-11-12, a tester: "these
+        // combinations can be lost every time the shuffle button is pressed again")
+        val queue by Player.queue.collectAsState()
+        var kept by remember(queue) { mutableStateOf(false) }
+        if (queue.size > 1) Word(if (kept) "kept as a list" else "keep as a list", pixel(13.sp, if (kept) Ink.ink else Ink.mid), Modifier.padding(start = 24.dp), touch = 8.dp) {
+            if (!kept) {
+                val day = java.time.LocalDate.now().let { "${it.dayOfMonth} ${it.month.name.lowercase()}" }
+                HereLists.make("up next, $day", queue); kept = true
+            }
+        }
     }
 }
 
