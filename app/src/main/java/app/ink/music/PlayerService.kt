@@ -509,6 +509,7 @@ class PlayerService : MediaLibraryService() {
         val album: String,
         val durationMs: Long,
         val fromAddon: Boolean,
+        val streamUrl: String,
     )
     private val preferred = java.util.concurrent.ConcurrentHashMap<String, Preferred>()
     private val sourceMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -607,10 +608,56 @@ class PlayerService : MediaLibraryService() {
                     val metered = Quality.metered(this)
                     return Quality.now(this).also { chosen[key] = Chosen(it, now, metered) }
                 }
+                // Addon is preferred for every song, no matter which page or library it came from.
+                // If the addon has no match, the full build tries YouTube before the original source.
+                val original = spec.uri
+                val preferredSpec = if (original.scheme != "addon" && AddonMusic.baseUrl(this).isNotBlank()) {
+                    runCatching {
+                        val item = mediaFor(original)
+                        if (item == null || item.mediaId.startsWith("s") || item.mediaId.startsWith("e")) null
+                        else {
+                            val key = original.toString()
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            val cached = preferred[key]
+                            when {
+                                cached != null -> spec.withUri(Uri.parse(cached.streamUrl))
+                                sourceMisses[key]?.let { it > now } == true -> null
+                                else -> {
+                                    val md = item.mediaMetadata
+                                    val title = md.title?.toString().orEmpty()
+                                    val artist = md.artist?.toString().orEmpty()
+                                    val album = md.albumTitle?.toString().orEmpty()
+                                    val duration = item.localConfiguration?.uri?.let { item.mediaMetadata.durationMs }?.takeIf { it > 0 } ?: 0L
+                                    val addonUrl = AddonMusic.findStream(this, title, artist, album, duration / 1000)
+                                    if (addonUrl != null) {
+                                        preferred[key] = Preferred(original, title, artist, album, duration, true, addonUrl)
+                                        android.util.Log.i("ink-addon", "playing $title from addon")
+                                        spec.withUri(Uri.parse(addonUrl))
+                                    } else if (original.scheme != "ytm" && YouTubeMusic.available) {
+                                        val yt = kotlinx.coroutines.runBlocking(Dispatchers.IO) { youtubeMatch(title, artist, duration) }
+                                        val ytUrl = yt?.let { YouTubeMusic.stream(it.id, false, small = quality() == Quality.SAVER)?.first }
+                                        if (ytUrl != null) {
+                                            preferred[key] = Preferred(original, title, artist, album, duration, false, ytUrl)
+                                            android.util.Log.i("ink-addon", "addon miss; playing $title from YouTube Music")
+                                            spec.withUri(Uri.parse(ytUrl))
+                                        } else {
+                                            sourceMisses[key] = now + 300_000L
+                                            null
+                                        }
+                                    } else {
+                                        sourceMisses[key] = now + 300_000L
+                                        null
+                                    }
+                                }
+                            }
+                        }
+                    }.onFailure { android.util.Log.w("ink-addon", "source selection failed: ${it.message}") }.getOrNull()
+                } else null
                 when {
-                    // A BitChord addon song resolves to its direct stream URL; optional LastWave HMAC is signed in AddonMusic.
-                    spec.uri.scheme == "addon" -> spec.withUri(Uri.parse(
-                        AddonMusic.stream(this, spec.uri.toString().removePrefix("addon://").substringBefore('/'))))
+                    // A BitChord addon search result resolves directly through its stored addon id.
+                    original.scheme == "addon" -> spec.withUri(Uri.parse(
+                        AddonMusic.stream(this, original.toString().removePrefix("addon://").substringBefore('/'))))
+                    preferredSpec != null -> preferredSpec
                     // a YouTube song kept on the phone plays from there, no signal needed (Offline)
                     spec.uri.scheme == "ytm" && Offline.file(this, "y" + spec.uri.host) != null ->
                         spec.withUri(Uri.fromFile(Offline.file(this, "y" + spec.uri.host)!!)).also { android.util.Log.d("ink-offline", "kept: y${spec.uri.host}") }
