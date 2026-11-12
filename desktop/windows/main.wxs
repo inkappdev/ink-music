@@ -156,7 +156,6 @@
            plays (its machine-wide registration can't be rolled back without an administrator: gone from Apps, a 2.1.16
            from the site goes in over it cleanly); from 2.1.15, whose download is outside, it updates whole -->
       <RemoveExistingProducts After="InstallInitialize"/>
-      <RemoveExistingProducts After="InstallInitialize"/>
       <Custom Action="JpFindRelatedProducts" After="FindRelatedProducts"/>
     </InstallExecuteSequence>
 
