@@ -227,7 +227,7 @@ object AddonMusic {
             val code = connection.responseCode
             if (code !in 200..299) throw IOException("Addon HTTP $code")
             val body = connection.inputStream.bufferedReader().use { it.readText() }
-            if (body.trimStart().startsWith("[")) JSONObject().put("tracks", org.json.JSONArray(body))
+            return if (body.trimStart().startsWith("[")) JSONObject().put("tracks", org.json.JSONArray(body))
             else JSONObject(body)
         } finally { connection.disconnect() }
     }
