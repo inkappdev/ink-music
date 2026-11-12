@@ -39,8 +39,8 @@ object Mapped {
         // each artist as they're written (the latest heard), their nearness from your taste; and the ones brought in
         val names = LinkedHashMap<String, String>()
         heard.forEach { h -> h.artist.substringBefore(", ").trim().takeIf { it.isNotEmpty() }?.let { names[Taste.bare(it)] = it } }
-        Fresh.brought.value.forEach { b -> b.artists.keys.forEach { names.putIfAbsent(Taste.bare(it), it) } }
-        val artists = names.values.map { it to t.of(it) }.filter { it.second > 0 }.sortedByDescending { it.second }.take(40)
+        Fresh.brought.value.forEach { b -> b.artists.keys.forEach { a -> a.substringBefore(", ").trim().takeIf { it.isNotEmpty() }?.let { names.putIfAbsent(Taste.bare(it), it) } } }
+        val artists = names.values.distinctBy { it.lowercase() }.map { it to t.of(it) }.filter { it.second > 0 }.sortedByDescending { it.second }.take(40)
         val now = System.currentTimeMillis()
         // in rotation: the songs most in it now (lately counting more), their artists
         val byId = heard.associateBy { it.id }
@@ -66,8 +66,8 @@ fun MappedPage(onClose: () -> Unit) {
     val accent = r?.record?.let { rememberCover(it, 240)?.accent } ?: Ink.ink
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = SIDE, end = SIDE, top = 8.dp, bottom = 48.dp)) {
-            BasicText("INK MAPPED", style = headline(56.sp))
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = SIDE, end = SIDE, top = 8.dp, bottom = 48.dp).widthIn(max = 760.dp)) {
+            BasicText("INK MAPPED", style = headline(40.sp))
             BasicText("your listening as land: a hill for each artist you're near, the nearer the higher, kin close together",
                 style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
             Spacer(Modifier.height(28.dp))
@@ -77,9 +77,10 @@ fun MappedPage(onClose: () -> Unit) {
                 else -> Row(verticalAlignment = Alignment.Top) {
                     // drawn again as tags come in (their key: how many are known)
                     val known = r.artists.count { Genres.tags(it.first) != null }
-                    LandOf(r.artists, { Genres.tags(it) }, Modifier.weight(1f).widthIn(max = 760.dp).aspectRatio(1f), accent = accent, named = 5, version = known)
-                    Spacer(Modifier.width(48.dp))
-                    Column(Modifier.width(300.dp)) {
+                    // small, a map on a page, not the page (2026-11-12, Bronson: "much smaller")
+                    LandOf(r.artists, { Genres.tags(it) }, Modifier.width(420.dp).aspectRatio(1f), accent = accent, named = 5, version = known)
+                    Spacer(Modifier.width(40.dp))
+                    Column(Modifier.width(280.dp)) {
                         Said("lately", InkMap.mood(r.appetite).uppercase(), "${(r.appetite * 10).toInt()} in ten of what's picked for you is new to you")
                         if (r.rotation.isNotEmpty()) Said("in rotation", null, r.rotation.joinToString(", ") { it.lowercase() })
                         r.hours?.let { Said("when", null, it) }
