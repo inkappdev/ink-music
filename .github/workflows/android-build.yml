@@ -41,3 +41,16 @@ jobs:
           path: app/build/outputs/apk/full/debug/*.apk
           if-no-files-found: error
           retention-days: 7
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Compile desktop app (including Discord RPC)
+        run: ./gradlew --no-daemon :desktop:compileKotlin
