@@ -83,10 +83,33 @@ object Win {
     var before: DpSize? = null
     var beforeAt: WindowPosition? = null
     private var was: WindowPlacement = WindowPlacement.Floating
-    val full get() = state?.placement == WindowPlacement.Fullscreen
+    val full get() = covering || state?.placement == WindowPlacement.Fullscreen
+
+    /** Windows' full screen as ink makes it ([full]): the window over the whole screen, still an ordinary window. */
+    @Volatile private var covering = false
 
     fun full(on: Boolean) {
         val s = state ?: return
+        // Windows: not Java's full screen, which is exclusive there, and Windows minimizes an exclusive window as soon as
+        // another takes the focus (2026-11-12, a tester: opening a folder to drag a song in, ink music minimized itself;
+        // brought back, it was full screen again, "maximizing itself"; and minimize fought it). The window laid over
+        // the whole screen instead, and put back as it was
+        if (Home.windows) {
+            if (on == covering) return
+            covering = on
+            if (on) {
+                was = s.placement; before = s.size; beforeAt = s.position
+                val b = java.awt.Frame.getFrames().firstOrNull { it.title == "ink music" && it.isDisplayable }?.graphicsConfiguration?.bounds
+                    ?: java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration.bounds
+                s.placement = WindowPlacement.Floating
+                s.position = WindowPosition(b.x.dp, b.y.dp)
+                s.size = DpSize(b.width.dp, b.height.dp)
+            } else {
+                s.placement = was
+                if (was == WindowPlacement.Floating) { before?.let { s.size = it }; beforeAt?.takeIf { it.isSpecified }?.let { s.position = it } }
+            }
+            return
+        }
         if (on == full) return   // closing the player when it wasn't full screen: the window left as it is (zoomed stays zoomed)
         if (on) {
             was = s.placement

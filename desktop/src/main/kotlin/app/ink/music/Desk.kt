@@ -116,7 +116,7 @@ object Placed {
 
     /** Written down as it is now: its plain size (as it was before, while full screen), and whether it's zoomed. */
     fun keep(s: WindowState) {
-        if (s.isMinimized) return
+        if (s.isMinimized || Win.full) return
         val floating = s.placement == WindowPlacement.Floating
         val size = if (floating) s.size else Win.before ?: s.size
         val p = if (floating) s.position else Win.beforeAt ?: s.position
