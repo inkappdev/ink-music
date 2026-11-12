@@ -152,6 +152,73 @@ object LyricsSources {
             jobs.awaitAll().firstNotNullOfOrNull { it }
         }
 
+    private fun spicy(title: String, artist: String, duration: Long, apiKey: String): List<Line>? {
+        if (apiKey.isBlank()) return null
+        fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
+            .replace(Regex("\\p{M}+"), "").lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        val query = enc("artist:\"$artist\" track:\"$title\"")
+        val search = JSONObject(request("https://api.deezer.com/search?q=$query&limit=10"))
+        val tracks = search.optJSONArray("data") ?: return null
+        var deezerId = ""
+        for (i in 0 until tracks.length()) {
+            val track = tracks.optJSONObject(i) ?: continue
+            val sameTitle = norm(track.optString("title")) == norm(title)
+            val sameArtist = norm(track.optJSONObject("artist")?.optString("name").orEmpty()) == norm(artist)
+            val durationMatches = duration <= 0 || kotlin.math.abs(track.optLong("duration") - duration) <= 5
+            if (sameTitle && sameArtist && durationMatches) { deezerId = track.optString("id"); break }
+        }
+        if (deezerId.isBlank()) return null
+        val links = JSONObject(request("https://api.song.link/v1-alpha.1/links?url=${enc("https://www.deezer.com/track/$deezerId")}"))
+        val spotifyUrl = links.optJSONObject("linksByPlatform")?.optJSONObject("spotify")?.optString("url").orEmpty()
+        val spotifyId = Regex("""/track/([A-Za-z0-9]{22})(?:[/?#]|$)""").find(spotifyUrl)?.groupValues?.get(1) ?: return null
+        val connection = URL("https://api.spicylyrics.org/v1/lyrics/$spotifyId").openConnection() as HttpURLConnection
+        connection.connectTimeout = 7000
+        connection.readTimeout = 9000
+        connection.setRequestProperty("User-Agent", "INK-Music/2")
+        connection.setRequestProperty("Authorization", "Bearer $apiKey")
+        val response = try {
+            if (connection.responseCode !in 200..299) return null
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } finally { connection.disconnect() }
+        val body = JSONObject(response).optJSONObject("Body") ?: return null
+        val type = body.optString("Type")
+        val content = body.optJSONArray("Content") ?: body.optJSONArray("Lines") ?: return null
+        val lines = ArrayList<Line>()
+        for (i in 0 until content.length()) {
+            val row = content.optJSONObject(i)
+            if (row == null) {
+                val text = content.optString(i).trim()
+                if (text.isNotBlank()) lines += Line(-1, text)
+                continue
+            }
+            when (type.lowercase()) {
+                "syllable" -> {
+                    val lead = row.optJSONObject("Lead")
+                    val syllables = lead?.optJSONArray("Syllables")
+                    val parts = ArrayList<Pair<Long, String>>()
+                    if (syllables != null) for (j in 0 until syllables.length()) {
+                        val syllable = syllables.optJSONObject(j) ?: continue
+                        val text = syllable.optString("Text")
+                        if (text.isNotBlank()) parts += (syllable.optDouble("StartTime") * 1000).toLong() to text
+                    }
+                    val text = parts.joinToString("") { it.second }.ifBlank { lead?.optString("Text").orEmpty() }
+                    val start = lead?.optDouble("StartTime", 0.0) ?: parts.firstOrNull()?.first?.div(1000.0) ?: 0.0
+                    if (text.isNotBlank()) lines += Line((start * 1000).toLong(), text, parts)
+                }
+                "line" -> {
+                    val text = row.optString("Text")
+                    if (text.isNotBlank()) lines += Line((row.optDouble("StartTime", 0.0) * 1000).toLong(), text)
+                }
+                else -> {
+                    val text = row.optString("Text")
+                    if (text.isNotBlank()) lines += Line(-1, text)
+                }
+            }
+        }
+        return lines.takeIf { it.isNotEmpty() }?.sortedBy { it.at }
+    }
+
     private fun betterPortato(title: String, artist: String, album: String, duration: Long): List<Line>? {
         val url = "https://lyrics-api.boidu.dev/qq/getLyrics?s=${enc(title)}&a=${enc(artist)}&d=$duration&al=${enc(album)}"
         val body = request(url)
