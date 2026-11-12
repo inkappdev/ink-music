@@ -462,7 +462,7 @@ object Crossfade {
     internal const val RATE = 22_050
 
     /** A stretch decoded to mono floats at [RATE] (blocking; 20 s at most), and the song's length (ms). */
-    internal fun decode(url: String, from: Double, length: Double, waitMs: Long = 20_000): Pair<FloatArray, Long>? {
+    internal fun decode(url: String, from: Double, length: Double, waitMs: Long = 20_000, rate: Int = RATE): Pair<FloatArray, Long>? {
         val out = File.createTempFile("ink-ends", ".raw")
         try {
             val m = Mpv(mapOf(
@@ -470,7 +470,7 @@ object Crossfade {
                 "vid" to "no", "audio-display" to "no", "terminal" to "no", "idle" to "no", "ytdl" to "no",
                 "replaygain" to "no", "hr-seek" to "yes", "cache" to "yes",
                 "start" to "%.3f".format(java.util.Locale.ROOT, from), "length" to "%.3f".format(java.util.Locale.ROOT, length),
-                "af" to "lavfi=[aformat=sample_fmts=flt:channel_layouts=mono:sample_rates=$RATE]",
+                "af" to "lavfi=[aformat=sample_fmts=flt:channel_layouts=mono:sample_rates=$rate]",
             ))
             var dur = 0L
             try {
@@ -486,7 +486,7 @@ object Crossfade {
                 }
             } finally { m.close() }
             val bytes = out.readBytes()
-            if (bytes.size < RATE * 4) return null
+            if (bytes.size < rate * 4) return null
             val f = FloatArray(bytes.size / 4)
             java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(f)
             return f to dur

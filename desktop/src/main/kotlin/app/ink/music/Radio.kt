@@ -108,7 +108,10 @@ object Radio {
         if (s.id.startsWith("y")) YouTube.related(s.id).takeIf { it.isNotEmpty() }?.let { return it }
         val seed = Library.songs.value.firstOrNull { it.id == s.id }
         val known = s.artist.isNotBlank() && s.artist != "unknown"
-        // a file with nothing in it: its name, cleaned of track numbers and underscores, is what's asked
+        // a file with nothing in it: heard (Recognize, Shazam's fingerprint), else its name cleaned of track numbers and
+        // underscores is what's asked
+        val heard = if (!known && seed != null && seed.path.isNotEmpty() && !seed.tube) runCatching { Recognize.of(seed) }.getOrNull() else null
+        if (heard != null) YouTube.find(heard.title, heard.artist)?.let { YouTube.related(it.id) }?.takeIf { it.isNotEmpty() }?.let { return it }
         val title = if (known) s.title else spoken(seed?.path?.let { java.io.File(it).nameWithoutExtension } ?: s.title)
         (YouTube.find(title, if (known) s.artist else "") ?: runCatching { kotlinx.coroutines.runBlocking { YouTube.search(title) }?.songs?.firstOrNull() }.getOrNull())
             ?.let { YouTube.related(it.id) }?.takeIf { it.isNotEmpty() }?.let { return it }
