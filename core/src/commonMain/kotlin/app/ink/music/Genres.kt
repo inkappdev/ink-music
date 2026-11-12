@@ -45,6 +45,12 @@ object Genres {
     private val kept = HashMap<String, Pair<List<String>, Long>>()
     private const val KEEP = 60L * 86_400_000
 
+    /** An artist's top tags as kept (most given first), or null when they haven't been read (ink mapped places them by these). */
+    fun tags(artist: String): List<String>? = kept[key(artist)]?.first
+
+    /** The genres a tag tells (most of them one; "post-punk" is indie and rock both). */
+    fun genresOf(tag: String): List<String> = TAGS.entries.filter { tag in it.value }.map { it.key }
+
     /** Whether an artist fits a genre: one of its tags among their top three. Unknown artists don't (yet). */
     fun fits(artist: String, genre: String): Boolean {
         val want = TAGS[genre.lowercase()] ?: return false

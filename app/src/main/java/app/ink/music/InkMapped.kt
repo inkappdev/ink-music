@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -75,16 +76,20 @@ object Mapped {
         // the record you've played most this month, for the map's colour and the card's foot
         val record = heard.filter { now - it.at < 30L * 86_400_000 && it.album.isNotBlank() }.groupBy { it.album to it.artist.substringBefore(", ") }
             .maxByOrNull { it.value.size }?.value?.lastOrNull()?.let { Library.song(it.id) ?: YouTubeMusic.known(it.id) }
+        // their tags, where they're missing, read behind (a few seconds the first time): the map placed by sound once they come
+        GenrePicks.tagIn(c, artists.map { it.first })
         Read(artists, t.appetite, rotation, hours, Fresh.turnedDownNames(c), record)
     }
 
     /** The map drawn at `side` px in the record's colour (blocking), kept. */
     suspend fun draw(c: Context, r: Read, side: Int): Pair<ImageBitmap, InkMap.Drawn> {
         val accent = r.record?.let { runCatching { Covers.of(c, it, 240) }.getOrNull()?.accent } ?: Ink.ink
-        val key = "${r.artists.hashCode()}|${r.appetite}|${accent.value}|$side"
+        // its key the artists and the tags known of them: tags come in and it's drawn again, by sound
+        val tagged = r.artists.count { Genres.tags(it.first) != null }
+        val key = "${r.artists.hashCode()}|$tagged|${r.appetite}|${accent.value}|$side"
         drawn.get(key)?.let { return it }
         return withContext(Dispatchers.Default) {
-            val d = InkMap.draw(r.artists, r.appetite, accent.toArgb(), side)
+            val d = InkMap.draw(r.artists, r.appetite, accent.toArgb(), side, tags = Genres::tags)
             (Bitmap.createBitmap(d.pixels, side, side, Bitmap.Config.ARGB_8888).asImageBitmap() to d).also { drawn.put(key, it) }
         }
     }
@@ -94,7 +99,8 @@ object Mapped {
 @Composable
 fun MappedArt() {
     val ctx = LocalContext.current
-    val map by produceState<ImageBitmap?>(null) { val r = Mapped.read(ctx); if (r.artists.isNotEmpty()) value = Mapped.draw(ctx, r, 360).first }
+    val tagged by GenrePicks.tagged.collectAsState()
+    val map by produceState<ImageBitmap?>(null, tagged) { val r = Mapped.read(ctx); if (r.artists.isNotEmpty()) value = Mapped.draw(ctx, r, 360).first }
     Box(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
         map?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
     }
@@ -105,6 +111,12 @@ fun MappedArt() {
 private fun NamedMap(img: ImageBitmap, d: InkMap.Drawn) {
     BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) {
         Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        // the regions your land is most of, named dim where they lie (as a map names its ranges)
+        d.regions.forEach { g ->
+            Box(Modifier.offset(maxWidth * g.x - 30.dp, maxWidth * g.y - 8.dp)) {
+                BasicText(g.name.uppercase(), style = pixel(12.sp, Ink.mid), maxLines = 1)
+            }
+        }
         d.peaks.forEach { p ->
             val x = maxWidth * p.x; val y = maxWidth * p.y
             Box(Modifier.offset(x - 3.dp, y - 3.dp).size(6.dp).background(Ink.ink))
@@ -126,7 +138,9 @@ fun MappedPage(pages: Pages) {
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableStateOf(0) }
     val read by produceState<Mapped.Read?>(null, refresh) { value = Mapped.read(ctx) }
-    val drawn by produceState<Pair<ImageBitmap, InkMap.Drawn>?>(null, read) { read?.takeIf { it.artists.isNotEmpty() }?.let { value = Mapped.draw(ctx, it, 720) } }
+    // drawn again as their tags come in (the first visit reads them), placed by sound
+    val tagged by GenrePicks.tagged.collectAsState()
+    val drawn by produceState<Pair<ImageBitmap, InkMap.Drawn>?>(null, read, tagged) { read?.takeIf { it.artists.isNotEmpty() }?.let { value = Mapped.draw(ctx, it, 720) } }
     val list = pageList()
     FrostedPage { frost, top -> LazyColumn(
         state = list,
@@ -138,7 +152,7 @@ fun MappedPage(pages: Pages) {
                 BasicText("INK MAPPED", style = headline(52.sp), modifier = Modifier.weight(1f))
                 CloseArrow { pages.close() }
             }
-            BasicText("your listening as land: a hill for each artist you're near, the nearer the higher", style = pixel(12.sp, Ink.mid))
+            BasicText("your listening as land: a hill for each artist you're near, the nearer the higher, kin close together", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(20.dp))
             val r = read
             val d = drawn

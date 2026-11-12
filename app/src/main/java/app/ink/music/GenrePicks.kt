@@ -3,6 +3,7 @@ package app.ink.music
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -20,6 +21,12 @@ object GenrePicks {
     @Volatile private var loaded = false
 
     private fun file(c: Context) = File(c.filesDir, "genre-tags.json")
+
+    /** These artists' tags read where they're missing, behind (ink mapped's artists), kept as they come. */
+    fun tagIn(c: Context, artists: Collection<String>) {
+        val app = c.applicationContext
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { runCatching { tag(app, artists) } }
+    }
 
     /** Every pick of INK's (the critics' records and songs, electronic's), each once. */
     fun all(): List<Picks.Shown> =

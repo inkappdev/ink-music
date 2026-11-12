@@ -15,8 +15,8 @@ object InkMap {
     /** A named summit: whose, and where (0 to 1 across and down). */
     data class Peak(val name: String, val x: Float, val y: Float)
 
-    /** The map drawn, `side` square (ARGB, black where there's no line), and its named summits. */
-    class Drawn(val side: Int, val pixels: IntArray, val peaks: List<Peak>)
+    /** The map drawn, `side` square (ARGB, black where there's no line), its named summits, and its biggest regions' names. */
+    class Drawn(val side: Int, val pixels: IntArray, val peaks: List<Peak>, val regions: List<Peak> = emptyList())
 
     const val LEVELS = 14
 
@@ -26,12 +26,15 @@ object InkMap {
      * The map of `artists` (each its name and how near you are, 0 to 1, nearest first), `side` px square, in `accent`;
      * the `named` highest named. Blocking (a few hundred ms on a phone at 720).
      */
-    fun draw(artists: List<Pair<String, Double>>, appetite: Double, accent: Int, side: Int = 720, named: Int = 3): Drawn {
+    fun draw(artists: List<Pair<String, Double>>, appetite: Double, accent: Int, side: Int = 720, named: Int = 3,
+             tags: (String) -> List<String>? = { null }): Drawn {
         val many = 8 + ((appetite - .1) / .4 * 10).roundToInt().coerceIn(0, 10)
         val chosen = artists.filter { it.second > 0 }.take(many)
+        val at = chosen.associate { (name, _) -> name to place(name, tags(name)) }
         val hills = chosen.map { (name, v) ->
-            val (x, y) = place(name)
-            Hill(x, y, v, .035 + .05 * v)
+            val (x, y) = at.getValue(name)
+            // narrow enough that a region's artists stay peaks of a range, not one smooth mountain
+            Hill(x, y, v, .025 + .035 * v)
         }
         val n = side
         val field = FloatArray(n * n)
@@ -67,24 +70,70 @@ object InkMap {
             }
         }
         // the highest named, each on its own summit: the highest ground near where its hill stands (a neighbour's had
-        // pushed the top aside, the name beside a slope)
-        val peaks = chosen.take(named).map { (name, _) ->
-            val (hx, hy) = place(name)
+        // pushed the top aside, the name beside a slope); two on one summit, the second passed over for the next
+        val peaks = ArrayList<Peak>()
+        for ((name, _) in chosen) {
+            if (peaks.size >= named) break
+            val (hx, hy) = at.getValue(name)
             val cx = (hx * (n - 1)).toInt(); val cy = (hy * (n - 1)).toInt(); val rr = (n * .07).toInt()
             var best = cy * n + cx
             for (j in (cy - rr).coerceAtLeast(0)..(cy + rr).coerceAtMost(n - 1)) for (i in (cx - rr).coerceAtLeast(0)..(cx + rr).coerceAtMost(n - 1))
                 if (field[j * n + i] > field[best]) best = j * n + i
-            Peak(name, (best % n).toFloat() / (n - 1), (best / n).toFloat() / (n - 1))
+            val px0 = (best % n).toFloat() / (n - 1); val py0 = (best / n).toFloat() / (n - 1)
+            if (peaks.any { (it.x - px0) * (it.x - px0) + (it.y - py0) * (it.y - py0) < .09f * .09f }) continue
+            peaks.add(Peak(name, px0, py0))
         }
-        return Drawn(n, px, peaks)
+        // the regions your land is most of, named where they lie (the genres your nearest are, weighed by how near)
+        val weight = HashMap<String, Double>()
+        for ((name, v) in chosen) genresOf(tags(name)).forEach { (g, w) -> weight[g] = (weight[g] ?: 0.0) + v * w }
+        val regions = weight.entries.sortedByDescending { it.value }.take(3).filter { it.value > .3 }
+            .map { (g, _) -> WHEEL.getValue(g).let { (x, y) -> Peak(SHORT[g] ?: g, x.toFloat(), y.toFloat()) } }
+            // not over a summit's name
+            .filter { r -> peaks.none { (it.x - r.x) * (it.x - r.x) + (it.y - r.y) * (it.y - r.y) < .1f * .1f } }
+        return Drawn(n, px, peaks, regions)
     }
 
-    /** Where an artist's hill stands (0.18 to 0.82 each way), from their name: the same every week, on every device. */
-    fun place(name: String): Pair<Double, Double> {
+    /**
+     * Where an artist's hill stands (0.12 to 0.88 each way). By their sound (2026-11-11, Bronson's pick: "place them by
+     * sound"): among their genres on [WHEEL], weighed by how high each tag is in their top tags (Last.fm's listeners'),
+     * nudged a little by their name so a genre's artists don't stack; one of indie and pop lands between the two.
+     * With no tags read yet: by their name alone, the same every week and on every device.
+     */
+    fun place(name: String, tags: List<String>? = null): Pair<Double, Double> {
         var h = 0x811c9dc5.toInt()
         for (ch in name.lowercase()) { h = h xor ch.code; h *= 0x01000193 }
-        return (.18 + .64 * (h and 0xFF) / 255.0) to (.18 + .64 * ((h ushr 8) and 0xFF) / 255.0)
+        val jx = ((h and 0xFF) / 255.0 - .5); val jy = (((h ushr 8) and 0xFF) / 255.0 - .5)
+        val genres = genresOf(tags)
+        if (genres.isEmpty()) return (.18 + .64 * (jx + .5)) to (.18 + .64 * (jy + .5))
+        var x = 0.0; var y = 0.0; var sum = 0.0
+        for ((g, w) in genres) { val (gx, gy) = WHEEL.getValue(g); x += gx * w; y += gy * w; sum += w }
+        return (x / sum + jx * .22).coerceIn(.12, .88) to (y / sum + jy * .22).coerceIn(.12, .88)
     }
+
+    /** An artist's genres from their top five tags, each weighed by its tag's place (the first counts most). */
+    private fun genresOf(tags: List<String>?): Map<String, Double> {
+        val out = HashMap<String, Double>()
+        tags?.take(5)?.forEachIndexed { i, t -> Genres.genresOf(t).forEach { g -> if (g in WHEEL) out[g] = (out[g] ?: 0.0) + 1.0 / (i + 1) } }
+        return out
+    }
+
+    /**
+     * The genres' places on the map, a wheel with neighbours that are kin all the way round (metal by rock by indie by
+     * folk by country by blues by jazz by soul by hip-hop by African by Caribbean by Latin by Brazilian by pop by k-pop by
+     * j-pop by electronic by soundtracks by classical, back to metal's heavy and orchestral side): one world, shared by
+     * everyone's map, so the same corner means the same music on yours and a friend's.
+     */
+    private val WHEEL: Map<String, Pair<Double, Double>> = listOf(
+        "metal", "rock", "indie & alternative", "folk & acoustic", "country & americana", "blues", "jazz", "r&b & soul", "hip-hop",
+        "african", "reggae & caribbean", "latin", "brazilian", "pop", "k-pop", "j-pop", "dance & electronic", "soundtracks & musicals", "classical",
+    ).let { order -> order.mapIndexed { i, g ->
+        val a = 2 * kotlin.math.PI * i / order.size - kotlin.math.PI / 2
+        g to ((.5 + .32 * kotlin.math.cos(a)) to (.5 + .32 * kotlin.math.sin(a)))
+    }.toMap() }
+
+    /** A region's name as the map says it, short. */
+    private val SHORT = mapOf("indie & alternative" to "indie", "dance & electronic" to "electronic", "r&b & soul" to "soul",
+        "folk & acoustic" to "folk", "country & americana" to "country", "soundtracks & musicals" to "soundtracks", "reggae & caribbean" to "caribbean")
 
     /** How you're listening lately, as a word: wandering (a stretch picked for you half the time), settled in, or staying close. */
     fun mood(appetite: Double): String = when { appetite >= .4 -> "wandering"; appetite <= .2 -> "staying close"; else -> "settled in" }
