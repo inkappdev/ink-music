@@ -102,6 +102,7 @@ object DiscordAndroidPresence {
         val md = p.mediaMetadata
         val title = md.title?.toString()?.trim().orEmpty()
         val artist = md.artist?.toString()?.trim().orEmpty()
+        val album = md.albumTitle?.toString()?.trim().orEmpty()
         val active = enabled(ctx) && !Private.on(ctx) && p.isPlaying && item != null &&
             !item.mediaId.startsWith("s") && !item.mediaId.startsWith("e") && title.isNotBlank()
         if (!active) {
@@ -114,7 +115,7 @@ object DiscordAndroidPresence {
         val duration = p.duration.takeIf { it > 0 && it != androidx.media3.common.C.TIME_UNSET } ?: 0L
         val position = p.currentPosition.coerceAtLeast(0L)
         val start = System.currentTimeMillis() - position
-        val key = "${item!!.mediaId}|$title|$artist|${duration / 1000}"
+        val key = "${item!!.mediaId}|$title|$artist|$album|${duration / 1000}"
         val now = android.os.SystemClock.elapsedRealtime()
         if (rpc == null) {
             if (!connecting && now - lastAttempt >= RETRY_MS) connect(ctx)
@@ -124,7 +125,10 @@ object DiscordAndroidPresence {
         val activity = JSONObject().apply {
             put("type", 2)
             put("details", title.take(128))
-            if (artist.isNotBlank() && artist != "unknown") put("state", artist.take(128))
+            val byline = listOf(artist.takeIf { it.isNotBlank() && it != "unknown" }, album.takeIf { it.isNotBlank() })
+                .filterNotNull().joinToString(" · ")
+            if (byline.isNotBlank()) put("state", byline.take(128))
+            if (album.isNotBlank()) put("assets", JSONObject().put("large_image", "ink").put("large_text", album.take(128)))
             if (duration > 0) put("timestamps", JSONObject().put("start", start / 1000L).put("end", (start + duration) / 1000L))
             put("buttons", JSONArray().put(JSONObject().put("label", "get ink music").put("url", "https://inkhome.app/music")))
         }
