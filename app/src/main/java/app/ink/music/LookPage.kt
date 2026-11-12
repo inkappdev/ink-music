@@ -144,10 +144,10 @@ fun LookPage(pages: Pages) {
                 BasicText("ARTIST PAGES", style = headline(24.sp))
                 Spacer(Modifier.height(6.dp))
                 BasicText(if (Moving.available) "the picture an artist's page opens on: their photo, or their moving one where apple music has one, " +
-                    "in the dither, in grain or as it is" else "an artist's photo across their page, in the dither, in grain or as it is", style = pixel(12.sp, Ink.mid))
+                    "in the dither, blurred or as it is" else "an artist's photo across their page, in the dither, blurred or as it is", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(10.dp))
                 if (Moving.available) Choices(listOf("video" to video, "photo" to !video)) { Moving.set(ctx, artistVideo = it == 0) }
-                Choices(listOf("dithered" to (dithered && !grain), "grain" to grain, "as it is" to (!dithered && !grain))) {
+                Choices(listOf("dithered" to (dithered && !grain), "blur" to grain, "as it is" to (!dithered && !grain))) {
                     Moving.set(ctx, artistDither = it == 0, artistGrain = it == 1)
                 }
                 Spacer(Modifier.height(40.dp))
@@ -198,7 +198,7 @@ fun LookPage(pages: Pages) {
 
 /**
  * The look on a TV (2026-11-10), fewer words: what's behind the player, the cover, whether covers move (Apple Music's
- * moving ones), Spotify's canvas. No fluted glass (a pane the remote's light read badly through), no artist pages or
+ * moving ones), Spotify's canvas. No artist pages or
  * name; each shows in the player beside it at once. Moving starts off on a TV: a fast box can, a slow one stutters.
  */
 @Composable
@@ -220,9 +220,9 @@ private fun ColumnScope.TvLookChoices(signed: Boolean, canvasOn: Boolean) {
         }
         Spacer(Modifier.height(34.dp))
     }
-    val behind = Look.entries.filter { it != Look.FLUTED }
+    val behind = Look.entries.toList()
     Part("BEHIND IT", "the cover across the whole player, in this effect", behind.map { it.word to (it == look) }) { Looks.set(ctx, behind[it]) }
-    val covers = listOf<Look?>(null) + Moving.coverLooks.filter { it != Look.FLUTED }
+    val covers = listOf<Look?>(null) + Moving.coverLooks
     Part("THE COVER", "the record's cover beside the words", covers.map { (it?.word ?: "as it is") to (it == cover) }) { Moving.set(ctx, cover = covers[it]) }
     val marquee by Marquees.on.collectAsState()
     Part("THE NAME", "the artist's name running along the foot, or big and still over the cover's corner",

@@ -14,7 +14,7 @@ import kotlin.math.sin
 
 /**
  * How the cover sits behind the player (ink's desk clock looks, copied from ink's Look.kt; "plain"
- * is ink music's own, no backdrop): blurred to a colour field, behind fluted glass, as pixels on
+ * is ink music's own, no backdrop): blurred to a colour field, as pixels on
  * Silkscreen's grid, or dithered in its own colour as an iPod screen would.
  * Each is drawn by hand once a cover, off the main thread, into a bitmap the panel only shows:
  * nothing is worked out while the clock is up, and it looks the same on every Android (Compose's
@@ -22,7 +22,6 @@ import kotlin.math.sin
  */
 enum class Look(val word: String, val alpha: Float, val crisp: Boolean) {
     BLUR("blur", .3f, false),
-    FLUTED("fluted glass", .45f, false),
     PIXELS("pixels", .4f, true),
     DITHER("dither", .4f, true),
     // the cover (or a song's canvas) itself, no effect, held to half over the black so the words over it read
@@ -63,7 +62,6 @@ object Looks {
         val src = if (art.config == Bitmap.Config.HARDWARE) art.copy(Bitmap.Config.ARGB_8888, false) else art
         when (look) {
             Look.BLUR -> soft(src, 48, 2)
-            Look.FLUTED -> fluted(src, 540, 20 * density * 540 / shown)
             Look.PIXELS -> pixels(src, (shown / (18 * density)).roundToInt().coerceIn(4, 80))
             Look.DITHER -> dither(src, dots(shown, density), accent.toArgb())
             Look.AS_IS -> src
@@ -93,40 +91,6 @@ object Looks {
         Bitmap.createScaledBitmap(src, n, n, true).getPixels(px, 0, n, 0, 0, n, n)
         repeat(passes) { boxBlur(px, n, r, true); boxBlur(px, n, r, false) }
         return Bitmap.createBitmap(px, n, n, Bitmap.Config.ARGB_8888)
-    }
-
-    /**
-     * Fluted glass: vertical ribs `rib` px wide, each a cylindrical lens. A rib shows a wider slice
-     * of what's behind it, flipped and squeezed in, darker toward its seams, with a fine highlight
-     * just past the left one. What's behind is a little out of focus, as through real glass.
-     */
-    private fun fluted(src: Bitmap, n: Int, rib: Float): Bitmap {
-        val behind = IntArray(n * n)
-        Bitmap.createScaledBitmap(soft(src, 120, 1), n, n, true).getPixels(behind, 0, n, 0, 0, n, n)
-        val w = rib.coerceAtLeast(4f)
-        val from = IntArray(n); val lens = FloatArray(n); val shine = FloatArray(n)
-        for (x in 0 until n) {
-            val u = (x % w) / w
-            from[x] = (x - u * w + w / 2 + (u - .5f) * w * -1.7f).roundToInt().coerceIn(0, n - 1)
-            lens[x] = .55f + .45f * sin(PI * u).pow(.6).toFloat()
-            shine[x] = .75f * exp(-((u - .14f) / .035f).pow(2))
-        }
-        // a channel's value through the lens is v * lens + shine * grey: kept as integer factors (x 256)
-        val k = IntArray(n) { (lens[it] * 256).toInt() }
-        val h = IntArray(n) { (shine[it] * 256 / 3).toInt() }
-        val out = IntArray(n * n)
-        for (y in 0 until n) {
-            val row = y * n
-            for (x in 0 until n) {
-                val c = behind[row + from[x]]
-                val r = c shr 16 and 255; val g = c shr 8 and 255; val b = c and 255
-                val lift = h[x] * (r + g + b)
-                val kx = k[x]
-                val rr = minOf(255, (r * kx + lift) shr 8); val gg = minOf(255, (g * kx + lift) shr 8); val bb = minOf(255, (b * kx + lift) shr 8)
-                out[row + x] = (255 shl 24) or (rr shl 16) or (gg shl 8) or bb
-            }
-        }
-        return Bitmap.createBitmap(out, n, n, Bitmap.Config.ARGB_8888)
     }
 
     /** `cells` a side, each the average of its square, 16 px with a 1 px black gutter: shown unfiltered. */

@@ -135,8 +135,8 @@ private val OFF = Ink.ink.copy(alpha = .32f)
 private class Scrub { var at by mutableStateOf<Long?>(null) }
 
 /**
- * The player, the whole screen, over the cover in its look (ink's desk clock looks: blur, fluted
- * glass, pixels, dither, or plain). The times over the line, the line ruled along the cover's top
+ * The player, the whole screen, over the cover in its look (ink's desk clock looks: blur,
+ * pixels, dither, or plain). The times over the line, the line ruled along the cover's top
  * edge filling in its colour (drag or tap it, or circle a thumb round the cover, to scrub), the
  * song, back / pause / next / lyrics, and the artist as the giant marquee along the foot. With
  * lyrics on and a song that has synced lines, they take the cover's place and the cover sits
@@ -542,7 +542,7 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
 @Composable
 private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
     val c = rememberCover(t.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
-    // the cover in its own effect (settings, the look: the cover's): dither, pixels, fluted glass, drawn at its own size
+    // the cover in its own effect (settings, the look: the cover's): dither, pixels, drawn at its own size
     val look by Moving.cover.collectAsState()
     val density = LocalDensity.current.density
     val px = side.value * density

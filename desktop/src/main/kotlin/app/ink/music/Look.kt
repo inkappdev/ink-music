@@ -12,7 +12,6 @@ import java.io.File
  */
 enum class Look(val word: String, val alpha: Float) {
     BLUR("blur", .3f),
-    FLUTED("fluted glass", .45f),
     PIXELS("pixels", .4f),
     DITHER("dither", .4f),
     // the cover itself, held to half over the black so the words over it read
@@ -31,7 +30,7 @@ object Looks {
 /** Moving covers (Apple Music's motion artwork, [MotionCover]) and the cover's effect. */
 object Moving {
     /** The effects a cover takes (blur would hide it); null is as it is. */
-    val coverLooks = listOf(Look.DITHER, Look.PIXELS, Look.FLUTED)
+    val coverLooks = listOf(Look.DITHER, Look.PIXELS)
     private val _on = MutableStateFlow(true)
     val on: StateFlow<Boolean> = _on
     private val _cover = MutableStateFlow<Look?>(null)

@@ -156,7 +156,7 @@ class Video(url: String, private val wide: Int, private val high: Int = wide, fi
 
 /**
  * The record's moving cover over its still one, once its first frame is drawn (till then, and where there's none, the
- * still one shows), in the cover's own effect (the look: dither, pixels, fluted glass), else as it is.
+ * still one shows), in the cover's own effect (the look: dither, pixels), else as it is.
  */
 @Composable
 fun MovingCover(artist: String, album: String, title: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier) {
@@ -274,25 +274,6 @@ object Effects {
         }
     """
 
-    // fluted glass: ribs `rib` px wide, each a lens showing a wider slice flipped and squeezed in, darker toward its
-    // seams, a fine highlight just past the left one; a little soft, as through real glass
-    private const val FLUTED = """
-        uniform shader content;
-        uniform float rib;
-        uniform float wide;
-        half4 main(float2 p) {
-            if (content.eval(p).a < 0.5) return half4(0.0);
-            float u = mod(p.x, rib) / rib;
-            float x = clamp(p.x - u * rib + rib * 0.5 + (u - 0.5) * rib * -1.7, 1.0, wide - 1.0);
-            float2 q = float2(x, p.y);
-            half4 s = (content.eval(q) * 2.0 + content.eval(q + float2(0.0, 3.0)) + content.eval(q - float2(0.0, 3.0))) * 0.25;
-            float lens = 0.55 + 0.45 * pow(sin(3.14159 * u), 0.6);
-            float shine = 0.75 * exp(-pow((u - 0.14) / 0.035, 2.0));
-            float lift = shine / 3.0 * (s.r + s.g + s.b);
-            return half4(min(s.rgb * lens + lift, half3(1.0)), 1.0);
-        }
-    """
-
     private val made = HashMap<String, RuntimeEffect>()
     private fun effect(sksl: String) = synchronized(made) { made.getOrPut(sksl) { RuntimeEffect.makeForShader(sksl) } }
 
@@ -316,9 +297,6 @@ object Effects {
             Look.PIXELS -> ImageFilter.makeRuntimeShader(RuntimeShaderBuilder(effect(PIXELS)).apply {
                 val cell = 18 * density * k
                 uniform("cell", if (wide > 0) wide / (wide / cell).roundToInt().coerceAtLeast(4) else cell)
-            }, "content", null)
-            Look.FLUTED -> ImageFilter.makeRuntimeShader(RuntimeShaderBuilder(effect(FLUTED)).apply {
-                uniform("rib", 20 * density * k); uniform("wide", wide)
             }, "content", null)
             else -> null
         }

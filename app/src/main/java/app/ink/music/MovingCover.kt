@@ -41,9 +41,9 @@ import kotlin.math.roundToInt
 
 /**
  * Moving covers and canvases (settings, the look), and the effect each layer takes, each its own (2026-10-30:
- * "nothing tied to each other"): the cover (as it is, dither, pixels, fluted glass: still or moving, Apple Music's
+ * "nothing tied to each other"): the cover (as it is, dither, pixels: still or moving, Apple Music's
  * motion artwork, [MotionCover], where a record has one), and a song's Spotify canvas behind the player (off, as it is,
- * or blur, fluted glass, pixels, dither). The still background behind it is Looks' own. Moving (the full build's): on
+ * or blur, pixels, dither). The still background behind it is Looks' own. Moving (the full build's): on
  * wifi only (the default), always, or off. The effects over a moving picture are Android 13's shaders (before, as it is).
  */
 object Moving {
@@ -53,9 +53,9 @@ object Moving {
     const val WIFI = "on wifi"; const val ALWAYS = "always"; const val OFF = "off"
 
     /** The effects a cover takes (blur would hide it; plain is as it is). */
-    val coverLooks = listOf(Look.DITHER, Look.PIXELS, Look.FLUTED)
+    val coverLooks = listOf(Look.DITHER, Look.PIXELS)
     /** The effects a canvas takes. */
-    val canvasLooks = listOf(Look.BLUR, Look.FLUTED, Look.PIXELS, Look.DITHER)
+    val canvasLooks = listOf(Look.BLUR, Look.PIXELS, Look.DITHER)
 
     private val _when = MutableStateFlow(WIFI)
     val whenOn: StateFlow<String> = _when
@@ -133,7 +133,7 @@ object Moving {
 
 /**
  * The record's moving cover over its still one, once its first frame is drawn (till then, and where there's none, the
- * still one shows), in the cover's own effect (Moving.cover: dither, pixels, fluted glass), else as it is.
+ * still one shows), in the cover's own effect (Moving.cover: dither, pixels), else as it is.
  */
 @Composable
 fun MovingCover(artist: String, album: String, title: String, accent: Color, playing: Boolean, modifier: Modifier = Modifier) {
@@ -174,7 +174,7 @@ fun ArtistVideo(name: String, accent: Color, look: Look?, modifier: Modifier = M
 
 /**
  * Behind the player, a song's Spotify canvas (its tall looping clip; signed in to Spotify, the full build's) across the
- * whole page, in the background's effect (the look: blur, fluted glass, pixels, dither, as it is; plain, none), in the
+ * whole page, in the background's effect (the look: blur, pixels, dither, as it is; plain, none), in the
  * still cover's place: one background, the canvas where a song has one.
  */
 @Composable
@@ -266,7 +266,7 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
 }
 
 /**
- * The still looks (Looks: dither, pixels, fluted glass) as shaders, so each frame of a moving cover is drawn so. Past
+ * The still looks (Looks: dither, pixels) as shaders, so each frame of a moving cover is drawn so. Past
  * the picture's edge each gives nothing: an effect isn't held to its view, and black there hid the page.
  */
 private object Shaders {
@@ -305,26 +305,6 @@ private object Shaders {
         }
     """
 
-    // fluted glass: ribs `rib` px wide, each a lens showing a wider slice flipped and squeezed in, darker toward its
-    // seams, a fine highlight just past the left one; a little soft, as through real glass (Looks.fluted)
-    private const val FLUTED = """
-        uniform shader content;
-        uniform float rib;
-        uniform float wide;
-        half4 main(float2 p) {
-            if (content.eval(p).a < 0.5) return half4(0.0);
-            float u = mod(p.x, rib) / rib;
-            // a rib at the edge reaches past it: held to the picture (else it drew a dark strip there)
-            float x = clamp(p.x - u * rib + rib * 0.5 + (u - 0.5) * rib * -1.7, 1.0, wide - 1.0);
-            float2 q = float2(x, p.y);
-            half4 s = (content.eval(q) * 2.0 + content.eval(q + float2(0.0, 3.0)) + content.eval(q - float2(0.0, 3.0))) * 0.25;
-            float lens = 0.55 + 0.45 * pow(sin(3.14159 * u), 0.6);
-            float shine = 0.75 * exp(-pow((u - 0.14) / 0.035, 2.0));
-            float lift = shine / 3.0 * (s.r + s.g + s.b);
-            return half4(min(s.rgb * lens + lift, half3(1.0)), 1.0);
-        }
-    """
-
     fun effect(look: Look, accent: Color, density: Float, gain: Float, wide: Float): RenderEffect? = if (Build.VERSION.SDK_INT < 33) null else runCatching {
         val s = when (look) {
             Look.DITHER -> RuntimeShader(DITHER).apply {
@@ -336,7 +316,6 @@ private object Shaders {
             Look.PIXELS -> RuntimeShader(PIXELS).apply {
                 setFloatUniform("cell", if (wide > 0) wide / (wide / (18 * density)).roundToInt().coerceAtLeast(4) else 18 * density)
             }
-            Look.FLUTED -> RuntimeShader(FLUTED).apply { setFloatUniform("rib", 20 * density); setFloatUniform("wide", wide) }
             else -> return@runCatching null
         }
         RenderEffect.createRuntimeShaderEffect(s, "content")
