@@ -92,9 +92,13 @@ object KeepLoved {
         val c = app ?: return
         seen = seen?.minus(id)
         waiting = waiting - id
-        if (id in forLove) { forLove = forLove - id; Offline.remove(c, listOf(id)) }
+        // (one among the most played stays, kept for that)
+        if (id in forLove) { forLove = forLove - id; if (!KeepMost.holds(id)) Offline.remove(c, listOf(id)) }
         save(c)
     }
+
+    /** Whether it's kept for love (the most played let go of keeps it then). */
+    fun holds(id: String) = id in forLove
 
     /** Kept by hand: no longer the love's to let go. */
     fun byHand(ids: Collection<String>) {
@@ -115,7 +119,7 @@ object KeepLoved {
         val have = Offline.kept.value + Offline.keeping.value.keys
         forLove = forLove + keep.filter { it.id !in have }.map { it.id }
         waiting = waiting - songs.map { it.id }.toSet()
-        if (keep.isNotEmpty()) Offline.keep(c, keep, forLove = true)
+        if (keep.isNotEmpty()) Offline.keep(c, keep, auto = true)
         save(c)
     }
 

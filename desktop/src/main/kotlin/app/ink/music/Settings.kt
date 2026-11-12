@@ -756,6 +756,15 @@ private fun KeptSetting() {
             }
         }
     }
+    // the most played kept, refreshed daily (KeepMost): off at first
+    val most by KeepMost.on.collectAsState()
+    Spacer(Modifier.height(18.dp))
+    BasicText("keep what you play most: your ${KeepMost.N} most played of the last three months, kept on this computer and changed as they change", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        Word("off", pixel(14.sp, if (!most) Ink.ink else Ink.dim), touch = 8.dp) { KeepMost.set(false) }
+        Word("on", pixel(14.sp, if (most) Ink.ink else Ink.dim), touch = 8.dp) { KeepMost.set(true) }
+    }
     if (kept.isNotEmpty()) {
         // the list of them (lists, kept on this computer): to play, or let one go by its right click
         Word("see them", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { Nav.open(Page.List(KEPT, "kept on this computer")) }

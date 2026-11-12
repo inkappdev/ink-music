@@ -30,6 +30,17 @@ object LoveKeeping {
         return Turn(if (added.size > BATCH) emptySet() else added, seen + loved)
     }
 
+    /**
+     * Keep what you play most (2026-11-11, after SimpMusic's smart downloads): the `n` songs heard most often (each
+     * listen `(id, when)`) in the last `days`, most first; ties to the one heard last.
+     */
+    fun mostPlayed(heard: List<Pair<String, Long>>, now: Long, n: Int = 50, days: Int = 90): List<String> {
+        val from = now - days * 86_400_000L
+        val count = HashMap<String, Int>(); val last = HashMap<String, Long>()
+        for ((id, at) in heard) if (at >= from) { count[id] = (count[id] ?: 0) + 1; last[id] = maxOf(last[id] ?: 0L, at) }
+        return count.keys.sortedWith(compareByDescending<String> { count[it] }.thenByDescending { last[it] }).take(n)
+    }
+
     /** About how many bytes a song takes kept: its seconds at the rate it's kept (a FLAC's guessed, YouTube's its stream's). */
     fun about(seconds: Long, small: Boolean, tube: Boolean): Long =
         seconds * when { tube && small -> 12_000L; tube -> 20_000L; small -> 40_000L; else -> 110_000L }

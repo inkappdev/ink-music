@@ -41,9 +41,9 @@ object Offline {
     /** A song's kept file, if it's whole (the player asks as each song's loaded: quick). */
     fun file(id: String): File? = File(dir, id).takeIf { it.isFile && it.length() > 0 }
 
-    /** These songs kept: each not kept or on its way fetched, in turn. `forLove`: because they're loved ([KeepLoved]); by hand, yours to let go. */
-    fun keep(songs: List<Song>, forLove: Boolean = false) {
-        if (!forLove) KeepLoved.byHand(songs.map { it.id })
+    /** These songs kept: each not kept or on its way fetched, in turn. `auto`: because they're loved or played most ([KeepLoved], [KeepMost]); by hand, yours to let go. */
+    fun keep(songs: List<Song>, auto: Boolean = false) {
+        if (!auto) songs.map { it.id }.let { KeepLoved.byHand(it); KeepMost.byHand(it) }
         val todo = songs.filter { keepable(it) && it.id !in kept.value && it.id !in keeping.value }
         if (todo.isEmpty()) return
         keeping.value = keeping.value + todo.associate { it.id to 0f }

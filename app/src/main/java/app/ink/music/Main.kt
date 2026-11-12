@@ -179,6 +179,7 @@ class Main : ComponentActivity() {
         LastFm.start(this)
         Offline.start(this)
         KeepLoved.start(this)
+        KeepMost.start(this)
         SongsFrom.start(this)
         Pods.start(this)
         Order.start(this)
