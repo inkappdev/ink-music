@@ -53,6 +53,8 @@ object Mapped {
     class Read(
         val artists: List<Pair<String, Double>>, val appetite: Double, val rotation: List<String>, val hours: String?,
         val notForYou: List<String>, val record: Song?,
+        /** Who you are lately (InkMap.persona). */
+        val persona: InkMap.Persona,
     )
 
     // the last map drawn, by its makings and size: the tile and the page come back to it at once
@@ -78,7 +80,11 @@ object Mapped {
             .maxByOrNull { it.value.size }?.value?.lastOrNull()?.let { Library.song(it.id) ?: YouTubeMusic.known(it.id) }
         // their tags, where they're missing, read behind (a few seconds the first time): the map placed by sound once they come
         GenrePicks.tagIn(c, artists.map { it.first })
-        Read(artists, t.appetite, rotation, hours, Fresh.turnedDownNames(c), record)
+        val listens = heard.map { h ->
+            val z = java.time.Instant.ofEpochMilli(h.at).atZone(zone)
+            InkMap.Listen(h.artist, h.album, h.id, h.at, h.ms, z.hour, z.dayOfWeek.value >= 6)
+        }
+        Read(artists, t.appetite, rotation, hours, Fresh.turnedDownNames(c), record, InkMap.persona(listens, t.appetite, now) { Genres.tags(it) })
     }
 
     /** The map drawn at `side` px in the record's colour (blocking), kept. */
@@ -167,8 +173,7 @@ fun MappedPage(pages: Pages) {
             if (r != null && r.artists.isNotEmpty()) {
                 Spacer(Modifier.height(26.dp))
                 // how you're listening lately: the stretch picked for you, as a word and a share of ten
-                Said("lately", InkMap.mood(r.appetite).uppercase(),
-                    "${(r.appetite * 10).toInt()} in ten of what's picked for you is new to you")
+                Said("lately", r.persona.name, r.persona.line)
                 if (r.rotation.isNotEmpty()) Said("in rotation", null, r.rotation.joinToString(", ") { it.lowercase() })
                 r.hours?.let { Said("when", null, it) }
                 Column(Modifier.padding(bottom = 18.dp)) {

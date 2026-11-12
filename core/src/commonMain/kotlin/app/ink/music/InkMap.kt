@@ -141,6 +141,86 @@ object InkMap {
     /** How you're listening lately, as a word: wandering (a stretch picked for you half the time), settled in, or staying close. */
     fun mood(appetite: Double): String = when { appetite >= .4 -> "wandering"; appetite <= .2 -> "staying close"; else -> "settled in" }
 
+    /** A listen as the persona reads it: who, which record and song, when, how long, and the hour and weekend where you are. */
+    class Listen(val artist: String, val album: String, val song: String, val at: Long, val ms: Long, val hour: Int, val weekend: Boolean)
+
+    /** Who you are lately, as a name and its line ("THE DEVOTEE", "beach fossils is a third of everything you play"). */
+    data class Persona(val name: String, val line: String)
+
+    /**
+     * Who you are lately (2026-11-12, Bronson: "a ton of fun specific ones"): seventeen, each read from something real in
+     * the last month (who, which records in what order, when, how long, how new, which parts of the map), the most unusual
+     * one that fits; none standing out, settled in. `heard` oldest first, `tags` an artist's top tags (their regions).
+     */
+    fun persona(heard: List<Listen>, appetite: Double, now: Long, tags: (String) -> List<String>?): Persona {
+        val day = 86_400_000L
+        fun who(a: String) = a.substringBefore(", ").trim()
+        val recent = heard.filter { now - it.at < 30 * day }
+        if (recent.size < 15) return Persona("SETTLED IN", "play a while, and ink music gets to know you")
+        val before = heard.filter { now - it.at >= 30 * day }
+        val n = recent.size.toDouble()
+        val found = ArrayList<Pair<Double, Persona>>()
+        fun maybe(strength: Double, name: String, line: String) { found += strength to Persona(name, line) }
+
+        // who
+        val byArtist = recent.groupingBy { who(it.artist).lowercase() }.eachCount().entries.sortedByDescending { it.value }
+        val written = recent.associate { who(it.artist).lowercase() to who(it.artist).lowercase() }
+        val top = byArtist.first()
+        if (top.value / n >= .33) maybe(.9 + top.value / n * .1, "THE DEVOTEE", "${written[top.key]} is a third of everything you play")
+        val known = before.map { who(it.artist).lowercase() }.toSet()
+        byArtist.take(3).firstOrNull { it.key !in known && before.isNotEmpty() && it.value >= 5 }?.let {
+            maybe(.85, "NEW LOVE", "${written[it.key]}, new to you this month, already in your top three") }
+        // which songs
+        val bySong = recent.groupingBy { it.song }.eachCount().values.sortedDescending()
+        if (bySong.take(5).sum() / n >= .4 && bySong.first() >= 4) maybe(.8, "ON REPEAT", "the same handful of songs, again and again")
+        // where on the map
+        val regions = HashMap<String, Double>()
+        recent.forEach { l -> genresOf(tags(who(l.artist))).let { g -> val sum = g.values.sum(); g.forEach { (k, w) -> regions[k] = (regions[k] ?: 0.0) + w / sum } } }
+        val tagged = regions.values.sum()
+        if (tagged >= n * .5) {
+            val shares = regions.mapValues { it.value / tagged }.entries.sortedByDescending { it.value }
+            if (shares.first().value >= .85) maybe(.7, "ONE-TRACK MIND", "nearly all of it ${SHORT[shares.first().key] ?: shares.first().key}")
+            if (shares.count { it.value >= .1 } >= 4 && shares.first().value < .4) maybe(.7, "ISLAND HOPPER", shares.filter { it.value >= .1 }.take(4)
+                .joinToString(", ") { SHORT[it.key] ?: it.key } + ", and none of them home")
+        }
+        // how new
+        val firstEver = heard.groupBy { who(it.artist).lowercase() }.mapValues { e -> e.value.minOf { it.at } }
+        val newcomers = firstEver.count { now - it.value < 30 * day }
+        if (before.isNotEmpty() && newcomers >= 12) maybe(.65, "THE CARTOGRAPHER", "$newcomers artists new to you this month, all over the map")
+        val back = recent.map { who(it.artist).lowercase() }.distinct().filter { a ->
+            val earlier = before.filter { who(it.artist).lowercase() == a }.maxOfOrNull { it.at } ?: return@filter false
+            val firstNow = recent.filter { who(it.artist).lowercase() == a }.minOf { it.at }
+            firstNow - earlier >= 180 * day
+        }
+        if (back.size >= 2) maybe(.6, "THE COMEBACK", "back to ${back.take(2).joinToString(" and ") { written[it] ?: it }} after six months away")
+        if (appetite >= .4) maybe(.4, "WANDERING", "${(appetite * 10).toInt()} in ten of what's picked for you is new to you")
+        if (appetite <= .2 && newcomers <= 2) maybe(.4, "HOMEBODY", "almost nothing new: your people, on rotation")
+        // in what order
+        val pairs = recent.zipWithNext().filter { (a, b) -> b.at - a.at < 15 * 60_000L }
+        if (pairs.size >= 20) {
+            val same = pairs.count { (a, b) -> a.album.isNotBlank() && a.album == b.album } / pairs.size.toDouble()
+            if (same >= .6) maybe(.6, "ALBUM PERSON", "records front to back, the way they were made")
+            if (same <= .1) maybe(.45, "SHUFFLE SOUL", "rarely two in a row from the same record")
+        }
+        // when
+        val late = recent.count { it.hour >= 23 || it.hour < 4 } / n
+        val early = recent.count { it.hour in 5..8 } / n
+        val weekend = recent.count { it.weekend } / n
+        if (late >= .4) maybe(.6, "NIGHT OWL", "most of it after eleven at night")
+        if (early >= .35) maybe(.6, "EARLY BIRD", "most of it before nine in the morning")
+        if (weekend >= .6) maybe(.55, "WEEKEND WARRIOR", "most of it saturday and sunday")
+        // how long at a time: sittings broken by half an hour's quiet
+        val sittings = ArrayList<MutableList<Listen>>()
+        recent.forEach { l -> val last = sittings.lastOrNull()?.last(); if (last != null && l.at - (last.at + last.ms) < 30 * 60_000L) sittings.last() += l else sittings += mutableListOf(l) }
+        if (sittings.size >= 5) {
+            val lengths = sittings.map { s -> s.last().at + s.last().ms - s.first().at }.sorted()
+            val songs = sittings.map { it.size }.sorted()
+            if (lengths[lengths.size / 2] >= 2 * 3_600_000L) maybe(.5, "DEEP IN IT", "long sittings: two hours and more at a time")
+            if (songs[songs.size / 2] <= 3) maybe(.45, "QUICK HITS", "a song or three at a time")
+        }
+        return found.maxByOrNull { it.first }?.second ?: Persona("SETTLED IN", "a steady mix: nothing pulling you one way")
+    }
+
     /** When you listen, said: the parts of the day with most of it, from each listen's hour ("afternoons, and late"). */
     fun hours(hourOfEach: List<Int>): String? {
         if (hourOfEach.size < 10) return null
