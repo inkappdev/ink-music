@@ -261,6 +261,7 @@ sealed interface Page {
     data object Playing : Page
     data object Settings : Page
     data object Year : Page
+    data object Mapped : Page
     data class Festival(val name: String) : Page
     data class Mood(val mood: InnerTube.Mood) : Page
     data object Queue : Page
@@ -522,6 +523,7 @@ private fun App() {
                         Page.Playing -> {}
                         Page.Settings -> SettingsPage { Nav.close() }
                         Page.Year -> YearPage({ pages += it }) { Nav.close() }
+                        Page.Mapped -> MappedPage { Nav.close() }
                         is Page.Festival -> FestivalPage(page.name, { pages += it }) { Nav.close() }
                         is Page.Mood -> MoodPage(page.mood, { pages += it }) { Nav.close() }
                         Page.Queue -> QueuePage({ pages += it }) { Nav.close() }
@@ -788,6 +790,7 @@ private fun PlaceMenu(tab: String, shown: Boolean, modifier: Modifier, onFold: (
             }
             Spacer(Modifier.height(24.dp))
             MenuPlace(PLACES.size, shown) { Word("your year", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Year) } }
+            MenuPlace(PLACES.size, shown) { Word("ink mapped", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Mapped) } }
             MenuPlace(PLACES.size + 1, shown) { Word("settings", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Settings) } }
             // made by ink, its heart (the rail's, which a narrow window hasn't): the quiet funnel
             MenuPlace(PLACES.size + 2, shown) {

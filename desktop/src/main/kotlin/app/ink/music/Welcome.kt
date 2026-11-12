@@ -295,7 +295,7 @@ private fun LikeStep(onBack: () -> Unit, onDone: () -> Unit) {
             }
             val genreTags = remember(genres.toList()) { genres.associateWith { w -> GENRE_WORDS.first { it.first == w }.second.let { g -> listOfNotNull(Genres.tagOf(g)) } } }
             Column(Modifier.width(420.dp).fillMaxHeight()) {
-                LandOf(hills, { n -> genreTags[n] ?: Genres.tags(n) }, Modifier.fillMaxWidth().aspectRatio(1f))
+                LandOf(hills, { n -> genreTags[n] ?: Genres.tags(n) }, Modifier.fillMaxWidth().aspectRatio(1f), version = tagsRead)
                 Spacer(Modifier.height(12.dp))
                 BasicText(if (hills.isEmpty()) "your ink, mapped: pick and it rises" else "your ink, mapped", style = pixel(12.sp, Ink.mid))
             }
@@ -308,11 +308,11 @@ private fun LikeStep(onBack: () -> Unit, onDone: () -> Unit) {
  * new drawing faded in over the last. Nothing yet: black.
  */
 @Composable
-fun LandOf(hills: List<Pair<String, Double>>, tags: (String) -> List<String>?, modifier: Modifier, accent: androidx.compose.ui.graphics.Color = Ink.ink, named: Int = 3) {
+fun LandOf(hills: List<Pair<String, Double>>, tags: (String) -> List<String>?, modifier: Modifier, accent: androidx.compose.ui.graphics.Color = Ink.ink, named: Int = 3, version: Any? = null) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     BoxWithConstraints(modifier) {
         val px = with(density) { maxWidth.toPx() }.toInt().coerceIn(200, 1100)
-        val drawn by produceState<Pair<androidx.compose.ui.graphics.ImageBitmap, InkMap.Drawn>?>(null, hills, px, accent) {
+        val drawn by produceState<Pair<androidx.compose.ui.graphics.ImageBitmap, InkMap.Drawn>?>(null, hills, px, accent, version) {
             if (hills.isEmpty()) { value = null; return@produceState }
             value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                 val d = InkMap.draw(hills, .5, accent.toArgbInt(), px, named = named, tags = tags)
