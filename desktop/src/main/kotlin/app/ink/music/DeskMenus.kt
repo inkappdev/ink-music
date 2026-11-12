@@ -105,7 +105,7 @@ fun RecordMenu(a: Album, at: Offset, onClose: () -> Unit) {
             "play" to { Player.play(songs) },
             "shuffle" to { Player.play(songs.shuffled()) },
             "add to queue" to { songs.forEach { Player.add(it) } },
-            "radio" to { songs.firstOrNull()?.let { Player.radioFrom(it) } ?: Unit },
+            "similar" to { songs.firstOrNull()?.let { Player.radioFrom(it) } ?: Unit },
         ),
         listOfNotNull(
             (if (allLoved) "unlove" else "love") to { songs.filter { (it.id in loved) == allLoved }.forEach { Loved.toggle(it) } },
@@ -132,7 +132,7 @@ fun ArtistMenu(name: String, at: Offset, onClose: () -> Unit) {
         listOfNotNull(
             ("play" to { Player.play(theirs.sortedWith(compareBy({ it.year }, { it.album }, { it.disc }, { it.track }))) }).takeIf { theirs.isNotEmpty() },
             ("shuffle" to { Player.play(theirs.shuffled()) }).takeIf { theirs.isNotEmpty() },
-            ("radio" to { theirs.randomOrNull()?.let { Player.radioFrom(it) } ?: Unit }).takeIf { theirs.isNotEmpty() },
+            ("similar" to { theirs.randomOrNull()?.let { Player.radioFrom(it) } ?: Unit }).takeIf { theirs.isNotEmpty() },
         ),
         listOf("artist" to { Nav.open(Page.Artist(name)) }),
     ), onClose)

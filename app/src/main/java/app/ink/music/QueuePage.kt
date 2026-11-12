@@ -96,7 +96,7 @@ fun QueuePage(onClose: () -> Unit) {
                 // radio: lit, the queue's end brings more like it
                 val on = now?.radio != false
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Word("radio", pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Playback.radio(!on) }
+                    Word("similar", pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Playback.radio(!on) }
                     BasicText(if (on) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
                 }
             }

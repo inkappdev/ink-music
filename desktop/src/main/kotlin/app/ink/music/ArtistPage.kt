@@ -177,7 +177,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
             // their songs as a DJ's arc, each into the next on the beat (the phone's artist page has it)
             MixWord("artist $shown", playable, Modifier.padding(end = 26.dp))
             // radio: their best-known song, then more like it (the queue's end brings them)
-            Word("radio", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.radio(true); Player.play(listOf(playable.first())) }
+            Word("similar", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.radio(true); Player.play(listOf(playable.first())) }
             // follow: lit while you do (on YouTube Music too, signed in); their mix comes first among yours
             val following by Follows.all.collectAsState()
             val on = following.any { it.name.equals(shown, true) }

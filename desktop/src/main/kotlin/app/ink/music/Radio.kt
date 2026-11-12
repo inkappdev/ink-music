@@ -17,7 +17,8 @@ object Radio {
      * whatever the song it starts from; OFFLINE only the files on this computer, near it by sound; BOTH, as it was (your
      * server's similar, YouTube's, then your own). Neither ever comes back empty while there's anything to play.
      */
-    enum class Mode(val said: String) { BOTH("radio"), ONLINE("online radio"), OFFLINE("offline radio") }
+    // said as "similar" (2026-11-12, Bronson): radio is the stations; this is the queue going on with songs like it
+    enum class Mode(val said: String, val word: String) { BOTH("similar", "both"), ONLINE("similar, online", "online"), OFFLINE("similar, your files", "your files") }
 
     /** How many come at a time; and at most how many by one artist among them. */
     private const val BATCH = 10

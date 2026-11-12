@@ -1112,7 +1112,7 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
             Word("pick more", pixel(13.sp), touch = 8.dp) { open = false; Picking.toggle(s) }
             Word("play next", pixel(13.sp), touch = 8.dp) { open = false; Playback.playNext(s) }
             Word("add to queue", pixel(13.sp), touch = 8.dp) { open = false; Playback.add(s) }
-            Word("radio", pixel(13.sp), touch = 8.dp) { open = false; Playback.startRadio(s) }
+            Word("similar", pixel(13.sp), touch = 8.dp) { open = false; Playback.startRadio(s) }
             val lovedIds by Loved.ids.collectAsState()
             Word(if (s.id in lovedIds) "unlove" else "love", pixel(13.sp), touch = 8.dp) { open = false; Loved.toggle(s) }
             val account by Server.account.collectAsState()
@@ -1608,7 +1608,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 if (playable.isNotEmpty()) Row {
                     Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(playable, 0) }
                     Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(playable.shuffled(), 0) }
-                    Word("radio", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.startRadio(playable.first()) }
+                    Word("similar", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.startRadio(playable.first()) }
                     // signed in: followed there (lit), or not
                     val who by YouTubeAccount.who.collectAsState()
                     val followed by YouTubeAccount.followed.collectAsState()
@@ -1770,7 +1770,7 @@ private fun TvArtistSide(name: String, i: ArtistInfo?, room: Dp, records: Int, y
     if (playable.isNotEmpty()) Row {
         Word("play", pixel(15.sp), Modifier.padding(end = 24.dp).tvFirst(), touch = 8.dp) { Playback.play(playable, 0) }
         Word("shuffle", pixel(15.sp, Ink.mid), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(playable.shuffled(), 0) }
-        Word("radio", pixel(15.sp, Ink.mid), touch = 8.dp) { Playback.startRadio(playable.first()) }
+        Word("similar", pixel(15.sp, Ink.mid), touch = 8.dp) { Playback.startRadio(playable.first()) }
     }
     i?.about?.let { Bio.of(it) }?.first?.takeIf { it.isNotEmpty() }?.let { about ->
         val said = remember(about) { pullQuote(about).first ?: about }

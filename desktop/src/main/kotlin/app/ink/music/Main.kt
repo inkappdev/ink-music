@@ -1103,8 +1103,8 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
             ("add to queue" to { Player.add(s) }).takeIf { !playing },
             // radio: this song, then more like it as the queue runs out: from online only, or from your files only
             // (2026-11-12, a tester: two, said plainly, in place of one that did either)
-            ("online radio" to { Player.radioFrom(s, Radio.Mode.ONLINE) }).takeIf { !s.station && !s.episode && !Local.on },
-            ("offline radio" to { Player.radioFrom(s, Radio.Mode.OFFLINE) }).takeIf { !s.station && !s.episode && Library.songs.value.any { !it.tube && !it.server && it.path.isNotEmpty() } },
+            ("similar, online" to { Player.radioFrom(s, Radio.Mode.ONLINE) }).takeIf { !s.station && !s.episode && !Local.on },
+            ("similar, your files" to { Player.radioFrom(s, Radio.Mode.OFFLINE) }).takeIf { !s.station && !s.episode && Library.songs.value.any { !it.tube && !it.server && it.path.isNotEmpty() } },
         ),
         listOfNotNull(
             ((if (s.id in loved) "unlove" else "love") to { Loved.toggle(s) }).takeIf { !s.station && !s.episode },
@@ -1589,8 +1589,8 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                 val radioOn by Player.radio.collectAsState()
                 val mode by Player.radioMode.collectAsState()
                 Box(Modifier.padding(start = 14.dp)) {
-                    DropWord(if (radioOn) mode.said else "radio off", radioOn,
-                        Radio.Mode.entries.map { m -> DropRow(m.said, null, radioOn && mode == m) { Player.radioMode(m); Player.radio(true) } } +
+                    DropWord(if (radioOn) mode.said else "similar", radioOn,
+                        listOf(Radio.Mode.ONLINE, Radio.Mode.OFFLINE, Radio.Mode.BOTH).map { m -> DropRow(m.word, null, radioOn && mode == m) { Player.radioMode(m); Player.radio(true) } } +
                             DropRow("off", null, !radioOn) { Player.radio(false) })
                 }
             }
@@ -1716,15 +1716,16 @@ private fun QueuePage(open: (Page) -> Unit, onClose: () -> Unit) {
 fun RadioWord(modifier: Modifier = Modifier) {
     val radio by Player.radio.collectAsState()
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        // radio and where it's from: three words, the one in use lit (off: none lit)
+        // similar, and where from: the one in use lit (off: none lit)
         val mode by Player.radioMode.collectAsState()
-        Radio.Mode.entries.forEach { m ->
+        BasicText("similar  ", style = pixel(13.sp, if (radio) Ink.ink else Ink.mid))
+        listOf(Radio.Mode.ONLINE, Radio.Mode.OFFLINE, Radio.Mode.BOTH).forEach { m ->
             val on = radio && mode == m
-            Word(if (m == Radio.Mode.BOTH) "radio" else m.said.substringBefore(" "), pixel(13.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 8.dp) {
+            Word(m.word, pixel(13.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 8.dp) {
                 if (on) Player.radio(false) else { Player.radioMode(m); Player.radio(true) }
             }
         }
-        BasicText(if (radio) " then more like these" else " stops at the end", style = pixel(12.sp, Ink.mid))
+        BasicText(if (radio) " then more like these" else " off: stops at the end", style = pixel(12.sp, Ink.mid))
         // what's up next, a shuffle or a radio run you liked, kept as a list of yours (2026-11-12, a tester: "these
         // combinations can be lost every time the shuffle button is pressed again")
         val queue by Player.queue.collectAsState()
