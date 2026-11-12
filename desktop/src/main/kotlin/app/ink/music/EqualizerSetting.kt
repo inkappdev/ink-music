@@ -46,8 +46,7 @@ import kotlinx.coroutines.withContext
 fun TransitionsSetting() {
     val mode by Crossfade.mode.collectAsState()
     val sound by Player.sound.collectAsState()
-    BasicText("TRANSITIONS", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("TRANSITIONS")
     BasicText("each song runs into the next where it fades. automix matches their beats too", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     if (mode != Crossfade.OFF && sound.exclusive) {
@@ -75,8 +74,7 @@ fun EqualizerSetting() {
     fun put(corrected: Boolean = state.corrected, preset: String = state.preset, shape: List<Int> = state.shape,
             correction: List<Int> = state.correction, phones: String = state.phones) =
         set(Eq.State(true, preset, Eq.combined(correction, corrected, shape), phones, correction, corrected, shape))
-    BasicText("EQUALIZER", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("EQUALIZER")
     BasicText("shape the sound: correct it for your headphones, or pick a shape, or drag the bars", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     Row {

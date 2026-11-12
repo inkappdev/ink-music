@@ -89,28 +89,53 @@ fun SettingsPage(onClose: () -> Unit) {
         val chosen = @Composable { m: Modifier ->
             Column(m.verticalScroll(rememberScrollState()).padding(top = if (narrow) 0.dp else 12.dp, bottom = 40.dp)) {
                 Column(Modifier.widthIn(max = 640.dp)) {
+                    // each setting a row: its name and what it's set to; a click opens its words (SettingRows)
+                    val opened = remember(part) { Opened() }
                     when (part) {
-                        "your phone" -> PhoneSetting()
+                        "your phone" -> {
+                            val peers by SyncHub.peers.collectAsState()
+                            SettingRow("YOUR PHONE", if (peers.isEmpty()) "pair it" else peers.joinToString(", ") { it.name.lowercase() }, opened) { PhoneSetting() }
+                            RowsEnd()
+                        }
                         "your music" -> {
-                            ServerSetting()
-                            Spacer(Modifier.height(36.dp)); YouTubeSetting()
-                            Spacer(Modifier.height(36.dp)); FilesSetting()
+                            val a by Server.account.collectAsState()
+                            val who by TubeAccount.who.collectAsState()
+                            val local = Library.songs.collectAsState().value.count { !it.server }
+                            SettingRow("YOUR SERVER", a?.name?.lowercase() ?: "sign in", opened) { ServerSetting() }
+                            SettingRow("YOUTUBE MUSIC", who?.name?.lowercase() ?: "sign in", opened) { YouTubeSetting() }
+                            SettingRow("YOUR FILES", "$local ${if (local == 1) "song" else "songs"}", opened) { FilesSetting() }
+                            RowsEnd()
                         }
                         // how big everything's drawn first (it was under about, and nobody found it: "everything looks way too
                         // big", 2026-11-10)
-                        "the look" -> { SizeSetting(); Spacer(Modifier.height(36.dp)); LookSetting() }
-                        "sound" -> {
-                            SoundSetting()
-                            Spacer(Modifier.height(36.dp)); TransitionsSetting()
-                            Spacer(Modifier.height(36.dp)); EqualizerSetting()
-                            if (!Local.on) { Spacer(Modifier.height(36.dp)); SkipTalkingSetting() }
-                            Spacer(Modifier.height(36.dp)); KeptSetting()
+                        "the look" -> {
+                            val size by Size.chosen.collectAsState()
+                            SettingRow("SIZE", size?.let(::pct) ?: "fit", opened) { SizeSetting() }
+                            LookSetting(opened)
                         }
+                        "sound" -> {
+                            val sound by Player.sound.collectAsState()
+                            val mode by Crossfade.mode.collectAsState()
+                            val eq by Eq.state.collectAsState()
+                            SettingRow("OUTPUT", listOfNotNull(if (sound.device == "auto") "the ${if (Home.mac) "mac" else "computer"}'s choice" else "its own",
+                                if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded").joinToString(" · "), opened) { SoundSetting() }
+                            SettingRow("TRANSITIONS", mode, opened) { TransitionsSetting() }
+                            SettingRow("EQUALIZER", if (eq.on) eq.label.lowercase() else "off", opened) { EqualizerSetting() }
+                            RowsEnd()
+                        }
+                        // what's kept on this computer (2026-11-11: its own part, out of sound)
+                        "offline" -> { OfflineRows(opened); RowsEnd() }
                         "listening" -> {
-                            PrivateSetting()
-                            Spacer(Modifier.height(36.dp)); DiscordSetting()
-                            Spacer(Modifier.height(36.dp)); ListenBrainzSetting()
-                            if (LastFm.available) { Spacer(Modifier.height(36.dp)); LastFmSetting() }
+                            val hidden by Private.on.collectAsState()
+                            val discord by Discord.on.collectAsState()
+                            val lb by ListenBrainz.account.collectAsState()
+                            val fm by LastFm.account.collectAsState()
+                            SettingRow("PRIVATE LISTENING", if (hidden) "on" else "off", opened) { PrivateSetting() }
+                            if (!Local.on) SettingRow("SKIP THE TALKING", if (SkipTalking.on.collectAsState().value) "on" else "off", opened) { SkipTalkingSetting() }
+                            SettingRow("DISCORD", if (discord) "on" else "off", opened) { DiscordSetting() }
+                            SettingRow("LISTENBRAINZ", lb?.user?.lowercase() ?: "connect", opened) { ListenBrainzSetting() }
+                            if (LastFm.available) SettingRow("LAST.FM", fm?.name?.lowercase() ?: "connect", opened) { LastFmSetting() }
+                            RowsEnd()
                         }
                         "keys" -> KeysSetting()
                         else -> {
@@ -133,8 +158,7 @@ fun SettingsPage(onClose: () -> Unit) {
 @Composable
 private fun CloseSetting() {
     val keep by Tucked.keep.collectAsState()
-    BasicText("CLOSING THE WINDOW", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("CLOSING THE WINDOW")
     BasicText(if (keep) "the music plays on: ink music waits in the tray, by the clock" else "ink music quits, and the music with it", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
@@ -151,8 +175,7 @@ private fun CloseSetting() {
 @Composable
 private fun LocalSetting() {
     val wanted by Local.wanted.collectAsState()
-    BasicText("LOCAL FILES ONLY", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("LOCAL FILES ONLY")
     BasicText((if (wanted) "your files and your server, lyrics and your phone; nothing else online, lighter on memory"
         else "everything: youtube music, ink, radio, podcasts and the rest, with your files") +
         (if (wanted != Local.on) ". from the next time ink music opens" else ""), style = pixel(12.sp, Ink.mid))
@@ -171,8 +194,7 @@ private fun LocalSetting() {
 @Composable
 private fun TitleBarSetting() {
     var chosen by remember { mutableStateOf(InkTitle.wanted) }
-    BasicText("THE WINDOW'S TOP", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("THE WINDOW'S TOP")
     BasicText((if (chosen == "ink") "ink's own, black to the top, windows' buttons on it" else "windows' own bar, as every app has it") +
         (if (chosen != (if (InkTitle.on) "ink" else "windows")) ". from the next time ink music opens" else ""), style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
@@ -188,8 +210,7 @@ private fun TitleBarSetting() {
  */
 @Composable
 private fun KeysSetting() {
-    BasicText("KEYS", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("KEYS")
     BasicText("anywhere in the window, but while you type in find", style = pixel(12.sp, Ink.mid))
     for ((head, keys) in Settings.KEYS) {
         Spacer(Modifier.height(22.dp))
@@ -206,7 +227,7 @@ private fun KeysSetting() {
 
 /** The settings' parts, and how each stands in a line. */
 object Settings {
-    val PARTS = listOf("your phone", "your music", "the look", "sound", "listening") + (if (Home.mac) emptyList() else listOf("keys")) + "about"
+    val PARTS = listOf("your phone", "your music", "the look", "sound", "offline", "listening") + (if (Home.mac) emptyList() else listOf("keys")) + "about"
 
     /** The window's keys (Main's App), as the keys part says them: Ctrl's first, then the plain ones. */
     val KEYS = listOf(
@@ -241,12 +262,17 @@ object Settings {
         }
         "sound" -> {
             val sound by Player.sound.collectAsState()
-            val kept by Offline.kept.collectAsState()
             val mode by Crossfade.mode.collectAsState()
             val eq by Eq.state.collectAsState()
             listOfNotNull(if (sound.device == "auto") "the ${if (Home.mac) "mac" else "computer"}'s choice" else "its own output",
                 if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded", mode.takeIf { it != Crossfade.OFF },
-                if (eq.on) "equalizer ${eq.label}" else null, kept.size.takeIf { it > 0 }?.let { "$it kept" }).joinToString(" · ")
+                if (eq.on) "equalizer ${eq.label}" else null).joinToString(" · ")
+        }
+        "offline" -> {
+            val kept by Offline.kept.collectAsState()
+            listOfNotNull(if (kept.isEmpty()) "nothing kept yet" else "${kept.size} kept",
+                if (KeepLoved.on.collectAsState().value) "keeping what you love" else null,
+                if (KeepMost.on.collectAsState().value) "and what you play most" else null).joinToString(" · ")
         }
         "the look" -> {
             val behind by Looks.on.collectAsState()
@@ -275,8 +301,7 @@ private fun ServerSetting() {
     val account by Server.account.collectAsState()
     val count by Server.count.collectAsState()
     val syncing by Server.syncing.collectAsState()
-    BasicText("YOUR SERVER", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("YOUR SERVER")
     val a = account
     if (a == null) {
         BasicText("navidrome, or any subsonic server: its songs, played from it", style = pixel(12.sp, Ink.mid))
@@ -311,8 +336,7 @@ private fun ServerSetting() {
 /** Your files: the folders they're read from (each one let go of, beside the last), how many, another, or read again. */
 @Composable
 private fun FilesSetting() {
-    BasicText("YOUR FILES", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("YOUR FILES")
     val at by Library.folderAt.collectAsState()
     val local = Library.songs.collectAsState().value.count { !it.server }
     val folders = remember(at) { Library.folders }
@@ -331,8 +355,7 @@ private fun FilesSetting() {
 /** About: who made this, that it's free and open, the build; ink, from its makers, said once and plainly. */
 @Composable
 private fun AboutSetting() {
-    BasicText("INK MUSIC", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("INK MUSIC")
     BasicText("free and open, gpl-3.0. no ads, no account, nothing sold", style = pixel(12.sp, Ink.mid))
     if (Keys.version.isNotEmpty()) BasicText("version ${Keys.version}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
     if (Keys.build.isNotEmpty()) BasicText("build ${Keys.build}", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(top = 4.dp))
@@ -352,8 +375,7 @@ private fun AboutSetting() {
     Word("buy us a coffee", pixel(14.sp), touch = 8.dp) { browse(Coffee.PAGE) }
     Spacer(Modifier.height(36.dp))
     // the funnel: said once, plainly, never a nag
-    BasicText("FROM THE MAKERS OF INK", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("FROM THE MAKERS OF INK")
     BasicText("ink is a launcher for people who listen: your phone as words, your music on your home screen", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(10.dp))
     Word("inkhome.app", pixel(14.sp), touch = 8.dp) { browse("https://inkhome.app") }
@@ -422,8 +444,7 @@ private fun ListenBrainzSetting() {
     var brought by remember { mutableStateOf(ListenBrainz.brought(Home.dir)) }
     var bringing by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(account) { if (account != null) repeat(20) { if (brought != null) return@LaunchedEffect; kotlinx.coroutines.delay(1_000); brought = ListenBrainz.brought(Home.dir) } }
-    BasicText("LISTENBRAINZ", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("LISTENBRAINZ")
     val a = account
     if (a == null) {
         var token by remember { mutableStateOf("") }
@@ -482,8 +503,7 @@ private fun LastFmSetting() {
     var bringing by remember { mutableStateOf(false) }
     // connected just now: brought in meanwhile, read again when it lands
     androidx.compose.runtime.LaunchedEffect(account) { if (account != null) repeat(20) { if (brought != null) return@LaunchedEffect; kotlinx.coroutines.delay(1_000); brought = LastFm.brought(Home.dir) } }
-    BasicText("LAST.FM", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("LAST.FM")
     val a = account
     if (a == null) {
         var name by remember { mutableStateOf("") }
@@ -544,8 +564,7 @@ fun browse(url: String) {
 private fun SoundSetting() {
     val sound by Player.sound.collectAsState()
     val outputs = remember { Player.outputs() }
-    BasicText("SOUND", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("SOUND")
     BasicText("where it plays, and whether it has it alone", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     outputs.forEach { (name, said) ->
@@ -614,8 +633,7 @@ private fun YouTubeSetting() {
     val said by TubeAccount.said.collectAsState()
     val lists by TubeAccount.playlists.collectAsState()
     val liked by TubeAccount.liked.collectAsState()
-    BasicText("YOUTUBE MUSIC", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("YOUTUBE MUSIC")
     val w = who
     val c = code
     when {
@@ -649,8 +667,7 @@ private fun PhoneSetting() {
     val peers by SyncHub.peers.collectAsState()
     val code by TubeAccount.code.collectAsState()
     val said by TubeAccount.said.collectAsState()
-    BasicText("YOUR PHONE", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("YOUR PHONE")
     val c = code
     when {
         c != null -> {
@@ -719,61 +736,46 @@ fun ago(ms: Long): String = when {
 
 /** Kept offline: how many, how much room; kept as they are or smaller; let them all go. */
 @Composable
-private fun KeptSetting() {
+private fun OfflineRows(opened: Opened) {
     val kept by Offline.kept.collectAsState()
     val small by Offline.small.collectAsState()
-    BasicText("KEPT OFFLINE", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
-    val mb = remember(kept) { Offline.bytes() / 1_048_576 }
-    BasicText(if (kept.isEmpty()) "keep a song, a record or a playlist on this computer (keep offline: on its page, or a song's right click) to play it with no signal"
-        else "${kept.size} ${if (kept.size == 1) "song" else "songs"} on this computer, $mb mb", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(10.dp))
-    BasicText("kept as: your server's original file (lossless if it is) and youtube's best, or smaller (mp3 320, and youtube's lighter stream)", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-        Word("as they are", pixel(14.sp, if (!small) Ink.ink else Ink.dim), touch = 8.dp) { Offline.small(false) }
-        Word("smaller", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { Offline.small(true) }
+    val bytes = remember(kept) { Offline.bytes() }
+    SettingRow("KEPT", if (kept.isEmpty()) "none yet" else "${kept.size} ${if (kept.size == 1) "song" else "songs"} · ${LoveKeeping.said(bytes).removePrefix("about ")}", opened,
+        if (kept.isEmpty()) "keep a song, record or playlist (on its page, or a right click) to play it with no signal" else null) {
+        if (kept.isNotEmpty()) {
+            // the list of them (lists, kept on this computer): to play, or let one go by its right click
+            Word("see them", pixel(14.sp), touch = 8.dp) { Nav.open(Page.List(KEPT, "kept on this computer")) }
+            var sure by remember { mutableStateOf(false) }
+            LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
+            Word(if (sure) "remove them all" else "remove all", pixel(14.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
+                if (!sure) sure = true else { sure = false; Offline.remove(kept) }
+            }
+        }
+    }
+    SettingRow("KEPT AS", if (small) "smaller" else "as they are", opened, "the original (lossless if it is), or mp3 320 and youtube's lighter stream") {
+        Pick(listOf("as they are" to !small, "smaller" to small)) { Offline.small(it == 1) }
     }
     // a song loved, kept (KeepLoved): on or off; the loves from before offered once
     val keepOn by KeepLoved.on.collectAsState()
     val offered by KeepLoved.offered.collectAsState()
-    Spacer(Modifier.height(18.dp))
-    BasicText("keep what you love: a song you love is kept on this computer, to play with no signal", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-        Word("on", pixel(14.sp, if (keepOn) Ink.ink else Ink.dim), touch = 8.dp) { KeepLoved.set(true) }
-        Word("off", pixel(14.sp, if (!keepOn) Ink.ink else Ink.dim), touch = 8.dp) { KeepLoved.set(false) }
-    }
-    if (keepOn && !offered) {
-        val before = remember(kept) { KeepLoved.before() }
-        if (before.isNotEmpty()) {
-            val size = remember(before, small) { before.sumOf { LoveKeeping.about(it.duration / 1000, small, it.tube) } }
-            Spacer(Modifier.height(10.dp))
-            BasicText("keep the ${before.size} you've loved already? ${LoveKeeping.said(size)}", style = pixel(12.sp, Ink.mid))
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                Word("keep them", pixel(14.sp), touch = 8.dp) { KeepLoved.answer(true) }
-                Word("just new ones", pixel(14.sp, Ink.mid), touch = 8.dp) { KeepLoved.answer(false) }
+    SettingRow("KEEP WHAT YOU LOVE", if (keepOn) "on" else "off", opened, "a song you love is kept on this computer") {
+        Pick(listOf("on" to keepOn, "off" to !keepOn)) { KeepLoved.set(it == 0) }
+        if (keepOn && !offered) {
+            val before = remember(kept) { KeepLoved.before() }
+            if (before.isNotEmpty()) {
+                val size = remember(before, small) { before.sumOf { LoveKeeping.about(it.duration / 1000, small, it.tube) } }
+                PickLabel("keep the ${before.size} you've loved already? ${LoveKeeping.said(size)}")
+                Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                    Word("keep them", pixel(14.sp), touch = 8.dp) { KeepLoved.answer(true) }
+                    Word("just new ones", pixel(14.sp, Ink.mid), touch = 8.dp) { KeepLoved.answer(false) }
+                }
             }
         }
     }
     // the most played kept, refreshed daily (KeepMost): off at first
     val most by KeepMost.on.collectAsState()
-    Spacer(Modifier.height(18.dp))
-    BasicText("keep what you play most: the ${KeepMost.N} songs most in your rotation these days (this week counts more than the summer), kept on this computer and changed as they change", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-        Word("off", pixel(14.sp, if (!most) Ink.ink else Ink.dim), touch = 8.dp) { KeepMost.set(false) }
-        Word("on", pixel(14.sp, if (most) Ink.ink else Ink.dim), touch = 8.dp) { KeepMost.set(true) }
-    }
-    if (kept.isNotEmpty()) {
-        // the list of them (lists, kept on this computer): to play, or let one go by its right click
-        Word("see them", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { Nav.open(Page.List(KEPT, "kept on this computer")) }
-        var sure by remember { mutableStateOf(false) }
-        LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
-        Word(if (sure) "remove them all" else "remove all", pixel(14.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
-            if (!sure) sure = true else { sure = false; Offline.remove(kept) }
-        }
+    SettingRow("KEEP WHAT YOU PLAY MOST", if (most) "on" else "off", opened, "the ${KeepMost.N} most in your rotation, changed as they change") {
+        Pick(listOf("on" to most, "off" to !most)) { KeepMost.set(it == 0) }
     }
 }
 
@@ -783,8 +785,7 @@ private fun KeptSetting() {
 private fun SizeSetting() {
     val chosen by Size.chosen.collectAsState()
     val key = if (Home.mac) "⌘" else "ctrl"
-    BasicText("SIZE", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("SIZE")
     BasicText(
         if (chosen == null) "fit: the desktop's own size, bigger only on a screen set small (${pct(Size.fit)} here)"
         else "${pct(chosen ?: 1f)} of the desktop's own size. $key = and $key - step it",
@@ -805,8 +806,7 @@ private fun pct(f: Float) = "${Math.round(f * 100)}%"
 @Composable
 private fun PrivateSetting() {
     val on by Private.on.collectAsState()
-    BasicText("PRIVATE LISTENING", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("PRIVATE LISTENING")
     BasicText(if (on) "on: nothing you play is kept or told. it's okay, we know you like taylor swift"
         else "while it's on, what you play isn't kept here or told anywhere: no history, no scrobbles, not in your year", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(10.dp))
@@ -820,8 +820,7 @@ private fun PrivateSetting() {
 @Composable
 private fun SkipTalkingSetting() {
     val on by SkipTalking.on.collectAsState()
-    BasicText("SKIP THE TALKING", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("SKIP THE TALKING")
     BasicText("in youtube's music videos, the talking, skits and credits are passed over, where sponsorblock's listeners have marked them", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(10.dp))
     androidx.compose.foundation.layout.Row {
@@ -834,8 +833,7 @@ private fun SkipTalkingSetting() {
 @Composable
 private fun DiscordSetting() {
     val on by Discord.on.collectAsState()
-    BasicText("DISCORD", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    SettingHead("DISCORD")
     BasicText(if (on) "what you play shows on your discord profile while discord's open: the song, who, its cover. not while paused, or in private listening"
         else "off: nothing shown on discord", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(10.dp))
@@ -864,95 +862,53 @@ fun NetworkShut(modifier: Modifier = Modifier) {
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun LookSetting() {
+private fun LookSetting(opened: Opened) {
     val behind by Looks.on.collectAsState()
     val cover by Moving.cover.collectAsState()
     val moving by Moving.on.collectAsState()
     val names by Marquees.on.collectAsState()
     LookPreview()
-    Spacer(Modifier.height(28.dp))
-    BasicText("THE COVER", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
-    BasicText("the record's cover, still or moving, in an effect of its own", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(12.dp))
-    FlowRow(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Word("clear", pixel(14.sp, if (cover == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(cover = null) }
-        for (l in Moving.coverLooks) Word(l.word, pixel(14.sp, if (cover == l) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(cover = l) }
+    Spacer(Modifier.height(20.dp))
+    val covers = listOf<Look?>(null) + Moving.coverLooks
+    SettingRow("THE COVER", cover?.word ?: "clear", opened, "the record's cover, still or moving, in an effect of its own") {
+        Pick(covers.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(cover = covers[it]) }
     }
-    Spacer(Modifier.height(36.dp))
-    BasicText("BEHIND IT", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
-    BasicText(if (behind == Look.PLAIN) "plain: the cover's print in the dither beside it, on black"
-        else "the cover across the whole window behind the player, in this effect", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(12.dp))
-    FlowRow(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (l in listOf(Look.PLAIN, Look.BLUR, Look.PIXELS, Look.DITHER, Look.AS_IS))
-            Word(l.word, pixel(14.sp, if (behind == l) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Looks.set(l) }
+    val behinds = listOf(Look.PLAIN, Look.BLUR, Look.PIXELS, Look.DITHER, Look.AS_IS)
+    SettingRow("BEHIND IT", behind.word, opened, if (behind == Look.PLAIN) "plain: the cover's print in the dither beside it, on black"
+        else "the cover across the whole window behind the player") {
+        Pick(behinds.map { it.word to (it == behind) }) { Looks.set(behinds[it]) }
     }
-    Spacer(Modifier.height(36.dp))
-    BasicText("SPOTIFY'S CANVAS", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
     val pass by SpotifyHanded.pass.collectAsState()
     val canvasOn by Moving.canvasOn.collectAsState()
-    BasicText(when {
-        pass != null -> "the looping clip spotify shows behind a song, behind the player in place of the cover. signed in on your phone"
-        SpotifyHanded.handedAt > 0 -> "signed in on your phone: open ink music there, paired, and its canvases show here again"
-        else -> "sign in to spotify on your phone (settings, the look), paired with this one, and a song's canvas shows here too"
-    }, style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(12.dp))
-    Row {
-        Word("on", pixel(14.sp, if (canvasOn) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(canvasOn = true) }
-        Word("off", pixel(14.sp, if (!canvasOn) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(canvasOn = false) }
+    SettingRow("SPOTIFY'S CANVAS", if (canvasOn) "on" else "off", opened, when {
+        pass != null -> "a song's looping clip behind the player. signed in on your phone"
+        SpotifyHanded.handedAt > 0 -> "signed in on your phone: open ink music there, paired, and canvases show here again"
+        else -> "sign in to spotify on your phone, paired with this one, and canvases show here too"
+    }) {
+        Pick(listOf("on" to canvasOn, "off" to !canvasOn)) { Moving.set(canvasOn = it == 0) }
     }
-    Spacer(Modifier.height(36.dp))
-    BasicText("MOVING COVERS", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
-    BasicText("where a label made one, apple music's looping cover plays while the music does", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(12.dp))
-    Row {
-        Word("on", pixel(14.sp, if (moving) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(on = true) }
-        Word("off", pixel(14.sp, if (!moving) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(on = false) }
+    SettingRow("MOVING COVERS", if (moving) "on" else "off", opened, "apple music's looping cover, where a label made one") {
+        Pick(listOf("on" to moving, "off" to !moving)) { Moving.set(on = it == 0) }
     }
-    Spacer(Modifier.height(36.dp))
-    // how mixes and lists are drawn from their covers (artists' photos stay in the dither)
+    // how mixes and lists are drawn from their covers
     val print by CoverPrint.on.collectAsState()
-    BasicText("COVERS", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
-    BasicText("how mixes and lists are drawn from their covers", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(12.dp))
-    Row {
-        Print.entries.forEach { p ->
-            Word(p.word, pixel(14.sp, if (p == print) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { CoverPrint.set(p) }
-        }
+    SettingRow("COVERS", print.word, opened, "how mixes and lists are drawn from their covers") {
+        Pick(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(Print.entries[it]) }
     }
-    Spacer(Modifier.height(36.dp))
     val artistVideo by Moving.artistVideo.collectAsState()
     val artistDither by Moving.artistDither.collectAsState()
     val artistGrain by Moving.artistGrain.collectAsState()
-    BasicText("ARTIST PAGES", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
-    BasicText("the picture an artist's page opens on: their photo, or their moving one where apple music has one, in the dither, blurred or clear",
-        style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(12.dp))
-    Row {
-        Word("video", pixel(14.sp, if (artistVideo) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistVideo = true) }
-        Word("photo", pixel(14.sp, if (!artistVideo) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(artistVideo = false) }
+    SettingRow("ARTIST PAGES", "${if (artistVideo) "video" else "photo"} · ${if (artistGrain) "blur" else if (artistDither) "dithered" else "clear"}", opened,
+        "their photo, or their moving one where apple music has one") {
+        Pick(listOf("video" to artistVideo, "photo" to !artistVideo)) { Moving.set(artistVideo = it == 0) }
+        Pick(listOf("dithered" to (artistDither && !artistGrain), "blur" to artistGrain, "clear" to (!artistDither && !artistGrain))) {
+            Moving.set(artistDither = it == 0, artistGrain = it == 1)
+        }
     }
-    Spacer(Modifier.height(8.dp))
-    Row {
-        Word("dithered", pixel(14.sp, if (artistDither && !artistGrain) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistDither = true, artistGrain = false) }
-        Word("blur", pixel(14.sp, if (artistGrain) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistDither = false, artistGrain = true) }
-        Word("clear", pixel(14.sp, if (!artistDither && !artistGrain) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(artistDither = false, artistGrain = false) }
+    SettingRow("THE NAME", if (names) "moving" else "still", opened, "the big artist names along the player's foot and on their pages") {
+        Pick(listOf("moving" to names, "still" to !names)) { Marquees.set(it == 0) }
     }
-    Spacer(Modifier.height(36.dp))
-    BasicText("THE NAME", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
-    BasicText("the big artist names along the player's foot and on their pages", style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(12.dp))
-    Row {
-        Word("moving", pixel(14.sp, if (names) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Marquees.set(true) }
-        Word("still", pixel(14.sp, if (!names) Ink.ink else Ink.dim), touch = 8.dp) { Marquees.set(false) }
-    }
+    RowsEnd()
 }
 
 /** The player small: the background, the cover in its effect (moving where it can), the name along the foot. */
