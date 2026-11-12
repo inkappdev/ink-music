@@ -87,7 +87,13 @@ object Discord {
                 continue
             }
             lastError.value = ""
-            status.value = if (show) "connected · showing playback" else "connected · idle"
+            status.value = when {
+                Local.on -> "local-files-only mode · Discord hidden"
+                !on.value -> "off · Discord connected"
+                Private.on.value -> "private listening · Discord hidden"
+                show -> "connected · showing playback"
+                else -> "connected · idle"
+            }
             said = key; lastAt = start; dirty = false
             delay(1_000)
         }
@@ -147,21 +153,30 @@ object Discord {
         return null
     }
 
-    private fun open(i: Int): Pipe? = if (Home.windows) runCatching {
-        val f = RandomAccessFile("\\\\.\\pipe\\discord-ipc-$i", "rw")
-        object : Pipe {
-            override fun write(b: ByteArray) = f.write(b)
-            override fun read(n: Int) = ByteArray(n).also { f.readFully(it) }
-            override fun close() = f.close()
-        }
-    }.getOrNull() else {
-        // where the socket is: the runtime folder (Linux), the temp folder (the Mac), or a Flatpak's or Snap's inside it
-        val bases = listOfNotNull(System.getenv("XDG_RUNTIME_DIR"), System.getenv("TMPDIR"), System.getenv("TMP"), System.getenv("TEMP"), "/tmp").distinct()
-        val inner = listOf("", "app/com.discordapp.Discord/", "snap.discord/", ".flatpak/dev.vencord.Vesktop/xdg-run/", "app/dev.vencord.Vesktop/")
-        bases.flatMap { b -> inner.map { File(b, "${it}discord-ipc-$i") } }.firstOrNull { it.exists() }?.let { f ->
-            runCatching {
+    private fun open(i: Int): Pipe? {
+        if (Home.windows) return runCatching {
+            val f = RandomAccessFile("\\\\.\\pipe\\discord-ipc-$i", "rw")
+            object : Pipe {
+                override fun write(b: ByteArray) = f.write(b)
+                override fun read(n: Int) = ByteArray(n).also { f.readFully(it) }
+                override fun close() = f.close()
+            }
+        }.getOrNull()
+
+        val bases = listOfNotNull(
+            System.getenv("XDG_RUNTIME_DIR"),
+            System.getenv("UID")?.let { "/run/user/$it" },
+            System.getenv("TMPDIR"), System.getenv("TMP"), System.getenv("TEMP"), "/tmp",
+        ).distinct()
+        val inner = listOf(
+            "", "app/com.discordapp.Discord/", "snap.discord/",
+            ".flatpak/dev.vencord.Vesktop/xdg-run/", "app/dev.vencord.Vesktop/",
+        )
+        val candidates = bases.flatMap { base -> inner.map { File(base, "${it}discord-ipc-$i") } }
+        for (file in candidates.filter { it.exists() }) {
+            val connected = runCatching {
                 val ch = SocketChannel.open(java.net.StandardProtocolFamily.UNIX)
-                ch.connect(java.net.UnixDomainSocketAddress.of(f.path))
+                ch.connect(java.net.UnixDomainSocketAddress.of(file.path))
                 object : Pipe {
                     override fun write(b: ByteArray) { val buf = ByteBuffer.wrap(b); while (buf.hasRemaining()) ch.write(buf) }
                     override fun read(n: Int): ByteArray {
@@ -172,6 +187,7 @@ object Discord {
                     override fun close() = ch.close()
                 }
             }.getOrNull()
+            if (connected != null) return connected
         }
+        return null
     }
-}
