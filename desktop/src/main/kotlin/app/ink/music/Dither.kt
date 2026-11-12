@@ -51,8 +51,9 @@ object Dither {
     fun develop(art: ImageBitmap, accent: Color, dots: Int, frames: Int = 12, print: Print = Print.DITHER): List<ImageBitmap>? = runCatching {
         val img = Image.makeFromBitmap(art.asSkiaBitmapCopy())
         if (print != Print.DITHER) {
-            // tiles (Prints in core) from the cover drawn a pixel a dot
-            return@runCatching Prints.tiles(pixels(img, dots), dots, frames).map { image(it, dots).toComposeImageBitmap() }
+            // tiles or grain (Prints in core) from the cover drawn a pixel a dot
+            val px = pixels(img, dots)
+            return@runCatching (if (print == Print.GRAIN) Prints.grain(px, dots, frames) else Prints.tiles(px, dots, frames)).map { image(it, dots).toComposeImageBitmap() }
         }
         // softened less since 2026-11-11 (half the dots, blurred once; were a third, three times): faces and type come back
         val small = (dots / 2).coerceAtLeast(16)

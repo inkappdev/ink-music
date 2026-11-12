@@ -54,7 +54,7 @@ object Moving {
     }
 }
 
-/** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither or tiles. */
+/** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither, tiles or grain. */
 object CoverPrint {
     private val _on = MutableStateFlow(Print.DITHER)
     val on: StateFlow<Print> = _on

@@ -2112,7 +2112,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
     }
 }
 
-/** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither or tiles. */
+/** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither, tiles or grain. */
 @Composable
 fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value)
 

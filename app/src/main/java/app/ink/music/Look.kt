@@ -80,10 +80,10 @@ object Looks {
         val dots = dots(shown, density)
         if (print == Print.DITHER) (1..frames).map { dither(src, dots, accent.toArgb(), it.toFloat() / frames) }
         else {
-            // tiles (Prints in core) from the cover drawn a pixel a dot
+            // tiles or grain (Prints in core) from the cover drawn a pixel a dot
             val px = IntArray(dots * dots)
             Bitmap.createScaledBitmap(src, dots, dots, true).getPixels(px, 0, dots, 0, 0, dots, dots)
-            Prints.tiles(px, dots, frames).map { Bitmap.createBitmap(it, dots, dots, Bitmap.Config.ARGB_8888) }
+            (if (print == Print.GRAIN) Prints.grain(px, dots, frames) else Prints.tiles(px, dots, frames)).map { Bitmap.createBitmap(it, dots, dots, Bitmap.Config.ARGB_8888) }
         }
     } catch (e: Exception) { null }
 
@@ -192,7 +192,7 @@ internal fun boxBlur(px: IntArray, n: Int, r: Int, rows: Boolean) {
  * The giant names running across (the player's artist at its foot, ink weekly's, a long name on an artist's page):
  * moving, or still where they are (settings, the look; 2026-10-30). Kept beside the look's own choice.
  */
-/** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither or tiles. */
+/** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither, tiles or grain. */
 object CoverPrint {
     private val _on = MutableStateFlow(Print.DITHER)
     val on: StateFlow<Print> = _on
