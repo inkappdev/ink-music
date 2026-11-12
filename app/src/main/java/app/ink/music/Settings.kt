@@ -136,7 +136,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 var addonUrl by remember { mutableStateOf(AddonMusic.baseUrl(ctx)) }
                 var addonDialog by remember { mutableStateOf(false) }
                 SettingRow("BITCHORD ADDON", addonUrl.ifBlank { "not configured" }, opened,
-                    "try this addon before the song's usual source; optional LastWave HMAC") {
+                    "try this addon before the song's usual source; optional request signing") {
                     Word(if (addonUrl.isBlank()) "add addon >" else "configure addon >", pixel(14.sp, Ink.mid), touch = 8.dp) {
                         addonDialog = true
                     }
@@ -398,7 +398,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics" + (if (YouTubeMusic.available) " (and to youtube music when lrclib has none)" else "") + "; " +
                             (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library, and the youtube songs you play, for your history there); " else "") +
                             "with listenbrainz or last.fm connected, what you play goes there. " +
-                            (if (AddonMusic.baseUrl(ctx).isNotBlank()) "your configured addon server receives your searches and audio stream requests; its optional HMAC secret signs LastWave requests. " else "") +
+                            (if (AddonMusic.baseUrl(ctx).isNotBlank()) "your configured addon server receives your searches and audio stream requests; its optional secret signs token-based requests. " else "") +
                             (if (Moving.available) "with moving covers on, the record playing goes to apple music, for its moving cover; " +
                                 "signed in to spotify, the song playing goes to spotify, for its canvas (and your playlists, when you bring one in). " else "") +
                             (if (YouTubeMusic.available) "with skip the talking on, the first four characters of a scrambled youtube video id go to sponsorblock, never the id itself. " else "") +
@@ -850,14 +850,14 @@ private fun AddonConfigDialog(ctx: android.content.Context, onDismiss: () -> Uni
                 textStyle = pixel(12.sp, Ink.ink),
                 modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
             )
-            BasicText("Optional LastWave HMAC secret", style = pixel(10.sp, Ink.mid))
+            BasicText("Optional addon signing secret", style = pixel(10.sp, Ink.mid))
             BasicTextField(
                 value = secret, onValueChange = { secret = it }, singleLine = true,
                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                 textStyle = pixel(12.sp, Ink.ink),
                 modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
             )
-            BasicText("Leave the secret empty for standard BitChord addons. It is used only for /a/{token} LastWave URLs.", style = pixel(10.sp, Ink.mid))
+            BasicText("Leave the secret empty unless your addon requires signed /a/{token} requests.", style = pixel(10.sp, Ink.mid))
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 Word("save", pixel(12.sp, Ink.ink), onClick = { AddonMusic.configure(ctx, url, secret); onSave() })
                 Word("clear", pixel(12.sp, Ink.mid), onClick = { AddonMusic.configure(ctx, "", ""); url = ""; secret = ""; onSave() })
