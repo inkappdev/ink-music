@@ -2,6 +2,7 @@ package app.ink.music
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -17,6 +18,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -70,7 +76,6 @@ private enum class Step { HELLO, PHONE, MUSIC, LIKE }
 @Composable
 fun WelcomePage() {
     var step by remember { mutableStateOf(Step.HELLO) }
-    LaunchedEffect(Unit) { delay(1_600); if (step == Step.HELLO) step = Step.PHONE }
     Box(Modifier.fillMaxSize().background(Ink.black)) {
         AnimatedContent(step, transitionSpec = {
             fadeIn(tween(Motion.ENTER, delayMillis = 60, easing = Motion.expo)) togetherWith fadeOut(tween(Motion.EXIT))
@@ -101,12 +106,61 @@ private fun StepFrame(heading: String, foot: @Composable androidx.compose.founda
     }
 }
 
+/** INK MUSIC and the one word to go on, the left half; covers drifting by in the dither, the right (the phone's welcome). */
 @Composable
 private fun Hello(onNext: () -> Unit) {
-    Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, indication = null, onClick = onNext), contentAlignment = Alignment.CenterStart) {
-        Column(Modifier.padding(horizontal = 64.dp)) {
-            BasicText("INK", style = headline(200.sp).copy(lineHeight = 190.sp))
-            BasicText("MUSIC", style = pixel(64.sp), modifier = Modifier.padding(top = 4.dp, start = 8.dp))
+    Row(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 64.dp, vertical = 56.dp)) {
+            Spacer(Modifier.weight(1f))
+            BasicText("INK", style = headline(160.sp).copy(lineHeight = 152.sp))
+            BasicText("MUSIC", style = pixel(56.sp), modifier = Modifier.padding(top = 4.dp, start = 6.dp))
+            Spacer(Modifier.height(48.dp))
+            Word("CONTINUE", headline(44.sp), touch = 12.dp, onClick = onNext)
+            Spacer(Modifier.weight(1f))
+        }
+        Drift(Modifier.weight(1f).fillMaxHeight())
+    }
+}
+
+/** The well-loved artists' pictures (the phone's welcome-covers.json, kept in the app: no looking up on a first open). */
+private val faces: List<Song> by lazy {
+    runCatching {
+        val text = Welcome::class.java.getResourceAsStream("/welcome-covers.json")!!.bufferedReader().use { it.readText() }
+        val o = org.json.JSONObject(text)
+        o.keys().asSequence().map { faceSong(it, o.getString(it)) }.toList()
+    }.getOrDefault(emptyList())
+}
+
+private val DRIFT_COVER = 170.dp
+private val DRIFT_GAP = 14.dp
+
+/**
+ * Rows of covers in the dither, as many as the height holds, each sliding its own way and slowly back, wider than its
+ * half; each develops from black as it's read (Dithered).
+ */
+@Composable
+private fun Drift(modifier: Modifier) {
+    val all = faces
+    if (all.isEmpty()) { Box(modifier); return }
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "drift")
+    val run by t.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(
+        tween(70_000, easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "run")
+    BoxWithConstraints(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
+        val rows = ((maxHeight + DRIFT_GAP) / (DRIFT_COVER + DRIFT_GAP)).toInt() + 1
+        val across = 8
+        val wide = DRIFT_COVER * across + DRIFT_GAP * (across - 1)
+        Column(verticalArrangement = Arrangement.spacedBy(DRIFT_GAP), modifier = Modifier.requiredHeight((DRIFT_COVER + DRIFT_GAP) * rows - DRIFT_GAP)) {
+            for (row in 0 until rows) {
+                val way = if (row % 2 == 0) -1 else 1
+                val shift = (way * run * 320 - 160 * way).dp
+                Row(Modifier.requiredWidth(wide).offset(x = shift), horizontalArrangement = Arrangement.spacedBy(DRIFT_GAP)) {
+                    for (place in 0 until across) {
+                        // each row its own run through the faces, so none sits beside itself
+                        val f = all[(row * 5 + place * 3) % all.size]
+                        androidx.compose.runtime.key(row, place) { Dithered(f, Modifier.size(DRIFT_COVER), px = 340) }
+                    }
+                }
+            }
         }
     }
 }
