@@ -124,7 +124,10 @@ object Covers {
             } ?: (if (song.server || song.tube || song.episode) null else picture(File(song.path)))
                 // (an artist's face or photo, a song only in shape, is never looked for so)
                 // local files only: no catalogs asked, no YouTube pictures (Local)
-                ?: (if (song.station || song.episode || face(song) || Local.on) null else found(song, px))
+                // a file of yours with no art of its own and no record named: left as it is, ink's sleeve, never a
+                // cover found by its title (2026-11-12, a tester: "if it contains nothing, leave it as it is")
+                ?: (if (song.station || song.episode || face(song) || Local.on || (song.path.isNotEmpty() && !song.server && !song.tube && song.album.isBlank())) null
+                    else found(song, px))
                 ?: (if (song.tube && !face(song) && !Local.on) frame(song, px) else null)
             val t1 = System.nanoTime()
             missed -= song.albumId

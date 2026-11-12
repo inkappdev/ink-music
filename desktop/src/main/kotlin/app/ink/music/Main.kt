@@ -854,15 +854,17 @@ fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry> {
 @Composable
 private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
     // a grid of faces, as the records are (2026-10-29: one thin list down a wide page)
-    val albums by Library.albums.collectAsState()
-    val covers = remember(albums) { albums.groupBy { it.artist }.mapValues { it.value.first().songs.first() } }
+    // each artist's own records' covers, from the songs (a few records each, so one without art isn't all there is):
+    // what's in the files when no photo of them comes (2026-11-12, a tester: tiles stayed empty when the search failed)
+    val songs by Library.songs.collectAsState()
+    val covers = remember(songs) { songs.groupBy { it.albumArtist }.mapValues { (_, l) -> l.distinctBy { it.albumId }.take(3) } }
     val grid = pageGrid()
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        items(artists, key = { it.name }) { a -> ArtistTile(a, covers[a.name]) { open(Page.Artist(a.name)) } }
+        items(artists, key = { it.name }) { a -> ArtistTile(a, covers[a.name].orEmpty()) { open(Page.Artist(a.name)) } }
     }
 }
 
@@ -871,7 +873,7 @@ private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
  * none; kept after), their record's cover till then; their name, how much of theirs is here.
  */
 @Composable
-private fun ArtistTile(a: ArtistEntry, record: Song?, onClick: () -> Unit) {
+private fun ArtistTile(a: ArtistEntry, records: List<Song>, onClick: () -> Unit) {
     // a click opens them, a double click shuffles their songs here, a right click their options
     var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
     val photo by androidx.compose.runtime.produceState<String?>(null, a.name) {
@@ -886,7 +888,12 @@ private fun ArtistTile(a: ArtistEntry, record: Song?, onClick: () -> Unit) {
         }).rightClick { menuAt = it }) {
         // inside what was clicked, so the menu opens from the click (beside it, from the grid's corner)
         menuAt?.let { ArtistMenu(a.name, it) { menuAt = null } }
-        val face = remember(photo, record) { photo?.let { faceSong(a.name, it, photo = true) } ?: record }
+        // their photo where it comes and draws, else the first of their records whose cover there is (the file's own art
+        // first, as every cover); none, their name on ink's sleeve
+        val tries = remember(photo, records) { listOfNotNull(photo?.let { faceSong(a.name, it, photo = true) }) + records }
+        val face by androidx.compose.runtime.produceState<Song?>(records.firstOrNull(), tries) {
+            for (t in tries) if (Covers.of(t, 400) != null) { value = t; return@produceState }
+        }
         CoverOf(face, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(a.name, listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" },
