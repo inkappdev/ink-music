@@ -50,9 +50,16 @@ object Player {
      * (exclusive: nothing else on the computer plays through it meanwhile, and on a Mac it's set to the file's own
      * sample rate, not mixed at the system's). Kept.
      */
-    data class Sound(val device: String = "auto", val exclusive: Boolean = false, val even: Boolean = true)
+    /**
+     * The output, shared or alone, and the level: `even` by the files' replaygain tags; `measured` (2026-11-12, a tester:
+     * loud songs down and quiet ones up, untagged or not), each song's loudness measured as it plays (EBU R128,
+     * ffmpeg's loudnorm) and brought to `target` LUFS: -18 quieter, -14 as streaming services play, -11 louder.
+     */
+    data class Sound(val device: String = "auto", val exclusive: Boolean = false, val even: Boolean = true, val measured: Boolean = false, val target: Int = -14)
     private val soundFile = File(Home.dir, "sound.json")
-    val sound = MutableStateFlow(runCatching { JSONObject(soundFile.readText()).let { Sound(it.optString("device", "auto"), it.optBoolean("exclusive"), it.optBoolean("even", true)) } }.getOrDefault(Sound()))
+    val sound = MutableStateFlow(runCatching { JSONObject(soundFile.readText()).let {
+        Sound(it.optString("device", "auto"), it.optBoolean("exclusive"), it.optBoolean("even", true), it.optBoolean("measured"), it.optInt("target", -14))
+    } }.getOrDefault(Sound()))
 
     /** Every output mpv can reach, as it names them and as they're called ("auto" first). */
     private fun everyOutput(): List<Pair<String, String>> {
@@ -92,9 +99,11 @@ object Player {
         decks.forEach { m ->
             if (to.device != was.device) m.set("audio-device", to.device)
             if (to.exclusive != was.exclusive) { m.set("audio-exclusive", if (to.exclusive) "yes" else "no"); m.command("ao-reload") }
-            if (to.even != was.even) m.set("replaygain", if (to.even) "album" else "no")
+            if (to.even != was.even || to.measured != was.measured) m.set("replaygain", if (to.even && !to.measured) "album" else "no")
         }
-        scope.launch { runCatching { Home.write(soundFile, JSONObject().put("device", to.device).put("exclusive", to.exclusive).put("even", to.even).toString()) } }
+        if (to.measured != was.measured || to.target != was.target) rechain()
+        scope.launch { runCatching { Home.write(soundFile, JSONObject().put("device", to.device).put("exclusive", to.exclusive).put("even", to.even)
+            .put("measured", to.measured).put("target", to.target).toString()) } }
     }
 
     /**
@@ -207,7 +216,7 @@ object Player {
             "vid" to "no", "audio-display" to "no", "terminal" to "no", "idle" to "yes",
             "gapless-audio" to "yes",
             // even volume from the files' own tags: a record's level, a song's when it has none
-            "replaygain" to if (sound.value.even) "album" else "no", "replaygain-clip" to "no",
+            "replaygain" to if (sound.value.even && !sound.value.measured) "album" else "no", "replaygain-clip" to "no",
             // a song with no gain anywhere: about where most of a library sits (the phone's, ReplayGain's -18 LUFS
             // from today's masters), so an untagged song isn't the odd loud one out
             "replaygain-fallback" to UNTAGGED.toString(),
@@ -811,6 +820,8 @@ object Player {
         if (Crossfade.mode.value == Crossfade.AUTOMIX) { parts += "highpass@bass=f=10"; parts += "lowpass@top=f=20000" }
         val eq = Eq.state.value
         if (eq.on) parts += Eq.filters(eq.levels)
+        // measured: each song brought to the level chosen as it plays, the loud down and the quiet up
+        sound.value.takeIf { it.measured }?.let { parts += "loudnorm=I=${it.target}:TP=-1.5:LRA=11" }
         return if (parts.isEmpty()) "" else "@ink:lavfi=[${parts.joinToString(",")}]"
     }
 

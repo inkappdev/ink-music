@@ -563,16 +563,31 @@ private fun SoundSetting() {
     )
     Spacer(Modifier.height(16.dp))
     androidx.compose.foundation.layout.Row {
-        Word("even volume", pixel(14.sp, if (sound.even) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
-            Player.sound(sound.copy(even = true))
+        Word("even volume", pixel(14.sp, if (sound.even && !sound.measured) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
+            Player.sound(sound.copy(even = true, measured = false))
         }
-        Word("as recorded", pixel(14.sp, if (!sound.even) Ink.ink else Ink.dim), touch = 8.dp) { Player.sound(sound.copy(even = false)) }
+        Word("measured", pixel(14.sp, if (sound.measured) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
+            Player.sound(sound.copy(measured = true))
+        }
+        Word("as recorded", pixel(14.sp, if (!sound.even && !sound.measured) Ink.ink else Ink.dim), touch = 8.dp) { Player.sound(sound.copy(even = false, measured = false)) }
     }
     Spacer(Modifier.height(6.dp))
     BasicText(
-        if (sound.even) "every record as loud as the next, by the files' own replaygain tags" else "each file at the level it was made",
+        when {
+            sound.measured -> "every song measured as it plays: the loud ones down, the quiet ones up, tagged or not"
+            sound.even -> "every record as loud as the next, by the files' own replaygain tags"
+            else -> "each file at the level it was made"
+        },
         style = pixel(12.sp, Ink.mid),
     )
+    // measured: to what level
+    if (sound.measured) androidx.compose.foundation.layout.Row(Modifier.padding(top = 8.dp)) {
+        listOf(-18 to "quieter", -14 to "normal", -11 to "louder").forEach { (lufs, word) ->
+            Word(word, pixel(14.sp, if (sound.target == lufs) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
+                Player.sound(sound.copy(target = lufs))
+            }
+        }
+    }
     Spacer(Modifier.height(6.dp))
     BasicText("alone, as recorded, at volume 100: the file's samples reach the output unchanged", style = pixel(12.sp, Ink.mid))
 }
