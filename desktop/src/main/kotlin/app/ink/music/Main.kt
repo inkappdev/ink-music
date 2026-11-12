@@ -841,11 +841,19 @@ private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
  */
 @Composable
 private fun ArtistTile(a: ArtistEntry, record: Song?, onClick: () -> Unit) {
+    // a click opens them, a double click shuffles their songs here, a right click their options
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    menuAt?.let { ArtistMenu(a.name, it) { menuAt = null } }
     val photo by androidx.compose.runtime.produceState<String?>(null, a.name) {
         kotlinx.coroutines.delay(500)
         Artists.of(a.name).collect { i -> i?.photo?.let { value = it } }
     }
-    Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+    Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick),
+        onDoubleClick = felt {
+            val n = a.name.lowercase()
+            Library.songs.value.filter { it.albumArtist.lowercase() == n || it.artist.lowercase().substringBefore(",").trim() == n }
+                .shuffled().takeIf { it.isNotEmpty() }?.let { Player.play(it) }
+        }).rightClick { menuAt = it }) {
         val face = remember(photo, record) { photo?.let { faceSong(a.name, it, photo = true) } ?: record }
         CoverOf(face, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
@@ -878,10 +886,15 @@ private fun SongGrid(songs: List<Song>) {
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
-            Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(songs, i) })) {
+            // a click picks it, a double click plays from it, a right click its options: as a song's row (2026-11-11)
+            var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+            menuAt?.let { SongMenu(s, null, null, it, playing = now?.song?.id == s.id) { menuAt = null } }
+            Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null,
+                onDoubleClick = felt { Selected.choose(s.id) { Player.play(songs, i) }; Player.play(songs, i) },
+                onClick = felt { Selected.choose(s.id) { Player.play(songs, i) } }).rightClick { menuAt = it }) {
                 CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
                 Spacer(Modifier.height(8.dp))
-                BasicText(s.title.uppercase(), style = headline(14.sp, if (now?.song?.id == s.id) Ink.ink else Ink.ink.copy(alpha = .9f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                BasicText(s.title.uppercase(), style = headline(14.sp, if (now?.song?.id == s.id || Selected.id == s.id) Ink.ink else Ink.ink.copy(alpha = .9f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 BasicText(s.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -994,7 +1007,7 @@ private fun PlayNow(onClick: () -> Unit) {
  * its words following one after another; away by a click anywhere else, esc, or a word chosen. Kept inside the window.
  */
 @Composable
-private fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?, at: androidx.compose.ui.geometry.Offset, playing: Boolean, onClose: () -> Unit) {
+internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?, at: androidx.compose.ui.geometry.Offset, playing: Boolean, onClose: () -> Unit) {
     val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
     // the close plays out (a fade) before the menu goes; what was chosen is done as it starts
     fun close(then: () -> Unit = {}) { then(); shown.targetState = false }
@@ -1139,7 +1152,7 @@ private fun BarMenu(groups: List<List<Pair<String, () -> Unit>>>, accent: Color,
  * colour, gently (2026-11-09), and dims a moment while pressed.
  */
 @Composable
-private fun MenuWord(word: String, color: Color, accent: Color, place: Int, onClick: () -> Unit) {
+internal fun MenuWord(word: String, color: Color, accent: Color, place: Int, onClick: () -> Unit) {
     val alpha = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(Motion.STAGGER / 2L * place); alpha.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
     val src = remember { MutableInteractionSource() }
@@ -1214,7 +1227,12 @@ fun UnderCover(title: String, said: String) {
 
 @Composable
 fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
-    Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+    // a click opens it, a double click plays it, a right click its options (2026-11-11, a tester: double click and right
+    // click everywhere, not only in a tracklist)
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    menuAt?.let { RecordMenu(a, it) { menuAt = null } }
+    Column(modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null,
+        onDoubleClick = felt { Player.play(a.songs) }, onClick = felt(then = onClick)).rightClick { menuAt = it }) {
         CoverOf(a.songs.first(), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(a.title, a.artist)
