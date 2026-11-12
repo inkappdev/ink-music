@@ -1565,6 +1565,16 @@ private fun LyricsSourcesDialog(selected: String, onDismiss: () -> Unit, onSelec
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             BasicText("LYRICS SOURCE", style = headline(18.sp))
+            var spicyKey by remember { mutableStateOf(Lyrics.spicyKey()) }
+            BasicText("Spicy Lyrics API key (optional)", style = pixel(10.sp, Ink.mid))
+            androidx.compose.foundation.text.BasicTextField(
+                value = spicyKey,
+                onValueChange = { spicyKey = it },
+                singleLine = true,
+                textStyle = pixel(12.sp, Ink.ink),
+                modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
+            )
+            Word("save API key", pixel(11.sp, SAID), onClick = { Lyrics.setSpicyKey(spicyKey) })
             LyricsSources.sources.forEach { source ->
                 val active = source.id == selected
                 Column(
