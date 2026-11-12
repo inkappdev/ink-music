@@ -89,6 +89,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
@@ -403,6 +404,14 @@ private fun App() {
                 val held = if (Home.mac) e.keyboardModifiers.pointerMeta else e.keyboardModifiers.pointerCtrl
                 val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
                 if (held && dy != 0f) { if (dy < 0) Size.bigger() else Size.smaller(); e.changes.forEach { it.consume() } }
+            }
+            // space is play and pause, wherever the focus is (2026-11-12, a tester: after clicking next, loop or the heart,
+            // space pressed that instead: the clicked word kept the keys, and a clickable takes space as its own click).
+            // Taken here before anything focused hears it, its press and its release, unless a field is being typed in
+            .onPreviewKeyEvent { k ->
+                if (k.key != Key.Spacebar || Typing.on || k.isCtrlPressed || k.isMetaPressed) return@onPreviewKeyEvent false
+                if (k.type == KeyEventType.KeyDown) { Watching.toggle?.invoke() ?: Player.toggle() }
+                true
             }
             .onKeyEvent { k ->
                 if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
