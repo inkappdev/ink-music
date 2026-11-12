@@ -29,39 +29,67 @@ object Discord {
 
     private val file = File(Home.dir, "discord-off")
     val on = MutableStateFlow(!file.exists())
+    val status = MutableStateFlow("waiting for a song")
+    val lastError = MutableStateFlow("")
     fun set(to: Boolean) { on.value = to; runCatching { if (to) file.delete() else file.writeText("") }; nudge() }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pipe: Pipe? = null
     @Volatile private var dirty = true
+    @Volatile private var forceReconnect = false
     fun nudge() { dirty = true }
+    fun reconnect() {
+        forceReconnect = true
+        dirty = true
+        runCatching { pipe?.close() }
+        pipe = null
+        status.value = "reconnecting"
+    }
 
     fun start() = scope.launch {
-        // local files only: not started (Local)
-        if (Local.on) return@launch
-        if (APP.isEmpty()) return@launch
-        // what's shown, said again when the song, playing, or the place in it changes (Discord takes five a 20 s)
+        // Keep running even in local-only mode: changing the setting must not leave a dead RPC loop.
         var said: String? = null
         var lastTry = 0L
         var lastAt = 0L
         while (true) {
             delay(1_000)
             val n = Player.now.value
-            val show = on.value && !Private.on.value && n != null && n.playing && !n.song.station
+            val show = on.value && !Local.on && !Private.on.value && n != null && n.playing &&
+                !n.song.station && !n.song.episode
+            val key = if (show) n!!.song.id else null
+            if (Local.on) status.value = "disabled by local-files-only mode (restart after changing it)"
+            else if (!on.value) status.value = "off"
+            else if (Private.on.value) status.value = "paused by private listening"
+            else if (n == null || !n.playing) status.value = "waiting for playback"
             // a jump: where it is against where it should be
             val start = if (show) System.currentTimeMillis() - Player.position.value else 0L
             if (show && kotlin.math.abs(start - lastAt) > 3_000) dirty = true
-            val key = if (show) n!!.song.id else null
             if (key == said && !dirty) continue
             if (pipe == null) {
-                if (key == null || System.currentTimeMillis() - lastTry < 30_000) { if (key == null) said = null; continue }
+                if (key == null) { said = null; continue }
+                if (!forceReconnect && System.currentTimeMillis() - lastTry < 5_000) continue
+                forceReconnect = false
                 lastTry = System.currentTimeMillis()
-                pipe = runCatching { connect() }.getOrNull() ?: continue
+                status.value = "looking for Discord desktop IPC"
+                pipe = runCatching { connect() }.getOrNull()
+                if (pipe == null) {
+                    status.value = "Discord not found — open the desktop app"
+                    continue
+                }
             }
-            val ok = runCatching { send(if (show) activity(n!!, start) else null) }.isSuccess
-            if (!ok) { runCatching { pipe?.close() }; pipe = null; continue }
+            val ok = runCatching { send(if (show) activity(n!!, start) else null) }
+                .onFailure { lastError.value = it.message ?: it.javaClass.simpleName }
+                .isSuccess
+            if (!ok) {
+                runCatching { pipe?.close() }
+                pipe = null
+                status.value = "connection lost; retrying"
+                continue
+            }
+            lastError.value = ""
+            status.value = if (show) "connected · showing playback" else "connected · idle"
             said = key; lastAt = start; dirty = false
-            delay(4_000)
+            delay(1_000)
         }
     }
 
@@ -71,17 +99,18 @@ object Discord {
         put("details", s.title.take(128).padEnd(2))
         if (s.artist.isNotBlank() && s.artist != "unknown") put("state", s.artist.take(128).padEnd(2))
         if (n.duration > 0) put("timestamps", JSONObject().put("start", start).put("end", start + n.duration))
-        put("assets", JSONObject().apply {
-            put("large_image", runCatching { Covers.link(s) }.getOrNull() ?: "ink")
-            if (s.album.isNotBlank()) put("large_text", s.album.take(128).padEnd(2))
-        })
+        // Do not send arbitrary cover URLs as asset keys: Discord only accepts assets uploaded to this app.
         put("buttons", JSONArray().put(JSONObject().put("label", "get ink music").put("url", "https://inkhome.app/music")))
     }
 
     private fun send(activity: JSONObject?) {
         val args = JSONObject().put("pid", ProcessHandle.current().pid()).put("activity", activity ?: JSONObject.NULL)
         frame(1, JSONObject().put("cmd", "SET_ACTIVITY").put("args", args).put("nonce", java.util.UUID.randomUUID().toString()))
-        read()
+        val response = read()
+        if (response.optString("evt") == "ERROR") {
+            val data = response.optJSONObject("data")
+            throw java.io.IOException(data?.optString("message")?.takeIf { it.isNotBlank() } ?: response.toString())
+        }
     }
 
     // ---- Discord's local connection: frames of an op and a length (little-endian), then JSON ----
@@ -104,6 +133,7 @@ object Discord {
 
     /** The first of Discord's ten connections answering, its hello said and heard. */
     private fun connect(): Pipe? {
+        lastError.value = ""
         for (i in 0..9) {
             val p = open(i) ?: continue
             pipe = p
@@ -111,7 +141,7 @@ object Discord {
                 frame(0, JSONObject().put("v", 1).put("client_id", APP))
                 val r = read()
                 if (r.optString("evt") == "READY") return p
-            } catch (_: Exception) {}
+            } catch (e: Exception) { lastError.value = e.message ?: e.javaClass.simpleName }
             runCatching { p.close() }; pipe = null
         }
         return null
