@@ -15,7 +15,7 @@ enum class Look(val word: String, val alpha: Float) {
     PIXELS("pixels", .4f),
     DITHER("dither", .4f),
     // the cover itself, held to half over the black so the words over it read
-    AS_IS("as it is", .5f),
+    AS_IS("clear", .5f),
     PLAIN("plain", 0f),
 }
 

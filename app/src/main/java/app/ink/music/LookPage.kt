@@ -81,7 +81,7 @@ fun LookPage(pages: Pages) {
                 BasicText("the record's cover in the player, moving where it has a moving one", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(10.dp))
                 val options = listOf<Look?>(null) + Moving.coverLooks
-                Choices(options.map { (it?.word ?: "as it is") to (it == cover) }) { Moving.set(ctx, cover = options[it]) }
+                Choices(options.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(ctx, cover = options[it]) }
                 Spacer(Modifier.height(40.dp))
             }
             Column(Modifier.cascade(2)) {
@@ -144,10 +144,10 @@ fun LookPage(pages: Pages) {
                 BasicText("ARTIST PAGES", style = headline(24.sp))
                 Spacer(Modifier.height(6.dp))
                 BasicText(if (Moving.available) "the picture an artist's page opens on: their photo, or their moving one where apple music has one, " +
-                    "in the dither, blurred or as it is" else "an artist's photo across their page, in the dither, blurred or as it is", style = pixel(12.sp, Ink.mid))
+                    "in the dither, blurred or clear" else "an artist's photo across their page, in the dither, blurred or clear", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(10.dp))
                 if (Moving.available) Choices(listOf("video" to video, "photo" to !video)) { Moving.set(ctx, artistVideo = it == 0) }
-                Choices(listOf("dithered" to (dithered && !grain), "blur" to grain, "as it is" to (!dithered && !grain))) {
+                Choices(listOf("dithered" to (dithered && !grain), "blur" to grain, "clear" to (!dithered && !grain))) {
                     Moving.set(ctx, artistDither = it == 0, artistGrain = it == 1)
                 }
                 Spacer(Modifier.height(40.dp))
@@ -223,7 +223,7 @@ private fun ColumnScope.TvLookChoices(signed: Boolean, canvasOn: Boolean) {
     val behind = Look.entries.toList()
     Part("BEHIND IT", "the cover across the whole player, in this effect", behind.map { it.word to (it == look) }) { Looks.set(ctx, behind[it]) }
     val covers = listOf<Look?>(null) + Moving.coverLooks
-    Part("THE COVER", "the record's cover beside the words", covers.map { (it?.word ?: "as it is") to (it == cover) }) { Moving.set(ctx, cover = covers[it]) }
+    Part("THE COVER", "the record's cover beside the words", covers.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(ctx, cover = covers[it]) }
     val marquee by Marquees.on.collectAsState()
     Part("THE NAME", "the artist's name running along the foot, or big and still over the cover's corner",
         listOf("moving" to marquee, "on the cover" to !marquee)) { Marquees.set(ctx, it == 0) }

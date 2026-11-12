@@ -252,7 +252,7 @@ object Settings {
             val cover by Moving.cover.collectAsState()
             val moving by Moving.on.collectAsState()
             val size by Size.chosen.collectAsState()
-            listOf("size ${size?.let(::pct) ?: "fit"}", "cover ${cover?.word ?: "as it is"}", if (behind == Look.PLAIN) "its print beside it" else "${behind.word} behind",
+            listOf("size ${size?.let(::pct) ?: "fit"}", "cover ${cover?.word ?: "clear"}", if (behind == Look.PLAIN) "its print beside it" else "${behind.word} behind",
                 if (moving) "moving covers" else "still covers").joinToString(" · ")
         }
         "listening" -> {
@@ -829,7 +829,7 @@ private fun LookSetting() {
     BasicText("the record's cover, still or moving, in an effect of its own", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     FlowRow(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Word("as it is", pixel(14.sp, if (cover == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(cover = null) }
+        Word("clear", pixel(14.sp, if (cover == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(cover = null) }
         for (l in Moving.coverLooks) Word(l.word, pixel(14.sp, if (cover == l) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(cover = l) }
     }
     Spacer(Modifier.height(36.dp))
@@ -884,7 +884,7 @@ private fun LookSetting() {
     val artistGrain by Moving.artistGrain.collectAsState()
     BasicText("ARTIST PAGES", style = headline(24.sp))
     Spacer(Modifier.height(6.dp))
-    BasicText("the picture an artist's page opens on: their photo, or their moving one where apple music has one, in the dither, blurred or as it is",
+    BasicText("the picture an artist's page opens on: their photo, or their moving one where apple music has one, in the dither, blurred or clear",
         style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     Row {
@@ -895,7 +895,7 @@ private fun LookSetting() {
     Row {
         Word("dithered", pixel(14.sp, if (artistDither && !artistGrain) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistDither = true, artistGrain = false) }
         Word("blur", pixel(14.sp, if (artistGrain) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(artistDither = false, artistGrain = true) }
-        Word("as it is", pixel(14.sp, if (!artistDither && !artistGrain) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(artistDither = false, artistGrain = false) }
+        Word("clear", pixel(14.sp, if (!artistDither && !artistGrain) Ink.ink else Ink.dim), touch = 8.dp) { Moving.set(artistDither = false, artistGrain = false) }
     }
     Spacer(Modifier.height(36.dp))
     BasicText("THE NAME", style = headline(24.sp))

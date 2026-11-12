@@ -25,7 +25,7 @@ enum class Look(val word: String, val alpha: Float, val crisp: Boolean) {
     PIXELS("pixels", .4f, true),
     DITHER("dither", .4f, true),
     // the cover (or a song's canvas) itself, no effect, held to half over the black so the words over it read
-    AS_IS("as it is", .5f, false),
+    AS_IS("clear", .5f, false),
     PLAIN("plain", 0f, false),
 }
 
