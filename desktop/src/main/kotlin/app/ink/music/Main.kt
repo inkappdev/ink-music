@@ -1051,6 +1051,11 @@ private fun PlayNow(onClick: () -> Unit) {
         contentAlignment = Alignment.CenterStart) { Sprite(PLAY, Ink.ink, 1.5.dp) }
 }
 
+/** Words on the clipboard, to paste anywhere. */
+fun copyText(text: String) {
+    runCatching { java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(text), null) }
+}
+
 /**
  * A song's options, a menu at the right click: on black, a hairline round it, the words one under another in three
  * kinds (what plays, what's kept, where to go; remove last and dim). It rises a little out of the click as it fades in,
@@ -1094,6 +1099,8 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
             ("artist" to { go(Page.Artist(s.albumArtist)) }).takeIf { open != null && !s.episode },
             // a file of yours: shown where it is (Explorer, the Finder)
             file?.let { f -> (if (Home.mac) "show in finder" else "show in folder") to { SongLink.reveal(f) } },
+            // its name to paste anywhere, a search or a message (2026-11-12, a tester)
+            ("copy title" to { copyText(listOf(s.artist.substringBefore(", "), s.title).filter { it.isNotBlank() }.joinToString(" - ")) }).takeIf { s.title.isNotBlank() },
         ),
     ).filter { it.isNotEmpty() }
     // copy link, after the keeping kind (its own kind where that's empty): a song with a link (not a station's, an episode's)
@@ -1500,7 +1507,10 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
     val side by Bar.side.collectAsState()
     // the beat over the line where the window's wide enough for its four squares and tempo between the times
     var beatOn by remember { mutableStateOf(true) }
-    Column(Modifier.fillMaxWidth().background(Ink.black).padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
+    // a right click anywhere on the bar, its cover too: the song's menu (2026-11-12, a tester: right click everywhere)
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    Column(Modifier.fillMaxWidth().background(Ink.black).rightClick { menuAt = it }.padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
+        menuAt?.let { SongMenu(n.song, null, null, it, playing = true) { menuAt = null } }
         // the bar's top edge over the line's reach: dragged up, the bar taller and its cover bigger (BarEdge)
         Box(Modifier.fillMaxWidth()) {
             SeekLine(n, cover?.accent ?: Ink.ink, beat = beatOn, ends = true)

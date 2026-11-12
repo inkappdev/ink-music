@@ -184,7 +184,10 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             Box(Modifier.size(side + off)) {
                                 // its print beside it, while there's no background (the background takes its place)
                                 if (!s.station && behind == Look.PLAIN) Dithered(s, Modifier.offset(off, off).size(side), px = 1200)
-                                Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }) {
+                                var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+                                Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }
+                                    .rightClick { menuAt = it }) {
+                                    menuAt?.let { SongMenu(s, null, null, it, playing = s.id == n.song.id) { menuAt = null } }
                                     val density = androidx.compose.ui.platform.LocalDensity.current.density
                                     CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxSize().graphicsLayer {
                                         renderEffect = coverLook?.takeIf { !s.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
