@@ -623,8 +623,14 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             if (tab != "songs") emptyList()
             else Genres.names.map { g -> g to pool.count { Genres.fits(it.artist, g) } }.filter { it.second > 0 }.sortedByDescending { it.second }
         }
-        if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) Row(Modifier.padding(horizontal = SIDE), verticalAlignment = Alignment.CenterVertically) {
-            SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS }, Modifier.weight(1f))
+        // one row (2026-11-12, it was two, the orders ten words across): the order in use, dropped down; the songs' sources
+        // and genre after a hairline; then shuffle all, add music, and list or grid
+        if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) Row(Modifier.padding(horizontal = SIDE).padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS })
+            if (tab == "songs" && (counts.size > 1 || genres.isNotEmpty())) {
+                Box(Modifier.padding(horizontal = 20.dp).width(1.dp).height(14.dp).background(Ink.line))
+                FilterRow(counts, genres, Modifier.weight(1f).padding(end = 20.dp))
+            } else Spacer(Modifier.weight(1f))
             // everything shuffled, at once, and music added from a folder, here where the music is (2026-11-11, a tester:
             // "importing songs shouldn't require users to navigate through the settings"; "add your songs, hit shuffle")
             Word("SHUFFLE ALL", headline(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { pool.shuffled().takeIf { it.isNotEmpty() }?.let { Player.play(it) } }
@@ -638,7 +644,6 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
                 }
             }
         }
-        if (tab == "songs" && (counts.size > 1 || genres.isNotEmpty())) FilterRow(counts, genres, Modifier.padding(horizontal = SIDE))
         Spacer(Modifier.height(4.dp))
         if (read && songs.isEmpty() && tab in setOf("albums", "artists", "songs")) {
             Column(Modifier.padding(horizontal = SIDE)) {
@@ -2012,7 +2017,7 @@ object SongsFrom {
 }
 
 /**
- * The songs page's filters under its orders, one line (wrapping where it's narrow): the sources it has, then a hairline's
+ * The songs page's filters beside its order, in the one row (wrapping where it's narrow): the sources it has, then a hairline's
  * gap, then the genres your songs are in, most first (eight, and the one chosen), each with how many. Lit is what's shown;
  * a source and a genre together narrow it to both; the lit genre again, every genre.
  */
@@ -2027,48 +2032,64 @@ private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>,
         Word(word, pixel(13.sp, if (lit) Ink.ink else Ink.dim), touch = 8.dp, onClick = onClick)
         count?.let { BasicText(" $it", style = pixel(12.sp, if (lit) Ink.mid else Ink.dim)) }
     }
-    androidx.compose.foundation.layout.FlowRow(modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(20.dp),
+    androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
         if (counts.size > 1) SongsFrom.WORDS.filter { (k, _) -> k == "all" || k in counts }.forEach { (k, word) ->
             Choice(word, counts[k].takeIf { k != "all" }, k == now) { SongsFrom.choose(k) }
         }
         if (counts.size > 1 && (genres.isNotEmpty() || genre.isNotEmpty())) Box(Modifier.width(1.dp).height(14.dp).background(Ink.line))
-        // the genres dropped down from one word, as the places' menu is (2026-11-10, Bronson: "a cleaner way to display
-        // genres"): every genre, or the one chosen, lit; ↓ opens it, ↑ while it's open
-        if (genres.isNotEmpty() || genre.isNotEmpty()) Box {
-            var down by remember { mutableStateOf(false) }
-            // there while it's down or still folding away: it unfolds from under the word, its rows rising in one after
-            // another as the places menu's do, and folds back up (2026-11-10, as the phone's)
-            val open = remember { androidx.compose.animation.core.MutableTransitionState(false) }
-            open.targetState = down
-            val turn by androidx.compose.animation.core.animateFloatAsState(if (down) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "arrow")
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Word(genre.ifEmpty { "every genre" }, pixel(13.sp, if (genre.isEmpty() && !down) Ink.dim else Ink.ink), touch = 8.dp) { down = !down }
-                Sprite(PLACES_DOWN, if (genre.isEmpty() && !down) Ink.dim else Ink.ink, 2.dp, Modifier.padding(start = 4.dp).graphicsLayer { rotationZ = turn })
-            }
-            if (open.currentState || open.targetState) androidx.compose.ui.window.Popup(
-                offset = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 30.dp.roundToPx()) },
-                onDismissRequest = { down = false },
-                properties = androidx.compose.ui.window.PopupProperties(focusable = true),
-            ) {
-                // the chosen one always there, even with none of its songs tagged yet
-                val all = if (genre.isNotEmpty() && genres.none { it.first == genre }) genres + (genre to 0) else genres
-                androidx.compose.animation.AnimatedVisibility(
-                    open,
-                    enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
-                    exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
-                ) {
-                    Column(Modifier.background(Ink.black).border(1.dp, Ink.line).heightIn(max = 440.dp)
-                        .verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp)) {
-                        (listOf("every genre" to null) + all.map { it.first to it.second }).forEachIndexed { i, (g, n) ->
-                            // each row rising in 30 ms after the one before (the first dozen; the rest with the last)
-                            val shown = remember { androidx.compose.animation.core.Animatable(0f) }
-                            LaunchedEffect(Unit) { kotlinx.coroutines.delay(minOf(i, 12) * 30L); shown.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
-                            Box(Modifier.graphicsLayer { alpha = shown.value; translationY = (1f - shown.value) * 10.dp.toPx() }) {
-                                if (i == 0) Choice(g, null, genre.isEmpty()) { SongsFrom.setGenre(""); down = false }
-                                else Choice(g, n, g == genre) { SongsFrom.setGenre(g); down = false }
-                            }
-                        }
+        // the genres dropped down from one word, as the places' menu is (2026-11-10: "a cleaner way to display genres"):
+        // every genre, or the one chosen, lit
+        if (genres.isNotEmpty() || genre.isNotEmpty()) {
+            // the chosen one always there, even with none of its songs tagged yet
+            val all = if (genre.isNotEmpty() && genres.none { it.first == genre }) genres + (genre to 0) else genres
+            DropWord(genre.ifEmpty { "every genre" }, genre.isNotEmpty(),
+                listOf(DropRow("every genre", null, genre.isEmpty()) { SongsFrom.setGenre("") }) +
+                    all.map { (g, n) -> DropRow(g, n, g == genre) { SongsFrom.setGenre(g) } })
+        }
+    }
+}
+
+/** One row of a [DropWord]'s list: its word, a count after it, lit when it's the one in use; [beside] after the count. */
+class DropRow(val word: String, val count: Int?, val lit: Boolean, val beside: (@Composable () -> Unit)? = null, val pick: () -> Unit)
+
+/**
+ * A word with a list dropped down from it (the songs' genres, the libraries' orders): the word says what's in use, lit
+ * when it's other than the first; ↓ opens it, ↑ while it's open, a row picked folds it. It unfolds from under the word,
+ * its rows rising in one after another as the places menu's do, and folds back up (2026-11-10, as the phone's). [beside]
+ * after the word (an order's way round).
+ */
+@Composable
+fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, beside: (@Composable () -> Unit)? = null) = Box {
+    var down by remember { mutableStateOf(false) }
+    val open = remember { androidx.compose.animation.core.MutableTransitionState(false) }
+    open.targetState = down
+    val turn by androidx.compose.animation.core.animateFloatAsState(if (down) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "arrow")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Word(label, pixel(13.sp, if (!lit && !down) Ink.dim else Ink.ink), touch = 8.dp) { down = !down }
+        beside?.invoke()
+        Sprite(PLACES_DOWN, if (!lit && !down) Ink.dim else Ink.ink, 2.dp, Modifier.padding(start = 4.dp).graphicsLayer { rotationZ = turn })
+    }
+    if (open.currentState || open.targetState) androidx.compose.ui.window.Popup(
+        offset = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 30.dp.roundToPx()) },
+        onDismissRequest = { down = false },
+        properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+    ) {
+        androidx.compose.animation.AnimatedVisibility(
+            open,
+            enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+            exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+        ) {
+            Column(Modifier.background(Ink.black).border(1.dp, Ink.line).heightIn(max = 440.dp)
+                .verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp)) {
+                rows.forEachIndexed { i, r ->
+                    // each row rising in 30 ms after the one before (the first dozen; the rest with the last)
+                    val shown = remember { androidx.compose.animation.core.Animatable(0f) }
+                    LaunchedEffect(Unit) { kotlinx.coroutines.delay(minOf(i, 12) * 30L); shown.animateTo(1f, tween(Motion.ENTER, easing = Motion.expo)) }
+                    Row(Modifier.graphicsLayer { alpha = shown.value; translationY = (1f - shown.value) * 10.dp.toPx() }, verticalAlignment = Alignment.CenterVertically) {
+                        Word(r.word, pixel(13.sp, if (r.lit) Ink.ink else Ink.dim), touch = 8.dp) { r.pick(); down = false }
+                        r.count?.let { BasicText(" $it", style = pixel(12.sp, if (r.lit) Ink.mid else Ink.dim)) }
+                        r.beside?.invoke()
                     }
                 }
             }

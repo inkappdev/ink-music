@@ -38,7 +38,8 @@ object Sorts {
     val ARTISTS = listOf(Sort.AZ, Sort.MOST, Sort.LATELY, Sort.FORGOTTEN, Sort.SHUFFLE)
     // the records' own orders too (2026-11-10, Bronson: songs' felt "too basic"): by artist, a record at a time in its
     // order; the year as a timeline; newest in; the longest first
-    val SONGS = listOf(Sort.AZ, Sort.ARTIST, Sort.YEAR, Sort.ADDED, Sort.HOUR, Sort.LATELY, Sort.MOST, Sort.FORGOTTEN, Sort.LENGTH, Sort.SHUFFLE)
+    // no shuffle among the songs' orders: SHUFFLE ALL beside them plays them so (2026-11-12)
+    val SONGS = listOf(Sort.AZ, Sort.ARTIST, Sort.YEAR, Sort.ADDED, Sort.HOUR, Sort.LATELY, Sort.MOST, Sort.FORGOTTEN, Sort.LENGTH)
 
     data class Chosen(val sort: Sort = Sort.AZ, val turned: Boolean = false)
 
@@ -49,7 +50,8 @@ object Sorts {
     fun start() {
         val o = runCatching { JSONObject(file.readText()) }.getOrDefault(JSONObject())
         _chosen.value = listOf("albums", "artists", "songs").associateWith { tab ->
-            Chosen(o.optString("sort-$tab").let { n -> Sort.entries.firstOrNull { it.name == n } } ?: Sort.AZ, o.optBoolean("sort-$tab-turned"))
+            Chosen(o.optString("sort-$tab").let { n -> Sort.entries.firstOrNull { it.name == n } }
+                ?.takeUnless { tab == "songs" && it !in SONGS } ?: Sort.AZ, o.optBoolean("sort-$tab-turned"))
         }
     }
 
@@ -236,21 +238,17 @@ object Colours {
     }
 }
 
-/** The row of orders at a tab's top: lit is the one in use (a pixel arrow beside it says which way; chosen again, it turns). */
+/**
+ * A tab's orders, dropped down from one word saying the one in use (2026-11-12: ten words across the songs' top were
+ * most of a row; as the genres are): a pixel arrow beside an order says which way; chosen again, it turns.
+ */
 @Composable
-fun SortRow(tab: String, sorts: List<Sort>, modifier: Modifier = Modifier) {
+fun SortRow(tab: String, sorts: List<Sort>) {
     val all by Sorts.chosen.collectAsState()
     val c = all[tab] ?: Sorts.Chosen()
-    Row(modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-        sorts.forEach { s ->
-            val on = s == c.sort
-            val word = if (s == Sort.AZ && on && c.turned) "z-a" else s.word
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Word(word, pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Sorts.tap(tab, s) }
-                if (on && s.turns && s != Sort.AZ) Sprite(if (c.turned) UP else DOWN, Ink.ink, 2.dp, Modifier.padding(start = 2.dp))
-            }
-        }
-    }
+    fun word(s: Sort) = if (s == Sort.AZ && s == c.sort && c.turned) "z-a" else s.word
+    val way = @Composable { s: Sort -> if (s == c.sort && s.turns && s != Sort.AZ) Sprite(if (c.turned) UP else DOWN, Ink.ink, 2.dp, Modifier.padding(start = 4.dp)) }
+    DropWord(word(c.sort), c.sort != Sort.AZ || c.turned, sorts.map { s -> DropRow(word(s), null, s == c.sort, { way(s) }) { Sorts.tap(tab, s) } }) { way(c.sort) }
 }
 
 private val DOWN = listOf("#####", ".###.", "..#..")
