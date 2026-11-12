@@ -81,11 +81,11 @@ object Looks {
         (1..frames).map { dither(src, dots, accent.toArgb(), it.toFloat() / frames) }
     } catch (e: Exception) { null }
 
-    /** Shrunk to `n` px and box-blurred three times each way: drawn back up, a colour field. */
-    private fun soft(src: Bitmap, n: Int, r: Int): Bitmap {
+    /** Shrunk to `n` px and box-blurred `passes` times each way (three: drawn back up, a colour field). */
+    private fun soft(src: Bitmap, n: Int, r: Int, passes: Int = 3): Bitmap {
         val px = IntArray(n * n)
         Bitmap.createScaledBitmap(src, n, n, true).getPixels(px, 0, n, 0, 0, n, n)
-        repeat(3) { boxBlur(px, n, r, true); boxBlur(px, n, r, false) }
+        repeat(passes) { boxBlur(px, n, r, true); boxBlur(px, n, r, false) }
         return Bitmap.createBitmap(px, n, n, Bitmap.Config.ARGB_8888)
     }
 
@@ -150,7 +150,8 @@ object Looks {
     private fun dither(src: Bitmap, dots: Int, colour: Int, gain: Float = 1f): Bitmap {
         val n = dots
         val px = IntArray(n * n)
-        Bitmap.createScaledBitmap(soft(src, (n / 3).coerceAtLeast(16), 1), n, n, true).getPixels(px, 0, n, 0, 0, n, n)
+        // softened less since 2026-11-11 (half the dots, blurred once; were a third, three times): faces and type come back
+        Bitmap.createScaledBitmap(soft(src, (n / 2).coerceAtLeast(16), 1, passes = 1), n, n, true).getPixels(px, 0, n, 0, 0, n, n)
         val lum = FloatArray(n * n) { i -> val p = px[i]; (.3f * (p shr 16 and 255) + .59f * (p shr 8 and 255) + .11f * (p and 255)) / 255 }
         val lo = lum.min(); val span = (lum.max() - lo).coerceAtLeast(.01f)
         val on = (255 shl 24) or (colour and 0xFFFFFF)

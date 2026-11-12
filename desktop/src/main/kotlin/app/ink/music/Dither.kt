@@ -16,7 +16,7 @@ import org.jetbrains.skia.Surface
 import kotlin.math.roundToInt
 
 /**
- * A picture in the dither (the phone's Looks.develop, its pixels by Skia): softened, then 1-bit through a Bayer 4 x 4,
+ * A picture in the dither (the phone's Looks.develop, its pixels by Skia): softened a little, then 1-bit through a Bayer 4 x 4,
  * 3 dp dots, in the picture's own colour on black, developing from black (the brightest dots first) in `frames` steps.
  * An artist's photo is shown this way, album art the only full colour.
  */
@@ -50,8 +50,9 @@ object Dither {
 
     fun develop(art: ImageBitmap, accent: Color, dots: Int, frames: Int = 12): List<ImageBitmap>? = runCatching {
         val img = Image.makeFromBitmap(art.asSkiaBitmapCopy())
-        val small = (dots / 3).coerceAtLeast(16)
-        val soft = pixels(img, small).also { px -> repeat(3) { blur(px, small, 1, true); blur(px, small, 1, false) } }
+        // softened less since 2026-11-11 (half the dots, blurred once; were a third, three times): faces and type come back
+        val small = (dots / 2).coerceAtLeast(16)
+        val soft = pixels(img, small).also { px -> blur(px, small, 1, true); blur(px, small, 1, false) }
         val px = pixels(image(soft, small), dots)
         val lum = FloatArray(dots * dots) { i -> val p = px[i]; (.3f * (p shr 16 and 255) + .59f * (p shr 8 and 255) + .11f * (p and 255)) / 255 }
         val lo = lum.min(); val span = (lum.max() - lo).coerceAtLeast(.01f)
