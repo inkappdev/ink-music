@@ -327,10 +327,12 @@ fun LandOf(hills: List<Pair<String, Double>>, tags: (String) -> List<String>?, m
                 m?.let { (img, d) ->
                     androidx.compose.foundation.Image(img, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
                     // the summits' names, and the regions' (fainter), where they stand
+                    // kept inside the map: a name near its edge moved in, not cut off (about 9 dp a letter at 12 sp)
+                    fun at(x: Float, name: String, back: androidx.compose.ui.unit.Dp) = (w * x - back).coerceIn(0.dp, (w - 9.dp * name.length).coerceAtLeast(0.dp))
                     d.peaks.forEach { p -> BasicText(p.name.lowercase(), style = pixel(12.sp, Ink.ink), maxLines = 1, softWrap = false,
-                        modifier = Modifier.offset(x = w * p.x - 20.dp, y = w * p.y - 22.dp)) }
+                        modifier = Modifier.offset(x = at(p.x, p.name, 20.dp), y = w * p.y - 22.dp)) }
                     d.regions.forEach { r -> BasicText(r.name.uppercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, softWrap = false,
-                        modifier = Modifier.offset(x = w * r.x - 24.dp, y = w * r.y)) }
+                        modifier = Modifier.offset(x = at(r.x, r.name, 24.dp), y = w * r.y)) }
                 }
             }
         }
