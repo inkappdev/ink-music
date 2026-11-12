@@ -685,7 +685,9 @@ class PlayerService : MediaLibraryService() {
                 if (eventTime.timeline.isEmpty) return
                 val id = eventTime.timeline.getWindow(eventTime.windowIndex, androidx.media3.common.Timeline.Window()).mediaItem.mediaId
                 if (formats.size > 50) formats.clear()
-                formats[id] = format
+                // without its tags (a file's embedded cover among them, 0.7 MB in a heap read 2026-11-11): only its rate,
+                // depth and codec are asked of it here
+                formats[id] = format.buildUpon().setMetadata(null).build()
                 // exact to a usb dac: asked for this format before the player opens Android's track for it
                 exactSaid = exactFor(format)
                 tell()

@@ -80,7 +80,10 @@ import kotlinx.coroutines.withContext
 /** A music video's frame (YouTube's wide one, its baked-in black bars cut off) and its colour, for the shelf and the page. */
 class VideoFrame(val image: ImageBitmap, val accent: Color)
 
-private val frames = android.util.LruCache<String, VideoFrame>(24)
+// the last 16 MB of them (a wide one is up to 3.7 MB: 24 by count had been up to 88 MB, 2026-11-11)
+private val frames = object : android.util.LruCache<String, VideoFrame>(16 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: VideoFrame) = value.image.width * value.image.height * 4
+}
 
 private suspend fun frameOf(id: String): VideoFrame? = frames.get(id) ?: withContext(Dispatchers.IO) {
     val bytes = listOf("hq720", "mqdefault").firstNotNullOfOrNull { k ->

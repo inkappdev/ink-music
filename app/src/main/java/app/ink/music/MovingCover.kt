@@ -211,7 +211,12 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
     var shown by remember(url) { mutableStateOf(false) }
     var video by remember(url) { mutableStateOf(androidx.media3.common.VideoSize.UNKNOWN) }
     val player = remember(url) {
-        ExoPlayer.Builder(ctx).build().apply {
+        // a few seconds loaded ahead, not a film's worth: a loop is short and silent, and with the default buffers each
+        // one in sight held 12-13 MB of video (2026-11-11, a heap read: 124 MB of buffers in the screens' process)
+        val load = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(4_000, 8_000, 1_000, 1_000)
+            .setTargetBufferBytes(4 * 1024 * 1024).setPrioritizeTimeOverSizeThresholds(false).build()
+        ExoPlayer.Builder(ctx).setLoadControl(load).build().apply {
             // a picture, never a sound: no audio track, no focus taken from the music
             trackSelectionParameters = trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
             volume = 0f

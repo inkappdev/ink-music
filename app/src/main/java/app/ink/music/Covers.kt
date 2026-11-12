@@ -27,8 +27,9 @@ class Cover(val image: ImageBitmap, val accent: Color)
  * size it's shown. Read and made ready off the main thread, the last few dozen kept.
  */
 object Covers {
-    // an eighth of what the app may hold: a player-sized cover is ~6 MB
-    private val kept = object : LruCache<String, Cover>((Runtime.getRuntime().maxMemory() / 8).toInt().coerceAtLeast(48 * 1024 * 1024)) {
+    // an eighth of what the app may hold (32 MB on the S26; was at least 48 till the memory pass, 2026-11-11): a
+    // player-sized cover is ~6 MB, a shelf's tile a fraction of it
+    private val kept = object : LruCache<String, Cover>((Runtime.getRuntime().maxMemory() / 8).toInt().coerceIn(24 * 1024 * 1024, 48 * 1024 * 1024)) {
         override fun sizeOf(key: String, c: Cover) = c.image.width * c.image.height * 4
     }
     private val none = java.util.Collections.synchronizedSet(HashSet<String>())   // records with no picture, not asked again

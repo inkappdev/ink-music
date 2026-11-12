@@ -41,8 +41,11 @@ import kotlinx.coroutines.withContext
  */
 object Grain {
     private const val SMALL = 120
-    // the blurred pictures made, by picture: a list seen again is there at once
-    private val made = android.util.LruCache<String, ImageBitmap>(48)
+    // the blurred pictures made, by picture: a list seen again is there at once; the last 12 MB of them (each ~0.9 MB:
+    // 48 by count had been up to 44 MB, 2026-11-11)
+    private val made = object : android.util.LruCache<String, ImageBitmap>(12 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
+    }
 
     fun kept(key: String): ImageBitmap? = made.get(key)
 

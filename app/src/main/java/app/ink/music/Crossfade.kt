@@ -226,7 +226,14 @@ class Crossfade(
             ?.let { exo.currentTimeline.getNextWindowIndex(it, exo.repeatMode, exo.shuffleModeEnabled) }?.takeIf { it != C.INDEX_UNSET }
             ?.let { exo.getMediaItemAt(it).mediaId })
         ends.keys.filter { it !in keep }.forEach { ends.remove(it); asked.remove(it) }
+        // the blend's copies of songs' ends too (2026-11-11: never let go, ~9 MB a song mixed, the player's heap at 131 MB
+        // after an evening of automix); the song before kept besides, as the blend reads it the moment the new one sounds
+        if (now != null && now != lastNow) { before = lastNow; lastNow = now }
+        blend?.tails?.keys?.retainAll(keep + setOfNotNull(before, lastNow))
     }
+    // the song playing as last let go, and the one before it (whose end the blend may still be reading)
+    private var lastNow: String? = null
+    private var before: String? = null
     private fun replanSoon() { main.removeCallbacks(replan); main.postDelayed(replan, 300) }
 
     fun release() { main.removeCallbacks(tick); end(); work.shutdown(); plans.shutdown(); lyrics.shutdown() }
