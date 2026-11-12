@@ -196,6 +196,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     if (!s.station && !s.episode) MovingCover(s.albumArtist.ifBlank { s.artist.substringBefore(", ") }, s.album, s.title,
                                         accent, n.playing && s.id == n.song.id, Modifier.fillMaxSize())
                                     if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
+                                    // the song's way through, inside the cover too (2026-11-12, a tester and Bronson): a band
+                                    // along its foot filling in its colour, see-through; clicked or dragged, there in the song
+                                    if (s.id == n.song.id && !s.station && n.duration > 0) CoverLine(n.duration, accent, Modifier.align(Alignment.BottomStart))
                                 }
                             }
                         }
@@ -711,5 +714,35 @@ fun androidx.compose.foundation.layout.BoxScope.ColumnEdge(onBack: () -> Unit) {
     ) {
         Box(Modifier.padding(end = 6.dp).width(1.dp).fillMaxHeight().background(if (over) Ink.mid else Ink.line))
         Box(Modifier.padding(end = 14.dp)) { Chevron(BACK_RIGHT, 8.dp, 14.dp, c) }
+    }
+}
+
+
+/**
+ * A band along the cover's foot, inside it, filling as the song goes (a game's loading bar, see-through so the cover
+ * shows under it), thicker under the mouse; a click or a drag along it goes there in the song.
+ */
+@Composable
+private fun CoverLine(duration: Long, accent: androidx.compose.ui.graphics.Color, modifier: Modifier) {
+    val position by Player.position.collectAsState()
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val src = remember { MutableInteractionSource() }
+    val over by src.collectIsHoveredAsState()
+    val tall by androidx.compose.animation.core.animateDpAsState(if (over || dragging != null) 22.dp else 8.dp, tween(Motion.ENTER, easing = Motion.expo), label = "band")
+    val part = dragging ?: (position.toFloat() / duration).coerceIn(0f, 1f)
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth().height(28.dp).hoverable(src)
+        .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
+        .pointerInput(duration) {
+            detectTapGestures { o -> Player.seek((o.x / size.width * duration).toLong()) }
+        }
+        .pointerInput(duration) {
+            detectHorizontalDragGestures(
+                onDragStart = { o -> dragging = (o.x / size.width).coerceIn(0f, 1f) },
+                onDragEnd = { dragging?.let { Player.seek((it * duration).toLong()) }; dragging = null },
+                onDragCancel = { dragging = null },
+            ) { change, _ -> dragging = (change.position.x / size.width).coerceIn(0f, 1f) }
+        }, contentAlignment = Alignment.BottomStart) {
+        Box(Modifier.fillMaxWidth().height(tall).background(Ink.black.copy(alpha = .25f)))
+        Box(Modifier.fillMaxWidth(part).height(tall).background(accent.copy(alpha = .55f)))
     }
 }
