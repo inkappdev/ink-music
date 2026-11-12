@@ -59,6 +59,13 @@ object Lyrics {
         retry.clear()
     }
 
+    fun spicyKey(): String = prefs().getString("spicy_key", "").orEmpty()
+
+    fun setSpicyKey(key: String) {
+        prefs().edit().putString("spicy_key", key.trim()).apply()
+        retry.clear()
+    }
+
     private fun cachedSource(t: Now, base: File, id: String): List<Line>? {
         val file = File("${base.path}.$id.lrc")
         if (file.exists()) return runCatching { parse(file.readText()).ifEmpty { plain(file) } }.getOrNull()
@@ -77,7 +84,7 @@ object Lyrics {
         if (id == "better" || id == "youtube") return cachedSource(t, base, id)
         if (id == "better_qq") {
             val artist = t.artist.split(',').first().trim()
-            val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000)
+            val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
             if (lines != null) runCatching { dir.mkdirs(); File("${base.path}.$id.lrc").writeText(lrcOf(lines)) }
             return lines
         }
@@ -135,7 +142,7 @@ object Lyrics {
             }
         }
         // Prefer recording-aware and syllable/word-timed catalogues before line-only LRCLIB.
-        additional(t, base, listOf("bini", "lyricsplus", "unison"))?.let { return@withContext it }
+        additional(t, base, listOf("bini", "spicy", "better_qq", "lyricsplus", "unison"))?.let { return@withContext it }
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
             if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
