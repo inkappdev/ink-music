@@ -548,6 +548,8 @@ class PlayerService : MediaLibraryService() {
         // screens' process may run another: two processes sharing one data folder crash)
         runCatching { android.webkit.WebView.setDataDirectorySuffix("player") }
         YouTubeMusic.attach(this)
+        // the first song's way made ready now: YouTube Music's page, the player's code, the solver (it had cost that song 1-2 s)
+        ahead.execute { YouTubeMusic.warmUp(this) }
         Pods.start(this)
         // stopped (the player's "stop"), the notification goes; Media3 kept it after a stop by default
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)

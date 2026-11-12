@@ -133,25 +133,85 @@ object YouTubeMusic {
         val id = app?.let { Versions.of(it, asked) }?.let { "y$it" } ?: asked
         val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.third > System.currentTimeMillis() }?.let { return it.first to it.second }
-        init()
-        // signed in: the stream YouTube Music's web player gets as you (Premium: its 256k AAC; your uploads),
-        // else, or if that fails, the one NewPipe finds signed out. A speaker always gets NewPipe's (it fetches the
-        // link itself, from its own address)
-        if (SIGNED && !forSpeaker && id !in refusedSongs && refusedSongs.size < 3) app?.let { YouTubeAccount.signed(it) }?.let { t ->
-            signedStream(t, id, small)?.let { (url, mime, kbps) ->
-                rates[key] = kbps
-                streams[key] = Triple(url, mime, System.currentTimeMillis() + 4 * 3_600_000L)
-                return url to mime
-            }
+        // asked again while it's being found (the player's loader and the one reading ahead, at once): that answer
+        // waited for, not found twice (2026-11-11: the log had a song found twice in the same moment, on two threads)
+        val lock = finding.computeIfAbsent(key) { Any() }
+        return synchronized(lock) {
+            try {
+                streams[key]?.takeIf { it.third > System.currentTimeMillis() }?.let { return@synchronized it.first to it.second }
+                find(id, key, forSpeaker, small)
+            } finally { finding.remove(key, lock) }
         }
+    }
+    private val finding = ConcurrentHashMap<String, Any>()
+    // the two ways a song is found, run side by side when the first is slow
+    private val race = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "ink-find").apply { isDaemon = true } }
+
+    /**
+     * A song's stream found. Signed in: the stream YouTube Music's web player gets as you (Premium: its 256k AAC; your
+     * uploads); if it hasn't answered in 2 s, NewPipe's (signed out) asked alongside, and whichever answers first plays
+     * (2026-11-11: a slow moment for YouTube shouldn't be a silent one here); if it fails, NewPipe's. A speaker always
+     * gets NewPipe's (it fetches the link itself, from its own address).
+     */
+    private fun find(id: String, key: String, forSpeaker: Boolean, small: Boolean): Pair<String, String>? {
+        init()
         val t0 = System.currentTimeMillis()
-        val info = Pipe.streamInfo(id.removePrefix("y")) ?: return null
-        android.util.Log.d("ink-youtube", "stream $id in ${System.currentTimeMillis() - t0} ms")
-        val (url, mime, kbps) = Pipe.audio(info, forSpeaker, small) ?: return null
+        val pipe = java.util.concurrent.Callable { pipeStream(id, forSpeaker, small) }
+        val signedOk = SIGNED && !forSpeaker && id !in refusedSongs && refusedSongs.size < 3
+        val t = if (signedOk) app?.let { YouTubeAccount.signed(it) } else null
+        val got: Triple<String, String, Int>? = if (t == null) pipe.call() else {
+            val done = java.util.concurrent.ExecutorCompletionService<Triple<String, String, Int>?>(race)
+            done.submit { signedStream(t, id, small) }
+            var running = 1
+            var first = runCatching { done.poll(2_000, java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull()
+                ?.let { running--; runCatching { it.get() }.getOrNull() }
+            // slow, or it failed: NewPipe's asked (alongside, if the signed one's still going)
+            if (first == null) {
+                if (running == 1) android.util.Log.d("ink-youtube", "find $id: signed slow after ${System.currentTimeMillis() - t0} ms, newpipe alongside")
+                done.submit(pipe); running++
+                while (first == null && running > 0) {
+                    first = runCatching { done.poll(30, java.util.concurrent.TimeUnit.SECONDS)?.get() }.getOrNull(); running--
+                }
+            }
+            first
+        }
+        val (url, mime, kbps) = got ?: return null
         // its bitrate, for the player to say
         rates[key] = kbps
         streams[key] = Triple(url, mime, System.currentTimeMillis() + 4 * 3_600_000L)
         return url to mime
+    }
+
+    /** NewPipe's stream, signed out (blocking). */
+    private fun pipeStream(id: String, forSpeaker: Boolean, small: Boolean): Triple<String, String, Int>? {
+        val t0 = System.currentTimeMillis()
+        val info = Pipe.streamInfo(id.removePrefix("y")) ?: return null
+        android.util.Log.d("ink-youtube", "stream $id in ${System.currentTimeMillis() - t0} ms")
+        return Pipe.audio(info, forSpeaker, small)
+    }
+
+    /**
+     * Everything the first song needs, made ready as the player starts (blocking; 2026-11-11: the first song after a
+     * start took 1.8-2 s to find, against 0.4-0.7 after: YouTube Music's page asked, the player's code read, the solver
+     * started and the player prepared in it, all as that song waited): done now, ahead of it.
+     */
+    fun warmUp(c: android.content.Context) = runCatching {
+        attach(c)
+        init()
+        if (!SIGNED) return@runCatching
+        val t = YouTubeAccount.signed(c) ?: return@runCatching
+        val t0 = System.currentTimeMillis()
+        ready(c, t)
+        playerUrl?.let { Solver.warm(c, it) }
+        android.util.Log.d("ink-youtube", "warmed up in ${System.currentTimeMillis() - t0} ms")
+    }.onFailure { android.util.Log.d("ink-youtube", "warm up: $it") }
+
+    /** The account's id and its page's player, asked once a run, the player's code kept for the solver. */
+    @Synchronized private fun ready(c: android.content.Context, t: InnerTube) {
+        if (account != null && playerUrl != null) return
+        val (sync, js) = t.page()
+        account = sync; playerUrl = js
+        if (js != null) keptPlayer(c, js, t)?.let { (code, sts) -> Solver.keep(js, code); playerSts = sts }
     }
 
     /**
@@ -188,11 +248,7 @@ object YouTubeMusic {
         val c = app ?: return null
         val vid = id.removePrefix("y")
         val t0 = System.currentTimeMillis()
-        if (account == null || playerUrl == null) {
-            val (sync, js) = t.page()
-            account = sync; playerUrl = js
-            if (js != null) keptPlayer(c, js, t)?.let { (code, sts) -> Solver.keep(js, code); playerSts = sts }
-        }
+        ready(c, t)
         val sync = account ?: return null.also { android.util.Log.d("ink-youtube", "signed $vid: no account id") }
         val js = playerUrl ?: return null.also { android.util.Log.d("ink-youtube", "signed $vid: no player") }
         val tA = System.currentTimeMillis()

@@ -32,6 +32,9 @@ object Solver {
      * The answers (blocking) to a stream's challenges, from the player at [url] (its code [keep]-ed first): its
      * signature [sig] and its [n], each null if there wasn't one. Null when the solver couldn't.
      */
+    /** The solver started and the player at [url] prepared in it, ahead of the first song (blocking; its answer unused). */
+    fun warm(c: Context, url: String) { solve(c, url, null, "ink0warm0up0") }
+
     fun solve(c: Context, url: String, sig: String?, n: String?): Pair<String?, String?>? = runCatching {
         val w = synchronized(lock) { web ?: SolverWebView.create(c.applicationContext).get(20, TimeUnit.SECONDS).also { web = it } }
         val answers = w.solve(url, sig, n).get(30, TimeUnit.SECONDS)

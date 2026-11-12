@@ -13,6 +13,7 @@ object YouTubeMusic {
     fun stream(id: String, forSpeaker: Boolean, small: Boolean = false): Pair<String, String>? = null
     fun kbps(id: String, small: Boolean): Int = 0
     fun refused(id: String) {}
+    fun warmUp(c: android.content.Context) {}
     fun related(id: String): List<Song> = emptyList()
     fun find(title: String, artist: String): Song? = null
     fun moods(): List<TubeMood> = emptyList()
