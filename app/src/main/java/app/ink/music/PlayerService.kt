@@ -627,7 +627,7 @@ class PlayerService : MediaLibraryService() {
                                     val title = md.title?.toString().orEmpty()
                                     val artist = md.artist?.toString().orEmpty()
                                     val album = md.albumTitle?.toString().orEmpty()
-                                    val duration = item.localConfiguration?.uri?.let { item.mediaMetadata.durationMs }?.takeIf { it > 0 } ?: 0L
+                                    val duration = Library.song(item.mediaId)?.duration ?: 0L
                                     val addonUrl = AddonMusic.findStream(this, title, artist, album, duration / 1000)
                                     if (addonUrl != null) {
                                         preferred[key] = Preferred(original, title, artist, album, duration, true, addonUrl)
@@ -821,7 +821,30 @@ class PlayerService : MediaLibraryService() {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 // the network's fault (any song's): tried again once it's back, whatever the tries below came to
                 if (error.errorCode in 2000 until 3000) againWhenOnline()
-                val uri = player.currentMediaItem?.localConfiguration?.uri ?: return
+                val current = player.currentMediaItem ?: return
+                val uri = current.localConfiguration?.uri ?: return
+                val selected = preferred.remove(uri.toString())
+                if (selected != null) {
+                    sourceMisses[uri.toString()] = android.os.SystemClock.elapsedRealtime() + 300_000L
+                    val failedId = current.mediaId
+                    val failedIndex = player.currentMediaItemIndex
+                    android.util.Log.w("ink-addon", "${selected.title}: ${if (selected.fromAddon) "addon" else "YouTube"} stream failed; trying ${if (selected.fromAddon) "YouTube Music" else "original source"}")
+                    work.launch {
+                        val yt = if (selected.fromAddon) youtubeMatch(selected.title, selected.artist, selected.durationMs) else null
+                        if (player.currentMediaItem?.mediaId != failedId || player.currentMediaItemIndex != failedIndex) return@launch
+                        if (yt != null) {
+                            YouTubeMusic.remember(yt)
+                            val targetUri = yt.uri
+                            sourceMisses[targetUri.toString()] = android.os.SystemClock.elapsedRealtime() + 300_000L
+                            player.replaceMediaItem(failedIndex, Playback.item(yt))
+                            android.util.Log.i("ink-addon", "fallback to YouTube Music: ${yt.title}")
+                        } else {
+                            android.util.Log.w("ink-addon", "${selected.title}: no YouTube match; using original source")
+                        }
+                        player.prepare()
+                    }
+                    return
+                }
                 if (uri.scheme != "ytm" || error.errorCode !in 2000 until 3000) return
                 val id = "y" + uri.host
                 val tries = (retried[id] ?: 0) + 1
