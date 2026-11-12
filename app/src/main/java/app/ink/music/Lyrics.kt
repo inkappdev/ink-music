@@ -86,7 +86,7 @@ object Lyrics {
             cachedSource(t, base, id)?.let { return it }
             val artist = t.artist.split(',').first().trim()
             val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
-            if (lines != null) runCatching { dir.mkdirs(); File("${base.path}.$id.lrc").writeText(lrcOf(lines)) }
+            if (lines != null) runCatching { dir.mkdirs(); File("${base.path}.$id.lrc").writeText(sourceText(lines)) }
             return lines
         }
         cachedSource(t, base, id)?.let { return it }
@@ -115,7 +115,7 @@ object Lyrics {
                         val artist = t.artist.split(',').first().trim()
                         val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
                         if (!lines.isNullOrEmpty()) {
-                            runCatching { dir.mkdirs(); file.writeText(lrcOf(lines)) }
+                            runCatching { dir.mkdirs(); file.writeText(sourceText(lines)) }
                             android.util.Log.d("ink-lyrics", "${t.artist} - ${t.title}: ${lines.size} lines from $id")
                         }
                         id to lines
@@ -256,6 +256,11 @@ object Lyrics {
     private val wordStamp = Regex("""<(\d+):(\d+(?:\.\d+)?)>([^<]*)""")
 
     private fun clock(ms: Long) = "%02d:%05.2f".format(java.util.Locale.US, ms / 60_000, (ms % 60_000) / 1000.0)
+
+    /** Provider cache: untimed plain-text lines must not be serialized with a fake timestamp. */
+    private fun sourceText(lines: List<Line>) = lines.joinToString("\n") { line ->
+        if (line.at < 0) line.words else lrcOf(listOf(line))
+    }
 
     /** Lines kept as lrc, a line timed word by word as enhanced lrc. */
     private fun lrcOf(lines: List<Line>) = lines.joinToString("\n") { l ->
