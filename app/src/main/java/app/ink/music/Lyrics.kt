@@ -75,6 +75,12 @@ object Lyrics {
 
     private suspend fun selected(t: Now, base: File, id: String): List<Line>? {
         if (id == "better" || id == "youtube") return cachedSource(t, base, id)
+        if (id == "better_qq") {
+            val artist = t.artist.split(',').first().trim()
+            val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000)
+            if (lines != null) runCatching { dir.mkdirs(); File("${base.path}.$id.lrc").writeText(lrcOf(lines)) }
+            return lines
+        }
         cachedSource(t, base, id)?.let { return it }
         val artist = t.artist.split(',').first().trim()
         val lines = if (id == "lrclib") {
@@ -88,9 +94,8 @@ object Lyrics {
         return lines
     }
 
-    private suspend fun additional(t: Now, base: File): List<Line>? {
-        // These are attempted only after Ink's established BetterLyrics/LRCLIB/YouTube Music path.
-        for (id in listOf("bini", "lyricsplus", "unison", "kugou", "ovh")) {
+    private suspend fun additional(t: Now, base: File, ids: List<String>): List<Line>? {
+        for (id in ids) {
             val file = File("${base.path}.$id.lrc")
             if (file.exists()) {
                 val kept = runCatching { parse(file.readText()).ifEmpty { plain(file) } }.getOrNull()
@@ -129,12 +134,14 @@ object Lyrics {
                 return@withContext lines
             }
         }
+        // Prefer recording-aware and syllable/word-timed catalogues before line-only LRCLIB.
+        additional(t, base, listOf("bini", "lyricsplus", "unison"))?.let { return@withContext it }
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
             if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
             val existing = parse(text).ifEmpty { plain(File("${base.path}.txt")) }
             if (existing.isNotEmpty()) return@withContext existing
-            additional(t, base)?.let { return@withContext it }
+            additional(t, base, listOf("kugou", "ovh"))?.let { return@withContext it }
             return@withContext existing
         }
         if ((retry[key] ?: 0L) > SystemClock.elapsedRealtime()) return@withContext null
@@ -143,7 +150,7 @@ object Lyrics {
             retry[key] = SystemClock.elapsedRealtime() + 60_000
             // lrclib down (503s, 2026-11-01): YouTube Music's meanwhile, kept if it has some; else lrclib again in a minute
             if (YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
-            additional(t, base)?.let { return@withContext it }
+            additional(t, base, listOf("kugou", "ovh"))?.let { return@withContext it }
             return@withContext null
         }
         // kept, so lrclib isn't asked again (a full disk only means asking again)
@@ -155,7 +162,7 @@ object Lyrics {
         // none synced on lrclib: YouTube Music's (the full build), timed by Musixmatch
         if (got.first.isBlank() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
         val primary = parse(got.first).ifEmpty { plain(got.second) }
-        if (primary.isNotEmpty()) primary else additional(t, base) ?: primary
+        if (primary.isNotEmpty()) primary else additional(t, base, listOf("kugou", "ovh")) ?: primary
     }
 
     /** Untimed words as lines (at -1), a verse's gap kept as a blank one. */
