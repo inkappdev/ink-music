@@ -147,7 +147,7 @@ private fun MusicStep(onNext: () -> Unit) {
     val files = songs.count { !it.server }
     val fromServer = songs.count { it.server }
     StepFrame("WHERE'S YOUR MUSIC?", foot = {
-        Word("NEXT", headline(40.sp, if (files + fromServer > 0) Ink.ink else Ink.mid), touch = 10.dp, onClick = onNext)
+        Word("NEXT", headline(40.sp), touch = 10.dp, onClick = onNext)
     }) {
         Column(Modifier.verticalScroll(rememberScrollState()).widthIn(max = 640.dp)) {
             Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { chooseFolder { Library.choose(it) } }).padding(vertical = 10.dp)) {
