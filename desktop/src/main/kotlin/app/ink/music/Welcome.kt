@@ -326,13 +326,21 @@ fun LandOf(hills: List<Pair<String, Double>>, tags: (String) -> List<String>?, m
             Box(Modifier.fillMaxSize()) {
                 m?.let { (img, d) ->
                     androidx.compose.foundation.Image(img, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
-                    // the summits' names, and the regions' (fainter), where they stand
-                    // kept inside the map: a name near its edge moved in, not cut off (about 9 dp a letter at 12 sp)
-                    fun at(x: Float, name: String, back: androidx.compose.ui.unit.Dp) = (w * x - back).coerceIn(0.dp, (w - 9.dp * name.length).coerceAtLeast(0.dp))
-                    d.peaks.forEach { p -> BasicText(p.name.lowercase(), style = pixel(12.sp, Ink.ink), maxLines = 1, softWrap = false,
-                        modifier = Modifier.offset(x = at(p.x, p.name, 20.dp), y = w * p.y - 22.dp)) }
-                    d.regions.forEach { r -> BasicText(r.name.uppercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, softWrap = false,
-                        modifier = Modifier.offset(x = at(r.x, r.name, 24.dp), y = w * r.y)) }
+                    // each summit a dot, a short hairline up to its name on a black tab, read over any line (ink mapped's page)
+                    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                        d.peaks.forEach { p ->
+                            val x = p.x * size.width; val y = p.y * size.height; val s6 = 5.dp.toPx(); val up = 14.dp.toPx()
+                            drawRect(Ink.ink, androidx.compose.ui.geometry.Offset(x - s6 / 2, y - s6 / 2), androidx.compose.ui.geometry.Size(s6, s6))
+                            drawLine(Ink.mid, androidx.compose.ui.geometry.Offset(x, y), androidx.compose.ui.geometry.Offset(x + up, y - up), strokeWidth = 1f)
+                        }
+                    }
+                    // kept inside the map: a name near its right edge moved in (about 9 dp a letter at 12 sp)
+                    d.peaks.forEach { p ->
+                        val x = (w * p.x + 16.dp).coerceAtMost((w - 9.dp * p.name.length - 8.dp).coerceAtLeast(0.dp))
+                        Box(Modifier.offset(x = x, y = w * p.y - 26.dp).background(Ink.black).padding(horizontal = 4.dp, vertical = 1.dp)) {
+                            BasicText(p.name.lowercase(), style = pixel(12.sp, Ink.ink), maxLines = 1, softWrap = false)
+                        }
+                    }
                 }
             }
         }
