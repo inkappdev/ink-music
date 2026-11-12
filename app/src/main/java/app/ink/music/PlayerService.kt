@@ -570,7 +570,7 @@ class PlayerService : MediaLibraryService() {
                 when {
                     // A BitChord addon song resolves to its direct stream URL; optional LastWave HMAC is signed in AddonMusic.
                     spec.uri.scheme == "addon" -> spec.withUri(Uri.parse(
-                        AddonMusic.stream(this, spec.uri.host ?: throw java.io.IOException("invalid addon track"))))
+                        AddonMusic.stream(this, spec.uri.toString().removePrefix("addon://").substringBefore('/'))))
                     // a YouTube song kept on the phone plays from there, no signal needed (Offline)
                     spec.uri.scheme == "ytm" && Offline.file(this, "y" + spec.uri.host) != null ->
                         spec.withUri(Uri.fromFile(Offline.file(this, "y" + spec.uri.host)!!)).also { android.util.Log.d("ink-offline", "kept: y${spec.uri.host}") }
