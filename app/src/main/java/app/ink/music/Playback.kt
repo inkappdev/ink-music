@@ -457,7 +457,7 @@ object Playback {
             MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
                 .setAlbumArtist(s.albumArtist).setTrackNumber(s.track).setIsPlayable(true).setExtras(Levelling.extras(s))
                 // a cover for the notification, the lock screen and the car: YouTube's link, else ink music's own
-                .setArtworkUri(if (s.tube || s.episode || s.id.startsWith("a")) s.art?.let(android.net.Uri::parse) else CoverProvider.of(s.id)).build(),
+                .setArtworkUri(if (s.tube || s.episode || s.addon) s.art?.let(android.net.Uri::parse) else CoverProvider.of(s.id)).build(),
         )
         .build()
 }
