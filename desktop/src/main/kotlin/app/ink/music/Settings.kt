@@ -797,13 +797,19 @@ private fun SkipTalkingSetting() {
 @Composable
 private fun DiscordSetting() {
     val on by Discord.on.collectAsState()
+    val status by Discord.status.collectAsState()
+    val error by Discord.lastError.collectAsState()
     SettingHead("DISCORD")
-    BasicText(if (on) "what you play shows on your discord profile while discord's open: the song, who, its cover. not while paused, or in private listening"
-        else "off: nothing shown on discord", style = pixel(12.sp, Ink.mid))
+    BasicText(if (on) "what you play shows on your Discord profile while Discord desktop is open; hidden while paused or in private listening"
+        else "off: nothing shown on Discord", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(8.dp))
+    BasicText(status, style = pixel(12.sp, Ink.ink))
+    if (error.isNotBlank()) BasicText(error, style = pixel(11.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
     Spacer(Modifier.height(10.dp))
     androidx.compose.foundation.layout.Row {
         Word("on", pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Discord.set(true) }
-        Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { Discord.set(false) }
+        Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Discord.set(false) }
+        Word("reconnect", pixel(14.sp, Ink.mid), touch = 8.dp) { Discord.reconnect() }
     }
 }
 
