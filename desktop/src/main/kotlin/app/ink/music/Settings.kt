@@ -71,17 +71,19 @@ fun SettingsPage(onClose: () -> Unit) {
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Settings.PARTS.forEach { p -> Word(p.uppercase(), headline(20.sp, if (p == part) Ink.ink else Ink.dim), touch = 4.dp) { part = p } }
                 }
-                Spacer(Modifier.height(10.dp))
-                BasicText(Settings.said(part), style = pixel(12.sp, Ink.mid), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(18.dp))
-            } else Column(Modifier.width(340.dp).fillMaxHeight()) {
-                BasicText("SETTINGS", style = headline(56.sp))
                 Spacer(Modifier.height(28.dp))
-                Settings.PARTS.forEach { p ->
-                    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { part = p })
-                        .padding(vertical = 10.dp)) {
-                        BasicText(p.uppercase(), style = headline(30.sp, if (p == part) Ink.ink else Ink.dim))
-                        BasicText(Settings.said(p), style = pixel(12.sp, if (p == part) Ink.mid else Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            } else {
+                // the parts' names alone, clean, nothing under them (2026-11-12; a line under each said how it stood, too
+                // much writing, and with the big player under them keys and about were hidden); a window too short for
+                // even these scrolls them
+                Column(Modifier.width(340.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    BasicText("SETTINGS", style = headline(56.sp))
+                    Spacer(Modifier.height(28.dp))
+                    Settings.PARTS.forEach { p ->
+                        Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { part = p })
+                            .padding(vertical = 10.dp)) {
+                            BasicText(p.uppercase(), style = headline(30.sp, if (p == part) Ink.ink else Ink.dim))
+                        }
                     }
                 }
             }
@@ -253,51 +255,6 @@ object Settings {
     )
     /** The part last open, for the next time (this run). */
     var last = "your music"
-
-    @Composable
-    fun said(part: String): String = when (part) {
-        "your phone" -> {
-            val peers by SyncHub.peers.collectAsState()
-            if (peers.isEmpty()) "not paired: pair it, and the two keep in step" else peers.joinToString(", ") { it.name.lowercase() } + ", in step"
-        }
-        "your music" -> {
-            val a by Server.account.collectAsState()
-            val who by TubeAccount.who.collectAsState()
-            val local = Library.songs.collectAsState().value.count { !it.server }
-            listOfNotNull(a?.name?.lowercase(), who?.let { "youtube music, signed in" }, "$local songs here").joinToString(" · ")
-        }
-        "sound" -> {
-            val sound by Player.sound.collectAsState()
-            val mode by Crossfade.mode.collectAsState()
-            val eq by Eq.state.collectAsState()
-            listOfNotNull(if (sound.device == "auto") "the ${if (Home.mac) "mac" else "computer"}'s choice" else "its own output",
-                if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded", mode.takeIf { it != Crossfade.OFF },
-                if (eq.on) "equalizer ${eq.label}" else null).joinToString(" · ")
-        }
-        "offline" -> {
-            val kept by Offline.kept.collectAsState()
-            listOfNotNull(if (kept.isEmpty()) "nothing kept yet" else "${kept.size} kept",
-                if (KeepLoved.on.collectAsState().value) "keeping what you love" else null,
-                if (KeepMost.on.collectAsState().value) "and what you play most" else null).joinToString(" · ")
-        }
-        "the look" -> {
-            val behind by Looks.on.collectAsState()
-            val cover by Moving.cover.collectAsState()
-            val moving by Moving.on.collectAsState()
-            val size by Size.chosen.collectAsState()
-            listOf("size ${size?.let(::pct) ?: "fit"}", "cover ${cover?.word ?: "clear"}", if (behind == Look.PLAIN) "its print beside it" else "${behind.word} behind",
-                if (moving) "moving covers" else "still covers").joinToString(" · ")
-        }
-        "listening" -> {
-            val hidden by Private.on.collectAsState()
-            val lb by ListenBrainz.account.collectAsState()
-            val fm by LastFm.account.collectAsState()
-            listOfNotNull(if (hidden) "private listening on" else null, lb?.let { "listenbrainz on" }, fm?.let { "last.fm on" })
-                .ifEmpty { listOf("what's kept, and who's told") }.joinToString(" · ")
-        }
-        "keys" -> "space to play, ctrl f to find, and the rest"
-        else -> "made by ink · free and open" + Keys.build.substringBefore(' ').takeIf { it.isNotEmpty() && it != "here" }?.let { " · $it" }.orEmpty()
-    }
 }
 
 /** Your server: signed in, its name, where, how many songs, read again or sign out; else signing in. */
