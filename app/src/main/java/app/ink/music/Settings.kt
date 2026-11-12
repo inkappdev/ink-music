@@ -359,6 +359,15 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     if (hidden) "nothing kept or told. it's okay, we know you like taylor swift" else "while on, nothing you play is kept or told") {
                     Pick(listOf("on" to hidden, "off" to !hidden)) { hidden = it == 0; Private.set(ctx, hidden) }
                 }
+                // Android Discord RPC is independent of the desktop IPC integration.
+                var discordPresence by remember { mutableStateOf(DiscordAndroidPresence.enabled(ctx)) }
+                SettingRow("DISCORD RICH PRESENCE", if (discordPresence) "on" else "off", opened,
+                    "show the song playing on your Discord profile; hidden during private listening") {
+                    Pick(listOf("on" to discordPresence, "off" to !discordPresence)) {
+                        discordPresence = it == 0
+                        DiscordAndroidPresence.setEnabled(ctx, discordPresence)
+                    }
+                }
                 // a YouTube video's talking skipped (SponsorBlock: the player reads files/skip-talking-off), the full build's
                 if (YouTubeMusic.available) {
                     var skip by remember { mutableStateOf(!java.io.File(ctx.filesDir, "skip-talking-off").exists()) }
