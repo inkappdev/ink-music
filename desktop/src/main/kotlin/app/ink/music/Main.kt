@@ -621,8 +621,12 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             if (tab != "songs") emptyList()
             else Genres.names.map { g -> g to pool.count { Genres.fits(it.artist, g) } }.filter { it.second > 0 }.sortedByDescending { it.second }
         }
-        if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) Row(Modifier.padding(horizontal = SIDE)) {
+        if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) Row(Modifier.padding(horizontal = SIDE), verticalAlignment = Alignment.CenterVertically) {
             SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS }, Modifier.weight(1f))
+            // everything shuffled, at once, and music added from a folder, here where the music is (2026-11-11, a tester:
+            // "importing songs shouldn't require users to navigate through the settings"; "add your songs, hit shuffle")
+            Word("SHUFFLE ALL", headline(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { pool.shuffled().takeIf { it.isNotEmpty() }?.let { Player.play(it) } }
+            Word("ADD MUSIC", headline(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { chooseFolder { Library.add(it) } }
             // the songs as a list of words or a grid of covers (2026-11-10, Bronson: "a grid view, album blocks")
             if (tab == "songs") {
                 val grid by SongsFrom.grid.collectAsState()
@@ -640,9 +644,12 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
                 BasicText(if (syncing) "READING YOUR SERVER" else "NO MUSIC YET", style = headline(28.sp))
                 Spacer(Modifier.height(8.dp))
                 if (!syncing) {
-                    BasicText("put songs in ${Library.said}, or sign in to your server", style = pixel(13.sp, Ink.mid))
+                    BasicText("add a folder of your music, put songs in ${Library.said}, or sign in to your server", style = pixel(13.sp, Ink.mid))
                     Spacer(Modifier.height(16.dp))
-                    Word("SIGN IN", headline(28.sp), touch = 8.dp) { open(Page.Settings) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                        Word("ADD MUSIC", headline(28.sp), touch = 8.dp) { chooseFolder { Library.add(it) } }
+                        Word("SIGN IN", headline(28.sp, Ink.mid), touch = 8.dp) { open(Page.Settings) }
+                    }
                 }
             }
             return@Column

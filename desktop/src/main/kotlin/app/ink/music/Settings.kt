@@ -604,7 +604,7 @@ private fun SoundSetting() {
  * A folder picked in the system's own way (the Mac's open panel, Windows' own picker, both folders only; Swing's
  * elsewhere); [picked] isn't called if it's cancelled.
  */
-private fun chooseFolder(picked: (java.io.File) -> Unit) {
+internal fun chooseFolder(picked: (java.io.File) -> Unit) {
     if (Home.windows) return WinFolder.choose("Your music", Library.folder, ::swingFolder, picked)
     (if (Home.mac) macFolder() else swingFolder())?.let(picked)
 }
