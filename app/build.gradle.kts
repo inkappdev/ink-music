@@ -28,6 +28,8 @@ android {
         // Last.fm's key and secret for ink music, kept out of git with the release key (a build without them has no Last.fm)
         buildConfigField("String", "LASTFM_KEY", "\"${release?.getProperty("lastfmKey").orEmpty()}\"")
         buildConfigField("String", "LASTFM_SECRET", "\"${release?.getProperty("lastfmSecret").orEmpty()}\"")
+        // -Pfdroid: F-Droid's build, which F-Droid keeps up to date itself: no looking at GitHub for a new version
+        buildConfigField("boolean", "UPDATER", "${!project.hasProperty("fdroid")}")
     }
 
     // the key only where it's kept (Fedora); Windows' keystore.properties holds Last.fm's alone, its builds signed as debug ones
@@ -46,7 +48,12 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName(if (signs) "release" else "debug")
+            // F-Droid's build left unsigned: F-Droid signs it with its own key
+            signingConfig = when {
+                signs -> signingConfigs.getByName("release")
+                project.hasProperty("fdroid") -> null
+                else -> signingConfigs.getByName("debug")
+            }
             // -PbesideDebug: a release build that installs next to the debug one (its own id), to try R8's build
             if (project.hasProperty("besideDebug")) applicationIdSuffix = ".check"
         }

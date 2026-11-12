@@ -1,0 +1,41 @@
+Categories:
+  - Multimedia
+License: GPL-3.0-only
+AuthorName: ink
+AuthorEmail: hello@inkhome.app
+WebSite: https://inkhome.app/music/
+SourceCode: https://github.com/inkappdev/ink-music
+IssueTracker: https://github.com/inkappdev/ink-music/issues
+Changelog: https://github.com/inkappdev/ink-music/releases
+
+AutoName: ink music
+
+RepoType: git
+Repo: https://github.com/inkappdev/ink-music.git
+
+AntiFeatures:
+  NonFreeNet:
+    en-US: Plays from YouTube Music (searches, and signed in, plays); optional sign-ins to Spotify and Last.fm;
+      covers and picks from Apple's, Deezer's and publications' services; podcasts found through Apple's directory.
+
+Builds:
+  - versionName: 2.1.2
+    versionCode: 53
+    commit: v2.1.2
+    subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y openjdk-21-jdk-headless
+      - update-java-alternatives -a
+    gradle:
+      - full
+    prebuild: sed -i -e '/REQUEST_INSTALL_PACKAGES/d' src/full/AndroidManifest.xml
+    gradleprops:
+      - phoneOnly
+      - fdroid
+    ndk: 29.0.14206865
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 2.1.2
+CurrentVersionCode: 53
