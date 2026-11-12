@@ -3542,6 +3542,7 @@ private fun AddonConfigDialog(ctx: android.content.Context, onDismiss: () -> Uni
             BasicText("Optional LastWave HMAC secret", style = pixel(10.sp, Ink.mid))
             BasicTextField(
                 value = secret, onValueChange = { secret = it }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                 textStyle = pixel(12.sp, Ink.ink),
                 modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
             )
