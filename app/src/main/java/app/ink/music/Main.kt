@@ -289,6 +289,7 @@ sealed interface Page {
     data class Path(val song: Song) : Page
     data object Loved : Page
     data object Year : Page
+    data object Mapped : Page
     data object Pick : Page
     data object InkRadio : Page
     data class TubeList(val list: app.ink.music.TubeList) : Page
@@ -458,6 +459,7 @@ private fun App() {
                         is Page.Path -> PathPage(p.song, pages)
                         Page.Loved -> LovedPage(pages)
                         Page.Year -> YearPage(pages)
+                        Page.Mapped -> MappedPage(pages)
                         Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
                         Page.InkRadio -> InkRadioPage(pages)
                         is Page.TubeList -> TubeListPage(p.list, pages)
@@ -747,6 +749,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                     item {
                         if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", heart = true) { pages.open(Page.Loved) }
                         if (!tv) ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
+                        if (!tv) ListRow("ink mapped", "your listening as land, these days") { pages.open(Page.Mapped) }
                         // what's on the phone to play with no signal (your server's, YouTube's)
                         val keptIds by Offline.kept.collectAsState()
                         if (keptIds.isNotEmpty()) ListRow("kept on this phone", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}, offline") { pages.open(Page.Kept) }
@@ -883,8 +886,9 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             Spacer(Modifier.height(24.dp))
             Word("settings", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size, menu), touch = 8.dp) { menu = false; pages.open(Page.Settings) }
             Word("your year", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 1, menu), touch = 8.dp) { menu = false; pages.open(Page.Year) }
+            Word("ink mapped", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 2, menu), touch = 8.dp) { menu = false; pages.open(Page.Mapped) }
             // made by ink, its heart (it beats; seven taps and hearts float up), ink its website: the quiet funnel
-            Row(Modifier.arrive(tabs.size + 2, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.arrive(tabs.size + 3, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 val ctx = LocalContext.current
                 BasicText("made by ", style = pixel(12.sp, Ink.dim))
                 Word("ink", pixel(12.sp, Ink.mid), touch = 8.dp) {
@@ -2996,6 +3000,10 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
             ListTile("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "", { pages.open(Page.Year) }) {
                 YearArt(minutes ?: 0)
             }
+        }
+        // ink mapped beside it: your listening as land (2026-11-11)
+        if (!Device.tv) item(key = "mapped") {
+            ListTile("ink mapped", "your listening as land", { pages.open(Page.Mapped) }) { MappedArt() }
         }
         if (kept.isNotEmpty()) item(key = "kept") {
             ListTile("kept on this phone", "${kept.size} ${if (kept.size == 1) "song" else "songs"}, offline", { pages.open(Page.Kept) }) { Mosaic(kept, "kept") }

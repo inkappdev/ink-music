@@ -129,6 +129,64 @@ object ShareCard {
         ctx.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    /**
+     * Ink mapped as a story (1080 x 1920): "ink music" small at the top, MY INK, MAPPED, the map with its highest named,
+     * the word for how you're listening lately, three artists, and the record you play most at the foot with its line
+     * along its top in its colour (the map's).
+     */
+    suspend fun shareMapped(ctx: Context, d: InkMap.Drawn, r: Mapped.Read) {
+        val png = withContext(Dispatchers.Default) {
+            val cover = r.record?.let { runCatching { Covers.of(ctx, it, 640) }.getOrNull() }
+            val out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
+            val c = Canvas(out)
+            c.drawColor(Ink.black.toArgb())
+            val archivo = ResourcesCompat.getFont(ctx, R.font.archivo_black)
+            val silk = ResourcesCompat.getFont(ctx, R.font.silkscreen)
+            fun pixel(size: Float, color: Color = Ink.mid) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = silk; textSize = size; this.color = color.toArgb() }
+            fun headline(size: Float, color: Color = Ink.ink) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                typeface = archivo; textSize = size; this.color = color.toArgb(); letterSpacing = -0.02f
+            }
+            val side = (W - 2 * M).toInt()
+            c.drawText("ink music", M, 250f, pixel(30f))
+            c.drawText("MY INK, MAPPED", M, 370f, headline(72f))
+            // the map, its highest named on black tabs beside their summits' dots
+            val top = 430f
+            val map = Bitmap.createBitmap(d.pixels, d.side, d.side, Bitmap.Config.ARGB_8888)
+            c.drawBitmap(map, null, RectF(M, top, M + side, top + side), Paint(Paint.FILTER_BITMAP_FLAG))
+            val label = pixel(30f, Ink.ink)
+            for (p in d.peaks) {
+                val x = M + p.x * side; val y = top + p.y * side
+                c.drawRect(x - 7, y - 7, x + 7, y + 7, Paint().apply { color = Ink.ink.toArgb() })
+                val name = p.name.lowercase()
+                val w = label.measureText(name)
+                val tx = if (p.x < .62f) x + 20 else x - 20 - w
+                c.drawRect(tx - 8, y - 34, tx + w + 8, y + 8, Paint().apply { color = Ink.black.toArgb() })
+                c.drawText(name, tx, y, label)
+            }
+            var y = top + side + 120f
+            c.drawText(InkMap.mood(r.appetite).uppercase(), M, y, headline(96f))
+            y += 70f
+            layout(r.artists.take(3).joinToString(", ") { it.first.lowercase() }, pixel(34f), side, 2).let { c.save(); c.translate(M, y); it.draw(c); c.restore() }
+            // the record you play most, small at the foot, its line along its top
+            r.record?.let { s ->
+                val box = 180f
+                val at = H - 140f - box
+                c.drawRect(M, at - 4f, M + box, at, Paint().apply { color = (cover?.accent ?: Ink.ink).toArgb() })
+                val art = cover?.image?.asAndroidBitmap()
+                if (art != null) {
+                    val sq = minOf(art.width, art.height)
+                    c.drawBitmap(art, Rect((art.width - sq) / 2, (art.height - sq) / 2, (art.width + sq) / 2, (art.height + sq) / 2), RectF(M, at, M + box, at + box), Paint(Paint.FILTER_BITMAP_FLAG))
+                } else c.drawRect(M, at, M + box, at + box, Paint().apply { color = Ink.line.toArgb(); style = Paint.Style.STROKE; strokeWidth = 3f })
+                val x = M + box + 36f
+                c.drawText("most played", x, at + 34f, pixel(28f))
+                layout(s.album.ifEmpty { s.title }.uppercase(), headline(48f), (W - M - x).toInt(), 2).let { c.save(); c.translate(x, at + 54f); it.draw(c); c.restore() }
+            }
+            val dir = File(ctx.cacheDir, "shared").apply { mkdirs() }
+            File(dir, "ink-mapped.png").also { f -> f.outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        }
+        send(ctx, png, "my ink, mapped")
+    }
+
     /** Your year as a poster: the year, the minutes, the artist, song and record heard most. */
     suspend fun shareYear(ctx: Context, y: Year) {
         val png = withContext(Dispatchers.Default) {

@@ -129,6 +129,16 @@ object Fresh {
         JSONArray(refusedFile(c).readText()).let { a -> (0 until a.length()).map { a.getString(it) } }
     }.getOrDefault(emptyList())
 
+    /** The artists said not for you, as they were written (ink mapped lists them). */
+    fun turnedDownNames(c: Context): List<String> = refused(c)
+
+    /** An artist said not for you, let back (ink mapped: a tap on their name). */
+    fun letBack(c: Context, artist: String) {
+        val list = refused(c).filter { it != artist }
+        runCatching { refusedFile(c).writeText(JSONArray(list).toString()) }
+        build(c)
+    }
+
     /** The artists said not for you, folded (made-for-you mixes leave them out for good: no refill lets one back). */
     fun turnedDown(c: Context): Set<String> = refused(c).map { Curation.folded(it) }.toSet()
 
