@@ -71,6 +71,12 @@ import kotlin.math.exp
  * along the foot drags it back through the months.
  */
 object Mapped {
+    /**
+     * Held back till it's right (2026-11-12, Bronson: "i just dont want to ship it half baked"): the rail's and menu's
+     * ink mapped open a teaser, made-up land rising and breathing, coming soon. False shows it as it is.
+     */
+    const val SOON = true
+
     /** At most this many hills (the shader's array). */
     const val SLOTS = 24
 
@@ -236,6 +242,7 @@ object Mapped {
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun MappedPage(onClose: () -> Unit) {
+    if (Mapped.SOON) return MappedSoon(onClose)
     val taste by Fresh.taste.collectAsState()
     val tagged by GenrePicks.tagged.collectAsState()
     val read by produceState<Mapped.Read?>(null, taste, tagged) { value = withContext(Dispatchers.IO) { Mapped.read() } }
@@ -507,4 +514,48 @@ private fun YouAreHere(names: List<String>, xy: List<Offset>, hPx: Float, aspect
     val px = at.value.x * hPx; val py = at.value.y * hPx
     val s = with(density) { 16.dp.toPx() }
     Box(Modifier.offset { IntOffset((px - s / 2).toInt(), (py - s / 2).toInt()) }.size(16.dp).graphicsLayer { alpha = a }.border(2.dp, Ink.ink))
+}
+
+
+/** Ink mapped, coming soon: made-up land across the window (the same for everyone), rising and breathing, the name and one line. */
+@Composable
+private fun MappedSoon(onClose: () -> Unit) {
+    val density = LocalDensity.current
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { reveal.animateTo(14f, tween(2_200, easing = Motion.expo)) }
+    val time by rememberInfiniteTransition(label = "tide").animateFloat(0f, 1_000f, infiniteRepeatable(tween(1_000_000, easing = LinearEasing), RepeatMode.Restart), label = "time")
+    Box(Modifier.fillMaxSize().background(Ink.black)) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val aspect = constraints.maxWidth.toFloat() / constraints.maxHeight
+            // eight hills across the window, the same every time
+            val hills = remember(aspect) {
+                listOf(.18f to .42f, .3f to .62f, .42f to .35f, .5f to .58f, .63f to .44f, .72f to .66f, .82f to .38f, .9f to .58f)
+                    .mapIndexed { i, (x, y) -> Offset(x * aspect, y) to (1f - i * .07f).coerceAtLeast(.45f) }
+            }
+            val heights = FloatArray(hills.size) { hills[it].second }
+            val xy = hills.map { it.first }
+            val top = xy.indices.maxOf { Mapped.field(xy[it], xy, heights).first }
+            Canvas(Modifier.fillMaxSize()) {
+                val b = RuntimeShaderBuilder(Mapped.effect)
+                b.uniform("size", size.width, size.height)
+                val u = FloatArray(Mapped.SLOTS * 4)
+                for (i in xy.indices) { u[i * 4] = xy[i].x; u[i * 4 + 1] = xy[i].y; u[i * 4 + 2] = heights[i] }
+                b.uniform("hills", u)
+                b.uniform("top", top)
+                b.uniform("reveal", reveal.value)
+                b.uniform("time", time)
+                b.uniform("breathe", .06f)
+                b.uniform("hover", -1f)
+                b.uniform("ink", Ink.mid.red, Ink.mid.green, Ink.mid.blue, 1f)
+                b.uniform("halfw", .75f * density.density)
+                val shader = b.makeShader()
+                drawIntoCanvas { c -> c.nativeCanvas.drawRect(org.jetbrains.skia.Rect.makeWH(size.width, size.height), org.jetbrains.skia.Paint().apply { this.shader = shader }) }
+            }
+        }
+        Column(Modifier.padding(start = SIDE, top = 8.dp)) {
+            Close(onClose)
+            BasicText("INK MAPPED", style = headline(56.sp))
+            BasicText("your listening as land. coming soon", style = pixel(13.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
+        }
+    }
 }

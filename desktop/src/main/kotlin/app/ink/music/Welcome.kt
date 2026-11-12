@@ -287,14 +287,15 @@ private fun LikeStep(onBack: () -> Unit, onDone: () -> Unit) {
                     }
                 }
             }
-            Spacer(Modifier.width(48.dp))
+            if (!Mapped.SOON) Spacer(Modifier.width(48.dp))
             // your land, as it grows: each pick a hill (artists highest, the genres a little lower), placed by its sound
             val hills = remember(picked.toList(), genres.toList(), tagsRead) {
                 picked.mapIndexed { i, n -> n to (1.0 - i * .02).coerceAtLeast(.6) } +
                     genres.mapNotNull { w -> GENRE_WORDS.firstOrNull { it.first == w }?.let { it.first to .75 } }
             }
             val genreTags = remember(genres.toList()) { genres.associateWith { w -> GENRE_WORDS.first { it.first == w }.second.let { g -> listOfNotNull(Genres.tagOf(g)) } } }
-            Column(Modifier.width(420.dp).fillMaxHeight()) {
+            // ink mapped's land beside the picks, while it's not held back (Mapped.SOON)
+            if (!Mapped.SOON) Column(Modifier.width(420.dp).fillMaxHeight()) {
                 LandOf(hills, { n -> genreTags[n] ?: Genres.tags(n) }, Modifier.fillMaxWidth().aspectRatio(1f), version = tagsRead)
                 Spacer(Modifier.height(12.dp))
                 BasicText(if (hills.isEmpty()) "your ink, mapped: pick and it rises" else "your ink, mapped", style = pixel(12.sp, Ink.mid))
