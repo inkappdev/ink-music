@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -107,6 +108,9 @@ fun HandOverPage(pages: Pages) {
             sending = false
         }
     }
+    // opened by a scanned link (the phone's own camera): it pairs straight away
+    val fromCamera by Computers.scanned.collectAsState()
+    LaunchedEffect(fromCamera) { fromCamera?.let { Computers.scanned.value = null; pairBy(it) } }
     FrostedPage(onClose = { pages.close() }) { frost, top ->
         Column(
             Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal))
@@ -177,6 +181,18 @@ fun HandOverPage(pages: Pages) {
 }
 
 object Computers {
+    /** A computer's QR code read by the phone's own camera (its link opened ink music): the pairing page takes it. */
+    val scanned = kotlinx.coroutines.flow.MutableStateFlow<Handover.Link?>(null)
+
+    /** An intent that's a pairing link (https://inkhome.app/pair#..., or inkmusic://pair#... from the site's page): kept for the page. */
+    fun take(i: android.content.Intent?): Boolean {
+        val u = i?.data ?: return false
+        if (i.action != android.content.Intent.ACTION_VIEW) return false
+        val l = Handover.read("/pair#" + (u.fragment ?: return false)) ?: return false
+        scanned.value = l
+        return true
+    }
+
     /** Finding computers waiting on this wifi; the returned function stops looking. */
     fun find(ctx: Context, onFound: (Computer) -> Unit): () -> Unit {
         val m = ctx.getSystemService(NsdManager::class.java) ?: return {}

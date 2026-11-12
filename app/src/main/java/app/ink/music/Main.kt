@@ -154,6 +154,8 @@ class Main : ComponentActivity() {
         super.onCreate(savedInstanceState)
         lifecycle.addObserver(Sun(this))   // the dim words brighter in sunlight
         Moves.start(this)
+        // a computer's QR code read by the camera: kept before anything, so even a Main closing itself below hands it on
+        Computers.take(intent)
         // opened again (the home screen, the notification) over ink music's own screens: those stay
         // as they were (the YouTube sign-in, mid-way), not a second library over them
         if (!isTaskRoot) { finish(); return }
@@ -202,6 +204,12 @@ class Main : ComponentActivity() {
                 mediaController = Playback.token?.takeIf { on }?.let { android.media.session.MediaController(this@Main, it) }
             }
         }
+    }
+
+    /** Open already, and a computer's QR code read by the camera: the pairing page takes it (App). */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        Computers.take(intent)
     }
 
     /** A TV's remote pressed with nothing focused (Compose then hears nothing): the first thing on screen takes focus. */
@@ -354,6 +362,9 @@ private fun App() {
     LaunchedEffect(library) { Playback.refresh() }
 
     val pages = remember { Pages() }
+    // a computer's QR code read by the phone's own camera: its pairing page, on top (it pairs from there)
+    val scanned by Computers.scanned.collectAsState()
+    LaunchedEffect(scanned) { if (scanned != null && pages.stack.lastOrNull() != Page.HandOver) pages.open(Page.HandOver) }
     var playerUp by rememberSaveable { mutableStateOf(false) }
     // what plays on another device, opened from its bar ([RemotePlayerPage])
     var remoteUp by remember { mutableStateOf(false) }
@@ -887,8 +898,15 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             Word("settings", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size, menu), touch = 8.dp) { menu = false; pages.open(Page.Settings) }
             Word("your year", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 1, menu), touch = 8.dp) { menu = false; pages.open(Page.Year) }
             Word("ink mapped", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 2, menu), touch = 8.dp) { menu = false; pages.open(Page.Mapped) }
+            // pairing a computer a tap from anywhere, not deep in settings; once one's paired, its name opens its setting
+            if (!tv) {
+                val peers by SyncPhone.peers.collectAsState()
+                Word(if (peers.isEmpty()) "pair a computer" else "your computer", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 3, menu), touch = 8.dp) {
+                    menu = false; pages.open(if (peers.isEmpty()) Page.HandOver else Page.SettingsPart("music"))
+                }
+            }
             // made by ink, its heart (it beats; seven taps and hearts float up), ink its website: the quiet funnel
-            Row(Modifier.arrive(tabs.size + 3, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.arrive(tabs.size + 4, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 val ctx = LocalContext.current
                 BasicText("made by ", style = pixel(12.sp, Ink.dim))
                 Word("ink", pixel(12.sp, Ink.mid), touch = 8.dp) {

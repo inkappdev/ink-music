@@ -32,12 +32,17 @@ object Handover {
      */
     data class Link(val code: String, val port: Int, val hosts: List<String>)
 
+    /**
+     * The QR code's link. inkhome.app/pair opens ink music on a phone that has it (an App Link: the phone's own camera
+     * or Lens, not only ink music's), the site's page where it hasn't; what's after # never leaves the phone.
+     */
     fun link(code: String, port: Int, hosts: List<String>): String =
-        "https://inkhome.app/#pair/${code.filter(Char::isDigit)}/$port/${hosts.joinToString(",")}"
+        "https://inkhome.app/pair#${code.filter(Char::isDigit)}/$port/${hosts.joinToString(",")}"
 
-    /** A scanned link read back; null when it isn't one. */
+    /** A scanned link read back; null when it isn't one. Also the first form, inkhome.app/#pair/... */
     fun read(text: String): Link? {
-        val parts = text.trim().substringAfter("#pair/", "").split("/")
+        val t = text.trim()
+        val parts = (if ("/pair#" in t) t.substringAfter("/pair#") else t.substringAfter("#pair/", "")).split("/")
         val code = parts.getOrNull(0)?.takeIf { it.length == 6 && it.all(Char::isDigit) } ?: return null
         val port = parts.getOrNull(1)?.toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
         val hosts = parts.getOrNull(2).orEmpty().split(",").filter { h -> h.isNotEmpty() && h.all { it.isDigit() || it == '.' } }
