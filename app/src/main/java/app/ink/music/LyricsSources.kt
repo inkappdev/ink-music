@@ -17,6 +17,7 @@ object LyricsSources {
     val sources = listOf(
         Source("auto", "Automatic", "Best available result from all enabled sources"),
         Source("better", "BetterLyrics", "Word-synced Apple Music lyrics"),
+        Source("better_qq", "BetterLyrics Portato", "QQ Music karaoke timings"),
         Source("youtube", "YouTube Music", "Timed lyrics from YouTube Music"),
         Source("lrclib", "LRCLIB", "Synced and plain lyrics"),
         Source("bini", "BiniLyrics", "Apple Music TTML, word-level timing"),
@@ -73,6 +74,7 @@ object LyricsSources {
                     "kugou" -> kugou(title, artist, durationSeconds)
                     "lyricsplus" -> lyricsPlus(title, artist, album, durationSeconds)
                     "bini" -> bini(title, artist, durationSeconds)
+                    "better_qq" -> betterPortato(title, artist, album, durationSeconds)
                     else -> null
                 }
             }.getOrNull()
@@ -136,6 +138,14 @@ object LyricsSources {
             if (lines.isNotEmpty()) return lines.sortedBy { it.at }
         }
         return null
+    }
+
+    private fun betterPortato(title: String, artist: String, album: String, duration: Long): List<Line>? {
+        val url = "https://lyrics-api.boidu.dev/qq/getLyrics?s=${enc(title)}&a=${enc(artist)}&d=$duration&al=${enc(album)}"
+        val body = request(url)
+        val ttml = runCatching { JSONObject(body).optString("ttml") }.getOrDefault(body)
+        if (ttml.isBlank()) return null
+        return BetterLyrics.parse(ttml).map { Line(it.at, it.words, it.parts) }.takeIf { it.isNotEmpty() }
     }
 
     private fun bini(title: String, artist: String, duration: Long): List<Line>? {
