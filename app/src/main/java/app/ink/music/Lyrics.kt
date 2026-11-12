@@ -166,9 +166,9 @@ object Lyrics {
         val lrc = File("${base.path}.lrc")
         val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
         val better = File("${base.path}.bl")  // Better Lyrics asked (word by word, when it has them)
-        // Follow Lokal-style priority: recording-aware and syllable-timed catalogues first.
-        additional(t, base, listOf("local", "bini", "spicy", "better_qq", "lyricsplus", "unison"))?.let { return@withContext it }
-        // word by word first, where Better Lyrics has the song (asked once a song, words kept before it too)
+        // Follow Lokal's order: local sidecars, exact-recording Apple Music, then Spicy Lyrics.
+        additional(t, base, listOf("local", "bini", "spicy"))?.let { return@withContext it }
+        // BetterLyrics is the next word-synced source (asked once a song, words kept before it too)
         if (!better.exists()) {
             val timed = BetterLyrics.of(t.title, artist, t.duration / 1000, AGENT)
             if (timed != null) runCatching { dir.mkdirs(); better.writeText("") }
@@ -179,6 +179,8 @@ object Lyrics {
                 return@withContext lines
             }
         }
+        // QQ karaoke through BetterLyrics, then community syllable and listener-contributed timings.
+        additional(t, base, listOf("better_qq", "lyricsplus", "unison"))?.let { return@withContext it }
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
             if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
