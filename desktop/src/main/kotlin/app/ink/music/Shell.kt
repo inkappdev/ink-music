@@ -201,7 +201,9 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
                 Row(verticalAlignment = Alignment.Top) {
                     WholeWords(title.uppercase(), headline(19.sp), 3, Modifier.weight(1f).then(
                         if (aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
-                            onClick = felt { OnAirSong.find(aired.title, aired.artist!!) }) else Modifier))
+                            onClick = felt { OnAirSong.find(aired.title, aired.artist!!) })
+                        // the song's own name: a click goes to it (in the songs list, or its record)
+                        else Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { GoToPlaying.go(n.song) })))
                     Heart(airedSong ?: n.song, 2.dp, Modifier.offset(x = 8.dp, y = (-6).dp))
                 }
                 Spacer(Modifier.height(4.dp))

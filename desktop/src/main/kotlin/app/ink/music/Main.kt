@@ -879,6 +879,7 @@ fun ArtistRow(a: ArtistEntry, onClick: () -> Unit) {
 @Composable
 private fun SongGrid(songs: List<Song>) {
     val grid = pageGrid("songs")
+    LaunchedEffect(songs) { GoToPlaying.asked.collect { id -> songs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { grid.animateScrollToItem(it) } } }
     val now by Player.now.collectAsState()
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
@@ -904,6 +905,8 @@ private fun SongGrid(songs: List<Song>) {
 @Composable
 private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
     val list = pageList()
+    // "go to it" (the now column's title clicked): the song playing scrolled to, near the top
+    LaunchedEffect(songs) { GoToPlaying.asked.collect { id -> songs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { list.animateScrollToItem((it - 2).coerceAtLeast(0)) } } }
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) { cascading {
         itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(songs, i) } }
     }}
@@ -956,6 +959,12 @@ fun SongRow(
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // the song playing, a bar beside it in its cover's colour (2026-11-11, a tester: "it's still very easy to lose
+            // track of which song is currently playing", the progress title alone too quiet in a long list)
+            if (now?.song?.id == s.id) {
+                val bar = rememberCover(now?.song, 300)?.accent ?: Ink.ink
+                Box(Modifier.width(3.dp).height(30.dp).background(bar)); Spacer(Modifier.width(12.dp))
+            }
             // picking: a square before it, filled once it's picked
             if (picking) { Box(Modifier.size(12.dp).then(if (picked) Modifier.background(Ink.ink) else Modifier.border(1.dp, Ink.mid))); Spacer(Modifier.width(14.dp)) }
             // its record's cover beside it, small and square (a list's covers word)

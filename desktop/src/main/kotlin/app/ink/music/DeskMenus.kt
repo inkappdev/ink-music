@@ -137,3 +137,16 @@ fun ArtistMenu(name: String, at: Offset, onClose: () -> Unit) {
         listOf("artist" to { Nav.open(Page.Artist(name)) }),
     ), onClose)
 }
+
+
+/**
+ * Go to the song playing (2026-11-11, a tester: finding it in a long list took a search): the now column's title
+ * clicked; the songs list scrolls to it where it's shown, else its record opens.
+ */
+object GoToPlaying {
+    val asked = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    fun go(s: Song) {
+        if (Nav.place == "songs" && Nav.pages.isEmpty()) asked.tryEmit(s.id)
+        else if (s.album.isNotEmpty() && !s.station && !s.episode) Nav.open(Page.Record(s.albumId))
+    }
+}
