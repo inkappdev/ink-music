@@ -83,6 +83,7 @@ object Lyrics {
     private suspend fun selected(t: Now, base: File, id: String): List<Line>? {
         if (id == "better" || id == "youtube") return cachedSource(t, base, id)
         if (id == "better_qq") {
+            cachedSource(t, base, id)?.let { return it }
             val artist = t.artist.split(',').first().trim()
             val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
             if (lines != null) runCatching { dir.mkdirs(); File("${base.path}.$id.lrc").writeText(lrcOf(lines)) }
@@ -110,7 +111,7 @@ object Lyrics {
                 continue
             }
             val artist = t.artist.split(',').first().trim()
-            val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000)
+            val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
             if (!lines.isNullOrEmpty()) {
                 runCatching { dir.mkdirs(); file.writeText(lrcOf(lines)) }
                 android.util.Log.d("ink-lyrics", "${t.artist} - ${t.title}: ${lines.size} lines from $id")
@@ -130,6 +131,8 @@ object Lyrics {
         val lrc = File("${base.path}.lrc")
         val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
         val better = File("${base.path}.bl")  // Better Lyrics asked (word by word, when it has them)
+        // Follow Lokal-style priority: recording-aware and syllable-timed catalogues first.
+        additional(t, base, listOf("bini", "spicy", "better_qq", "lyricsplus", "unison"))?.let { return@withContext it }
         // word by word first, where Better Lyrics has the song (asked once a song, words kept before it too)
         if (!better.exists()) {
             val timed = BetterLyrics.of(t.title, artist, t.duration / 1000, AGENT)
@@ -141,8 +144,6 @@ object Lyrics {
                 return@withContext lines
             }
         }
-        // Prefer recording-aware and syllable/word-timed catalogues before line-only LRCLIB.
-        additional(t, base, listOf("bini", "spicy", "better_qq", "lyricsplus", "unison"))?.let { return@withContext it }
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
             if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
