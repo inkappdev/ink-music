@@ -6,7 +6,7 @@ public interface IDiscordRpcService extends android.os.IInterface {
 
     abstract class Stub extends android.os.Binder implements IDiscordRpcService {
         static final int TRANSACTION_connect = android.os.IBinder.FIRST_CALL_TRANSACTION;
-        Stub() { attachInterface(this, DESCRIPTOR); }
+        public Stub() { attachInterface(this, DESCRIPTOR); }
         public static IDiscordRpcService asInterface(android.os.IBinder binder) {
             if (binder == null) return null;
             android.os.IInterface local = binder.queryLocalInterface(DESCRIPTOR);
@@ -19,7 +19,7 @@ public interface IDiscordRpcService extends android.os.IInterface {
                 IDiscordRpcConnection result = connect(data.readLong(), data.readString(), IDiscordRpcCallback.Stub.asInterface(data.readStrongBinder()));
                 reply.writeNoException(); reply.writeStrongBinder(result != null ? result.asBinder() : null); return true;
             }
-            if (code == INTERFACE_TRANSACTION) { reply.writeString(DESCRIPTOR); return true; }
+            if (code == android.os.IBinder.INTERFACE_TRANSACTION) { reply.writeString(DESCRIPTOR); return true; }
             return super.onTransact(code, data, reply, flags);
         }
         private static final class Proxy implements IDiscordRpcService {
