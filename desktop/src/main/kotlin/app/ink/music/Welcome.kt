@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -142,9 +143,11 @@ private val DRIFT_GAP = 14.dp
 private fun Drift(modifier: Modifier) {
     val all = faces
     if (all.isEmpty()) { Box(modifier); return }
+    // one turn of a circle every two minutes, read only where it's drawn (graphicsLayer): no layout or recomposition a
+    // frame, nothing snapped to whole dp, and each row eases to a stop and back (a sine), never turning on the spot
     val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "drift")
-    val run by t.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(
-        tween(70_000, easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "run")
+    val run = t.animateFloat(0f, (2 * Math.PI).toFloat(), androidx.compose.animation.core.infiniteRepeatable(
+        tween(120_000, easing = androidx.compose.animation.core.LinearEasing)), label = "run")
     BoxWithConstraints(modifier.clipToBounds(), contentAlignment = Alignment.Center) {
         val rows = ((maxHeight + DRIFT_GAP) / (DRIFT_COVER + DRIFT_GAP)).toInt() + 1
         val across = 8
@@ -152,8 +155,9 @@ private fun Drift(modifier: Modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(DRIFT_GAP), modifier = Modifier.requiredHeight((DRIFT_COVER + DRIFT_GAP) * rows - DRIFT_GAP)) {
             for (row in 0 until rows) {
                 val way = if (row % 2 == 0) -1 else 1
-                val shift = (way * run * 320 - 160 * way).dp
-                Row(Modifier.requiredWidth(wide).offset(x = shift), horizontalArrangement = Arrangement.spacedBy(DRIFT_GAP)) {
+                // each row a little behind the one above, so they don't all stop at once
+                val lag = row * .7f
+                Row(Modifier.requiredWidth(wide).graphicsLayer { translationX = way * 170.dp.toPx() * kotlin.math.sin(run.value + lag) }, horizontalArrangement = Arrangement.spacedBy(DRIFT_GAP)) {
                     for (place in 0 until across) {
                         // each row its own run through the faces, so none sits beside itself
                         val f = all[(row * 5 + place * 3) % all.size]
