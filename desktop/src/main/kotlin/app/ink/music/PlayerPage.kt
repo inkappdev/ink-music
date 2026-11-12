@@ -198,6 +198,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
                                     // the song's way through, inside the cover too (2026-11-12, a tester and Bronson): a band
                                     // along its foot filling in its colour, see-through; clicked or dragged, there in the song
+                                    if (s.id == n.song.id) SpectrumOver(s, n.playing, accent, Modifier.fillMaxSize())
                                     if (s.id == n.song.id && !s.station && n.duration > 0) CoverLine(n.duration, accent, Modifier.align(Alignment.BottomStart))
                                 }
                             }

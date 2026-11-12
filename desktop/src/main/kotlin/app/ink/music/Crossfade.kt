@@ -462,7 +462,7 @@ object Crossfade {
     internal const val RATE = 22_050
 
     /** A stretch decoded to mono floats at [RATE] (blocking; 20 s at most), and the song's length (ms). */
-    internal fun decode(url: String, from: Double, length: Double): Pair<FloatArray, Long>? {
+    internal fun decode(url: String, from: Double, length: Double, waitMs: Long = 20_000): Pair<FloatArray, Long>? {
         val out = File.createTempFile("ink-ends", ".raw")
         try {
             val m = Mpv(mapOf(
@@ -476,7 +476,7 @@ object Crossfade {
             try {
                 m.observe("duration", Mpv.DOUBLE)
                 m.command("loadfile", url)
-                val until = System.currentTimeMillis() + 20_000
+                val until = System.currentTimeMillis() + waitMs
                 loop@ while (System.currentTimeMillis() < until) {
                     when (val e = m.next(1.0)) {
                         is Mpv.Changed -> if (e.name == "duration") dur = ((e.value as? Double) ?: 0.0).times(1000).toLong().coerceAtLeast(dur)

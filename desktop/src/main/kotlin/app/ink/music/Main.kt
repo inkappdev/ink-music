@@ -1617,6 +1617,8 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                             if (Sleep.at.value == 0L) Sleep.CHOICES.filter { it in setOf(15, 30, 60) }.map { m -> "sleep in $m min" to { Sleep.set(m) } } +
                                 listOf("sleep at the song's end" to { Sleep.set(0) })
                             else listOf("${Sleep.said()} · off" to { Sleep.set(null) }),
+                            // the spectrum in the player's cover (Spectrum)
+                            listOf((if (Spectrum.on.value) "spectrum · off" else "spectrum in the cover") to { Spectrum.set(!Spectrum.on.value) }),
                             // preview: a taste of each song, then the next (Preview)
                             if (Preview.secs.value == 0) Preview.CHOICES.map { n -> "preview $n s of each" to { Preview.set(n) } }
                             else listOf("preview · off" to { Preview.set(0) }),
