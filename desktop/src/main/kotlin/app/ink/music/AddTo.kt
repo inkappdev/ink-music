@@ -42,13 +42,9 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Whether a song can go into one of your playlists: you're signed in to your server or YouTube Music, and it's a song. */
+/** Whether a song can go into one of your playlists: it's a song (lists here need no account since 2026-11-11: HereLists). */
 @Composable
-fun canAddToList(s: Song?): Boolean {
-    val account by Server.account.collectAsState()
-    val who by TubeAccount.who.collectAsState()
-    return s != null && !s.station && !s.episode && (account != null || who != null)
-}
+fun canAddToList(s: Song?): Boolean = s != null && !s.station && !s.episode
 
 /**
  * Into a playlist (the phone's, 2026-11-07: there was no way on the computer): a new one, named here, or one of yours,
@@ -66,6 +62,7 @@ fun AddToPage(songs: List<Song>, onDone: () -> Unit, onClose: () -> Unit) {
     val mine = remember(lists) { lists.filter { it.mine } }
     val who by TubeAccount.who.collectAsState()
     val tubeLists by TubeAccount.playlists.collectAsState()
+    val here by HereLists.all.collectAsState()
     val scope = rememberCoroutineScope()
     // what's happening: adding, in, or didn't take
     var said by remember { mutableStateOf<String?>(null) }
@@ -93,7 +90,18 @@ fun AddToPage(songs: List<Song>, onDone: () -> Unit, onClose: () -> Unit) {
                     BasicText(if (songs.size == 1) "${s.title}  ·  ${s.artist}".lowercase() else "${songs.size} songs", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     BasicText(said ?: "", style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 10.dp))
                     Spacer(Modifier.height(10.dp))
+                    // here, on this computer: no account needed, any song (HereLists)
+                    Label("here, on this computer")
+                    NewList { name -> put(name) { HereLists.make(name, songs); true } }
+                }
+            }
+            items(here, key = { "h" + it.id }) { m ->
+                ListChoice(m.name, "${m.songs.size} ${if (m.songs.size == 1) "song" else "songs"}") { put(m.name) { HereLists.add(m.id, songs); true } }
+            }
+            item {
+                Column(Modifier.widthIn(max = 640.dp)) {
                     if (account != null) {
+                        Spacer(Modifier.height(18.dp))
                         Label("on your server")
                         NewList { name -> put(name) { Server.makePlaylist(name, songs) } }
                         if (mine.isEmpty()) BasicText("no playlists of yours there yet: name one above, enter makes it", style = pixel(12.sp, Ink.mid))
@@ -132,7 +140,7 @@ private fun ListChoice(name: String, said: String, onClick: () -> Unit) {
 
 /** A new list: "new >", its name typed, enter (or make) makes it with the song in it. */
 @Composable
-private fun NewList(onMake: (String) -> Unit) {
+internal fun NewList(onMake: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     fun make() { val n = name.trim(); if (n.isNotEmpty()) { onMake(n); name = "" } }
     Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {

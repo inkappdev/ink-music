@@ -417,6 +417,7 @@ fun ListsPage(open: (Page) -> Unit) {
     val loved = lovedSongs()
     val keptIds by Offline.kept.collectAsState()
     val tubeListsNow by TubeAccount.playlists.collectAsState()
+    val hereLists by HereLists.all.collectAsState()
     LaunchedEffect(account) { Server.readPlaylists() }
     val gridded by ListsGrid.on.collectAsState()
     if (gridded) return ListsTiles(open)
@@ -428,6 +429,10 @@ fun ListsPage(open: (Page) -> Unit) {
         if (keptIds.isNotEmpty()) item { ListRow(Server.Playlist(KEPT, "kept on this computer", keptIds.size, true)) { open(Page.List(KEPT, "kept on this computer")) } }
         // lists that fill themselves from rules (SmartLists), and a new one
         item { SmartRows(open) }
+        // lists kept here, on this computer (HereLists): no account needed
+        item { Label("here, on this computer") }
+        items(hereLists, key = { it.id }) { m -> ListRow(Server.Playlist(m.id, m.name, m.songs.size, true)) { open(Page.List(m.id, m.name)) } }
+        item { NewList { name -> val m = HereLists.make(name, emptyList()); open(Page.List(m.id, m.name)) } }
         if (lists.isEmpty()) item {
             BasicText(if (account == null) "your server's playlists show here once you're signed in to it" else "no playlists on your server yet",
                 style = pixel(12.sp, Ink.mid))
@@ -531,7 +536,15 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
     val covers by ListCovers.on.collectAsState()
     val loved = lovedSongs()
     val keptNow by Offline.kept.collectAsState()
-    val songs by produceState<List<Song>?>(null, id, loved, keptNow) { value = if (id == LOVED) loved else if (id == KEPT) Offline.songs() else Server.playlist(id) }
+    val here by HereLists.all.collectAsState()
+    val songs by produceState<List<Song>?>(null, id, loved, keptNow, here) {
+        value = when {
+            id == LOVED -> loved
+            id == KEPT -> Offline.songs()
+            id.startsWith(HereLists.PREFIX) -> HereLists.of(id)?.songs.orEmpty()
+            else -> Server.playlist(id)
+        }
+    }
     val list = pageList()
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
@@ -556,13 +569,34 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                     CoversWord()
                     KeepOffline(s)
                 }
+                // the list written out: as words, as a spreadsheet, or every song's link (2026-11-11)
+                if (!s.isNullOrEmpty()) {
+                    var copied by remember { mutableStateOf(false) }
+                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                        Word("save as text", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "txt", ListOut.text(s)) }
+                        Word("save as csv", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "csv", ListOut.csv(s)) }
+                        Word(if (copied) "links copied" else "copy links", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.copy(ListOut.links(s)); copied = true }
+                        // a list here: let it go (a second click, as remove all's)
+                        if (id.startsWith(HereLists.PREFIX)) {
+                            var sure by remember { mutableStateOf(false) }
+                            LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
+                            Word(if (sure) "delete it" else "delete list", pixel(13.sp, if (sure) Ink.ink else Ink.dim), touch = 8.dp) {
+                                if (!sure) sure = true else { HereLists.delete(id); onClose() }
+                            }
+                        }
+                    }
+                }
                 MixProgress(name)
                 Spacer(Modifier.height(14.dp))
             }
             val s = songs.orEmpty()
             itemsIndexed(s, key = { i, x -> "$i" + x.id }) { i, x ->
                 SongRow(x, said = "${x.artist}  ·  ${x.album}".lowercase(), open = open, cover = covers,
-                    onRemove = if (id == KEPT) ({ Offline.remove(listOf(x.id)) }) else null) { Player.play(s, i) }
+                    onRemove = when {
+                        id == KEPT -> ({ Offline.remove(listOf(x.id)) })
+                        id.startsWith(HereLists.PREFIX) -> ({ HereLists.remove(id, i) })
+                        else -> null
+                    }) { Player.play(s, i) }
             }
         }}
     }
