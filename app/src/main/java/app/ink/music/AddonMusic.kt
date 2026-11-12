@@ -67,6 +67,44 @@ object AddonMusic {
             }.getOrDefault(emptyList())
         }
 
+    /**
+     * Find an exact recording in the configured addon and return its playable URL.
+     * Called by the player's resolving data source on its IO loader thread.
+     */
+    fun findStream(ctx: Context, title: String, artist: String, album: String, durationSeconds: Long): String? {
+        val base = baseUrl(ctx)
+        if (base.isBlank() || title.isBlank() || artist.isBlank()) return null
+        return runCatching {
+            val params = settings(ctx, base)
+            params["q"] = "$title $artist"
+            val response = request(ctx, "$base/search", params)
+            val tracks = response.optJSONArray("tracks") ?: return@runCatching null
+            fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
+                .replace(Regex("\\p{M}+"), "").lowercase()
+                .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+            val wantedTitle = norm(title)
+            val wantedArtist = norm(artist.substringBefore(',').trim())
+            val candidates = (0 until tracks.length()).mapNotNull { i ->
+                val track = tracks.optJSONObject(i) ?: return@mapNotNull null
+                if (track.optString("id").isBlank()) return@mapNotNull null
+                if (norm(track.optString("title")) != wantedTitle) return@mapNotNull null
+                val foundArtist = norm(track.optString("artist"))
+                if (foundArtist.isNotEmpty() && foundArtist != wantedArtist &&
+                    !foundArtist.contains(wantedArtist) && !wantedArtist.contains(foundArtist)) return@mapNotNull null
+                val seconds = track.optDouble("duration", 0.0).toLong()
+                val difference = if (durationSeconds > 0 && seconds > 0) kotlin.math.abs(seconds - durationSeconds) else 0L
+                if (difference > 12) return@mapNotNull null
+                Triple(track, difference, if (foundArtist == wantedArtist) 0 else 1)
+            }.sortedWith(compareBy<Triple<JSONObject, Long, Int>> { it.second }.thenBy { it.third })
+            val track = candidates.firstOrNull()?.first ?: return@runCatching null
+            val direct = track.optString("streamURL").takeIf { it.startsWith("http") }
+            if (direct != null) return@runCatching direct
+            val id = track.getString("id")
+            val stream = request(ctx, "$base/stream/${Uri.encode(id)}", params)
+            stream.optString("url").ifBlank { stream.optString("streamURL") }.takeIf { it.startsWith("http") }
+        }.onFailure { android.util.Log.w("ink-addon", "lookup failed: ${it.message}") }.getOrNull()
+    }
+
     /** Called by Playback when it rebuilds a queued addon item from Media3 metadata. */
     fun songFrom(item: MediaItem): Song? {
         val uri = item.localConfiguration?.uri?.takeIf { it.scheme == "addon" } ?: return null
