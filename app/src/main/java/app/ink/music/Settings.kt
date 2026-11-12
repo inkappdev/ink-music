@@ -374,6 +374,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics" + (if (YouTubeMusic.available) " (and to youtube music when lrclib has none)" else "") + "; " +
                             (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library, and the youtube songs you play, for your history there); " else "") +
                             "with listenbrainz or last.fm connected, what you play goes there. " +
+                            (if (AddonMusic.baseUrl(ctx).isNotBlank()) "your configured addon server receives your searches and audio stream requests; its optional HMAC secret signs LastWave requests. " else "") +
                             (if (Moving.available) "with moving covers on, the record playing goes to apple music, for its moving cover; " +
                                 "signed in to spotify, the song playing goes to spotify, for its canvas (and your playlists, when you bring one in). " else "") +
                             (if (YouTubeMusic.available) "with skip the talking on, the first four characters of a scrambled youtube video id go to sponsorblock, never the id itself. " else "") +
