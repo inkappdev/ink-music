@@ -80,12 +80,35 @@ object Lyrics {
         }
     }
 
+    /** Local sidecar lyrics beside an indexed audio file; content URIs are resolved by MediaStore. */
+    private fun local(t: Now): List<Line>? {
+        val uri = t.song?.uri ?: return null
+        val path = if (uri.scheme == "file") uri.path else runCatching {
+            ctx.contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
+        val audio = path?.let(::File)?.takeIf { it.isFile } ?: return null
+        val stem = audio.nameWithoutExtension
+        val folder = audio.parentFile ?: return null
+        val lrc = File(folder, "$stem.lrc")
+        if (lrc.isFile) return runCatching { parse(lrc.readText()).takeIf { it.isNotEmpty() } }.getOrNull()
+        val ttml = File(folder, "$stem.ttml")
+        if (ttml.isFile) return runCatching {
+            BetterLyrics.parse(ttml.readText()).map { Line(it.at, it.words, it.parts) }.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+        val txt = File(folder, "$stem.txt")
+        if (txt.isFile) return runCatching { plain(txt.readText()).takeIf { it.isNotEmpty() } }.getOrNull()
+        return null
+    }
+
     private suspend fun selected(t: Now, base: File, id: String): List<Line>? {
+        if (id == "local") return local(t)
         if (id == "better" || id == "youtube") return cachedSource(t, base, id)
         if (id == "better_qq") {
             cachedSource(t, base, id)?.let { return it }
             val artist = t.artist.split(',').first().trim()
-            val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
+            val lines = if (id == "local") local(t) else LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
             if (lines != null) runCatching { dir.mkdirs(); File("${base.path}.$id.lrc").writeText(sourceText(lines)) }
             return lines
         }
@@ -113,8 +136,8 @@ object Lyrics {
                         id to runCatching { parse(file.readText()).ifEmpty { plain(file) } }.getOrNull()
                     } else {
                         val artist = t.artist.split(',').first().trim()
-                        val lines = LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
-                        if (!lines.isNullOrEmpty()) {
+                        val lines = if (id == "local") local(t) else LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
+                        if (!lines.isNullOrEmpty() && id != "local") {
                             runCatching { dir.mkdirs(); file.writeText(sourceText(lines)) }
                             android.util.Log.d("ink-lyrics", "${t.artist} - ${t.title}: ${lines.size} lines from $id")
                         }
@@ -143,7 +166,7 @@ object Lyrics {
         val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
         val better = File("${base.path}.bl")  // Better Lyrics asked (word by word, when it has them)
         // Follow Lokal-style priority: recording-aware and syllable-timed catalogues first.
-        additional(t, base, listOf("bini", "spicy", "better_qq", "lyricsplus", "unison"))?.let { return@withContext it }
+        additional(t, base, listOf("local", "bini", "spicy", "better_qq", "lyricsplus", "unison"))?.let { return@withContext it }
         // word by word first, where Better Lyrics has the song (asked once a song, words kept before it too)
         if (!better.exists()) {
             val timed = BetterLyrics.of(t.title, artist, t.duration / 1000, AGENT)
