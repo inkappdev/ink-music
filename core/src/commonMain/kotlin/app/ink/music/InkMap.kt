@@ -53,21 +53,24 @@ object InkMap {
             }
         }
         val top = (field.maxOrNull() ?: 0f).coerceAtLeast(1e-6f)
-        val q = IntArray(n * n) { (field[it] / top * LEVELS).toInt().coerceAtMost(LEVELS - 1) }
-        val steps = intArrayOf(shade(accent, .4f), shade(accent, .7f), accent or (0xFF shl 24))
+        // the lines drawn smooth (2026-11-11, Bronson: "a little jagged up close"): each pixel shaded by how far it is
+        // from the nearest level's line, in pixels (its distance in heights over how steep the ground is there), so a
+        // line has soft, even edges at any angle; half a line's width about 1.1 px at 720, wider as the map is
+        val fr = FloatArray(n * n) { field[it] / top * LEVELS }
+        val half = 1.1f * n / 720f
         val px = IntArray(n * n) { BLACK }
-        // a line a little over two pixels wide wherever the level changes, brighter the higher it is
-        val w = maxOf(1, n / 300)
-        for (j in 0 until n - 1) for (i in 0 until n - 1) {
-            val a = q[j * n + i]; val r = q[j * n + i + 1]; val d = q[(j + 1) * n + i]
-            if (a == r && a == d) continue
-            val k = maxOf(a, r, d).toFloat() / (LEVELS - 1)
-            if (maxOf(a, r, d) == 0) continue
-            val c = steps[if (k > .6f) 2 else if (k > .3f) 1 else 0]
-            for (dj in 0..w) for (di in 0..w) {
-                val y = j + dj; val x = i + di
-                if (x < n && y < n) px[y * n + x] = c
-            }
+        for (j in 1 until n - 1) for (i in 1 until n - 1) {
+            val k = j * n + i
+            val v = fr[k]
+            val b = kotlin.math.round(v)
+            if (b < 1f || b > LEVELS - 1) continue
+            val gx = (fr[k + 1] - fr[k - 1]) / 2; val gy = (fr[k + n] - fr[k - n]) / 2
+            val g = kotlin.math.sqrt(gx * gx + gy * gy)
+            if (g < 1e-6f) continue
+            val a = (half + .5f - kotlin.math.abs(v - b) / g).coerceIn(0f, 1f)
+            if (a <= 0f) continue
+            val t = b / (LEVELS - 1)
+            px[k] = shade(accent, a * (if (t > .6f) 1f else if (t > .3f) .7f else .4f))
         }
         // the highest named, each on its own summit: the highest ground near where its hill stands (a neighbour's had
         // pushed the top aside, the name beside a slope); two on one summit, the second passed over for the next

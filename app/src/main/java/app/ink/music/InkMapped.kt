@@ -140,7 +140,9 @@ fun MappedPage(pages: Pages) {
     val read by produceState<Mapped.Read?>(null, refresh) { value = Mapped.read(ctx) }
     // drawn again as their tags come in (the first visit reads them), placed by sound
     val tagged by GenrePicks.tagged.collectAsState()
-    val drawn by produceState<Pair<ImageBitmap, InkMap.Drawn>?>(null, read, tagged) { read?.takeIf { it.artists.isNotEmpty() }?.let { value = Mapped.draw(ctx, it, 720) } }
+    // drawn at the screen's own width, not stretched to it (a line a pixel's own, smooth up close)
+    val side = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp * androidx.compose.ui.platform.LocalDensity.current.density).toInt().coerceIn(480, 1440)
+    val drawn by produceState<Pair<ImageBitmap, InkMap.Drawn>?>(null, read, tagged, side) { read?.takeIf { it.artists.isNotEmpty() }?.let { value = Mapped.draw(ctx, it, side) } }
     val list = pageList()
     FrostedPage { frost, top -> LazyColumn(
         state = list,
