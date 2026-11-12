@@ -2092,7 +2092,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
         val frames by androidx.compose.runtime.produceState<List<androidx.compose.ui.graphics.ImageBitmap>?>(null, cover, print) {
             val c = cover ?: return@produceState
             value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                Looks.develop(c.image.asAndroidBitmap(), c.accent, side, density.density, print = print, word = photo.title.removePrefix("mood "))?.map { it.asImageBitmap() }
+                Looks.develop(c.image.asAndroidBitmap(), c.accent, side, density.density, print = print)?.map { it.asImageBitmap() }
             }
         }
         val shown = remember(frames) { Animatable(0f) }
@@ -2112,7 +2112,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
     }
 }
 
-/** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither, tiles, contours or letters. */
+/** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither or tiles. */
 @Composable
 fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value)
 

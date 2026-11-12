@@ -75,19 +75,15 @@ object Looks {
      * The cover developing in the dither, as a print does in its tray: `frames` steps from black to
      * the whole of it, the brightest dots first (shown one after another as it arrives).
      */
-    fun develop(art: Bitmap, accent: Color, shown: Float, density: Float, frames: Int = 12, print: Print = Print.DITHER, word: String = ""): List<Bitmap>? = try {
+    fun develop(art: Bitmap, accent: Color, shown: Float, density: Float, frames: Int = 12, print: Print = Print.DITHER): List<Bitmap>? = try {
         val src = if (art.config == Bitmap.Config.HARDWARE) art.copy(Bitmap.Config.ARGB_8888, false) else art
         val dots = dots(shown, density)
         if (print == Print.DITHER) (1..frames).map { dither(src, dots, accent.toArgb(), it.toFloat() / frames) }
         else {
-            // the other looks (Prints in core) from the cover drawn a pixel a dot
+            // tiles (Prints in core) from the cover drawn a pixel a dot
             val px = IntArray(dots * dots)
             Bitmap.createScaledBitmap(src, dots, dots, true).getPixels(px, 0, dots, 0, 0, dots, dots)
-            when (print) {
-                Print.TILES -> Prints.tiles(px, dots, frames)
-                Print.CONTOURS -> Prints.contours(px, dots, accent.toArgb(), frames)
-                else -> Prints.letters(px, dots, accent.toArgb(), word, frames)
-            }.map { Bitmap.createBitmap(it, dots, dots, Bitmap.Config.ARGB_8888) }
+            Prints.tiles(px, dots, frames).map { Bitmap.createBitmap(it, dots, dots, Bitmap.Config.ARGB_8888) }
         }
     } catch (e: Exception) { null }
 
@@ -196,7 +192,7 @@ internal fun boxBlur(px: IntArray, n: Int, r: Int, rows: Boolean) {
  * The giant names running across (the player's artist at its foot, ink weekly's, a long name on an artist's page):
  * moving, or still where they are (settings, the look; 2026-10-30). Kept beside the look's own choice.
  */
-/** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither, tiles, contours or letters. */
+/** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither or tiles. */
 object CoverPrint {
     private val _on = MutableStateFlow(Print.DITHER)
     val on: StateFlow<Print> = _on

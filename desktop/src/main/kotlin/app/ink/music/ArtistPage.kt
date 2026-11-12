@@ -378,7 +378,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
             val c = cover ?: return@produceState
             if (ready != null) { value = ready; return@produceState }
             val t = System.nanoTime()
-            value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, dots, print = print, word = photo.title.removePrefix("mood ")) }?.also { f -> key?.let { Dither.keep(it, f) } }
+            value = withContext(Dispatchers.Default) { Dither.develop(c.image, c.accent, dots, print = print) }?.also { f -> key?.let { Dither.keep(it, f) } }
             if (Log.on) Log.d("dither: ${photo.album.take(20)} cover ${(t - born) / 1_000_000} ms after shown, frames ${(System.nanoTime() - t) / 1_000_000} ms")
         }
         // developed in the first time it's seen (450 ms); a size changed after, there at once (the picture's, not the size's)
@@ -393,7 +393,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
     }
 }
 
-/** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither, tiles, contours or letters. */
+/** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither or tiles. */
 @Composable
 fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value)
 
