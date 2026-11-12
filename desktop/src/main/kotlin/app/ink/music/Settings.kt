@@ -594,7 +594,7 @@ private fun swingFolder(): java.io.File? {
 @Composable
 private fun Waiting(c: String) {
     val link by TubeAccount.link.collectAsState()
-    BasicText("on your phone: ink music, settings, sync with a computer, and point it at this", style = pixel(12.sp, Ink.mid))
+    BasicText("point your phone's camera at this: it opens ink music there and pairs (or in ink music: pair a computer)", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(14.dp))
     Row(verticalAlignment = Alignment.Bottom) {
         link?.let { QrCode(it, Modifier.size(184.dp)); Spacer(Modifier.width(24.dp)) }
