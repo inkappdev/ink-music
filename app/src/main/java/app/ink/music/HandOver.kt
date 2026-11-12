@@ -118,7 +118,7 @@ fun HandOverPage(pages: Pages) {
         ) {
             BasicText("SYNC WITH A COMPUTER", style = headline(40.sp))
             Spacer(Modifier.height(8.dp))
-            BasicText("on the computer: ink music, settings, your phone, pair your phone, and point this at the code it shows " +
+            BasicText("on the computer: ink music, pair your phone (at the foot of its places, or in settings, your phone), and point this, or the phone's own camera, at the code it shows " +
                 "(on a tv: ink music shows a code as it opens). " +
                 "paired, it's signed in to what this phone is, and the two keep in step on your wifi: what you've heard, what you love, " +
                 "what you were playing", style = pixel(12.sp, Ink.mid))
