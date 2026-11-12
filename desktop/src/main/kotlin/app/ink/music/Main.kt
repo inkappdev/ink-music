@@ -460,6 +460,9 @@ private fun App() {
             },
     ) {
       BoxWithConstraints(Modifier.fillMaxSize()) {
+        // the first open: the welcome over the whole window, till it's through (Welcome)
+        val welcoming by Welcome.showing.collectAsState()
+        if (welcoming) { WelcomePage(); return@BoxWithConstraints }
         val frame = frameOf(maxWidth)
         val tucked by Tuck.on.collectAsState()
         // nothing playing: no now column, the page has its room (it came with the first thing played)

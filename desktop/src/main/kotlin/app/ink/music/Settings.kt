@@ -347,7 +347,7 @@ private fun AboutSetting() {
 
 /** Signing in to your server: its address, your name and password; what went wrong, said plainly. */
 @Composable
-private fun SignIn() {
+internal fun SignIn() {
     val scope = rememberCoroutineScope()
     var address by remember { mutableStateOf("") }
     var user by remember { mutableStateOf("") }
