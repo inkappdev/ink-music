@@ -165,7 +165,7 @@ object LyricsSources {
         }
         fun clean(s: String) = s.replace(Regex("<[^>]+>"), "").replace("&amp;", "&")
             .replace("&lt;", "<").replace("&gt;", ">").replace("&apos;", "'").replace("&quot;", "\"")
-            .replace(Regex("\s+"), " ").trim()
+            .replace(Regex("""\s+"""), " ").trim()
         for (m in p.findAll(ttml)) {
             val at = time(m.groupValues[1]) ?: continue
             val parts = span.findAll(m.groupValues[2]).mapNotNull { word ->
