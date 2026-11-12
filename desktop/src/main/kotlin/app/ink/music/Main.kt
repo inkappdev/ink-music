@@ -1576,7 +1576,7 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                     }
                 }
             }
-            Controls(n, small = true)
+            Controls(n, small = true, both = words)
             // a station's: the song it's playing, found, to love (the heart) or put in a list (add)
             val airedSong = rememberAiredSong(n)
             if (airedSong != null) {

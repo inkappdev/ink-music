@@ -132,19 +132,20 @@ private val OFF get() = Ink.dim
  * and repeat a size smaller at the ends, lit when on. `small`: back, play and next alone (the foot bar).
  */
 @Composable
-fun Controls(n: Player.Now, modifier: Modifier = Modifier, small: Boolean = false) {
+fun Controls(n: Player.Now, modifier: Modifier = Modifier, small: Boolean = false, both: Boolean = !small) {
     val shuffle by Player.shuffle.collectAsState()
     val repeat by Player.repeat.collectAsState()
     val cell = if (small) 2.dp else 3.dp
     Row(modifier, horizontalArrangement = if (small) Arrangement.spacedBy(4.dp) else Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        if (!small) Pixel(SHUFFLE, if (shuffle) "shuffle, on" else "shuffle, off", if (shuffle) Ink.ink else OFF) { Player.shuffle() }
+        // shuffle and repeat too where there's room (the bar too since 2026-11-12, a tester: shuffle a click away)
+        if (both) Pixel(SHUFFLE, if (shuffle) "shuffle, on" else "shuffle, off", if (shuffle) Ink.ink else OFF, Modifier.padding(end = if (small) 10.dp else 0.dp), cell = cell) { Player.shuffle() }
         Pixel(BACK, "back", Ink.ink, cell = cell) { Player.previous() }
         Pixel(if (n.playing) PAUSE else PLAY, if (n.playing) "pause" else "play", Ink.ink, cell = cell) { Player.toggle() }
         Pixel(NEXT, "next", Ink.ink, cell = cell) { Player.next() }
-        if (!small) Pixel(
+        if (both) Pixel(
             if (repeat == 2) REPEAT_ONE else REPEAT,
             when (repeat) { 2 -> "repeat one"; 0 -> "repeat, off"; else -> "repeat, on" },
-            if (repeat != 0) Ink.ink else OFF,
+            if (repeat != 0) Ink.ink else OFF, Modifier.padding(start = if (small) 10.dp else 0.dp), cell = cell,
         ) { Player.repeat() }
     }
 }
