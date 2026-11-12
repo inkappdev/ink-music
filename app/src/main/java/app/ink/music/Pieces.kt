@@ -13,6 +13,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -217,13 +218,13 @@ private object Drawn {
 
 /** A word you can press: brightness is the feedback (ink, 55% while held). `touch`: its press reaches that far past it (half across). */
 @Composable
-fun Word(text: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier, touch: Dp = 0.dp, onClick: () -> Unit) {
+fun Word(text: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier, touch: Dp = 0.dp, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val c by animateColorAsState(if (pressed) Ink.mid else style.color, tween(Motion.FADE), label = "word")
     BasicText(
         text, style = style.copy(color = c), maxLines = 1, overflow = TextOverflow.Ellipsis,
-        modifier = modifier.clickable(src, indication = null, onClick = felt(then = onClick)).padding(vertical = touch, horizontal = touch / 2),
+        modifier = modifier.combinedClickable(interactionSource = src, indication = null, onClick = felt(then = onClick), onLongClick = onLongClick).padding(vertical = touch, horizontal = touch / 2),
     )
 }
 
