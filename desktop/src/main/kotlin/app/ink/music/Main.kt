@@ -1654,33 +1654,53 @@ private val GRIP = listOf("#.#", "...", "#.#", "...", "#.#")
 
 /**
  * The queue's songs: played dim, the one playing lit, the rest as they come; a click plays from there. Each dragged by
- * its grip (at its right end, under the mouse) into another place (2026-11-10, Bronson: "we need a way of reordering the up
- * next list"): the row follows the mouse, trading places with each neighbour it passes half of, the queue moved as it goes.
+ * its grip (at its right end, under the mouse) into another place (2026-11-10: "we need a way of reordering the up next
+ * list"). As the phone's (2026-11-12; it had traded places as it went, a black bar over the rows): the held row follows
+ * the mouse over the rest, they ease aside to where it would go and dim, and let go it settles into its place, the queue
+ * moved once.
  */
 @Composable
 fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyListState, pad: PaddingValues, modifier: Modifier, follow: Boolean = false) {
-    val queue by Player.queue.collectAsState()
+    val queueState = Player.queue.collectAsState()
+    val queue by queueState
     val now by Player.now.collectAsState()
     val at = now?.index ?: -1
-    // the row held, and how far it's been dragged from its place
-    var dragging by remember { mutableStateOf(-1) }
-    var dy by remember { mutableStateOf(0f) }
+    // the row held, how far it's been carried, a row's height (the held one's, taken as it's lifted), and its settling
+    var lifted by remember { mutableStateOf<Int?>(null) }
+    var drag by remember { mutableStateOf(0f) }
+    var rowPx by remember { mutableStateOf(1f) }
+    var settling by remember { mutableStateOf(false) }
+    // the queue as it was when a drop moved it: once the list shows another, the held row's let go in that same frame
+    var before by remember { mutableStateOf<List<Song>?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // where the carried row would land
+    val target = lifted?.let { (it + kotlin.math.round(drag / rowPx).toInt()).coerceIn(0, (queue.size - 1).coerceAtLeast(0)) }
     // `follow` (the player's up next): the song playing at the list's top, there at once when it opens and slid to as
     // each next one starts, what's been played above it a scroll away (2026-11-09); not while a row's held
     if (follow) {
         val opened = remember { booleanArrayOf(false) }
         LaunchedEffect(at, queue.size) {
-            if (at < 0 || at >= queue.size || dragging >= 0) return@LaunchedEffect
+            if (at < 0 || at >= queue.size || lifted != null) return@LaunchedEffect
             if (!opened[0]) { opened[0] = true; list.scrollToItem(at) } else list.animateScrollToItem(at)
         }
     }
-    // past half the neighbour it's over: the two trade places, the drag carried on from the new place
-    fun step() {
-        val seen = list.layoutInfo.visibleItemsInfo
-        if (dy > 0) seen.firstOrNull { it.index == dragging + 1 }?.let { n ->
-            if (dy > n.size / 2f) { Player.move(dragging, dragging + 1); dragging += 1; dy -= n.size }
-        } else if (dy < 0) seen.firstOrNull { it.index == dragging - 1 }?.let { p ->
-            if (-dy > p.size / 2f) { Player.move(dragging, dragging - 1); dragging -= 1; dy += p.size }
+    // let go: it glides the rest of the way into its place, then the queue's moved (the rows then where they're drawn)
+    fun drop() {
+        val from = lifted ?: return
+        val to = target ?: from
+        if (settling) return
+        settling = true
+        scope.launch {
+            androidx.compose.animation.core.animate(drag, (to - from) * rowPx, animationSpec = tween(Motion.EXIT, easing = Motion.expo)) { v, _ -> drag = v }
+            if (to != from) {
+                // held where it's drawn till the list shows the queue moved (a frame on), so nothing jumps back between;
+                // the frame that shows it draws every row plain ([before])
+                val was = queueState.value
+                before = was
+                Player.move(from, to)
+                kotlinx.coroutines.withTimeoutOrNull(500) { androidx.compose.runtime.snapshotFlow { queueState.value }.first { it !== was } }
+            }
+            lifted = null; drag = 0f; before = null; settling = false
         }
     }
     // the playing song's cover colour, the progress line's, for its row's wash
@@ -1690,10 +1710,22 @@ fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyL
         itemsIndexed(queue) { i, s ->
             val src = remember { MutableInteractionSource() }
             val over by src.collectIsHoveredAsState()
-            val held = i == dragging
+            val l = lifted?.takeIf { before == null || queue === before }
+            val held = i == l
+            // the others step aside for the carried one, easing there; put straight back as it's let go (the queue moved
+            // under them then: easing back would slide them a second time)
+            val shift = when {
+                l == null || target == null || held -> 0f
+                i in (l + 1)..target -> -rowPx
+                i in target until l -> rowPx
+                else -> 0f
+            }
+            val aside = remember { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(shift, l) { if (l == null) aside.snapTo(0f) else aside.animateTo(shift, tween(Motion.ENTER, easing = Motion.expo)) }
+            val dim by androidx.compose.animation.core.animateFloatAsState(if (l != null && !held) .45f else 1f, tween(Motion.ENTER, easing = Motion.expo), label = "dim")
             Row(
                 Modifier.hoverable(src).zIndex(if (held) 1f else 0f)
-                    .graphicsLayer { translationY = if (held) dy else 0f }.background(if (held) Ink.black else Color.Transparent),
+                    .graphicsLayer { translationY = if (held) drag else if (l == null) 0f else aside.value; alpha = dim },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.weight(1f)) {
@@ -1703,12 +1735,16 @@ fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyL
                 Box(
                     Modifier.width(16.dp).height(36.dp)
                         .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor(java.awt.Cursor.MOVE_CURSOR)))
-                        .pointerInput(Unit) {
+                        .pointerInput(i, queue.size) {
                             detectVerticalDragGestures(
-                                onDragStart = { dragging = i; dy = 0f },
-                                onDragEnd = { dragging = -1; dy = 0f },
-                                onDragCancel = { dragging = -1; dy = 0f },
-                            ) { c, d -> c.consume(); if (dragging >= 0) { dy += d; step() } }
+                                onDragStart = {
+                                    if (settling) return@detectVerticalDragGestures
+                                    rowPx = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == i }?.size?.toFloat()?.takeIf { it > 0f } ?: rowPx
+                                    lifted = i; drag = 0f
+                                },
+                                onDragEnd = { drop() },
+                                onDragCancel = { drop() },
+                            ) { c, d -> c.consume(); if (lifted == i && !settling) drag += d }
                         },
                     contentAlignment = Alignment.CenterEnd,
                 ) { if (over || held) Sprite(GRIP, if (held) Ink.ink else Ink.mid, 2.dp) }
