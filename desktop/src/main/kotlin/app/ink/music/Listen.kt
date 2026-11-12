@@ -422,6 +422,19 @@ fun ListsPage(open: (Page) -> Unit) {
     val gridded by ListsGrid.on.collectAsState()
     if (gridded) return ListsTiles(open)
     val list = pageList()
+    // a right click anywhere: a new list, empty or from files (2026-11-12, a tester: the way it's done everywhere)
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    fun fresh(): String { var n = 1; while (hereLists.any { it.name == if (n == 1) "new list" else "new list $n" }) n++; return if (n == 1) "new list" else "new list $n" }
+    Box(Modifier.fillMaxSize().rightClick { menuAt = it }) {
+    menuAt?.let { at ->
+        MenuAt(at, Ink.ink, listOf(listOf(
+            "new list" to { val m = HereLists.make(fresh(), emptyList()); open(Page.List(m.id, m.name)) },
+            "new list from files" to { chooseFiles { files -> kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val songs = Dropped.songsOf(files)
+                if (songs.isNotEmpty()) { val m = HereLists.make(fresh(), songs); javax.swing.SwingUtilities.invokeLater { open(Page.List(m.id, m.name)) } }
+            } } },
+        ))) { menuAt = null }
+    }
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
         item { ListsView() }
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
@@ -450,6 +463,7 @@ fun ListsPage(open: (Page) -> Unit) {
             }
         }
     }}
+    }
 }
 
 /** Lists as a list or a grid: two words, the one chosen lit. */
@@ -546,6 +560,9 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
         }
     }
     val list = pageList()
+    // a list of yours: files dropped on the window go into it (Dropped), and files can be added from a folder
+    val mine = id.startsWith(HereLists.PREFIX)
+    androidx.compose.runtime.DisposableEffect(id) { if (mine) Dropped.into = id; onDispose { if (Dropped.into == id) Dropped.into = null } }
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
@@ -586,6 +603,11 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                         }
                     }
                 }
+                // yours: songs from the computer into it, chosen or dropped (2026-11-12, a tester)
+                if (mine) Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Word("add files", pixel(13.sp), touch = 8.dp) { chooseFiles { files -> kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { HereLists.add(id, Dropped.songsOf(files)) } } }
+                    BasicText("or drop them here", style = pixel(12.sp, Ink.mid))
+                }
                 MixProgress(name)
                 Spacer(Modifier.height(14.dp))
             }
@@ -596,7 +618,7 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                         id == KEPT -> ({ Offline.remove(listOf(x.id)) })
                         id.startsWith(HereLists.PREFIX) -> ({ HereLists.remove(id, i) })
                         else -> null
-                    }) { Player.play(s, i) }
+                    }, order = s) { Player.play(s, i) }
             }
         }}
     }

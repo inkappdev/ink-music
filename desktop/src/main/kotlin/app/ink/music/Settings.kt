@@ -568,6 +568,14 @@ private fun SoundSetting() {
  * A folder picked in the system's own way (the Mac's open panel, Windows' own picker, both folders only; Swing's
  * elsewhere); [picked] isn't called if it's cancelled.
  */
+/** Songs chosen from the computer, as many as wanted at once (the system's own file picker). */
+internal fun chooseFiles(picked: (List<java.io.File>) -> Unit) {
+    val d = java.awt.FileDialog(null as java.awt.Frame?, "Add songs", java.awt.FileDialog.LOAD)
+    d.isMultipleMode = true
+    d.isVisible = true
+    d.files.toList().takeIf { it.isNotEmpty() }?.let(picked)
+}
+
 internal fun chooseFolder(picked: (java.io.File) -> Unit) {
     if (Home.windows) return WinFolder.choose("Your music", Library.folder, ::swingFolder, picked)
     (if (Home.mac) macFolder() else swingFolder())?.let(picked)

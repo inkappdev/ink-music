@@ -366,14 +366,22 @@ val SHRINK = listOf("#.....", ".#....", "..#..#", "...#.#", "....##", "..####")
 object Dropped {
     private val scope = CoroutineScope(Dispatchers.IO)
     val over = MutableStateFlow(false)
+    /** A list of yours open (HereLists): what's dropped goes into it, not played (2026-11-12, a tester). */
+    @Volatile var into: String? = null
+
+    /** Files and folders as songs, a record's in its order. */
+    fun songsOf(paths: List<File>): List<Song> = paths.flatMap { f ->
+        if (f.isDirectory) Library.read(f.walkTopDown().filter { it.isFile }.toList())
+            .sortedWith(compareBy({ it.albumId }, { it.disc }, { it.track }, { it.path }))
+        else Library.read(listOf(f))
+    }
 
     fun play(paths: List<File>) = scope.launch {
-        val songs = paths.flatMap { f ->
-            if (f.isDirectory) Library.read(f.walkTopDown().filter { it.isFile }.toList())
-                .sortedWith(compareBy({ it.albumId }, { it.disc }, { it.track }, { it.path }))
-            else Library.read(listOf(f))
-        }
-        if (songs.isNotEmpty()) javax.swing.SwingUtilities.invokeLater { Player.play(songs) }
+        val songs = songsOf(paths)
+        val list = into
+        if (songs.isEmpty()) return@launch
+        if (list != null) HereLists.add(list, songs)
+        else javax.swing.SwingUtilities.invokeLater { Player.play(songs) }
     }
 }
 
@@ -403,7 +411,7 @@ fun DropHint() {
     AnimatedVisibility(over, enter = fadeIn(tween(Motion.ENTER, easing = Motion.expo)), exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
         Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .85f)), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                BasicText("LET GO TO PLAY", style = headline(64.sp))
+                BasicText(if (Dropped.into != null) "LET GO TO ADD" else "LET GO TO PLAY", style = headline(64.sp))
                 Spacer(Modifier.height(10.dp))
                 BasicText("songs, a record's folder, a stack of them", style = pixel(14.sp, Ink.mid))
             }
