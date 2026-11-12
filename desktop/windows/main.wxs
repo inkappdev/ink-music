@@ -150,7 +150,13 @@
       <?ifndef JpAllowDowngrades ?>
       <Custom Action="JpDisallowDowngrade" After="JpFindRelatedProducts">JP_DOWNGRADABLE_FOUND</Custom>
       <?endif?>
-      <RemoveExistingProducts Before="CostInitialize"/>
+      <!-- the old version taken out inside the install's transaction (jpackage's is before it, Before="CostInitialize"):
+           an update that fails puts the old one's files back rather than leaving nothing. Tried 2026-11-11: from 2.1.12,
+           whose download sits in the folder its own uninstall empties, the update still fails, 2.1.12 comes back and
+           plays (its machine-wide registration can't be rolled back without an administrator: gone from Apps, a 2.1.16
+           from the site goes in over it cleanly); from 2.1.15, whose download is outside, it updates whole -->
+      <RemoveExistingProducts After="InstallInitialize"/>
+      <RemoveExistingProducts After="InstallInitialize"/>
       <Custom Action="JpFindRelatedProducts" After="FindRelatedProducts"/>
     </InstallExecuteSequence>
 

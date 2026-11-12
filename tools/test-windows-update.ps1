@@ -22,6 +22,14 @@ $app = Join-Path $env:LOCALAPPDATA "ink music\ink music.exe"
 $home2 = Join-Path $env:APPDATA "ink music"
 New-Item -ItemType Directory -Force $work, $serve | Out-Null
 
+# not from inside a packaged app's shell (Claude's own terminal is one): a folder it makes in AppData\Local lands in the
+# package's LocalCache, which Windows Installer's service can't see, and the update fails with 1619 for that alone
+$probe = Join-Path $env:LOCALAPPDATA "ink-update-probe-$PID"
+New-Item -ItemType Directory -Force $probe | Out-Null
+$boxed = [bool](Get-Item $probe -Force).Target
+Remove-Item -Recurse -Force $probe
+if ($boxed) { throw "run this from a PowerShell opened from the Start menu, not inside an app's terminal (its AppData is a package's copy)" }
+
 function Installed {
     $k = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall, HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall -ErrorAction SilentlyContinue |
         ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like "ink music*" }
@@ -36,7 +44,16 @@ if (-not (Test-Path $old)) {
     Invoke-WebRequest "https://inkhome.app/download/ink-music-$From-windows.msi" -OutFile $old -UseBasicParsing
 }
 Quit-Ink
-Write-Host "installing $From (was: $(Installed))"
+# a newer one there first is taken out (the msi won't go down a version); its settings and cache outside stay
+$had = Installed
+if ($had -and $had -notlike "$From*") {
+    $code = (Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall, HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall -ErrorAction SilentlyContinue |
+        ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like "ink music*" } | Select-Object -First 1).PSChildName
+    Write-Host "taking out $had first ($code)"
+    Start-Process msiexec -ArgumentList "/x", $code, "/passive", "/norestart", "/l*v", "`"$work\uninstall-$had.log`"" -Wait | Out-Null
+    if (Installed) { throw "$had didn't come out: $work\uninstall-$had.log" }
+}
+Write-Host "installing $From (was: $had)"
 $p = Start-Process msiexec -ArgumentList "/i", "`"$old`"", "/passive", "/norestart", "/l*v", "`"$work\install-$From.log`"" -Wait -PassThru
 if ((Installed) -notlike "$From*") { throw "$From didn't go in (msiexec said $($p.ExitCode)): $work\install-$From.log" }
 
@@ -72,19 +89,29 @@ $latest = @{
     )
 } | ConvertTo-Json -Depth 4
 [IO.File]::WriteAllText((Join-Path $serve "latest.json"), $latest)
-$server = Start-Job -ArgumentList $serve, $Port -ScriptBlock {
-    param($dir, $port)
-    $l = [Net.HttpListener]::new(); $l.Prefixes.Add("http://localhost:$port/"); $l.Start()
-    while ($true) {
-        $c = $l.GetContext()
+# the port taken or not by trying to take it (asking it: a closed port on Windows is slow to refuse, retried, and looks taken)
+$taken = $false
+try { $t = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port); $t.Start(); $t.Stop() } catch { $taken = $true }
+if ($taken) { throw "something holds localhost:$Port already (an earlier run's server?): close the old windows, or -Port another" }
+# its own process, killed at the end (a job blocked in GetContext never stopped, and held the port for the next run);
+# a request that fails (the app giving up mid-download) doesn't end it
+$serverPs1 = Join-Path $work "serve.ps1"
+[IO.File]::WriteAllText($serverPs1, @'
+param($dir, $port)
+$l = [Net.HttpListener]::new(); $l.Prefixes.Add("http://localhost:$port/"); $l.Start()
+while ($true) {
+    $c = $l.GetContext()
+    try {
         $f = Join-Path $dir ($c.Request.Url.AbsolutePath.TrimStart("/"))
         if (Test-Path $f -PathType Leaf) {
             $c.Response.ContentLength64 = (Get-Item $f).Length
-            $s = [IO.File]::OpenRead($f); $s.CopyTo($c.Response.OutputStream); $s.Close()
+            $s = [IO.File]::OpenRead($f); try { $s.CopyTo($c.Response.OutputStream) } finally { $s.Close() }
         } else { $c.Response.StatusCode = 404 }
         $c.Response.Close()
-    }
+    } catch { try { $c.Response.Abort() } catch {} }
 }
+'@)
+$server = Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$serverPs1`"", "`"$serve`"", $Port -WindowStyle Hidden -PassThru
 Start-Sleep 2
 try { Invoke-WebRequest "$base/latest.json" -UseBasicParsing | Out-Null } catch { throw "the stand-in release isn't served: $_" }
 
@@ -106,7 +133,7 @@ foreach ($i in 1..120) {
     if (-not $v) { $gone = $true }
     if ($v -like "$To*") { $went = $true; Start-Sleep 10; break }
 }
-Stop-Job $server; Remove-Job $server
+Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
 $running = [bool](Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $app })
 $r = @()
 $r += "update from $From to $To, $(Get-Date -Format s)"
