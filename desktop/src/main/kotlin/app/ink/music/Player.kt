@@ -490,6 +490,14 @@ object Player {
     private val fromRadio = java.util.Collections.synchronizedSet(HashSet<String>())
     @Volatile private var radioFrom: String? = null
 
+    /** Where radio's songs come from: online, offline, or both (Radio.Mode; kept). */
+    val radioMode = MutableStateFlow(runCatching { Radio.Mode.valueOf(File(Home.dir, "radio-mode").readText().trim()) }.getOrDefault(Radio.Mode.BOTH))
+    fun radioMode(m: Radio.Mode) {
+        radioMode.value = m
+        runCatching { File(Home.dir, "radio-mode").writeText(m.name) }
+        radioFrom = null
+    }
+
     fun radio(on: Boolean) {
         radio.value = on
         runCatching { File(Home.dir, "radio-off").let { if (on) it.delete() else it.writeText("") } }
@@ -516,7 +524,7 @@ object Player {
         val queued = q.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) }.toHashSet()
         scope.launch {
             // a mix's queue (its first song the mix's): radio keeps to its tempo
-            val more = Radio.after(seeds, queued, TempoMixes.keeping(q.firstOrNull()?.id))
+            val more = Radio.after(seeds, queued, TempoMixes.keeping(q.firstOrNull()?.id), radioMode.value)
             if (more.isEmpty() || !radio.value || _queue.value.lastOrNull()?.id != last.id) return@launch
             fromRadio += more.map { it.id }
             // on a speaker: to its queue

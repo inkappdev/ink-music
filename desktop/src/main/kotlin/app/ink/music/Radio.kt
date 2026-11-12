@@ -11,6 +11,14 @@ package app.ink.music
  * first; one heard in the last few hours, or a sped-up, slowed, nightcore or karaoke version, doesn't come.
  */
 object Radio {
+    /**
+     * Where radio's songs come from (2026-11-12, a tester: "too ambiguous and unpredictable ... sometimes it searches
+     * online, other times it simply uses local files"): ONLINE only songs from online (YouTube Music), never your files,
+     * whatever the song it starts from; OFFLINE only the files on this computer, near it by sound; BOTH, as it was (your
+     * server's similar, YouTube's, then your own). Neither ever comes back empty while there's anything to play.
+     */
+    enum class Mode(val said: String) { BOTH("radio"), ONLINE("online radio"), OFFLINE("offline radio") }
+
     /** How many come at a time; and at most how many by one artist among them. */
     private const val BATCH = 10
     private const val SAME_ARTIST = 2
@@ -27,9 +35,9 @@ object Radio {
     private val versions = Regex("""\b(sped ?up|slowed|nightcore|karaoke|8d audio|bass ?boosted|reverb)\b""", RegexOption.IGNORE_CASE)
 
     /** Songs to follow the seeds (blocking; the last song first): none already queued (ids, and title/artist keys). */
-    fun after(seeds: List<Seed>, queued: Set<String>, tempo: Double? = null): List<Song> {
+    fun after(seeds: List<Seed>, queued: Set<String>, tempo: Double? = null, mode: Mode = Mode.BOTH): List<Song> {
         if (seeds.isEmpty()) return emptyList()
-        val lists = seeds.take(WEIGHT.size).map { related(it) }
+        val lists = seeds.take(WEIGHT.size).map { when (mode) { Mode.BOTH -> related(it); Mode.ONLINE -> online(it); Mode.OFFLINE -> offline(it) } }
         val since = System.currentTimeMillis() - RECENT
         val heard = History.read().filter { it.at >= since }.flatMap { listOf(it.id, key(it.title, it.artist)) }.toHashSet()
         if (tempo == null) return rank(seeds, lists, queued, heard)
@@ -90,6 +98,59 @@ object Radio {
         return yours(s)
     }
 
+    /**
+     * Online only: YouTube Music's radio from the song as it's found there, by its tags (title, artist), or by what its
+     * file's name says when it has none; else the artist's own radio; else, so it never stops, songs the critics are
+     * picking now (INK's) near its genre, then any of them. None of it your files.
+     */
+    fun online(s: Seed): List<Song> {
+        if (Local.on) return emptyList()
+        if (s.id.startsWith("y")) YouTube.related(s.id).takeIf { it.isNotEmpty() }?.let { return it }
+        val seed = Library.songs.value.firstOrNull { it.id == s.id }
+        val known = s.artist.isNotBlank() && s.artist != "unknown"
+        // a file with nothing in it: its name, cleaned of track numbers and underscores, is what's asked
+        val title = if (known) s.title else spoken(seed?.path?.let { java.io.File(it).nameWithoutExtension } ?: s.title)
+        (YouTube.find(title, if (known) s.artist else "") ?: runCatching { kotlinx.coroutines.runBlocking { YouTube.search(title) }?.songs?.firstOrNull() }.getOrNull())
+            ?.let { YouTube.related(it.id) }?.takeIf { it.isNotEmpty() }?.let { return it }
+        if (known) runCatching { kotlinx.coroutines.runBlocking { YouTube.search(s.artist.substringBefore(", ")) }?.songs?.firstOrNull() }.getOrNull()
+            ?.let { YouTube.related(it.id) }?.takeIf { it.isNotEmpty() }?.let { return it }
+        // never empty: what the critics are picking, those of the seed's genre first
+        val picks = Picks.songs.value.map { it.pick }
+        val tags = Genres.tags(s.artist)?.take(3).orEmpty()
+        val near = picks.filter { p -> tags.isNotEmpty() && Genres.tags(p.artist)?.take(3)?.any { it in tags } == true }
+        return (near + picks.shuffled()).distinctBy { it.artist + it.title }.take(12)
+            .mapNotNull { p -> runCatching { YouTube.find(p.title, p.artist) }.getOrNull() }.take(8)
+    }
+
+    /** A file's name as words: "03_some-song_(official)" as "some song". */
+    private fun spoken(name: String) = name.replace(Regex("""[_\-.]+"""), " ").replace(Regex("""^\s*\d{1,3}\s+"""), "")
+        .replace(Regex("""\((official|audio|video|lyrics?)[^)]*\)""", RegexOption.IGNORE_CASE), "").trim()
+
+    /**
+     * Offline only: the files on this computer nearest the seed by what's known of their sound: the same artist, the
+     * same genre tags (Last.fm's), a tempo near (where it's been read), the same folder; scored and the best taken, the
+     * rest of the library after, so it never stops while there's a file to play.
+     */
+    fun offline(s: Seed): List<Song> {
+        val all = Library.songs.value.filter { !it.tube && !it.server && !it.station && !it.episode && it.path.isNotEmpty() && it.id != s.id }
+        if (all.isEmpty()) return emptyList()
+        val seed = Library.songs.value.firstOrNull { it.id == s.id }
+        fun who(a: String) = a.lowercase().substringBefore(",").trim()
+        val me = who(s.artist)
+        val myTags = Genres.tags(s.artist)?.take(5).orEmpty().toSet()
+        val myTempo = Tempos.kept(s.id)?.takeIf { it.bpm > 0 }?.bpm
+        val folder = seed?.path?.let { java.io.File(it).parent }
+        val scored = all.map { x ->
+            var score = 0.0
+            if (me.isNotEmpty() && me != "unknown" && who(x.artist) == me) score += 3
+            Genres.tags(x.artist)?.take(5)?.let { t -> score += 1.5 * t.count { it in myTags } }
+            if (myTempo != null) Tempos.kept(x.id)?.takeIf { it.bpm > 0 }?.let { if (Tempos.fits(it.bpm, myTempo, .06)) score += 1 }
+            if (folder != null && java.io.File(x.path).parent == folder) score += 1
+            x to score + Math.random() * .5
+        }.sortedByDescending { it.second }
+        return scored.map { it.first }.take(40)
+    }
+
     /** Your own songs near a seed: the same artist's, then the same folder's, shuffled; the seed itself left out. */
     private fun yours(s: Seed): List<Song> {
         val all = Library.songs.value
@@ -126,7 +187,8 @@ object Radio {
  * punishes you for using it"): the one playing plays on, the songs queued after it let go and radio's following it;
  * any other song begins, radio after it, as before.
  */
-fun Player.radioFrom(s: Song) {
+fun Player.radioFrom(s: Song, mode: Radio.Mode = radioMode.value) {
+    radioMode(mode)
     if (now.value?.song?.id != s.id) return startRadio(s)
     for (i in queue.value.size - 1 downTo index() + 1) remove(i)
     // (on already: asked again, it fills after this song)
