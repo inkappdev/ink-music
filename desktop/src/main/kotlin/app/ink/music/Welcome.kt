@@ -55,13 +55,12 @@ import java.io.File
  * The computer's first open (2026-11-12, Bronson: "a cool welcome screen"; the phone's Welcome its model): INK MUSIC,
  * then the phone's QR code, since a phone paired brings everything over (its sign-ins, server, listening, loves) and
  * that's the whole of it; without one, where your music is, then whom you like (followed: their mixes lead listen).
- * As few words as can be. Shown once, and never to someone who's used ink music here before.
+ * As few words as can be. Shown once to everyone, a new install or an update (a phone already paired: PAIRED, and in).
  */
 object Welcome {
     private val said = File(Home.dir, "welcomed")
-    // what someone who's used it leaves (sync.json and window.json are written on every start, so not those)
-    val showing = kotlinx.coroutines.flow.MutableStateFlow(
-        !said.exists() && listOf("heard.jsonl", "loved.json", "folder", "following.json").none { File(Home.dir, it).exists() })
+    // everyone once, those updating too (2026-11-12, Bronson: those who update go through it): till it's been through
+    val showing = kotlinx.coroutines.flow.MutableStateFlow(!said.exists())
 
     fun finish() {
         showing.value = false
