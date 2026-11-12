@@ -16,6 +16,7 @@ object LyricsSources {
 
     val sources = listOf(
         Source("auto", "Automatic", "Best available result from all enabled sources"),
+        Source("local", "Local file", "Read a neighbouring .lrc, .ttml, or .txt file"),
         Source("better", "BetterLyrics", "Word-synced Apple Music lyrics"),
         Source("better_qq", "BetterLyrics Portato", "QQ Music karaoke timings"),
         Source("youtube", "YouTube Music", "Timed lyrics from YouTube Music"),
