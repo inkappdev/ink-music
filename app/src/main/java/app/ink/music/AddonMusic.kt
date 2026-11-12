@@ -14,7 +14,7 @@ import javax.crypto.spec.SecretKeySpec
 import org.json.JSONObject
 
 /**
- * BitChord's JSON addon protocol, with optional LastWave HMAC authentication.
+ * BitChord-compatible JSON addon protocol, with optional token-route request signing.
  * Addons are remote HTTP sources, never executable modules.
  */
 object AddonMusic {
@@ -76,7 +76,7 @@ object AddonMusic {
         if (base.isBlank() || title.isBlank() || artist.isBlank()) return null
         return runCatching {
             val params = settings(ctx, base)
-            params["q"] = "$title $artist"
+            params["q"] = listOf(title, artist, album).filter { it.isNotBlank() }.joinToString(" ")
             val response = request(ctx, "$base/search", params)
             val tracks = response.optJSONArray("tracks") ?: return@runCatching null
             fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
@@ -94,14 +94,17 @@ object AddonMusic {
                 val seconds = track.optDouble("duration", 0.0).toLong()
                 val difference = if (durationSeconds > 0 && seconds > 0) kotlin.math.abs(seconds - durationSeconds) else 0L
                 if (difference > 12) return@mapNotNull null
-                Triple(track, difference, if (foundArtist == wantedArtist) 0 else 1)
+                val foundAlbum = norm(track.optString("album"))
+                val wantedAlbum = norm(album)
+                val albumPenalty = if (wantedAlbum.isBlank() || foundAlbum.isBlank() || foundAlbum == wantedAlbum) 0 else 1
+                Triple(track, difference, (if (foundArtist == wantedArtist) 0 else 2) + albumPenalty)
             }.sortedWith(compareBy<Triple<JSONObject, Long, Int>> { it.second }.thenBy { it.third })
             val track = candidates.firstOrNull()?.first ?: return@runCatching null
             val direct = track.optString("streamURL").takeIf { it.startsWith("http") }
             if (direct != null) return@runCatching direct
             val id = track.getString("id")
             val stream = request(ctx, "$base/stream/${Uri.encode(id)}", params)
-            stream.optString("url").ifBlank { stream.optString("streamURL") }.takeIf { it.startsWith("http") }
+            playableUrl(stream)
         }.onFailure { android.util.Log.w("ink-addon", "lookup failed: ${it.message}") }.getOrNull()
     }
 
@@ -130,9 +133,26 @@ object AddonMusic {
         val id = decoded.getString("id")
         val params = settings(ctx, base)
         val result = request(ctx, "$base/stream/${Uri.encode(id)}", params)
-        val url = result.optString("url").ifBlank { result.optString("streamURL") }
-        if (!url.startsWith("http")) throw IOException(result.optString("error").ifBlank { "Addon returned no stream URL" })
+        val url = playableUrl(result)
+        if (url == null) throw IOException(result.optString("error").ifBlank { "Addon returned no stream URL" })
         return url
+    }
+
+    /** Accept direct and wrapped stream response shapes used by addon servers. */
+    private fun playableUrl(response: JSONObject): String? {
+        fun find(value: JSONObject): String? {
+            for (key in listOf("url", "streamURL", "streamUrl", "audioUrl", "mediaUrl")) {
+                value.optString(key).takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { return it }
+            }
+            for (key in listOf("stream", "data", "result")) {
+                when (val nested = value.opt(key)) {
+                    is JSONObject -> find(nested)?.let { return it }
+                    is String -> nested.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { return it }
+                }
+            }
+            return null
+        }
+        return find(response)
     }
 
     private fun settings(ctx: Context, base: String): LinkedHashMap<String, String> {
@@ -167,6 +187,8 @@ object AddonMusic {
             }
             result["quality"] = match ?: tier
         }.onFailure { result.putIfAbsent("quality", "LOSSLESS") }
+        // Avoid spatial-audio variants unless the addon explicitly configures them.
+        result.putIfAbsent("atmos", "none")
         result.putIfAbsent("quality", when (Quality.now(ctx)) {
             Quality.SAVER -> "LOW"; Quality.HIGH -> "HIGH"; else -> "LOSSLESS"
         })
@@ -186,6 +208,7 @@ object AddonMusic {
         sign(ctx, target)?.let { (ts, signature) ->
             connection.setRequestProperty("X-LW-TS", ts)
             connection.setRequestProperty("X-LW-Sign", signature)
+            if (Uri.parse(target).path.orEmpty().contains("/stream/")) connection.setRequestProperty("X-LW-Intent", "stream")
         }
         try {
             val code = connection.responseCode
@@ -194,11 +217,11 @@ object AddonMusic {
         } finally { connection.disconnect() }
     }
 
-    /** Headers for the audio GET itself when its URL is a token-bearing LastWave route. */
+    /** Headers for the audio GET itself when its URL uses a token-bearing addon route. */
     fun signedHeaders(ctx: Context, url: String): Map<String, String> =
-        sign(ctx, url)?.let { (ts, signature) -> mapOf("X-LW-TS" to ts, "X-LW-Sign" to signature) }.orEmpty()
+        sign(ctx, url)?.let { (ts, signature) -> mapOf("X-LW-TS" to ts, "X-LW-Sign" to signature, "X-LW-Intent" to "stream") }.orEmpty()
 
-    /** LastWave's optional signature: timestamp, method, path and the /a/{token} path token. */
+    /** Optional route signature: timestamp, method, path and the /a/{token} path token. */
     private fun sign(ctx: Context, url: String): Pair<String, String>? {
         val key = secret(ctx)
         if (key.isBlank()) return null
