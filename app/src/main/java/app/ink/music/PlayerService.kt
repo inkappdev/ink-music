@@ -924,6 +924,8 @@ class PlayerService : MediaLibraryService() {
                     session?.player?.let { setSleep(it, 0) }
             }
         })
+        // Discord presence observes the player directly in this process; it never gates audio.
+        DiscordAndroidPresence.start(this, player)
         main.post(keepPlace)
         main.post(dacSays)
         main.post { effects(true); equalize(); tell() }   // the session's there once onCreate is done
@@ -1153,6 +1155,7 @@ class PlayerService : MediaLibraryService() {
     }.getOrNull()
 
     override fun onDestroy() {
+        DiscordAndroidPresence.stop()
         waiting?.let { cb -> runCatching { getSystemService(android.net.ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } }
         runCatching { unregisterReceiver(usbSeen) }
         crossfade?.release()
