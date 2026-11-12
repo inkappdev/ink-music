@@ -81,6 +81,12 @@ dependencies {
     // what's behind a bar, softly blurred (Chris Banes' Haze, Apache-2.0; RenderEffect on Android 12+)
     implementation("dev.chrisbanes.haze:haze:2.0.1")
     implementation("dev.chrisbanes.haze:haze-blur:2.0.1")
+    // pairing a computer by its QR code (PairCamera): the camera by CameraX, the code read by ZXing's core (both
+    // Apache-2.0, neither Play services)
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("com.google.zxing:core:3.5.3")
     // YouTube Music, the full build only (NewPipe's extractor, GPL-3.0): never in the play build
     "fullImplementation"("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     "fullImplementation"(project(":youtube"))

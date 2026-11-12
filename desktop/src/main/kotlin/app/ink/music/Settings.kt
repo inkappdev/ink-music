@@ -635,9 +635,19 @@ private fun PhoneSetting() {
     val c = code
     when {
         c != null -> {
-            BasicText("on your phone: ink music, settings, sync with a computer. pick ${TubeAccount.name.lowercase()}, and type", style = pixel(12.sp, Ink.mid))
-            Spacer(Modifier.height(8.dp))
-            BasicText(c, style = headline(64.sp))
+            // the QR code (2026-11-12): the phone's camera on it, and nothing typed; the code beside it for a phone
+            // without a camera, or an ink music from before
+            val link by TubeAccount.link.collectAsState()
+            BasicText("on your phone: ink music, settings, sync with a computer, and point it at this", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                link?.let { QrCode(it, Modifier.size(184.dp)); Spacer(Modifier.width(24.dp)) }
+                Column(Modifier.weight(1f)) {
+                    BasicText("or pick ${TubeAccount.name.lowercase()} there, and type", style = pixel(12.sp, Ink.mid))
+                    BasicText(c, style = headline(44.sp), maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
             BasicText("the two agree a key no one else on the wifi can work out; everything between them goes sealed under it", style = pixel(12.sp, Ink.mid))
             val where by TubeAccount.at.collectAsState()
             where?.let { BasicText("not listed on the phone? type its address there: $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }

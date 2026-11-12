@@ -56,6 +56,8 @@ dependencies {
     // speakers found on the network (mDNS; Apache-2.0)
     implementation("org.jmdns:jmdns:3.6.4")
     implementation("org.json:json:20240303")
+    // the pairing's QR code, for the phone's camera (Apache-2.0; core alone, no Swing or camera parts)
+    implementation("com.google.zxing:core:3.5.3")
     // YouTube Music: its API by hand (the phone's InnerTube.kt, shared), its streams through NewPipe's extractor (GPL-3.0)
     implementation(project(":youtube"))
     implementation(project(":core"))

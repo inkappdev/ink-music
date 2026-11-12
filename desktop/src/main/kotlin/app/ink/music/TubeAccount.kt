@@ -146,11 +146,13 @@ object TubeAccount {
     val code = MutableStateFlow<String?>(null)
     /** Where the phone can reach it by hand, if the wifi doesn't show it ("192.168.1.20:52114"). */
     val at = MutableStateFlow<String?>(null)
+    /** What the QR code beside the code says ([Handover.link]): the code, the port and every address, for the phone's camera. */
+    val link = MutableStateFlow<String?>(null)
     private var announcing: Process? = null
     /** What happened, said ("signed in as ...", "that didn't work"). */
     val said = MutableStateFlow<String?>(null)
     private var server: ServerSocket? = null
-    private var dns: javax.jmdns.JmDNS? = null
+    private var dns: List<javax.jmdns.JmDNS> = emptyList()
 
     /** The computer as the phone lists it. */
     val name: String get() = runCatching { java.net.InetAddress.getLocalHost().hostName.substringBefore(".") }.getOrDefault("this computer")
@@ -172,15 +174,30 @@ object TubeAccount {
         }, "handover").apply { isDaemon = true }.start()
         scope.launch {
             runCatching {
-                val ip = Serve.local() ?: java.net.InetAddress.getLocalHost()
-                at.value = "${ip.hostAddress}:${s.localPort}"
+                val all = Serve.addresses().ifEmpty { listOf(java.net.InetAddress.getLocalHost().hostAddress) }
+                at.value = "${all.first()}:${s.localPort}"
+                link.value = Handover.link(code.value.orEmpty(), s.localPort, all.take(4))
                 // a Mac's own announcer (mDNSResponder, as every Mac app's): a second one in the app (JmDNS) fought it
-                // for the port and the phone never heard; elsewhere JmDNS
+                // for the port and the phone never heard; elsewhere JmDNS, on each of the likeliest few (one per network:
+                // the wifi's may not be the first)
                 if (Home.mac) announcing = ProcessBuilder("/usr/bin/dns-sd", "-R", name, Handover.SERVICE, "local", s.localPort.toString())
                     .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
-                else dns = javax.jmdns.JmDNS.create(ip).also { it.registerService(javax.jmdns.ServiceInfo.create("${Handover.SERVICE}.local.", name, s.localPort, "ink music")) }
+                else dns = all.take(3).mapNotNull { ip ->
+                    runCatching {
+                        javax.jmdns.JmDNS.create(java.net.InetAddress.getByName(ip))
+                            .also { it.registerService(javax.jmdns.ServiceInfo.create("${Handover.SERVICE}.local.", name, s.localPort, "ink music")) }
+                    }.onFailure { Log.d("handover dns $ip: $it") }.getOrNull()
+                }
             }.onFailure { Log.d("handover dns: $it") }
-            kotlinx.coroutines.delay(10 * 60_000L)
+            // ten minutes; the QR code kept to the addresses as they are (the computer moved onto the phone's hotspot,
+            // say, the phone's way round a wifi that keeps devices apart)
+            repeat(120) {
+                kotlinx.coroutines.delay(5_000)
+                val c = code.value
+                if (server !== s || c == null) return@launch
+                val now = Serve.addresses()
+                if (now.isNotEmpty()) { at.value = "${now.first()}:${s.localPort}"; link.value = Handover.link(c, s.localPort, now.take(4)) }
+            }
             if (server === s) stop()
         }
     }
@@ -189,8 +206,9 @@ object TubeAccount {
         runCatching { server?.close() }; server = null
         announcing?.destroy(); announcing = null
         at.value = null
-        val d = dns; dns = null
-        if (d != null) scope.launch { runCatching { d.unregisterAllServices(); d.close() } }
+        link.value = null
+        val d = dns; dns = emptyList()
+        if (d.isNotEmpty()) scope.launch { d.forEach { runCatching { it.unregisterAllServices(); it.close() } } }
         code.value = null
     }
 
@@ -216,7 +234,8 @@ object TubeAccount {
                 val w = hello.optJSONObject("youtube")?.let { take(it) }
                 said.value = "paired with ${hello.optString("name", "your phone").lowercase()}" + (w?.let { ", signed in as ${it.name.lowercase()}" } ?: "")
                 scope.launch { kotlinx.coroutines.delay(500); stop() }
-                200 to JSONObject().put("ok", true).put("name", name).put("id", SyncHub.kept.id())
+                // and where to call for sync, so a phone that got here without mDNS (by the QR code) needn't find it again
+                200 to JSONObject().put("ok", true).put("name", name).put("id", SyncHub.kept.id()).put("sync", SyncHub.port())
             }.getOrElse { e -> said.value = "that didn't work: ${e.message?.lowercase()}"; 400 to JSONObject().put("ok", false).put("why", e.message.orEmpty()) }
             "POST" to "/hand" -> runCatching {
                 val o = JSONObject(body)

@@ -86,15 +86,30 @@ object Serve {
     /** This computer's address on the network as an address (for announcing it, mDNS). */
     fun local(): java.net.InetAddress? = address()?.let { java.net.InetAddress.getByName(it) }
 
-    /** This computer's address on the network (IPv4, a home network's: the speakers dial it). */
-    fun address(): String? = runCatching {
+    /** This computer's address on the network (IPv4, a home network's: the speakers and the phone dial it). */
+    fun address(): String? = addresses().firstOrNull()
+
+    /**
+     * Every address this computer has on a network, its likeliest first: the one its way out to the internet goes from,
+     * then real adapters before made-up ones. Before (2026-11-12) the first of any came first, and a laptop's WSL, Hyper-V,
+     * VirtualBox or VPN adapter could be it: announced there, shown there and the firewall read there, the phone never
+     * got in (Java's isVirtual is only for sub-interfaces, so those all look real). Link-local (169.254) left out.
+     */
+    fun addresses(): List<String> = runCatching {
+        val out = from(java.net.InetAddress.getByName("1.1.1.1"))
         NetworkInterface.getNetworkInterfaces().toList()
-            .filter { it.isUp && !it.isLoopback && !it.isVirtual && !it.isPointToPoint }
-            .flatMap { it.inetAddresses.toList() }
-            .filterIsInstance<Inet4Address>()
-            .sortedByDescending { it.isSiteLocalAddress }
-            .firstOrNull()?.hostAddress
-    }.getOrNull()
+            .filter { it.isUp && !it.isLoopback && !it.isVirtual }
+            .flatMap { n -> n.inetAddresses.toList().filterIsInstance<Inet4Address>().filter { !it.isLinkLocalAddress && !it.isAnyLocalAddress }.map { n to it } }
+            .sortedWith(compareBy({ (n, _) -> madeUp(n) }, { (_, a) -> a.hostAddress != out }, { (_, a) -> !a.isSiteLocalAddress }, { (n, _) -> n.isPointToPoint }))
+            .map { it.second.hostAddress }.distinct()
+    }.getOrDefault(emptyList())
+
+    /** An adapter some program made (a VM's, WSL's, a container's, a VPN's), by the name it goes by. */
+    private fun madeUp(n: NetworkInterface): Boolean {
+        val name = (n.displayName.orEmpty() + " " + n.name.orEmpty()).lowercase()
+        return listOf("vethernet", "hyper-v", "virtualbox", "vmware", "vmnet", "vbox", "wsl", "docker", "podman", "virbr", "veth",
+            "tap-", "tun", "wireguard", "tailscale", "zerotier", "hamachi", "vpn", "npcap", "bluetooth", "utun", "bridge").any { it in name }
+    }
 
     private fun answer(k: Socket) = runCatching {
         k.soTimeout = 15_000
