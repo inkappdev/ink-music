@@ -501,6 +501,46 @@ class PlayerService : MediaLibraryService() {
     /** Each stream's quality as chosen when the song began (Quality), when, and on mobile data or not: an hour, then chosen anew. */
     private data class Chosen(val quality: Int, val at: Long, val metered: Boolean)
     private val chosen = java.util.concurrent.ConcurrentHashMap<String, Chosen>()
+    // Preferred remote source for each original media URI; on failure, try YouTube, then the original source.
+    private data class Preferred(
+        val original: Uri,
+        val title: String,
+        val artist: String,
+        val album: String,
+        val durationMs: Long,
+        val fromAddon: Boolean,
+    )
+    private val preferred = java.util.concurrent.ConcurrentHashMap<String, Preferred>()
+    private val sourceMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun mediaFor(uri: Uri): MediaItem? {
+        val player = exo ?: return null
+        for (i in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(i)
+            if (item.localConfiguration?.uri == uri || item.requestMetadata.mediaUri == uri) return item
+        }
+        return null
+    }
+
+    private suspend fun youtubeMatch(title: String, artist: String, durationMs: Long): Song? {
+        if (!YouTubeMusic.available || title.isBlank()) return null
+        val found = YouTubeMusic.search("$title $artist", all = true)
+        fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
+            .replace(Regex("\\p{M}+"), "").lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        val wantedTitle = norm(title)
+        val wantedArtist = norm(artist.substringBefore(',').trim())
+        return found.songs.mapNotNull { song ->
+            if (norm(song.title) != wantedTitle) return@mapNotNull null
+            val foundArtist = norm(song.artist)
+            if (wantedArtist.isNotEmpty() && foundArtist != wantedArtist &&
+                !foundArtist.contains(wantedArtist) && !wantedArtist.contains(foundArtist)) return@mapNotNull null
+            val difference = if (durationMs > 0 && song.duration > 0) kotlin.math.abs(song.duration - durationMs) else 0L
+            if (difference > 15_000) return@mapNotNull null
+            song to difference
+        }.minByOrNull { it.second }?.first
+    }
+
     // YouTube songs found again after their stream failed, and how often (onPlayerError)
     private val retried = HashMap<String, Int>()
 
