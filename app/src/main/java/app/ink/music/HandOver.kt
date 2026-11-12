@@ -116,21 +116,16 @@ fun HandOverPage(pages: Pages) {
             Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal))
                 .verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
         ) {
-            BasicText("SYNC WITH A COMPUTER", style = headline(40.sp))
-            Spacer(Modifier.height(8.dp))
-            BasicText("on the computer: ink music, pair your phone (at the foot of its places, or in settings, your phone), and point this, or the phone's own camera, at the code it shows " +
-                "(on a tv: ink music shows a code as it opens). " +
-                "paired, it's signed in to what this phone is, and the two keep in step on your wifi: what you've heard, what you love, " +
-                "what you were playing", style = pixel(12.sp, Ink.mid))
+            // as few words as can be (2026-11-12): the camera, one line; typing a code or an address behind one word
+            BasicText("PAIR A COMPUTER", style = headline(40.sp))
             Spacer(Modifier.height(20.dp))
             val p = picked
+            var byHand by remember { mutableStateOf(!camera) }
             if (p == null) {
-                // the camera first: the computer's QR code is the whole of it (2026-11-12)
                 if (sees) {
                     PairCamera(Modifier.fillMaxWidth().aspectRatio(1f)) { pairBy(it) }
                     Spacer(Modifier.height(10.dp))
-                    BasicText("the code on the computer, in the square", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(24.dp))
+                    BasicText("point at the code on your computer", style = pixel(12.sp, Ink.mid))
                 } else if (camera) {
                     Word("SCAN THE CODE", headline(28.sp), touch = 8.dp) {
                         // turned down twice: Android won't ask again, so ink music's own page in its settings
@@ -138,20 +133,21 @@ fun HandOverPage(pages: Pages) {
                             runCatching { ctx.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                         } else { askedCamera++; ask.launch(arrayOf(Manifest.permission.CAMERA)) }
                     }
-                    BasicText(if (askedCamera >= 2) "allow the camera there (permissions), and it reads the computer's code" else "with the camera: nothing to type",
-                        style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(24.dp))
+                    if (askedCamera >= 2) BasicText("allow the camera there", style = pixel(12.sp, Ink.mid))
                 }
-                if (sees || camera) BasicText("or pick it here, and type its code", style = pixel(12.sp, Ink.mid))
-                if (found.isEmpty()) BasicText(if (reaches) "looking on this wifi" else "ink music needs your ok to reach devices on your wifi", style = pixel(13.sp, Ink.mid))
-                found.forEach { c -> Word(c.name.uppercase(), headline(28.sp), touch = 8.dp) { picked = c; said = null } }
-                // not listed (a wifi that keeps devices apart, a firewall): its address, as the computer shows it
-                Spacer(Modifier.height(28.dp))
-                var typed by remember { mutableStateOf("") }
-                Field("or its address, under the code on the computer", typed, { typed = it.trim() }, "192.168.1.20:52114", KeyboardType.Uri)
-                Word("NEXT", headline(28.sp, if (typed.contains(':')) Ink.ink else Ink.mid), touch = 8.dp) {
-                    val host = typed.substringBeforeLast(':'); val port = typed.substringAfterLast(':').toIntOrNull()
-                    if (host.isNotEmpty() && port != null) { picked = Computer(host, host, port); said = null }
+                if (!byHand) Word("type a code instead", pixel(12.sp, Ink.mid), Modifier.padding(top = 18.dp), touch = 8.dp) { byHand = true }
+                else {
+                    Spacer(Modifier.height(24.dp))
+                    if (found.isEmpty()) BasicText(if (reaches) "looking on this wifi" else "ink music needs your ok to reach devices on your wifi", style = pixel(13.sp, Ink.mid))
+                    found.forEach { c -> Word(c.name.uppercase(), headline(28.sp), touch = 8.dp) { picked = c; said = null } }
+                    // not listed (a wifi that keeps devices apart, a firewall): its address, as the computer shows it
+                    Spacer(Modifier.height(28.dp))
+                    var typed by remember { mutableStateOf("") }
+                    Field("or its address", typed, { typed = it.trim() }, "192.168.1.20:52114", KeyboardType.Uri)
+                    Word("NEXT", headline(28.sp, if (typed.contains(':')) Ink.ink else Ink.mid), touch = 8.dp) {
+                        val host = typed.substringBeforeLast(':'); val port = typed.substringAfterLast(':').toIntOrNull()
+                        if (host.isNotEmpty() && port != null) { picked = Computer(host, host, port); said = null }
+                    }
                 }
             } else if (scanned) {
                 // read off the screen: it pairs by itself, and what came of it is said under

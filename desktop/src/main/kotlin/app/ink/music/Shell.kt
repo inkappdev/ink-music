@@ -163,13 +163,11 @@ private fun RailPairing() {
         val c = code
         if (c == null) {
             Word("PAIR YOUR PHONE", headline(16.sp), touch = 6.dp) { TubeAccount.await() }
-            BasicText("your listening, loves and sign-ins in step", style = pixel(12.sp, Ink.mid))
             Word("not now", pixel(12.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 6.dp) { RailPair.putAway() }
         } else {
-            BasicText("PAIR YOUR PHONE", style = headline(16.sp))
-            BasicText("point its camera here", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
+            BasicText("PAIR YOUR PHONE", style = headline(16.sp), modifier = Modifier.padding(bottom = 10.dp))
             link?.let { QrCode(it, Modifier.size(140.dp)) }
-            BasicText("or type $c in ink music", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 10.dp))
+            BasicText(c, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp))
             Word("hide", pixel(12.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 6.dp) { TubeAccount.stop() }
         }
     }

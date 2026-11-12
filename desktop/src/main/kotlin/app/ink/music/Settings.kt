@@ -594,19 +594,17 @@ private fun swingFolder(): java.io.File? {
 @Composable
 private fun Waiting(c: String) {
     val link by TubeAccount.link.collectAsState()
-    BasicText("point your phone's camera at this: it opens ink music there and pairs (or in ink music: pair a computer)", style = pixel(12.sp, Ink.mid))
+    val where by TubeAccount.at.collectAsState()
+    // as few words as can be (2026-11-12): the code for the camera, the number and the address small beside it
+    BasicText("point your phone's camera here", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(14.dp))
     Row(verticalAlignment = Alignment.Bottom) {
         link?.let { QrCode(it, Modifier.size(184.dp)); Spacer(Modifier.width(24.dp)) }
         Column(Modifier.weight(1f)) {
-            BasicText("or pick ${TubeAccount.name.lowercase()} there, and type", style = pixel(12.sp, Ink.mid))
-            BasicText(c, style = headline(44.sp), maxLines = 1)
+            BasicText(c, style = headline(44.sp, Ink.mid), maxLines = 1)
+            where?.let { BasicText(it, style = pixel(12.sp, Ink.mid)) }
         }
     }
-    Spacer(Modifier.height(10.dp))
-    BasicText("the two agree a key no one else on the wifi can work out; everything between them goes sealed under it", style = pixel(12.sp, Ink.mid))
-    val where by TubeAccount.at.collectAsState()
-    where?.let { BasicText("not listed on the phone? type its address there: $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
     Spacer(Modifier.height(10.dp))
     Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
 }
