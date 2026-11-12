@@ -184,8 +184,10 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
         Column(Modifier.fillMaxSize()) {
         // the song small, so up next and the lyrics have the column (2026-10-28): the cover
-        // under the line, its words beside it; the cover opens the player, the big one
-        Row(verticalAlignment = Alignment.Top) {
+        // under the line, its words beside it; the cover opens the player, the big one; a right click its options
+        var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+        menuAt?.let { SongMenu(n.song, open, null, it, playing = true) { menuAt = null } }
+        Row(Modifier.rightClick { menuAt = it }, verticalAlignment = Alignment.Top) {
             Opens(Modifier.size(112.dp), { open(Page.Playing) }, left = true) {
                 CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxSize(), px = 720, moving = n.playing)
             }

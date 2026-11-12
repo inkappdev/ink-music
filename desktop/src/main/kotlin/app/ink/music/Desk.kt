@@ -320,7 +320,10 @@ private fun MiniSleeve(n: Player.Now) {
     val accent by animateColorAsState(cover?.accent ?: Ink.ink, tween(Motion.ENTER), label = "accent")
     val names by Marquees.on.collectAsState()
     val (title, artist) = said(n)
-    Row(Modifier.fillMaxSize()) {
+    // a right click on it, the song's options (2026-11-11, a tester: none in the mini player)
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    menuAt?.let { SongMenu(n.song, null, null, it, playing = true) { menuAt = null } }
+    Row(Modifier.fillMaxSize().rightClick { menuAt = it }) {
         // nothing a click does: the cover is what the window's taken hold of by, to drag it
         CoverOf(n.song, n.song.album.ifEmpty { n.song.title }, Modifier.fillMaxHeight().aspectRatio(1f), px = 320, moving = n.playing)
         Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
