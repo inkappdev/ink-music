@@ -76,17 +76,11 @@ class Crossfade(
 
     private val main = Handler(Looper.getMainLooper())
     // in the background's turn: a song read through end to end took the onn 16 to 18 s, the screen stalling under it
-    private val work = Executors.newSingleThreadExecutor { r ->
-        Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "ink-measure")
-    }
+    private val work = oneThread("ink-measure", background = true)
     // the plans on their own: behind the measuring and the lyrics' lookups, a song skipped to waited 15 s for its cut
     // (a lyrics miss took 9.5 s; 2026-11-11, "skipped, tick came 20 seconds in")
-    private val plans = Executors.newSingleThreadExecutor { r ->
-        Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "ink-plan")
-    }
-    private val lyrics = Executors.newSingleThreadExecutor { r ->
-        Thread({ android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, "ink-sung")
-    }
+    private val plans = oneThread("ink-plan", background = true)
+    private val lyrics = oneThread("ink-sung", background = true)
     private val ends = ConcurrentHashMap<String, Ends>()
     /** When each song's singing (ms), from its timed lyrics (Vocals): automix lays no voice over another. Empty: none known. */
     private val vocals = ConcurrentHashMap<String, List<LongRange>>()

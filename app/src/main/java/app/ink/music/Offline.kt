@@ -72,8 +72,13 @@ object Offline {
         _keeping.value = now; save(c)
     }
 
+    // YouTube songs kept one lot at a time, under a lock of their own: finding each one's stream is a network call, and
+    // under Offline's own (refresh's, which the main thread takes as a download finishes) a bulk keep of loves froze the
+    // screen until every stream was found (2026-11-11, an ANR)
+    private val tubeLock = Any()
+
     /** YouTube songs kept: each its stream found (the plain one, which the download manager can fetch as it is), its words beside it. */
-    @Synchronized private fun keepTube(c: Context, songs: List<Song>) {
+    private fun keepTube(c: Context, songs: List<Song>) { synchronized(tubeLock) {
         val dm = c.getSystemService(DownloadManager::class.java) ?: return
         dir(c).mkdirs()
         for (s in songs) {
@@ -93,7 +98,7 @@ object Offline {
             val id = runCatching { dm.enqueue(r) }.getOrNull() ?: continue
             _keeping.value = _keeping.value + (s.id to id); save(c)
         }
-    }
+    } }
 
     /** The YouTube songs kept, as songs to list and play (from their words kept beside them). */
     fun tubeSongs(c: Context): List<Song> = dir(c).listFiles()?.filter { it.name.endsWith(".json") }?.mapNotNull { f ->
@@ -178,8 +183,21 @@ object Offline {
         o.keys().asSequence().associateWith { o.getLong(it) }
     }.getOrDefault(emptyMap())
 
-    /** A download finished (the app open or not): the kept read again. */
+    /** A download finished (the app open or not): the kept read again, off the main thread (it may wait on a lock). */
     class Done : BroadcastReceiver() {
-        override fun onReceive(c: Context, i: Intent) { refresh(c) }
+        override fun onReceive(c: Context, i: Intent) {
+            val done = goAsync()
+            scope.launch { try { refresh(c) } finally { done.finish() } }
+        }
     }
 }
+
+/**
+ * One thread for work done in turn that, once shut down, lets a late task go rather than throw (2026-11-11: the player
+ * stopping shut its workers, and a task still on its way crashed the player's process as it went, since 2026-11-09).
+ * `background`: run at the background's priority.
+ */
+fun oneThread(name: String, background: Boolean = false): java.util.concurrent.ExecutorService =
+    java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.LinkedBlockingQueue(),
+        { r -> Thread({ if (background) android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND); r.run() }, name) },
+        java.util.concurrent.ThreadPoolExecutor.DiscardPolicy())

@@ -81,9 +81,9 @@ class PlayerService : MediaLibraryService() {
     }
     // a server song heard far enough (half of it, or four minutes, as Last.fm counts) is told to
     // the server once; "playing now" as it starts
-    private val net = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val net = oneThread("ink-net")
     /** The next YouTube song's stream found while this one plays, so a skip doesn't wait for it. */
-    private val ahead = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val ahead = oneThread("ink-ahead")
     // the jumps past a YouTube video's talking set for the song playing (SponsorBlock), let go as the next begins
     private val jumps = ArrayList<androidx.media3.exoplayer.PlayerMessage>()
 
