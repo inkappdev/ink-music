@@ -314,6 +314,19 @@ private fun FilesSetting() {
     Spacer(Modifier.height(8.dp))
     Word("add a folder", pixel(14.sp), touch = 8.dp) { chooseFolder { Library.add(it) } }
     Word("read again", pixel(14.sp, Ink.mid), touch = 8.dp) { Library.scan() }
+    // the covers kept on the computer: how much room, and those not looked at for a month let go (they come again)
+    var room by remember { mutableStateOf(-1L) }
+    var said by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(said) { room = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Covers.room() } }
+    Spacer(Modifier.height(14.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BasicText(if (room < 0) "covers" else "covers kept: ${room / 1_048_576} mb", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.width(20.dp))
+        Word(said ?: "clean up", pixel(14.sp, Ink.mid), touch = 8.dp) {
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { val f = Covers.cleanUp(); said = "${f / 1_048_576} mb freed" }
+        }
+    }
+    BasicText("those not seen for a month; they come again when they're wanted", style = pixel(12.sp, Ink.dim))
 }
 
 /** About: who made this, that it's free and open, the build; ink, from its makers, said once and plainly. */

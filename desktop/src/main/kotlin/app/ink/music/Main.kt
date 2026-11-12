@@ -134,6 +134,7 @@ fun main() {
     Library.start()
     Server.start()
     Covers.warm()
+    Covers.tidy()
     // the next song's cover (and the last's) ready before it plays
     Covers.ahead()
     // the genres you open most, their editors' songs read ahead (their pages open with their block there)
