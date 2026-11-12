@@ -29,6 +29,7 @@ object DiscordAndroidPresence {
     private fun disabledFile(ctx: Context) = File(ctx.filesDir, "discord-presence-off")
     private const val RETRY_MS = 15_000L
     private const val PUSH_MS = 15_000L
+    private const val PAUSED_TTL_MS = 5 * 60_000L
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "ink-discord-rpc").apply { isDaemon = true } }
     @Volatile private var context: Context? = null
@@ -41,6 +42,8 @@ object DiscordAndroidPresence {
     private var lastPush = 0L
     private var lastKey = ""
     private var lastActive = false
+    private var pausedSince = 0L
+    private var pausedMediaId = ""
 
     fun enabled(ctx: Context): Boolean = !disabledFile(ctx).exists()
     fun setEnabled(ctx: Context, on: Boolean) {
@@ -79,6 +82,8 @@ object DiscordAndroidPresence {
         player?.removeListener(listener)
         player = null
         lastActive = false
+        pausedSince = 0L
+        pausedMediaId = ""
         lastKey = ""
         val oldContext = context
         val oldConnection = serviceConnection
@@ -105,19 +110,42 @@ object DiscordAndroidPresence {
         val album = md.albumTitle?.toString()?.trim().orEmpty()
         val artwork = sequenceOf(md.artworkUri?.toString(), Library.song(item?.mediaId.orEmpty())?.art)
             .filterNotNull().firstOrNull { it.startsWith("https://") || it.startsWith("http://") }
-        val active = enabled(ctx) && !Private.on(ctx) && p.isPlaying && item != null &&
-            !item.mediaId.startsWith("s") && !item.mediaId.startsWith("e") && title.isNotBlank()
-        if (!active) {
+        val eligible = enabled(ctx) && !Private.on(ctx) && item != null &&
+            !item.mediaId.startsWith("s") && !item.mediaId.startsWith("e") && title.isNotBlank() &&
+            p.playbackState != Player.STATE_IDLE && p.playbackState != Player.STATE_ENDED
+        if (!eligible) {
             if (lastActive || lastKey.isNotEmpty()) clear()
             lastActive = false
+            pausedSince = 0L
+            pausedMediaId = ""
             lastKey = ""
             return
+        }
+        val isPaused = !p.playWhenReady && !p.isPlaying
+        val elapsed = android.os.SystemClock.elapsedRealtime()
+        if (isPaused) {
+            if (pausedMediaId != item!!.mediaId) {
+                pausedMediaId = item.mediaId
+                pausedSince = elapsed
+            } else if (pausedSince == 0L) {
+                pausedSince = elapsed
+            }
+            if (elapsed - pausedSince >= PAUSED_TTL_MS) {
+                if (lastActive || lastKey.isNotEmpty()) clear()
+                lastActive = false
+                lastKey = ""
+                return
+            }
+        } else {
+            pausedSince = 0L
+            pausedMediaId = ""
         }
         lastActive = true
         val duration = p.duration.takeIf { it > 0 && it != androidx.media3.common.C.TIME_UNSET } ?: 0L
         val position = p.currentPosition.coerceAtLeast(0L)
         val start = System.currentTimeMillis() - position
-        val key = "${item!!.mediaId}|$title|$artist|$album|${duration / 1000}"
+        val playbackLabel = if (isPaused) "paused" else "playing"
+        val key = "${item!!.mediaId}|$title|$artist|$album|${duration / 1000}|$playbackLabel"
         val now = android.os.SystemClock.elapsedRealtime()
         if (rpc == null) {
             if (!connecting && now - lastAttempt >= RETRY_MS) connect(ctx)
@@ -130,14 +158,15 @@ object DiscordAndroidPresence {
             put("details", title.take(128))
             val byline = listOf(artist.takeIf { it.isNotBlank() && it != "unknown" }, album.takeIf { it.isNotBlank() })
                 .filterNotNull().joinToString(" · ")
-            if (byline.isNotBlank()) put("state", byline.take(128))
+            val state = if (isPaused) listOf("Paused", byline).filter { it.isNotBlank() }.joinToString(" · ") else byline
+            if (state.isNotBlank()) put("state", state.take(128))
             put("assets", JSONObject().apply {
                 put("large_image", artwork ?: "ink")
                 put("large_text", if (album.isNotBlank()) album.take(128) else title.take(128))
                 put("small_image", "ink")
                 put("small_text", "Ink Music")
             })
-            if (duration > 0) put("timestamps", JSONObject().put("start", start / 1000L).put("end", (start + duration) / 1000L))
+            if (!isPaused && duration > 0) put("timestamps", JSONObject().put("start", start / 1000L).put("end", (start + duration) / 1000L))
             put("buttons", JSONArray().put(JSONObject().put("label", "get ink music").put("url", "https://inkhome.app/music")))
         }
         val connection = rpc ?: return
