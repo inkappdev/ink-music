@@ -96,7 +96,8 @@ fun SettingsPage(onClose: () -> Unit) {
                     when (part) {
                         "your phone" -> {
                             val peers by SyncHub.peers.collectAsState()
-                            SettingRow("YOUR PHONE", if (peers.isEmpty()) "pair it" else peers.joinToString(", ") { it.name.lowercase() }, opened) { PhoneSetting() }
+                            // one paired: its name; more: how many (five names ran to two lines, 2026-11-12), named when opened
+                            SettingRow("YOUR PHONE", when (peers.size) { 0 -> "pair it"; 1 -> peers[0].name.lowercase(); else -> "${peers.size} devices" }, opened) { PhoneSetting() }
                             RowsEnd()
                         }
                         "your music" -> {
