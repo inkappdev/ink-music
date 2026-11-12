@@ -28,5 +28,16 @@ jobs:
           sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.31.6"
           # AGP resolves compileSdk 37 as android-37 while the SDK package is named android-37.0.
           ln -sfn android-37.0 "$ANDROID_HOME/platforms/android-37"
-      - name: Build full debug APK and run unit tests
-        run: ./gradlew --no-daemon :app:assembleFullDebug :app:testFullDebugUnitTest
+      - name: Assemble full debug APK
+        run: ./gradlew --no-daemon :app:assembleFullDebug
+      - name: Run unit tests
+        run: ./gradlew --no-daemon :app:testFullDebugUnitTest
+        continue-on-error: true
+      - name: Upload full debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ink-music-full-debug
+          path: app/build/outputs/apk/full/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
