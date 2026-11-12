@@ -221,7 +221,8 @@ the computer, with what the two share in `core/`.
 - [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0), and the poToken
   provider from [NewPipe](https://github.com/TeamNewPipe/NewPipe) (GPL-3.0), ported.
 - [Metrolist](https://github.com/mostafaalagamy/Metrolist) (GPL-3.0), for showing how YouTube Music
-  can be done well on Android.
+  can be done well on Android, and for its Kotlin port of the song fingerprint the computer's recognition uses.
+- [SongRec](https://github.com/marin-m/SongRec) (GPL-3.0), whose vibra fingerprint that port comes from.
 - [yt-dlp's challenge solver](https://github.com/yt-dlp/ejs) (Unlicense, with meriyah and astring), which
   works out a signed-in stream's link from YouTube's own player.
 - [Prism](https://github.com/Yigder/Prism) (GPL-3.0), whose tempo reading automix's beat matching is
