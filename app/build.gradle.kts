@@ -30,9 +30,11 @@ android {
         buildConfigField("String", "LASTFM_SECRET", "\"${release?.getProperty("lastfmSecret").orEmpty()}\"")
     }
 
+    // the key only where it's kept (Fedora); Windows' keystore.properties holds Last.fm's alone, its builds signed as debug ones
+    val signs = release?.getProperty("storeFile") != null
     signingConfigs {
-        if (release != null) create("release") {
-            storeFile = file(release.getProperty("storeFile"))
+        if (signs) create("release") {
+            storeFile = file(release!!.getProperty("storeFile"))
             storePassword = release.getProperty("storePassword")
             keyAlias = release.getProperty("keyAlias")
             keyPassword = release.getProperty("keyPassword")
@@ -44,7 +46,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName(if (release != null) "release" else "debug")
+            signingConfig = signingConfigs.getByName(if (signs) "release" else "debug")
             // -PbesideDebug: a release build that installs next to the debug one (its own id), to try R8's build
             if (project.hasProperty("besideDebug")) applicationIdSuffix = ".check"
         }
