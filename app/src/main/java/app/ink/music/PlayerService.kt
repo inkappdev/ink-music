@@ -835,7 +835,7 @@ class PlayerService : MediaLibraryService() {
                     val failedIndex = player.currentMediaItemIndex
                     android.util.Log.w("ink-addon", "${selected.title}: ${if (selected.fromAddon) "addon" else "YouTube"} stream failed; trying ${if (selected.fromAddon) "YouTube Music" else "original source"}")
                     work.launch {
-                        val yt = if (selected.fromAddon) youtubeMatch(selected.title, selected.artist, selected.durationMs) else null
+                        val yt = if (selected.fromAddon) runCatching { youtubeMatch(selected.title, selected.artist, selected.durationMs) }.getOrNull() else null
                         if (player.currentMediaItem?.mediaId != failedId || player.currentMediaItemIndex != failedIndex) return@launch
                         if (yt != null) {
                             YouTubeMusic.remember(yt)
