@@ -1549,9 +1549,9 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
             // a station's: the song it's playing, found, to love (the heart) or put in a list (add)
             val airedSong = rememberAiredSong(n)
             if (airedSong != null) {
-                Heart(airedSong, 2.dp, Modifier.padding(start = 10.dp))
+                Heart(airedSong, 3.dp, Modifier.padding(start = 12.dp))
                 Word("add", pixel(14.sp, Ink.mid), Modifier.padding(start = 10.dp), touch = 10.dp) { Nav.open(Page.AddTo(airedSong)) }
-            } else Heart(n.song, 2.dp, Modifier.padding(start = 10.dp))
+            } else Heart(n.song, 3.dp, Modifier.padding(start = 12.dp))
             if (volume) { Spacer(Modifier.width(12.dp)); Volume(line = 80.dp) }
             if (words) {
                 Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)

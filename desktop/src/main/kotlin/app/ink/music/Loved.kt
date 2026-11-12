@@ -6,6 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.background
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -113,12 +117,13 @@ object Loved {
 /** The desktop bar's heart (waybar/heart/make-hearts.py), 7 x 6 on Silkscreen's grid. */
 val HEART = listOf(".##.##.", "#######", "#######", ".#####.", "..###..", "...#...")
 
-/** The heart's red, the desktop's: shown only a moment after loving, the one colour that isn't the art. */
+/** The heart's red: a loved song's heart, the one colour that isn't the art (2026-11-12, Bronson: "i like the look of a red heart"). */
 internal val RED = Color(0xFFE8302A)
 
 /**
- * A song's heart (the phone's): 35% while not loved; loving it, red for two seconds, then ink (loved, the rest of the
- * time). A click loves or unloves; a step brighter under the mouse.
+ * A song's heart: 70% while not loved, red while it is (2026-11-12, a tester: it went back to looking unloved and
+ * "users have no reliable way of knowing"; Bronson: red), glowing a moment as it's loved, and the word said beside it
+ * (loved, or not loved) for a second. A click loves or unloves; a step brighter under the mouse.
  */
 @Composable
 fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
@@ -127,12 +132,16 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     val on = song != null && song.id in loved
     var lovedAt by remember { mutableLongStateOf(0L) }
     var red by remember { mutableStateOf(false) }
+    // what was just done, said beside it a moment
+    var said by remember { mutableStateOf<String?>(null) }
+    var saidAt by remember { mutableLongStateOf(0L) }
     LaunchedEffect(lovedAt) { if (lovedAt > 0) { red = true; delay(2_000); red = false } }
+    LaunchedEffect(saidAt) { if (saidAt > 0) { delay(1_200); said = null } }
     LaunchedEffect(on) { if (!on) red = false }
     // the day of its 100th play, gold (an easter egg)
     val golden by EggsNow.golden.collectAsState()
     val colour by animateColorAsState(
-        when { red -> RED; song != null && song.id in golden -> GOLD; on -> Ink.ink; else -> Ink.dim },
+        when { song != null && song.id in golden && !red -> GOLD; on -> RED; else -> Ink.mid },
         tween(if (red) Motion.FADE else Motion.ENTER, easing = Motion.expo), label = "heart",
     )
     // its soft red glow while it's red, as the phone's (2026-11-10): the heart again, red and blurred, under it
@@ -142,8 +151,15 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
             .blur(cell, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded)) { Sprite(HEART, RED, cell) }
         Pixel(HEART, if (on) "unlove" else "love", colour, cell = cell) {
             val s = song ?: return@Pixel
-            if (s.id !in loved) lovedAt = System.currentTimeMillis()
+            if (s.id !in loved) { lovedAt = System.currentTimeMillis(); said = "loved" } else said = "not loved"
+            saidAt = System.currentTimeMillis()
             Loved.toggle(s)
+        }
+        said?.let { w ->
+            androidx.compose.foundation.layout.Box(Modifier.align(androidx.compose.ui.Alignment.TopCenter).offset(y = -(cell * 9)).wrapContentWidth(unbounded = true)
+                .background(Ink.black).padding(horizontal = 4.dp)) {
+                androidx.compose.foundation.text.BasicText(w, style = pixel(12.sp, if (w == "loved") RED else Ink.mid), maxLines = 1, softWrap = false)
+            }
         }
     }
 }
