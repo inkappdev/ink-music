@@ -74,8 +74,8 @@ object Lyrics {
     }
 
     private suspend fun selected(t: Now, base: File, id: String): List<Line>? {
-        cachedSource(t, base, id)?.let { return it }
         if (id == "better" || id == "youtube") return cachedSource(t, base, id)
+        cachedSource(t, base, id)?.let { return it }
         val artist = t.artist.split(',').first().trim()
         val lines = if (id == "lrclib") {
             val result = ask(artist, t.title, t.album, t.duration / 1000) ?: return null
