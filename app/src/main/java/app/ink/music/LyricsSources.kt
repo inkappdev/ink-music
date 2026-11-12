@@ -122,8 +122,16 @@ object LyricsSources {
             for (i in 0 until lyrics.length()) {
                 val line = lyrics.optJSONObject(i) ?: continue
                 val at = line.optLong("time", -1L)
-                val words = line.optString("text").takeIf { it.isNotBlank() } ?: continue
-                if (at >= 0) lines += Line(at, words)
+                if (at < 0) continue
+                val syllables = line.optJSONArray("syllabus")
+                val parts = ArrayList<Pair<Long, String>>()
+                if (syllables != null) for (j in 0 until syllables.length()) {
+                    val item = syllables.optJSONObject(j) ?: continue
+                    val word = item.optString("text")
+                    if (word.isNotBlank()) parts += item.optLong("time", at) to word
+                }
+                val text = if (parts.isNotEmpty()) parts.joinToString("") { it.second } else line.optString("text")
+                if (text.isNotBlank()) lines += Line(at, text, parts)
             }
             if (lines.isNotEmpty()) return lines.sortedBy { it.at }
         }
@@ -131,9 +139,19 @@ object LyricsSources {
     }
 
     private fun bini(title: String, artist: String, duration: Long): List<Line>? {
-        val url = "https://lyrics-api.binimum.org/?track=${enc(title)}&artist=${enc(artist)}&duration=$duration"
-        val json = JSONObject(request(url))
-        val ttml = json.optString("ttml")
+        val searchUrl = "https://lyrics-api.binimum.org/?track=${enc(title)}&artist=${enc(artist)}&duration=$duration"
+        val search = JSONObject(request(searchUrl))
+        val results = search.optJSONArray("results") ?: return null
+        var lyricsUrl = ""
+        for (i in 0 until results.length()) {
+            val hit = results.optJSONObject(i) ?: continue
+            if (hit.optString("lyricsUrl").startsWith("https://")) {
+                lyricsUrl = hit.optString("lyricsUrl")
+                break
+            }
+        }
+        if (lyricsUrl.isBlank()) return null
+        val ttml = request(lyricsUrl, "application/ttml+xml, text/xml, */*")
         if (ttml.isBlank()) return null
         val out = ArrayList<Line>()
         val p = Regex("""<p\\b([^>]*)>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL)
@@ -150,10 +168,13 @@ object LyricsSources {
             .replace(Regex("\\s+"), " ").trim()
         for (m in p.findAll(ttml)) {
             val at = time(m.groupValues[1]) ?: continue
-            val body = m.groupValues[2]
-            val pieces = span.findAll(body).map { clean(it.groupValues[2]) }.filter { it.isNotBlank() }.toList()
-            val text = if (pieces.isEmpty()) clean(body) else pieces.joinToString("")
-            if (text.isNotBlank()) out += Line(at, text)
+            val parts = span.findAll(m.groupValues[2]).mapNotNull { word ->
+                val stamp = time(word.groupValues[1]) ?: at
+                val value = clean(word.groupValues[2])
+                if (value.isBlank()) null else stamp to value
+            }.toList()
+            val text = if (parts.isEmpty()) clean(m.groupValues[2]) else parts.joinToString("") { it.second }
+            if (text.isNotBlank()) out += Line(at, text, parts)
         }
         return out.takeIf { it.isNotEmpty() }?.sortedBy { it.at }
     }
