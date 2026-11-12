@@ -132,6 +132,20 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     Word("add a folder >", pixel(14.sp, Ink.mid), touch = 8.dp) { runCatching { pick.launch(null) } }
                 }
 
+                var addonUrl by remember { mutableStateOf(AddonMusic.baseUrl(ctx)) }
+                var addonDialog by remember { mutableStateOf(false) }
+                SettingRow("BITCHORD ADDON", addonUrl.ifBlank { "not configured" }, opened,
+                    "try this addon before the song's usual source; optional LastWave HMAC") {
+                    Word(if (addonUrl.isBlank()) "add addon >" else "configure addon >", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                        addonDialog = true
+                    }
+                    if (addonDialog) AddonConfigDialog(
+                        ctx = ctx,
+                        onDismiss = { addonDialog = false },
+                        onSave = { addonUrl = AddonMusic.baseUrl(ctx); addonDialog = false },
+                    )
+                }
+
                 val a = account
                 SettingRow("YOUR SERVER", a?.name?.lowercase() ?: "sign in", opened, if (a == null) "navidrome, or any subsonic server" else null) {
                     if (a == null) SignIn()
@@ -806,4 +820,39 @@ fun TvSettingsPage(pages: Pages) {
             }
         }
     } }
+}
+
+
+/** Configure a BitChord-compatible addon from Your Music, not from Search. */
+@Composable
+private fun AddonConfigDialog(ctx: android.content.Context, onDismiss: () -> Unit, onSave: () -> Unit) {
+    var url by remember { mutableStateOf(AddonMusic.baseUrl(ctx)) }
+    var secret by remember { mutableStateOf(AddonMusic.secret(ctx)) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().background(Ink.black).border(1.dp, Ink.mid).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            BasicText("BITCHORD ADDON", style = headline(18.sp))
+            BasicText("Addon base URL or manifest.json URL", style = pixel(10.sp, Ink.mid))
+            BasicTextField(
+                value = url, onValueChange = { url = it }, singleLine = true,
+                textStyle = pixel(12.sp, Ink.ink),
+                modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
+            )
+            BasicText("Optional LastWave HMAC secret", style = pixel(10.sp, Ink.mid))
+            BasicTextField(
+                value = secret, onValueChange = { secret = it }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                textStyle = pixel(12.sp, Ink.ink),
+                modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
+            )
+            BasicText("Leave the secret empty for standard BitChord addons. It is used only for /a/{token} LastWave URLs.", style = pixel(10.sp, Ink.mid))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Word("save", pixel(12.sp, Ink.ink), onClick = { AddonMusic.configure(ctx, url, secret); onSave() })
+                Word("clear", pixel(12.sp, Ink.mid), onClick = { AddonMusic.configure(ctx, "", ""); url = ""; secret = ""; onSave() })
+                Word("cancel", pixel(12.sp, Ink.mid), onClick = onDismiss)
+            }
+        }
+    }
 }
