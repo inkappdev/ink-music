@@ -201,17 +201,55 @@ object YouTubeMusic {
         if (!SIGNED) return@runCatching
         val t = YouTubeAccount.signed(c) ?: return@runCatching
         val t0 = System.currentTimeMillis()
-        ready(c, t)
-        playerUrl?.let { Solver.warm(c, it) }
-        android.util.Log.d("ink-youtube", "warmed up in ${System.currentTimeMillis() - t0} ms")
+        val kept = ready(c, t)
+        // the solver's player and the first token at once, each on its own (2026-11-11: the first token alone was 0.8 s
+        // of the first song's wait)
+        val solver = race.submit { playerUrl?.let { Solver.warm(c, it) } }
+        val token = race.submit { account?.let { PoTokens.signed("dQw4w9WgXcQ", it) } }
+        runCatching { solver.get(20, java.util.concurrent.TimeUnit.SECONDS); token.get(20, java.util.concurrent.TimeUnit.SECONDS) }
+        android.util.Log.d("ink-youtube", "warmed up in ${System.currentTimeMillis() - t0} ms${if (kept) " (the page as kept)" else ""}")
+        // the page as kept: asked again behind it, in case YouTube's player has moved on since
+        if (kept) refresh(c, t)
     }.onFailure { android.util.Log.d("ink-youtube", "warm up: $it") }
 
-    /** The account's id and its page's player, asked once a run, the player's code kept for the solver. */
-    @Synchronized private fun ready(c: android.content.Context, t: InnerTube) {
-        if (account != null && playerUrl != null) return
+    private fun sessionFile(c: android.content.Context) = java.io.File(c.filesDir, "youtube-session")
+
+    /**
+     * The account's id and its page's player, asked once a run, the player's code kept for the solver. Kept on the phone
+     * a day too (2026-11-11: asking for the page was 0.8 s of the first song's wait, and they seldom change), so a start
+     * has them at once; true when they came from what was kept.
+     */
+    @Synchronized private fun ready(c: android.content.Context, t: InnerTube): Boolean {
+        if (account != null && playerUrl != null) return false
+        runCatching {
+            val (at, sync, js) = sessionFile(c).readLines().let { Triple(it[0].toLong(), it[1], it[2]) }
+            if (System.currentTimeMillis() - at < 86_400_000L && sync.isNotBlank() && js.startsWith("http")) {
+                account = sync; playerUrl = js
+                keptPlayer(c, js, t)?.let { (code, sts) -> Solver.keep(js, code); playerSts = sts }
+                return true
+            }
+        }
         val (sync, js) = t.page()
         account = sync; playerUrl = js
         if (js != null) keptPlayer(c, js, t)?.let { (code, sts) -> Solver.keep(js, code); playerSts = sts }
+        keepSession(c)
+        return false
+    }
+
+    /** The page asked again (behind a start that used the kept one): a new player taken up and kept. */
+    private fun refresh(c: android.content.Context, t: InnerTube) {
+        val (sync, js) = t.page()
+        if (sync == null || js == null) return
+        synchronized(this) {
+            if (js != playerUrl) keptPlayer(c, js, t)?.let { (code, sts) -> Solver.keep(js, code); playerSts = sts }
+            account = sync; playerUrl = js
+            keepSession(c)
+        }
+    }
+
+    private fun keepSession(c: android.content.Context) = runCatching {
+        val sync = account ?: return@runCatching; val js = playerUrl ?: return@runCatching
+        sessionFile(c).writeText("${System.currentTimeMillis()}\n$sync\n$js")
     }
 
     /**
