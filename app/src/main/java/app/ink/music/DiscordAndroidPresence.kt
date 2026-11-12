@@ -15,6 +15,7 @@ import androidx.media3.common.Player
 import com.discord.socialsdk.rpc.IDiscordRpcCallback
 import com.discord.socialsdk.rpc.IDiscordRpcConnection
 import com.discord.socialsdk.rpc.IDiscordRpcService
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
 import org.json.JSONArray
@@ -25,8 +26,7 @@ object DiscordAndroidPresence {
     private const val TAG = "ink-discord"
     private const val APP_ID = "1569768395262533672"
     private const val RPC_ACTION = "com.discord.socialsdk.rpc.IDiscordRpcService"
-    private const val PREFS = "discord-presence"
-    private const val ENABLED = "enabled"
+    private fun disabledFile(ctx: Context) = File(ctx.filesDir, "discord-presence-off")
     private const val RETRY_MS = 15_000L
     private const val PUSH_MS = 15_000L
     private val main = Handler(Looper.getMainLooper())
@@ -42,9 +42,9 @@ object DiscordAndroidPresence {
     private var lastKey = ""
     private var lastActive = false
 
-    fun enabled(ctx: Context): Boolean = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ENABLED, true)
+    fun enabled(ctx: Context): Boolean = !disabledFile(ctx).exists()
     fun setEnabled(ctx: Context, on: Boolean) {
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ENABLED, on).apply()
+        runCatching { if (on) disabledFile(ctx).delete() else disabledFile(ctx).createNewFile() }
         main.post { tick() }
     }
 
