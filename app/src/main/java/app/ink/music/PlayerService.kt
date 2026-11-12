@@ -620,7 +620,8 @@ class PlayerService : MediaLibraryService() {
                             val now = android.os.SystemClock.elapsedRealtime()
                             val cached = preferred[key]
                             when {
-                                cached != null -> spec.withUri(Uri.parse(cached.streamUrl))
+                                cached != null -> spec.buildUpon().setUri(Uri.parse(cached.streamUrl))
+                                    .setHttpRequestHeaders(spec.httpRequestHeaders + if (cached.fromAddon) AddonMusic.signedHeaders(this, cached.streamUrl) else emptyMap()).build()
                                 sourceMisses[key]?.let { it > now } == true -> null
                                 else -> {
                                     val md = item.mediaMetadata
@@ -632,7 +633,8 @@ class PlayerService : MediaLibraryService() {
                                     if (addonUrl != null) {
                                         preferred[key] = Preferred(original, title, artist, album, duration, true, addonUrl)
                                         android.util.Log.i("ink-addon", "playing $title from addon")
-                                        spec.withUri(Uri.parse(addonUrl))
+                                        spec.buildUpon().setUri(Uri.parse(addonUrl))
+                                            .setHttpRequestHeaders(spec.httpRequestHeaders + AddonMusic.signedHeaders(this, addonUrl)).build()
                                     } else if (original.scheme != "ytm" && YouTubeMusic.available) {
                                         val yt = kotlinx.coroutines.runBlocking(Dispatchers.IO) { youtubeMatch(title, artist, duration) }
                                         val ytUrl = yt?.let { YouTubeMusic.stream(it.id, false, small = quality() == Quality.SAVER)?.first }
@@ -655,8 +657,11 @@ class PlayerService : MediaLibraryService() {
                 } else null
                 when {
                     // A BitChord addon search result resolves directly through its stored addon id.
-                    original.scheme == "addon" -> spec.withUri(Uri.parse(
-                        AddonMusic.stream(this, original.toString().removePrefix("addon://").substringBefore('/'))))
+                    original.scheme == "addon" -> {
+                        val url = AddonMusic.stream(this, original.toString().removePrefix("addon://").substringBefore('/'))
+                        spec.buildUpon().setUri(Uri.parse(url))
+                            .setHttpRequestHeaders(spec.httpRequestHeaders + AddonMusic.signedHeaders(this, url)).build()
+                    }
                     preferredSpec != null -> preferredSpec
                     // a YouTube song kept on the phone plays from there, no signal needed (Offline)
                     spec.uri.scheme == "ytm" && Offline.file(this, "y" + spec.uri.host) != null ->
