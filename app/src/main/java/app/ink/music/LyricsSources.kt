@@ -1,0 +1,160 @@
+package app.ink.music
+
+import android.util.Base64
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+
+/**
+ * Optional lyrics catalogues. These are independent fallbacks: a failure or a
+ * no-match at one provider never prevents the next provider from being tried.
+ * All timestamps are normalized to milliseconds, matching Lyrics.Line.
+ */
+object LyricsSources {
+    data class Source(val id: String, val label: String, val detail: String)
+
+    val sources = listOf(
+        Source("auto", "Automatic", "Best available result from all enabled sources"),
+        Source("better", "BetterLyrics", "Word-synced Apple Music lyrics"),
+        Source("youtube", "YouTube Music", "Timed lyrics from YouTube Music"),
+        Source("lrclib", "LRCLIB", "Synced and plain lyrics"),
+        Source("bini", "BiniLyrics", "Apple Music TTML, word-level timing"),
+        Source("lyricsplus", "LyricsPlus", "Community mirrors, syllable timing"),
+        Source("unison", "Unison", "Community-contributed lyrics"),
+        Source("kugou", "KuGou", "LRC catalogue, useful for CJK releases"),
+        Source("ovh", "lyrics.ovh", "Plain-text fallback"),
+    )
+
+    private val stamp = Regex("""\[(\d+):(\d+(?:\.\d+)?)\]""")
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+    private fun request(url: String, accept: String = "application/json"): String {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 7000
+        c.readTimeout = 9000
+        c.setRequestProperty("User-Agent", "INK-Music/2")
+        c.setRequestProperty("Accept", accept)
+        try {
+            val code = c.responseCode
+            if (code !in 200..299) return ""
+            return c.inputStream.bufferedReader().use { it.readText() }
+        } finally { c.disconnect() }
+    }
+
+    private fun parseLrc(raw: String): List<Line> = raw.lineSequence().flatMap { line ->
+        val body = stamp.replace(line, "").trim()
+        if (body.isBlank()) emptySequence() else stamp.findAll(line).mapNotNull { m ->
+            val min = m.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+            val sec = m.groupValues[2].toDoubleOrNull() ?: return@mapNotNull null
+            Line((min * 60_000 + sec * 1000).toLong(), body)
+        }
+    }.sortedBy { it.at }.toList()
+
+    private fun plain(raw: String) = raw.lines().map { Line(-1, it.trim()) }
+        .dropWhile { it.words.isBlank() }.dropLastWhile { it.words.isBlank() }
+
+    suspend fun fetch(id: String, title: String, artist: String, album: String, durationSeconds: Long): List<Line>? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                when (id) {
+                    "ovh" -> {
+                        val json = JSONObject(request("https://api.lyrics.ovh/v1/${enc(artist)}/${enc(title)}"))
+                        plain(json.optString("lyrics")).takeIf { it.isNotEmpty() }
+                    }
+                    "unison" -> {
+                        val url = "https://unison.boidu.dev/lyrics?song=${enc(title)}&artist=${enc(artist)}&album=${enc(album)}&duration=$durationSeconds"
+                        val data = JSONObject(request(url))
+                        val lyrics = data.optJSONObject("data")?.optString("lyrics").orEmpty()
+                        if (lyrics.isBlank()) null else {
+                            val sync = data.optJSONObject("data")?.optString("syncType")
+                            if (sync.equals("plain", true)) plain(lyrics) else parseLrc(lyrics).takeIf { it.isNotEmpty() }
+                        }
+                    }
+                    "kugou" -> kugou(title, artist, durationSeconds)
+                    "lyricsplus" -> lyricsPlus(title, artist, album, durationSeconds)
+                    "bini" -> bini(title, artist, durationSeconds)
+                    else -> null
+                }
+            }.getOrNull()
+        }
+
+    private fun kugou(title: String, artist: String, duration: Long): List<Line>? {
+        val q = enc("$artist $title")
+        val search = JSONObject(request("https://mobileservice.kugou.com/api/v3/search/song?version=9108&plat=0&pagesize=8&showtype=0&keyword=$q"))
+        val songs = search.optJSONObject("data")?.optJSONArray("info") ?: return null
+        var hash = ""
+        for (i in 0 until songs.length()) {
+            val s = songs.optJSONObject(i) ?: continue
+            val d = s.optLong("duration")
+            if (duration <= 0 || d <= 0 || kotlin.math.abs(d - duration) <= 8) { hash = s.optString("hash"); break }
+        }
+        if (hash.isBlank()) return null
+        val candidates = JSONObject(request("https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&hash=$hash"))
+            .optJSONArray("candidates") ?: return null
+        for (i in 0 until candidates.length()) {
+            val c = candidates.optJSONObject(i) ?: continue
+            val id = c.optString("id")
+            val key = c.optString("accesskey")
+            if (id.isBlank() || key.isBlank()) continue
+            val d = JSONObject(request("https://lyrics.kugou.com/download?fmt=lrc&charset=utf8&client=pc&ver=1&id=$id&accesskey=$key"))
+            val encoded = d.optString("content")
+            if (encoded.isBlank()) continue
+            val lrc = String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8)
+            parseLrc(lrc).takeIf { it.isNotEmpty() }?.let { return it }
+        }
+        return null
+    }
+
+    private fun lyricsPlus(title: String, artist: String, album: String, duration: Long): List<Line>? {
+        val mirrors = listOf(
+            "https://lyricsplus.binimum.org",
+            "https://lyricsplus.atomix.one",
+            "https://lyricsplus.prjktla.my.id",
+            "https://lyricsplus.prjktla.workers.dev",
+            "https://lyricsplus-seven.vercel.app",
+            "https://lyrics-plus-backend.vercel.app",
+        )
+        for (host in mirrors) {
+            val url = "$host/v2/lyrics/get?title=${enc(title)}&artist=${enc(artist)}&duration=$duration&album=${enc(album)}"
+            val json = runCatching { JSONObject(request(url)) }.getOrNull() ?: continue
+            val lyrics = json.optJSONArray("lyrics") ?: continue
+            val lines = ArrayList<Line>()
+            for (i in 0 until lyrics.length()) {
+                val line = lyrics.optJSONObject(i) ?: continue
+                val at = line.optLong("time", -1L)
+                val words = line.optString("text").takeIf { it.isNotBlank() } ?: continue
+                if (at >= 0) lines += Line(at, words)
+            }
+            if (lines.isNotEmpty()) return lines.sortedBy { it.at }
+        }
+        return null
+    }
+
+    private fun bini(title: String, artist: String, duration: Long): List<Line>? {
+        val url = "https://lyrics-api.binimum.org/?track=${enc(title)}&artist=${enc(artist)}&duration=$duration"
+        val json = JSONObject(request(url))
+        val ttml = json.optString("ttml")
+        if (ttml.isBlank()) return null
+        val out = ArrayList<Line>()
+        val p = Regex("""<p\\b([^>]*)>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL)
+        val span = Regex("""<span\\b([^>]*)>(.*?)</span>""", RegexOption.DOT_MATCHES_ALL)
+        fun time(attrs: String): Long? {
+            val raw = Regex("""begin=["']([^"']+)["']""").find(attrs)?.groupValues?.get(1) ?: return null
+            val parts = raw.removeSuffix("s").split(':')
+            var seconds = 0.0
+            for (part in parts) seconds = seconds * 60 + (part.toDoubleOrNull() ?: return null)
+            return (seconds * 1000).toLong()
+        }
+        fun clean(s: String) = s.replace(Regex("<[^>]+>"), "").replace("&amp;", "&")
+            .replace("&lt;", "<").replace("&gt;", ">").replace("&apos;", "'").replace("&quot;", "\"")
+            .replace(Regex("\\s+"), " ").trim()
+        for (m in p.findAll(ttml)) {
+            val at = time(m.groupValues[1]) ?: continue
+            val body = m.groupValues[2]
+            val pieces = span.findAll(body).map { clean(it.groupValues[2]) }.filter { it.isNotBlank() }.toList()
+            val text = if (pieces.isEmpty()) clean(body) else pieces.joinToString("")
+            if (text.isNotBlank()) out += Line(at, text)
+        }
+        return out.takeIf { it.isNotEmpty() }?.sortedBy { it.at }
+    }
+}
