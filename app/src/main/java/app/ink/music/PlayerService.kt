@@ -84,6 +84,39 @@ class PlayerService : MediaLibraryService() {
     private val net = java.util.concurrent.Executors.newSingleThreadExecutor()
     /** The next YouTube song's stream found while this one plays, so a skip doesn't wait for it. */
     private val ahead = java.util.concurrent.Executors.newSingleThreadExecutor()
+    // the jumps past a YouTube video's talking set for the song playing (SponsorBlock), let go as the next begins
+    private val jumps = ArrayList<androidx.media3.exoplayer.PlayerMessage>()
+
+    /**
+     * A YouTube song beginning: where its video isn't music (SponsorBlock's marks: the talking, a skit, the credits),
+     * jumped past as each comes, the player's own message at that moment (no clock watched). Settings, sound: on unless
+     * said (a file, as the screens set it: files/skip-talking-off). A mark it's already inside: jumped at once.
+     */
+    private fun skipTalking(p: Player) {
+        jumps.forEach { it.cancel() }; jumps.clear()
+        val x = exo ?: return
+        val item = p.currentMediaItem ?: return
+        val uri = item.localConfiguration?.uri ?: item.requestMetadata.mediaUri
+        if (uri?.scheme != "ytm" || java.io.File(filesDir, "skip-talking-off").exists()) return
+        val video = uri.host ?: return
+        net.execute {
+            val marks = SponsorBlock.notMusic(video)
+            if (marks.isEmpty()) return@execute
+            main.post {
+                if (x.currentMediaItem?.mediaId != item.mediaId) return@post
+                val index = x.currentMediaItemIndex
+                for (m in marks) {
+                    val now = x.currentPosition
+                    if (now in m) { x.seekTo(m.last); continue }
+                    if (m.first < now) continue
+                    jumps += x.createMessage { _, _ ->
+                        if (x.currentMediaItem?.mediaId == item.mediaId && x.currentPosition < m.last) x.seekTo(m.last)
+                    }.setLooper(Looper.getMainLooper()).setPosition(index, m.first).setDeleteAfterDelivery(true).send()
+                }
+                android.util.Log.i("ink-youtube", "$video: ${marks.size} not music, skipped as they come")
+            }
+        }
+    }
     @Volatile private var warmWanted: String? = null
     private var told: String? = null
     private var nowSaid: String? = null
@@ -729,7 +762,7 @@ class PlayerService : MediaLibraryService() {
                     net.execute { ListenBrainz.playingNow(this@PlayerService, said); LastFm.playingNow(this@PlayerService, said) }
                 }
                 if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) { place(p); clock?.playing(p.isPlaying); episodePlace(p) }
-                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) episodeBegins(p)
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) { episodeBegins(p); skipTalking(p) }
                 // the widget: what plays, and whether
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_MEDIA_METADATA_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
                     val md = p.mediaMetadata

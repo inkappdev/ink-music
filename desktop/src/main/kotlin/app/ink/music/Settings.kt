@@ -103,6 +103,7 @@ fun SettingsPage(onClose: () -> Unit) {
                             SoundSetting()
                             Spacer(Modifier.height(36.dp)); TransitionsSetting()
                             Spacer(Modifier.height(36.dp)); EqualizerSetting()
+                            if (!Local.on) { Spacer(Modifier.height(36.dp)); SkipTalkingSetting() }
                             Spacer(Modifier.height(36.dp)); KeptSetting()
                         }
                         "listening" -> {
@@ -812,6 +813,20 @@ private fun PrivateSetting() {
     androidx.compose.foundation.layout.Row {
         Word("on", pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Private.set(true) }
         Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { Private.set(false) }
+    }
+}
+
+/** A YouTube video's talking skipped (SponsorBlock), on or off. */
+@Composable
+private fun SkipTalkingSetting() {
+    val on by SkipTalking.on.collectAsState()
+    BasicText("SKIP THE TALKING", style = headline(24.sp))
+    Spacer(Modifier.height(6.dp))
+    BasicText("in youtube's music videos, the talking, skits and credits are passed over, where sponsorblock's listeners have marked them", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    androidx.compose.foundation.layout.Row {
+        Word("on", pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { SkipTalking.set(true) }
+        Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { SkipTalking.set(false) }
     }
 }
 

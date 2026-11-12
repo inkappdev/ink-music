@@ -146,6 +146,7 @@ fun main() {
     Loved.start()
     KeepLoved.start()
     KeepMost.start()
+    SkipTalking.start()
     TubeAccount.start()
     // a paired phone kept in step, over the wifi (Sync)
     // podcasts (Pods): the shows followed and where each episode was left, kept here and carried by sync with the phone

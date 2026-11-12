@@ -288,6 +288,23 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     }
                     Spacer(Modifier.height(40.dp))
                 }
+                // a YouTube video's talking skipped (SponsorBlock: the player reads files/skip-talking-off), the full build's
+                if (YouTubeMusic.available) Column(Modifier.cascade(1)) {
+                    var skip by remember { mutableStateOf(!java.io.File(ctx.filesDir, "skip-talking-off").exists()) }
+                    BasicText("SKIP THE TALKING", style = headline(24.sp))
+                    Spacer(Modifier.height(6.dp))
+                    BasicText("in youtube's music videos, the talking, skits and credits are passed over, where sponsorblock's listeners have marked them", style = pixel(12.sp, Ink.mid))
+                    Spacer(Modifier.height(10.dp))
+                    Row {
+                        Word("on", pixel(14.sp, if (skip) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) {
+                            skip = true; java.io.File(ctx.filesDir, "skip-talking-off").delete()
+                        }
+                        Word("off", pixel(14.sp, if (!skip) Ink.ink else Ink.dim), touch = 8.dp) {
+                            skip = false; runCatching { java.io.File(ctx.filesDir, "skip-talking-off").createNewFile() }
+                        }
+                    }
+                    Spacer(Modifier.height(40.dp))
+                }
 
                 Column(Modifier.cascade(2)) {
                     // your server's songs kept on the phone: how many, how much, in what, and all let go
