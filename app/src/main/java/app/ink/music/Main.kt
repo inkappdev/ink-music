@@ -760,7 +760,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                     item {
                         if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", heart = true) { pages.open(Page.Loved) }
                         if (!tv) ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
-                        if (!tv) ListRow("ink mapped", "your listening as land, these days") { pages.open(Page.Mapped) }
+                        if (!tv) ListRow("ink mapped", if (Mapped.SOON) "coming soon" else "your listening as land, these days") { pages.open(Page.Mapped) }
                         // what's on the phone to play with no signal (your server's, YouTube's)
                         val keptIds by Offline.kept.collectAsState()
                         if (keptIds.isNotEmpty()) ListRow("kept on this phone", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}, offline") { pages.open(Page.Kept) }
@@ -3040,7 +3040,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
         }
         // ink mapped beside it: your listening as land (2026-11-11)
         if (!Device.tv) item(key = "mapped") {
-            ListTile("ink mapped", "your listening as land", { pages.open(Page.Mapped) }) { MappedArt() }
+            ListTile("ink mapped", if (Mapped.SOON) "coming soon" else "your listening as land", { pages.open(Page.Mapped) }) { MappedArt() }
         }
         if (kept.isNotEmpty()) item(key = "kept") {
             ListTile("kept on this phone", "${kept.size} ${if (kept.size == 1) "song" else "songs"}, offline", { pages.open(Page.Kept) }) { Mosaic(kept, "kept") }

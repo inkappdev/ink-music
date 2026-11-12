@@ -89,12 +89,66 @@ object Radio {
         return apart(picked, seeds.first().artist)
     }
 
-    /** One seed's songs: the server's similar, else YouTube Music's radio from it. */
-    fun related(c: Context, s: Seed): List<Song> =
-        if (s.id.startsWith("y")) YouTubeMusic.related(s.id)
-        else Server.similar(c, s.id, s.title, s.artist).ifEmpty {
-            YouTubeMusic.find(s.title, s.artist)?.let { YouTubeMusic.related(it.id) }.orEmpty()
+    /**
+     * One seed's songs: the server's similar for its songs; else three ears blended (the computer's since 2026-11-12,
+     * Bronson: radio as good as Chosic's suggestions): YouTube Music's radio from the song, Deezer's radio for its artist,
+     * Last.fm's artists most like them with their best-known songs ([blended]); else YouTube Music's radio alone.
+     */
+    fun related(c: Context, s: Seed): List<Song> {
+        if (!s.id.startsWith("y")) Server.similar(c, s.id, s.title, s.artist).takeIf { it.isNotEmpty() }?.let { return it }
+        runCatching { blended(s) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return it }
+        return if (s.id.startsWith("y")) YouTubeMusic.related(s.id)
+            else YouTubeMusic.find(s.title, s.artist)?.let { YouTubeMusic.related(it.id) }.orEmpty()
+    }
+
+    /**
+     * The three blended, as the computer's online radio: a song more than one names, or by an artist more than one names,
+     * first; the seed's own artist once at most, none other more than twice; the picks found on YouTube Music to play.
+     * Empty in the play build (no YouTube Music) and offline.
+     */
+    private fun blended(s: Seed): List<Song> {
+        // the player's process may not have set it yet (Scrobbling sets it as a song's first told)
+        if (LastFm.key.isBlank()) LastFm.key = BuildConfig.LASTFM_KEY
+        val artist = s.artist.substringBefore(", ").trim()
+        if (artist.isBlank() || artist == "unknown") return emptyList()
+        val tube = if (s.id.startsWith("y")) s.id else YouTubeMusic.find(s.title, artist)?.id
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(3)
+        val fromTube = pool.submit<List<Song>> { tube?.let { YouTubeMusic.related(it) }.orEmpty() }
+        val fromDeezer = pool.submit<List<Similar.Track>> { Similar.deezerRadio(artist) }
+        val fromLastFm = pool.submit<List<Similar.Track>> {
+            Similar.lastFmArtists(artist, LastFm.key, 8).take(6).flatMap { (a, m) -> Similar.deezerTop(a, 2).map { it.copy(weight = m * it.weight) } }
         }
+        val yt = runCatching { fromTube.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        val dz = runCatching { fromDeezer.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        val lf = runCatching { fromLastFm.get(25, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        pool.shutdownNow()
+        // without YouTube Music nothing found can be played
+        if (yt.isEmpty() && tube == null) return emptyList()
+        fun who(a: String) = a.lowercase().substringBefore(",").substringBefore(" & ").trim()
+        val named = HashMap<String, Int>()
+        listOf(yt.map { who(it.artist) }, dz.map { who(it.artist) }, lf.map { who(it.artist) }).forEach { l -> l.toSet().forEach { named[it] = (named[it] ?: 0) + 1 } }
+        class Pick(val title: String, val artist: String, var score: Double, var song: Song?)
+        val picks = LinkedHashMap<String, Pick>()
+        fun add(title: String, a: String, w: Double, song: Song?) {
+            val p = picks.getOrPut(key(title, a)) { Pick(title, a, 0.0, song) }
+            p.score += w; if (p.song == null) p.song = song
+        }
+        yt.forEachIndexed { i, x -> add(x.title, x.artist, 1.0 - i.toDouble() / (yt.size + 1), x) }
+        dz.forEach { add(it.title, it.artist, it.weight, null) }
+        lf.forEach { add(it.title, it.artist, it.weight * .9, null) }
+        picks.values.forEach { p -> p.score += .5 * ((named[who(p.artist)] ?: 1) - 1) }
+        val me = who(artist)
+        val by = HashMap<String, Int>()
+        val chosen = picks.values.sortedByDescending { it.score }.filter { p ->
+            val w = who(p.artist)
+            if (versions.containsMatchIn(p.title) && !versions.containsMatchIn(s.title)) return@filter false
+            if (key(p.title, p.artist) == key(s.title, artist)) return@filter false
+            if ((by[w] ?: 0) >= (if (w == me) 1 else 2)) return@filter false
+            by[w] = (by[w] ?: 0) + 1
+            true
+        }.take(14)
+        return chosen.mapNotNull { p -> p.song ?: runCatching { YouTubeMusic.find(p.title, p.artist) }.getOrNull() }
+    }
 
     /** The same order, but no artist twice in a row (nor straight after the song before them), where it can be helped. */
     fun apart(songs: List<Song>, before: String): List<Song> {
