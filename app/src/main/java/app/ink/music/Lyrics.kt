@@ -3,6 +3,7 @@ package app.ink.music
 import android.content.Context
 import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -130,7 +131,7 @@ object Lyrics {
             // Start every provider together, but inspect answers in the configured priority order.
             // This avoids making a slow catalogue hold up every source behind it.
             val jobs = ids.map { id ->
-                kotlinx.coroutines.async {
+                async {
                     val file = File("${base.path}.$id.lrc")
                     if (file.exists()) {
                         id to runCatching { parse(file.readText()).ifEmpty { plain(file) } }.getOrNull()
