@@ -147,6 +147,8 @@ fun main() {
     KeepLoved.start()
     KeepMost.start()
     SkipTalking.start()
+    // a newer version looked for as it opens, wherever it opens to (it was only when listen did: one who began on songs never heard)
+    Updates.check()
     TubeAccount.start()
     // a paired phone kept in step, over the wifi (Sync)
     // podcasts (Pods): the shows followed and where each episode was left, kept here and carried by sync with the phone

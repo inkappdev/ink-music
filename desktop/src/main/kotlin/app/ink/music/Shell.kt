@@ -76,6 +76,15 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
         Word("your year", pixel(13.sp, Ink.mid), Modifier.rising(PLACES.size + 1), touch = 6.dp) { Nav.open(Page.Year) }
         Word("settings", pixel(13.sp, Ink.mid), Modifier.rising(PLACES.size + 2), touch = 6.dp, onClick = onSettings)
         Spacer(Modifier.weight(1f))
+        // a newer version out, said where it's always in sight (2026-11-11, a tester: "a startup notification informing
+        // users when a new version is available"): a click shows it on listen, its notes and UPDATE
+        val offer by Updates.offer.collectAsState()
+        offer?.let { u ->
+            Column(Modifier.padding(bottom = 18.dp, end = 18.dp)) {
+                BasicText("new ink music", style = pixel(12.sp, Ink.mid))
+                Word(u.version, headline(22.sp), touch = 6.dp) { Nav.go("listen") }
+            }
+        }
         // made by ink, a small pixel heart after it; ink its own website (the quiet funnel, never a nag)
         Row(Modifier.rising(PLACES.size + 3), verticalAlignment = Alignment.CenterVertically) {
             BasicText("made by ", style = pixel(12.sp, Ink.dim))
