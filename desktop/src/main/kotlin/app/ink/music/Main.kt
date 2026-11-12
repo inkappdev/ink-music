@@ -201,6 +201,8 @@ fun main() {
             // as the pages' TOP at ink's size
             val chosen by Size.chosen.collectAsState()
             LaunchedEffect(Size.of(chosen)) { InkTitle.apply(window, Size.of(chosen)) }
+            // Windows: back, play and next under the window's preview in the taskbar (WinThumbBar)
+            LaunchedEffect(Unit) { WinThumbBar.start(window) }
             LaunchedEffect(Unit) {
                 // back to the front: the music folder read again (a song added meanwhile shows)
                 window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
