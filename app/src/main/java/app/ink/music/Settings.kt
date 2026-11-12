@@ -87,7 +87,7 @@ private val COG = listOf(
 @Composable
 fun SettingsPage(pages: Pages, part: String? = null) {
     val ctx = LocalContext.current
-    val title = when (part) { "music" -> "YOUR MUSIC"; "sound" -> "SOUND"; "listening" -> "LISTENING"; "about" -> "ABOUT"; else -> "INK MUSIC" }
+    val title = when (part) { "music" -> "YOUR MUSIC"; "sound" -> "SOUND"; "offline" -> "OFFLINE"; "listening" -> "LISTENING"; "about" -> "ABOUT"; else -> "INK MUSIC" }
     val account by Server.account.collectAsState()
     val count by Server.count.collectAsState()
     val syncing by Server.syncing.collectAsState()
@@ -118,47 +118,31 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 SettingsIndex(pages)
             } else Spacer(Modifier.height(30.dp))
 
-            if (part == "music") {
+            // each setting a row: its name and what it's set to; a tap opens its words (SettingRows)
+            val opened = rememberOpened()
+            if (part == "music") Column(Modifier.cascade(1)) {
                 // the phone's own music: every folder, or only the ones chosen (Android's folder chooser picks them)
-                Column(Modifier.cascade(1)) {
-                    val folders by Folders.chosen.collectAsState()
-                    val pick = androidx.activity.compose.rememberLauncherForActivityResult(
-                        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
-                    ) { uri -> uri?.let(Folders::pathOf)?.let { Folders.add(ctx, it) } }
-                    BasicText("THE PHONE'S MUSIC", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText(
-                        if (folders.isEmpty()) "every folder on the ${Device.word}. voice notes, recordings and clips under 30 seconds are left out"
-                        else "only these folders. a tap takes one off",
-                        style = pixel(12.sp, Ink.mid),
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    if (folders.isEmpty()) BasicText("every folder", style = pixel(14.sp))
+                val folders by Folders.chosen.collectAsState()
+                val pick = androidx.activity.compose.rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+                ) { uri -> uri?.let(Folders::pathOf)?.let { Folders.add(ctx, it) } }
+                SettingRow("THE ${Device.word.uppercase()}'S MUSIC", if (folders.isEmpty()) "every folder" else "${folders.size} ${if (folders.size == 1) "folder" else "folders"}", opened,
+                    if (folders.isEmpty()) "voice notes and clips under 30 seconds left out" else "only these. a tap takes one off") {
                     folders.forEach { f -> Word(f.trimEnd('/').lowercase(), pixel(14.sp), Modifier.padding(bottom = 6.dp), touch = 6.dp) { Folders.remove(ctx, f) } }
-                    Spacer(Modifier.height(8.dp))
                     Word("add a folder >", pixel(14.sp, Ink.mid), touch = 8.dp) { runCatching { pick.launch(null) } }
-                    Spacer(Modifier.height(40.dp))
                 }
 
-                Column(Modifier.cascade(1)) {
-                    BasicText("YOUR SERVER", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    val a = account
-                    if (a == null) {
-                        BasicText("navidrome, or any subsonic server: your whole library, streamed from home", style = pixel(12.sp, Ink.mid))
-                        Spacer(Modifier.height(18.dp))
-                        SignIn()
-                    } else {
+                val a = account
+                SettingRow("YOUR SERVER", a?.name?.lowercase() ?: "sign in", opened, if (a == null) "navidrome, or any subsonic server" else null) {
+                    if (a == null) SignIn()
+                    else {
                         // signed in: what it holds; a tap reads it again, a hold signs out
                         // a tap and a hold the remote can give too (OK, OK held), not a gesture only a finger can
                         Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
                             onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); Server.signOut(ctx) },
                             onClick = { Server.sync() })) {
                             BasicText("${a.name} at ${a.base.substringAfter("://")}", style = pixel(13.sp))
-                            BasicText(
-                                "${a.user}   " + if (syncing) "reading your library" else "$count songs",
-                                style = pixel(12.sp, Ink.mid),
-                            )
+                            BasicText("${a.user}   " + if (syncing) "reading your library" else "$count songs", style = pixel(12.sp, Ink.mid))
                             Spacer(Modifier.height(4.dp))
                             BasicText("tap reads it again   hold signs out", style = pixel(12.sp, Ink.mid))
                         }
@@ -166,33 +150,24 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         val folders by Server.folders.collectAsState()
                         val folder by Server.folder.collectAsState()
                         if (folders.size > 1) {
-                            Spacer(Modifier.height(14.dp))
-                            BasicText("library", style = pixel(12.sp, Ink.mid))
-                            Spacer(Modifier.height(4.dp))
-                            androidx.compose.foundation.layout.FlowRow(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
-                                Word("all", pixel(14.sp, if (folder == null) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Server.choose(ctx, null) }
-                                folders.forEach { (id, name) ->
-                                    Word(name.lowercase(), pixel(14.sp, if (folder == id) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Server.choose(ctx, id) }
-                                }
+                            PickLabel("library")
+                            Pick(listOf("all" to (folder == null)) + folders.map { (id, name) -> name.lowercase() to (folder == id) }) { i ->
+                                Server.choose(ctx, if (i == 0) null else folders[i - 1].first)
                             }
                         }
                     }
-                    Spacer(Modifier.height(40.dp))
                 }
 
-                Column(Modifier.cascade(2)) {
-                    // your youtube music (the full build): signed in on youtube's own page, read only
-                    if (YouTubeAccount.available) {
-                        val who by YouTubeAccount.who.collectAsState()
-                        val reading by YouTubeAccount.reading.collectAsState()
-                        val tubeLists by YouTubeAccount.playlists.collectAsState()
-                        val tubeRecords by YouTubeAccount.records.collectAsState()
-                        BasicText("YOUTUBE MUSIC", style = headline(24.sp))
-                        Spacer(Modifier.height(6.dp))
-                        val w = who
+                // your youtube music (the full build): signed in on youtube's own page, read only
+                if (YouTubeAccount.available) {
+                    val who by YouTubeAccount.who.collectAsState()
+                    val reading by YouTubeAccount.reading.collectAsState()
+                    val tubeLists by YouTubeAccount.playlists.collectAsState()
+                    val tubeRecords by YouTubeAccount.records.collectAsState()
+                    val w = who
+                    SettingRow("YOUTUBE MUSIC", w?.name?.lowercase() ?: "sign in", opened, if (w == null) "your playlists, likes and records, from your own account" else null) {
                         if (w == null) {
-                            BasicText("your playlists, liked songs, records and what you played lately, from your own account. " +
-                                "ink music isn't youtube's own app, and google could, rarely, mind one being used. " +
+                            BasicText("ink music isn't youtube's own app, and google could, rarely, mind one being used. " +
                                 "your sign-in stays on this ${Device.word} and goes only to youtube", style = pixel(12.sp, Ink.mid))
                             Spacer(Modifier.height(10.dp))
                             Word("SIGN IN", headline(40.sp), touch = 10.dp) { YouTubeAccount.openSignIn(ctx) }
@@ -210,226 +185,77 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                                 BasicText("tap reads it again   hold signs out", style = pixel(12.sp, Ink.mid))
                             }
                             // what you play here, in your history there (and what youtube's mixes learn from)
-                            Spacer(Modifier.height(18.dp))
-                            BasicText("youtube songs you play here go in your history there, as in its own app, and its mixes learn from them",
-                                style = pixel(12.sp, Ink.mid))
-                            Spacer(Modifier.height(10.dp))
+                            PickLabel("youtube songs you play here, in your history there")
                             var tells by remember { mutableStateOf(YouTubeAccount.tells(ctx)) }
-                            Row {
-                                Word("tell youtube", pixel(14.sp, if (tells) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { tells = true; YouTubeAccount.tell(ctx, true) }
-                                Word("don't", pixel(14.sp, if (!tells) Ink.ink else Ink.dim), touch = 8.dp) { tells = false; YouTubeAccount.tell(ctx, false) }
-                            }
+                            Pick(listOf("tell youtube" to tells, "don't" to !tells)) { tells = it == 0; YouTubeAccount.tell(ctx, tells) }
                         }
-                        Spacer(Modifier.height(40.dp))
                     }
                 }
 
                 // your computer: paired, kept in step on the wifi (Sync)
-                Column(Modifier.cascade(3)) { if (onTv()) TvPhoneSetting() else ComputerSetting(pages) }
-
-                // private listening: a switch, nothing kept or told while it's on
-                Column(Modifier.cascade(3)) {
-                    var hidden by remember { mutableStateOf(Private.on(ctx)) }
-                    BasicText("PRIVATE LISTENING", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText(if (hidden) "on: nothing you play is kept or told. it's okay, we know you like taylor swift"
-                        else "while it's on, what you play isn't kept here or told anywhere: no history, no scrobbles, not in your year",
-                        style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    Row {
-                        Word("on", pixel(14.sp, if (hidden) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { hidden = true; Private.set(ctx, true) }
-                        Word("off", pixel(14.sp, if (!hidden) Ink.ink else Ink.dim), touch = 8.dp) { hidden = false; Private.set(ctx, false) }
-                    }
-                    Spacer(Modifier.height(40.dp))
+                if (onTv()) { RowsEnd(); Spacer(Modifier.height(30.dp)); TvPhoneSetting() }
+                else {
+                    val peers by SyncPhone.peers.collectAsState()
+                    SettingRow("YOUR COMPUTER", if (peers.isEmpty()) "pair one" else peers.joinToString(", ") { it.name.lowercase() }, opened) { ComputerSetting(pages, head = false) }
                 }
 
-                Column(Modifier.cascade(3)) {
-                    // bringing playlists in from spotify, by a file (its own API is closed to small apps)
-                    BasicText("FROM SPOTIFY", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText(if (Spotify.available) "bring a playlist in: signed in to spotify, or from a file" else "bring a playlist in: exported from exportify.app, or from spotify's own download of your data", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    // signed in: out again, to bring in another account's playlists (2026-11-11)
-                    val spotifyAt by Spotify.at.collectAsState()
-                    var spotifyIn by remember(spotifyAt) { mutableStateOf(Spotify.available && Spotify.signedIn()) }
+                // bringing playlists in from spotify, by a file (its own API is closed to small apps)
+                val spotifyAt by Spotify.at.collectAsState()
+                var spotifyIn by remember(spotifyAt) { mutableStateOf(Spotify.available && Spotify.signedIn()) }
+                SettingRow("FROM SPOTIFY", if (spotifyIn) "signed in" else "bring a playlist in", opened,
+                    if (Spotify.available) "signed in to spotify, or from a file" else "exported from exportify.app, or from spotify's own download of your data") {
                     Row {
                         Word("bring one in", pixel(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { pages.open(Page.Import) }
                         if (spotifyIn) Word("sign out of spotify", pixel(14.sp, Ink.mid), touch = 8.dp) { Spotify.signOut(); spotifyIn = Spotify.signedIn() }
                     }
-                    if (spotifyIn) {
-                        Spacer(Modifier.height(6.dp))
-                        BasicText("signed in to spotify. sign out, then bring one in, to sign in to another account", style = pixel(12.sp, Ink.mid))
-                    }
-                    Spacer(Modifier.height(40.dp))
+                    if (spotifyIn) BasicText("sign out, then bring one in, to sign in to another account", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
                 }
-
-
+                if (!onTv()) RowsEnd()
             }
-            if (part == "sound") {
-                Column(Modifier.cascade(1)) {
-                    // how good a stream is: on wifi, and on mobile data (Quality)
-                    BasicText("QUALITY", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("songs from your server and youtube. original, the file as it is; high, mp3 320; data saver, the smallest", style = pixel(12.sp, Ink.mid))
-                    var quality by remember { mutableStateOf(Quality.read(ctx)) }
+
+            if (part == "sound") Column(Modifier.cascade(1)) {
+                // how good a stream is: on wifi, and on mobile data (Quality)
+                var quality by remember { mutableStateOf(Quality.read(ctx)) }
+                SettingRow("QUALITY", "${Quality.words[quality.first]} · ${Quality.words[quality.second]} on data", opened,
+                    "original, the file as it is; high, mp3 320; data saver, the smallest") {
                     for ((where, onData) in listOf("on wifi" to false, "on mobile data" to true)) {
-                        Spacer(Modifier.height(12.dp))
-                        BasicText(where, style = pixel(12.sp, Ink.mid))
-                        Spacer(Modifier.height(6.dp))
-                        Row {
-                            Quality.words.forEachIndexed { q, word ->
-                                val lit = (if (onData) quality.second else quality.first) == q
-                                Word(word, pixel(14.sp, if (lit) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) {
-                                    quality = if (onData) quality.first to q else q to quality.second
-                                    Quality.set(ctx, quality.first, quality.second)
-                                }
-                            }
+                        PickLabel(where)
+                        Pick(Quality.words.mapIndexed { q, w -> w to ((if (onData) quality.second else quality.first) == q) }) { q ->
+                            quality = if (onData) quality.first to q else q to quality.second
+                            Quality.set(ctx, quality.first, quality.second)
                         }
                     }
-                    Spacer(Modifier.height(40.dp))
                 }
-                // a YouTube video's talking skipped (SponsorBlock: the player reads files/skip-talking-off), the full build's
-                if (YouTubeMusic.available) Column(Modifier.cascade(1)) {
-                    var skip by remember { mutableStateOf(!java.io.File(ctx.filesDir, "skip-talking-off").exists()) }
-                    BasicText("SKIP THE TALKING", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("in youtube's music videos, the talking, skits and credits are passed over, where sponsorblock's listeners have marked them", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    Row {
-                        Word("on", pixel(14.sp, if (skip) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) {
-                            skip = true; java.io.File(ctx.filesDir, "skip-talking-off").delete()
-                        }
-                        Word("off", pixel(14.sp, if (!skip) Ink.ink else Ink.dim), touch = 8.dp) {
-                            skip = false; runCatching { java.io.File(ctx.filesDir, "skip-talking-off").createNewFile() }
-                        }
-                    }
-                    Spacer(Modifier.height(40.dp))
-                }
-
-                Column(Modifier.cascade(2)) {
-                    // your server's songs kept on the phone: how many, how much, in what, and all let go
-                    if (account != null || YouTubeMusic.available) {
-                        val kept by Offline.kept.collectAsState()
-                        BasicText("OFFLINE", style = headline(24.sp))
-                        Spacer(Modifier.height(6.dp))
-                        val mb = remember(kept) { Offline.bytes(ctx) / 1_048_576 }
-                        BasicText(if (kept.isEmpty()) "keep a song, a record or a playlist on the ${Device.word} (keep offline: on its page, or held) to play it with no signal"
-                            else "${kept.size} ${if (kept.size == 1) "song" else "songs"} on this ${Device.word}, $mb mb", style = pixel(12.sp, Ink.mid))
-                        // the list itself, from here too, as the computer's (2026-11-10)
-                        if (kept.isNotEmpty()) Word("see them", pixel(14.sp), Modifier.padding(top = 8.dp), touch = 8.dp) { pages.open(Page.Kept) }
-                        Spacer(Modifier.height(12.dp))
-                        BasicText("kept as: your server's original file (lossless if it is) and youtube's best, or smaller (mp3 320, and youtube's lighter stream)", style = pixel(12.sp, Ink.mid))
-                        Spacer(Modifier.height(6.dp))
-                        var small by remember { mutableStateOf(Offline.mp3(ctx)) }
-                        Row {
-                            Word("as they are", pixel(14.sp, if (!small) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { small = false; Offline.mp3(ctx, false) }
-                            Word("smaller", pixel(14.sp, if (small) Ink.ink else Ink.dim), touch = 8.dp) { small = true; Offline.mp3(ctx, true) }
-                        }
-                        // a song loved, kept (KeepLoved): off, on wifi, always; the loves from before offered once
-                        Spacer(Modifier.height(18.dp))
-                        val keepMode by KeepLoved.mode.collectAsState()
-                        val offered by KeepLoved.offered.collectAsState()
-                        BasicText("keep what you love: a song you love is kept on this ${Device.word}, to play with no signal", style = pixel(12.sp, Ink.mid))
-                        Spacer(Modifier.height(6.dp))
-                        Row {
-                            for (m in listOf(LoveKeeping.OFF, LoveKeeping.WIFI, LoveKeeping.ALWAYS))
-                                Word(m, pixel(14.sp, if (keepMode == m) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { KeepLoved.set(ctx, m) }
-                        }
-                        if (keepMode != LoveKeeping.OFF && !offered) {
-                            val before = remember(kept) { KeepLoved.before() }
-                            if (before.isNotEmpty()) {
-                                val size = remember(before, small) { before.sumOf { LoveKeeping.about(it.duration / 1000, small, it.tube) } }
-                                Spacer(Modifier.height(10.dp))
-                                BasicText("keep the ${before.size} you've loved already? ${LoveKeeping.said(size)}", style = pixel(12.sp, Ink.mid))
-                                Spacer(Modifier.height(6.dp))
-                                Row {
-                                    Word("keep them", pixel(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { KeepLoved.answer(ctx, true) }
-                                    Word("just new ones", pixel(14.sp, Ink.mid), touch = 8.dp) { KeepLoved.answer(ctx, false) }
-                                }
-                            }
-                        }
-                        // the most played kept, refreshed daily on wifi (KeepMost): off at first
-                        Spacer(Modifier.height(18.dp))
-                        val most by KeepMost.on.collectAsState()
-                        BasicText("keep what you play most: the ${KeepMost.N} songs most in your rotation these days (this week counts more than the summer), kept on this ${Device.word} and changed as they change (on wifi)", style = pixel(12.sp, Ink.mid))
-                        Spacer(Modifier.height(6.dp))
-                        Row {
-                            Word("off", pixel(14.sp, if (!most) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { KeepMost.set(ctx, false) }
-                            Word("on", pixel(14.sp, if (most) Ink.ink else Ink.dim), touch = 8.dp) { KeepMost.set(ctx, true) }
-                        }
-                        if (kept.isNotEmpty()) {
-                            Spacer(Modifier.height(10.dp))
-                            var sure by remember { mutableStateOf(false) }
-                            androidx.compose.runtime.LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
-                            Word(if (sure) "remove them all" else "remove all", pixel(14.sp, if (sure) Ink.ink else Ink.mid), touch = 8.dp) {
-                                if (!sure) sure = true else { sure = false; Offline.removeAll(ctx) }
-                            }
-                        }
-                        Spacer(Modifier.height(40.dp))
-                    }
-                }
-
-                Column(Modifier.cascade(3)) {
-                    // the phone's own equalizer, for ink music's sound
-                    BasicText("EQUALIZER", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    val eqOn = remember { Eq.read(ctx).on }
-                    BasicText("ink music's own: the ${Device.word}'s bands, and a few shapes to start from" + if (eqOn) "   on" else "", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
+                // the phone's own equalizer, for ink music's sound
+                val eqOn = remember(opened.name) { Eq.read(ctx).on }
+                SettingRow("EQUALIZER", if (eqOn) "on" else "off", opened, "the ${Device.word}'s bands, and shapes to start from") {
                     Word("open it", pixel(14.sp), touch = 8.dp) { pages.open(Page.Equalizer) }
-                    Spacer(Modifier.height(40.dp))
                 }
-
-                Column(Modifier.cascade(4)) {
-                    // volume levelling: on, or off (each song as it was mastered)
-                    BasicText("EVEN VOLUME", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("every song as loud as the next, by its replaygain. a record played through keeps its own quiet and loud", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    var level by remember { mutableStateOf(Playback.levelling(ctx)) }
-                    Row {
-                        Word("on", pixel(14.sp, if (level) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { level = true; Playback.level(true) }
-                        Word("off", pixel(14.sp, if (!level) Ink.ink else Ink.dim), touch = 8.dp) { level = false; Playback.level(false) }
+                // volume levelling: on, or off (each song as it was mastered)
+                var level by remember { mutableStateOf(Playback.levelling(ctx)) }
+                SettingRow("EVEN VOLUME", if (level) "on" else "off", opened, "every song as loud as the next; a record keeps its own") {
+                    Pick(listOf("on" to level, "off" to !level)) { level = it == 0; Playback.level(level) }
+                }
+                // pause and play eased: the sound fades out and back in (the player reads a file: off if it's there)
+                var soft by remember { mutableStateOf(!java.io.File(ctx.filesDir, "soft-off").exists()) }
+                SettingRow("SOFT PAUSE", if (soft) "on" else "off", opened, "a breath out at pause, in at play") {
+                    Pick(listOf("on" to soft, "off" to !soft)) {
+                        soft = it == 0
+                        if (soft) java.io.File(ctx.filesDir, "soft-off").delete() else runCatching { java.io.File(ctx.filesDir, "soft-off").createNewFile() }
                     }
-                    Spacer(Modifier.height(40.dp))
                 }
-
-                Column(Modifier.cascade(5)) {
-                    // pause and play eased: the sound fades out and back in (the player reads a file: off if it's there)
-                    BasicText("SOFT PAUSE", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("pausing fades the music out, playing fades it back in, a breath each way", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    var soft by remember { mutableStateOf(!java.io.File(ctx.filesDir, "soft-off").exists()) }
-                    Row {
-                        Word("on", pixel(14.sp, if (soft) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) {
-                            soft = true; java.io.File(ctx.filesDir, "soft-off").delete()
-                        }
-                        Word("off", pixel(14.sp, if (!soft) Ink.ink else Ink.dim), touch = 8.dp) {
-                            soft = false; runCatching { java.io.File(ctx.filesDir, "soft-off").createNewFile() }
-                        }
-                    }
-                    Spacer(Modifier.height(40.dp))
-                }
-
-                // a song going into the next (Crossfade; automix's first half)
-                Column(Modifier.cascade(5)) {
-                    BasicText("TRANSITIONS", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    // one line (the page had too much to read); the rest shows on the player as it happens
-                    BasicText("each song runs into the next where it fades. automix matches their beats too", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
-                    val cross = mode != Crossfade.OFF
+                // a song going into the next (Crossfade; automix's first half), and reading the mixes' tempos (Tempos)
+                var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
+                val cross = mode != Crossfade.OFF
+                SettingRow("TRANSITIONS", mode, opened, "each song into the next; automix on the beat") {
                     // said plainly when it's on but resting (it couldn't be told it wasn't crossfading: exact was on)
-                    if (cross && Exact.inUse(ctx)) {
-                        BasicText("resting while your usb dac is plugged in: exact is on (below)", style = pixel(12.sp, Ink.ink))
-                        Spacer(Modifier.height(8.dp))
+                    if (cross && Exact.inUse(ctx)) { BasicText("resting while your usb dac is plugged in: exact is on", style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(8.dp)) }
+                    Pick(listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX).map { it to (mode == it) }) { i ->
+                        mode = listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX)[i]; Crossfade.set(ctx, mode)
                     }
-                    Row {
-                        for (m in listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX))
-                            Word(m, pixel(14.sp, if (mode == m) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { mode = m; Crossfade.set(ctx, m) }
-                    }
+                    var wifi by remember { mutableStateOf(Tempos.wifiOnly(ctx)) }
+                    PickLabel("reading tempos, half a megabyte a song")
+                    Pick(listOf("on wifi only" to wifi, "anywhere" to !wifi)) { wifi = it == 0; Tempos.wifiOnly(ctx, wifi) }
                     // what the player last did with it: a song mixed into the next, or why one wasn't (2026-11-08:
                     // a listener's "not working on any of my phones", and nothing on the phone to say why)
                     if (cross) Crossfade.said(ctx)?.let { line ->
@@ -437,7 +263,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         BasicText("last: $line", style = pixel(12.sp, Ink.mid))
                         // the last dozen, and which phone, onto the clipboard: to send when it isn't mixing (2026-11-11)
                         var copied by remember { mutableStateOf(false) }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(6.dp))
                         Word(if (copied) "copied" else "copy what happened", pixel(14.sp, Ink.mid), touch = 8.dp) {
                             val text = (listOf("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, android ${android.os.Build.VERSION.RELEASE}, ink music ${BuildConfig.VERSION_NAME}, $mode") +
                                 Crossfade.history(ctx)).joinToString("\n")
@@ -445,101 +271,100 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                             copied = true
                         }
                     }
-                    Spacer(Modifier.height(40.dp))
                 }
-
-                // reading songs' tempos for the mixes (Tempos): anywhere, or on wifi only
-                Column(Modifier.cascade(5)) {
-                    BasicText("READING TEMPOS", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("the mixes read each new song's tempo once, about half a megabyte each. on wifi only, mobile data mixes the songs already read",
-                        style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    var wifi by remember { mutableStateOf(Tempos.wifiOnly(ctx)) }
-                    Row {
-                        Word("anywhere", pixel(14.sp, if (!wifi) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { wifi = false; Tempos.wifiOnly(ctx, false) }
-                        Word("on wifi only", pixel(14.sp, if (wifi) Ink.ink else Ink.dim), touch = 8.dp) { wifi = true; Tempos.wifiOnly(ctx, true) }
-                    }
-                    Spacer(Modifier.height(40.dp))
-                }
-
                 // exact to a usb dac: android 14's bit-perfect path (Exact), the equalizer and even volume resting
-                Column(Modifier.cascade(6)) {
-                    BasicText("EXACT TO A USB DAC", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    // one line; what touches the sound is said on the signal path
-                    BasicText("ink music plays to your dac itself: every sample as in the file, at its own rate. tap the format over the cover to see the way",
-                        style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    var exact by remember { mutableStateOf(Exact.on(ctx)) }
-                    Row {
-                        Word("on", pixel(14.sp, if (exact) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { exact = true; Playback.exact(ctx, true) }
-                        Word("off", pixel(14.sp, if (!exact) Ink.ink else Ink.dim), touch = 8.dp) { exact = false; Playback.exact(ctx, false) }
-                    }
-                    Spacer(Modifier.height(40.dp))
+                var exact by remember { mutableStateOf(Exact.on(ctx)) }
+                SettingRow("MORE", "exact to a usb dac" + if (exact) " · on" else "", opened) {
+                    PickLabel("exact to a usb dac: every sample as in the file, at its own rate")
+                    Pick(listOf("on" to exact, "off" to !exact)) { exact = it == 0; Playback.exact(ctx, exact) }
                 }
-
-                Column(Modifier.cascade(7)) {
-                    // the hi-res moment: a lossless song's format typed across the cover as it starts
-                    BasicText("HI-RES MOMENT", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("a lossless song says so across its cover as it starts. off, it's only the small word over the cover", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    val moment by Moments.on.collectAsState()
-                    Row {
-                        Word("on", pixel(14.sp, if (moment) Ink.ink else Ink.dim), Modifier.padding(end = 22.dp), touch = 8.dp) { Moments.set(ctx, true) }
-                        Word("off", pixel(14.sp, if (!moment) Ink.ink else Ink.dim), touch = 8.dp) { Moments.set(ctx, false) }
-                    }
-                    Spacer(Modifier.height(40.dp))
-                }
-
-
+                RowsEnd()
             }
-            if (part == "listening") {
-                Column(Modifier.cascade(1)) {
-                    // the artists the listen page grows from (YouTube Music's mixes and records: the full build)
-                    if (YouTubeMusic.available) {
-                        val seeds by Seeds.artists.collectAsState()
-                        BasicText("YOUR ARTISTS", style = headline(24.sp))
-                        Spacer(Modifier.height(6.dp))
-                        BasicText(if (seeds.isEmpty()) "none picked yet: pick a few and the listen page makes mixes of them"
-                            else seeds.joinToString(", ") { it.name.lowercase() }, style = pixel(12.sp, Ink.mid))
-                        Spacer(Modifier.height(10.dp))
-                        Word(if (seeds.isEmpty()) "pick" else "change", pixel(14.sp), touch = 8.dp) { pages.open(Page.Pick) }
-                        Spacer(Modifier.height(40.dp))
-                    }
-                }
 
-                Column(Modifier.cascade(3)) {
-                    // listenbrainz: what you play, told there (the player's process sends it)
-                    ListenBrainzSetting()
-                    Spacer(Modifier.height(40.dp))
-                }
-
-
-                // last.fm: scrobbled there too, connected by your name and password once
-                if (LastFm.available) Column(Modifier.cascade(4)) {
-                    LastFmSetting()
-                    Spacer(Modifier.height(40.dp))
-                }
-
-                // how much moves: full, less, or as the phone says (Moves)
-                Column(Modifier.cascade(4)) {
-                    BasicText("MOTION", style = headline(24.sp))
-                    Spacer(Modifier.height(6.dp))
-                    BasicText("pages arriving word by word, covers developing, the blur by the bars. less is easier on a slower phone" +
-                        if (Moves.phoneSaysLess(ctx)) "; this phone says less" else "", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    val chosen by Moves.chosen.collectAsState()
-                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(22.dp)) {
-                        listOf(Moves.AUTO, Moves.FULL, Moves.LESS).forEach { m ->
-                            Word(m, pixel(14.sp, if (chosen == m) Ink.ink else Ink.dim), touch = 8.dp) { Moves.set(ctx, m) }
+            // what's kept on the phone (2026-11-11: its own part, out of sound): how many and how much, kept as, keeping
+            // what you love and what you play most
+            if (part == "offline") Column(Modifier.cascade(1)) {
+                val kept by Offline.kept.collectAsState()
+                val bytes = remember(kept) { Offline.bytes(ctx) }
+                SettingRow("KEPT", if (kept.isEmpty()) "none yet" else "${kept.size} ${if (kept.size == 1) "song" else "songs"} · ${LoveKeeping.said(bytes).removePrefix("about ")}", opened,
+                    if (kept.isEmpty()) "keep a song, record or playlist (on its page, or held) to play it with no signal" else null) {
+                    if (kept.isNotEmpty()) {
+                        Word("see them", pixel(14.sp), touch = 8.dp) { pages.open(Page.Kept) }
+                        Spacer(Modifier.height(8.dp))
+                        var sure by remember { mutableStateOf(false) }
+                        LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
+                        Word(if (sure) "remove them all" else "remove all", pixel(14.sp, if (sure) Ink.ink else Ink.mid), touch = 8.dp) {
+                            if (!sure) sure = true else { sure = false; Offline.removeAll(ctx) }
                         }
                     }
-                    Spacer(Modifier.height(40.dp))
                 }
-
+                var small by remember { mutableStateOf(Offline.mp3(ctx)) }
+                SettingRow("KEPT AS", if (small) "smaller" else "as they are", opened, "the original (lossless if it is), or mp3 320 and youtube's lighter stream") {
+                    Pick(listOf("as they are" to !small, "smaller" to small)) { small = it == 1; Offline.mp3(ctx, small) }
+                }
+                // a song loved, kept (KeepLoved): off, on wifi, always; the loves from before offered once
+                val keepMode by KeepLoved.mode.collectAsState()
+                val offered by KeepLoved.offered.collectAsState()
+                SettingRow("KEEP WHAT YOU LOVE", keepMode, opened, "a song you love is kept on this ${Device.word}") {
+                    Pick(listOf(LoveKeeping.OFF, LoveKeeping.WIFI, LoveKeeping.ALWAYS).map { it to (keepMode == it) }) { i ->
+                        KeepLoved.set(ctx, listOf(LoveKeeping.OFF, LoveKeeping.WIFI, LoveKeeping.ALWAYS)[i])
+                    }
+                    if (keepMode != LoveKeeping.OFF && !offered) {
+                        val before = remember(kept) { KeepLoved.before() }
+                        if (before.isNotEmpty()) {
+                            val size = remember(before, small) { before.sumOf { LoveKeeping.about(it.duration / 1000, small, it.tube) } }
+                            PickLabel("keep the ${before.size} you've loved already? ${LoveKeeping.said(size)}")
+                            Row {
+                                Word("keep them", pixel(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { KeepLoved.answer(ctx, true) }
+                                Word("just new ones", pixel(14.sp, Ink.mid), touch = 8.dp) { KeepLoved.answer(ctx, false) }
+                            }
+                        }
+                    }
+                }
+                // the most played kept, refreshed daily on wifi (KeepMost): off at first
+                val most by KeepMost.on.collectAsState()
+                SettingRow("KEEP WHAT YOU PLAY MOST", if (most) "on" else "off", opened, "the ${KeepMost.N} most in your rotation, changed as they change (on wifi)") {
+                    Pick(listOf("on" to most, "off" to !most)) { KeepMost.set(ctx, it == 0) }
+                }
+                RowsEnd()
             }
+
+            if (part == "listening") Column(Modifier.cascade(1)) {
+                // the artists the listen page grows from (YouTube Music's mixes and records: the full build)
+                if (YouTubeMusic.available) {
+                    val seeds by Seeds.artists.collectAsState()
+                    SettingRow("YOUR ARTISTS", if (seeds.isEmpty()) "pick a few" else "${seeds.size} picked", opened, "the listen page makes mixes of them") {
+                        if (seeds.isNotEmpty()) { BasicText(seeds.joinToString(", ") { it.name.lowercase() }, style = pixel(12.sp, Ink.mid)); Spacer(Modifier.height(8.dp)) }
+                        Word(if (seeds.isEmpty()) "pick" else "change", pixel(14.sp), touch = 8.dp) { pages.open(Page.Pick) }
+                    }
+                }
+                // private listening: a switch, nothing kept or told while it's on
+                var hidden by remember { mutableStateOf(Private.on(ctx)) }
+                SettingRow("PRIVATE LISTENING", if (hidden) "on" else "off", opened,
+                    if (hidden) "nothing kept or told. it's okay, we know you like taylor swift" else "while on, nothing you play is kept or told") {
+                    Pick(listOf("on" to hidden, "off" to !hidden)) { hidden = it == 0; Private.set(ctx, hidden) }
+                }
+                // a YouTube video's talking skipped (SponsorBlock: the player reads files/skip-talking-off), the full build's
+                if (YouTubeMusic.available) {
+                    var skip by remember { mutableStateOf(!java.io.File(ctx.filesDir, "skip-talking-off").exists()) }
+                    SettingRow("SKIP THE TALKING", if (skip) "on" else "off", opened, "past the talking in music videos, where sponsorblock has it marked") {
+                        Pick(listOf("on" to skip, "off" to !skip)) {
+                            skip = it == 0
+                            if (skip) java.io.File(ctx.filesDir, "skip-talking-off").delete() else runCatching { java.io.File(ctx.filesDir, "skip-talking-off").createNewFile() }
+                        }
+                    }
+                }
+                // listenbrainz: what you play, told there (the player's process sends it)
+                val lb by ListenBrainz.account.collectAsState()
+                SettingRow("LISTENBRAINZ", lb?.user?.lowercase() ?: "connect", opened) { ListenBrainzSetting(head = false) }
+                // last.fm: scrobbled there too, connected by your name and password once
+                if (LastFm.available) {
+                    val fm by LastFm.account.collectAsState()
+                    SettingRow("LAST.FM", fm?.name?.lowercase() ?: "connect", opened) { LastFmSetting(head = false) }
+                }
+                RowsEnd()
+            }
+
             if (part == "about") {
                 Column(Modifier.cascade(1)) {
                     // the liner notes
@@ -551,6 +376,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                             "with listenbrainz or last.fm connected, what you play goes there. " +
                             (if (Moving.available) "with moving covers on, the record playing goes to apple music, for its moving cover; " +
                                 "signed in to spotify, the song playing goes to spotify, for its canvas (and your playlists, when you bring one in). " else "") +
+                            (if (YouTubeMusic.available) "with skip the talking on, the first four characters of a scrambled youtube video id go to sponsorblock, never the id itself. " else "") +
                             "the radio list comes from radio-browser.info, the indie chart and what a station is playing from the stations' own playlists; headphone tunings from autoeq (github), when you look for yours. no accounts of ours, no tracking, no ads.",
                         style = pixel(12.sp, Ink.mid),
                     )
@@ -585,8 +411,6 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://inkhome.app")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                     }
                 }
-
-
             }
         }
     } }
@@ -630,20 +454,29 @@ private fun SettingsIndex(pages: Pages) {
         look.word,
         if (Moving.available) (if (moving == Moving.OFF) "covers still" else "moving covers ${moving}") else null,
         if (Spotify.available && Spotify.signedIn() && Moving.canvasOn.collectAsState().value) "spotify canvas" else null,
+        if (Moves.less.value) "moving less" else null,
     ).joinToString(" · "), "look", 2)
     Entry("SOUND", listOfNotNull(
         Quality.words.getOrNull(quality.first)?.let { "$it on wifi" },
         if (eq.on) "equalizer on" else "equalizer off",
         if (soft) "soft pause" else null,
-        kept.size.takeIf { it > 0 }?.let { "$it kept offline" },
     ).joinToString(" · "), "sound", 3)
+    // what's kept on the phone, its own part since 2026-11-11 (your server's or youtube's songs: only with one of them)
+    if (account != null || YouTubeMusic.available) {
+        val keepMode by KeepLoved.mode.collectAsState()
+        Entry("OFFLINE", listOfNotNull(
+            if (kept.isEmpty()) "nothing kept yet" else "${kept.size} kept",
+            if (keepMode != LoveKeeping.OFF) "keeping what you love" else null,
+            if (KeepMost.on.collectAsState().value) "and what you play most" else null,
+        ).joinToString(" · "), "offline", 4)
+    }
     Entry("LISTENING", listOfNotNull(
         seeds.size.takeIf { it > 0 }?.let { "$it artists" },
+        if (Private.on(ctx)) "private" else null,
         if (lb != null) "listenbrainz on" else null,
         if (lastfm != null) "last.fm on" else null,
-        if (Moves.less.value) "moving less" else null,
-    ).joinToString(" · "), "listening", 4)
-    Entry("ABOUT", "version ${BuildConfig.VERSION_NAME} · what leaves the ${Device.word} · free and open", "about", 5)
+    ).joinToString(" · "), "listening", 5)
+    Entry("ABOUT", "version ${BuildConfig.VERSION_NAME} · what leaves the ${Device.word} · free and open", "about", 6)
 }
 
 /** Signing in to your server: its address, your name and password; what went wrong, said plainly. */
@@ -692,7 +525,7 @@ fun SignIn() {
 
 /** ListenBrainz: your user token, tried and kept; then whose it is (a hold forgets it). */
 @Composable
-private fun ListenBrainzSetting() {
+private fun ListenBrainzSetting(head: Boolean = true) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
@@ -700,8 +533,7 @@ private fun ListenBrainzSetting() {
     var brought by remember { mutableStateOf(ListenBrainz.brought(ctx)) }
     var bringing by remember { mutableStateOf(false) }
     LaunchedEffect(account) { if (account != null) repeat(20) { if (brought != null) return@LaunchedEffect; kotlinx.coroutines.delay(1_000); brought = ListenBrainz.brought(ctx) } }
-    BasicText("LISTENBRAINZ", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    if (head) { BasicText("LISTENBRAINZ", style = headline(24.sp)); Spacer(Modifier.height(6.dp)) }
     val a = account
     if (a == null) {
         var token by remember { mutableStateOf("") }
@@ -761,7 +593,7 @@ private fun ListenBrainzSetting() {
 
 /** Last.fm: your name and password, swapped for a session (the password not kept); then whose it is (a hold forgets it). */
 @Composable
-private fun LastFmSetting() {
+private fun LastFmSetting(head: Boolean = true) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
@@ -770,8 +602,7 @@ private fun LastFmSetting() {
     var bringing by remember { mutableStateOf(false) }
     // connected just now: brought in meanwhile, read again when it lands
     LaunchedEffect(account) { if (account != null) repeat(20) { if (brought != null) return@LaunchedEffect; kotlinx.coroutines.delay(1_000); brought = LastFm.brought(ctx) } }
-    BasicText("LAST.FM", style = headline(24.sp))
-    Spacer(Modifier.height(6.dp))
+    if (head) { BasicText("LAST.FM", style = headline(24.sp)); Spacer(Modifier.height(6.dp)) }
     val a = account
     if (a == null) {
         var name by remember { mutableStateOf("") }
@@ -853,7 +684,7 @@ internal fun Field(name: String, value: String, onValue: (String) -> Unit, hint:
  * a wifi it calls public) is never listed, and the way to type its address is on the page this opens.
  */
 @Composable
-private fun ComputerSetting(pages: Pages) {
+private fun ComputerSetting(pages: Pages, head: Boolean = true) {
     val ctx = LocalContext.current
     SyncPhone.start(ctx)
     val peers by SyncPhone.peers.collectAsState()
@@ -864,8 +695,7 @@ private fun ComputerSetting(pages: Pages) {
         onDispose { stop() }
     }
     val scope = rememberCoroutineScope()
-    BasicText("YOUR COMPUTER", style = headline(32.sp))
-    Spacer(Modifier.height(6.dp))
+    if (head) { BasicText("YOUR COMPUTER", style = headline(32.sp)); Spacer(Modifier.height(6.dp)) }
     if (peers.isEmpty() && waiting.isEmpty()) {
         BasicText("ink music on a computer (mac, windows, linux) signed in to what this phone is, and the two kept in step on your wifi. " +
             "on the computer: settings, your phone, pair your phone; then here", style = pixel(12.sp, Ink.mid))
@@ -895,7 +725,7 @@ private fun ComputerSetting(pages: Pages) {
             Word("pair another", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.HandOver) }
         }
     }
-    Spacer(Modifier.height(40.dp))
+    if (head) Spacer(Modifier.height(40.dp))
 }
 
 /** "just now", "4 minutes ago", "2 hours ago", "3 days ago". */

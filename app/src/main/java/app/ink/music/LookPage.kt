@@ -64,107 +64,61 @@ fun LookPage(pages: Pages) {
             }
         }
         // the choices, each layer its own: a heading, its line, its words
+        val opened = rememberOpened()
         val sections: @Composable ColumnScope.() -> Unit = if (tv) ({ TvLookChoices(signed, canvasOn) }) else ({
-            // three layers, each its own effect, none following another (2026-10-30): the cover, the
-            // still background, spotify's canvas over it; each a row of words, the chosen one lit
-            @Composable
-            fun Choices(words: List<Pair<String, Boolean>>, pick: (Int) -> Unit) {
-                FlowRow {
-                    words.forEachIndexed { i, (w, lit) ->
-                        Word(w, pixel(14.sp, if (lit) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp, bottom = 4.dp), touch = 8.dp) { pick(i) }
-                    }
-                }
+            // each layer a row (SettingRows): its name and what it's set to, its words a tap away, showing above at once;
+            // in the picture's order: the cover, what's behind it, the canvas over it, the name, then the rest
+            val options = listOf<Look?>(null) + Moving.coverLooks
+            SettingRow("THE COVER", cover?.word ?: "clear", opened, "the record's cover, moving where it has a moving one") {
+                Pick(options.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(ctx, cover = options[it]) }
             }
-            Column(Modifier.cascade(1)) {
-                BasicText("THE COVER", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                BasicText("the record's cover in the player, moving where it has a moving one", style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.height(10.dp))
-                val options = listOf<Look?>(null) + Moving.coverLooks
-                Choices(options.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(ctx, cover = options[it]) }
-                Spacer(Modifier.height(40.dp))
-            }
-            Column(Modifier.cascade(2)) {
-                BasicText("BEHIND IT", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                BasicText("one background behind the player: a song's spotify canvas where it has one" +
-                    (if (Spotify.available && signed && canvasOn) "" else " (canvas off)") + ", else its cover, in this effect", style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.height(10.dp))
-                Choices(Look.entries.map { it.word to (it == look) }) { Looks.set(ctx, Look.entries[it]) }
-                Spacer(Modifier.height(40.dp))
+            SettingRow("BEHIND IT", look.word, opened, "one background: a song's canvas where it has one, else its cover") {
+                Pick(Look.entries.map { it.word to (it == look) }) { Looks.set(ctx, Look.entries[it]) }
             }
             // spotify's canvas over the background (signed in to spotify)
-            if (Spotify.available) Column(Modifier.cascade(3)) {
-                BasicText("SPOTIFY'S CANVAS", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                // a TV: from the phone, as every sign-in is there (its own passes meanwhile, an hour's at a time)
-                val tv = onTv()
-                if (!signed && !(tv && Spotify.ready())) {
-                    if (tv) BasicText("a song's own looping clip behind the player, where it has one. it comes from your phone: " +
-                        "sign in to spotify in ink music there (settings, the look), and it's here the next time the two are in step", style = pixel(12.sp, Ink.mid))
-                    else {
-                        BasicText("a song's own looping clip behind the player, where it has one. it asks as you: sign in to spotify " +
-                            "(the same sign-in that brings your playlists in)", style = pixel(12.sp, Ink.mid))
-                        Spacer(Modifier.height(8.dp))
-                        Word("SIGN IN", headline(40.sp), touch = 8.dp) { Spotify.signIn(ctx) }
-                    }
-                } else {
-                    if (tv) { BasicText(if (signed) "signed in from your phone" else "from your phone, for now: sign in to spotify there to keep it", style = pixel(12.sp)); Spacer(Modifier.height(6.dp)) }
-                    BasicText("a song's own looping clip as the background, where it has one, in the effect above", style = pixel(12.sp, Ink.mid))
-                    Spacer(Modifier.height(10.dp))
-                    Choices(listOf("on" to canvasOn, "off" to !canvasOn)) { Moving.set(ctx, canvasOn = it == 0) }
-                }
-                Spacer(Modifier.height(40.dp))
+            if (Spotify.available) SettingRow("SPOTIFY'S CANVAS", if (!signed) "sign in" else if (canvasOn) "on" else "off", opened,
+                "a song's own looping clip as the background, where it has one") {
+                if (!signed) Word("SIGN IN", headline(40.sp), touch = 8.dp) { Spotify.signIn(ctx) }
+                else Pick(listOf("on" to canvasOn, "off" to !canvasOn)) { Moving.set(ctx, canvasOn = it == 0) }
             }
             // the giant names running across: moving, or still where they are
-            Column(Modifier.cascade(4)) {
-                val marquee by Marquees.on.collectAsState()
-                BasicText("THE NAME", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                BasicText("the artist's name running across the foot of the player (and ink weekly's, a long one on an artist's page)", style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.height(10.dp))
-                Choices(listOf("moving" to marquee, "still" to !marquee)) { Marquees.set(ctx, it == 0) }
-                Spacer(Modifier.height(40.dp))
+            val marquee by Marquees.on.collectAsState()
+            SettingRow("THE NAME", if (marquee) "moving" else "still", opened, "the artist's name along the player's foot") {
+                Pick(listOf("moving" to marquee, "still" to !marquee)) { Marquees.set(ctx, it == 0) }
             }
-            // how mixes and lists are drawn from their covers (artists' photos stay in the dither)
-            Column(Modifier.cascade(5)) {
-                val print by CoverPrint.on.collectAsState()
-                BasicText("COVERS", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                BasicText("how mixes and lists are drawn from their covers", style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.height(10.dp))
-                Choices(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(ctx, Print.entries[it]) }
-                Spacer(Modifier.height(40.dp))
+            // how mixes and lists are drawn from their covers
+            val print by CoverPrint.on.collectAsState()
+            SettingRow("COVERS", print.word, opened, "how mixes and lists are drawn from their covers") {
+                Pick(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(ctx, Print.entries[it]) }
             }
-            // an artist's page: their photo or their moving one (apple music's), dithered or as it is (both alike)
-            Column(Modifier.cascade(5)) {
-                val video by Moving.artistVideo.collectAsState()
-                val dithered by Moving.artistDither.collectAsState()
-                val grain by Moving.artistGrain.collectAsState()
-                BasicText("ARTIST PAGES", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                BasicText(if (Moving.available) "the picture an artist's page opens on: their photo, or their moving one where apple music has one, " +
-                    "in the dither, blurred or clear" else "an artist's photo across their page, in the dither, blurred or clear", style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.height(10.dp))
-                if (Moving.available) Choices(listOf("video" to video, "photo" to !video)) { Moving.set(ctx, artistVideo = it == 0) }
-                Choices(listOf("dithered" to (dithered && !grain), "blur" to grain, "clear" to (!dithered && !grain))) {
+            // an artist's page: their photo or their moving one (apple music's), dithered, blurred or clear (both alike)
+            val video by Moving.artistVideo.collectAsState()
+            val dithered by Moving.artistDither.collectAsState()
+            val grain by Moving.artistGrain.collectAsState()
+            val artistWord = if (grain) "blur" else if (dithered) "dithered" else "clear"
+            SettingRow("ARTIST PAGES", if (Moving.available) "${if (video) "video" else "photo"} · $artistWord" else artistWord, opened,
+                if (Moving.available) "their photo, or their moving one where apple music has one" else "their photo across their page") {
+                if (Moving.available) Pick(listOf("video" to video, "photo" to !video)) { Moving.set(ctx, artistVideo = it == 0) }
+                Pick(listOf("dithered" to (dithered && !grain), "blur" to grain, "clear" to (!dithered && !grain))) {
                     Moving.set(ctx, artistDither = it == 0, artistGrain = it == 1)
                 }
-                Spacer(Modifier.height(40.dp))
             }
             // whether covers and canvases move: they're video, so on wifi unless you say
-            if (Moving.available) Column(Modifier.cascade(6)) {
-                BasicText("MOVING", style = headline(24.sp))
-                Spacer(Modifier.height(6.dp))
-                BasicText("a record's moving cover (apple music's), an artist's and a song's canvas, where they have them. silent; " +
-                    "they settle when you pause", style = pixel(12.sp, Ink.mid))
-                Spacer(Modifier.height(10.dp))
-                Row {
-                    listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF).forEach { w ->
-                        Word(w, pixel(14.sp, if (whenOn == w) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Moving.set(ctx, whenOn = w) }
-                    }
-                }
+            if (Moving.available) SettingRow("MOVING", whenOn, opened, "moving covers and canvases, silent; they settle when you pause") {
+                Pick(listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF).map { it to (whenOn == it) }) { Moving.set(ctx, whenOn = listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF)[it]) }
             }
+            // the hi-res moment: a lossless song's format typed across the cover as it starts (here since 2026-11-11, out of sound)
+            val moment by Moments.on.collectAsState()
+            SettingRow("HI-RES MOMENT", if (moment) "on" else "off", opened, "a lossless song says so across its cover as it starts") {
+                Pick(listOf("on" to moment, "off" to !moment)) { Moments.set(ctx, it == 0) }
+            }
+            // how much moves: full, less, or as the phone says (Moves; here since 2026-11-11, out of listening)
+            val chosen by Moves.chosen.collectAsState()
+            SettingRow("MOTION", chosen, opened, "pages word by word, covers developing, the blur by the bars" +
+                if (Moves.phoneSaysLess(ctx)) "; this phone says less" else "") {
+                Pick(listOf(Moves.AUTO, Moves.FULL, Moves.LESS).map { it to (chosen == it) }) { Moves.set(ctx, listOf(Moves.AUTO, Moves.FULL, Moves.LESS)[it]) }
+            }
+            RowsEnd()
         })
         val title: @Composable () -> Unit = {
             Row(Modifier.fillMaxWidth()) {
@@ -189,7 +143,7 @@ fun LookPage(pages: Pages) {
             Spacer(Modifier.height(14.dp))
             preview(Modifier.fillMaxWidth().height(tall * .38f))
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 28.dp, bottom = LocalFoot.current + 40.dp)) {
+            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 14.dp, bottom = LocalFoot.current + 40.dp)) {
                 sections()
             }
         }
