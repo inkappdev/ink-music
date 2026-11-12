@@ -1,0 +1,27 @@
+name: Android build
+on:
+  push:
+    branches:
+      - feature/discord-bitchord-lyrics-sources
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install native build tools
+        run: sdkmanager "ndk;29.0.14206865" "cmake;3.31.6"
+      - name: Build full debug APK
+        run: ./gradlew --no-daemon :app:assembleFullDebug :app:testFullDebugUnitTest
