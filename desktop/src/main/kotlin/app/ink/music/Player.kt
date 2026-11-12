@@ -312,6 +312,8 @@ object Player {
                         if (!paused && step in 1..2_000) playedMs += step
                         lastMs = ms
                         if (!paused && System.currentTimeMillis() - keptAt > 10_000) { keptAt = System.currentTimeMillis(); keep() }
+                        // preview: a taste of each song, then the next (Preview)
+                        _queue.value.getOrNull(index)?.let { Preview.tick(it, ms, duration, paused) }
                         // an episode's place, every 15 s it plays
                         if (!paused && System.currentTimeMillis() - placeAt > 15_000) {
                             placeAt = System.currentTimeMillis()

@@ -1592,6 +1592,9 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                             DropRow("off", null, !radioOn) { Player.radio(false) })
                 }
             }
+            // preview on: said, lit, a click turns it off
+            val previewing by Preview.secs.collectAsState()
+            if (previewing > 0) Word("preview $previewing s", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 10.dp) { Preview.set(0) }
             if (volume) { Spacer(Modifier.width(12.dp)); Volume(line = 80.dp) }
             if (words) {
                 Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
@@ -1614,6 +1617,9 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                             if (Sleep.at.value == 0L) Sleep.CHOICES.filter { it in setOf(15, 30, 60) }.map { m -> "sleep in $m min" to { Sleep.set(m) } } +
                                 listOf("sleep at the song's end" to { Sleep.set(0) })
                             else listOf("${Sleep.said()} · off" to { Sleep.set(null) }),
+                            // preview: a taste of each song, then the next (Preview)
+                            if (Preview.secs.value == 0) Preview.CHOICES.map { n -> "preview $n s of each" to { Preview.set(n) } }
+                            else listOf("preview · off" to { Preview.set(0) }),
                             // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
                             listOf("stop" to { Player.stop() }),
                         ),
