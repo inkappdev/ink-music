@@ -751,6 +751,8 @@ class PlayerService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)   // headphones out: pause
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+        // The resolving data source needs the timeline from the very first prepare (including a restored queue).
+        exo = player
         // what's added with shuffle on comes next or last, not anywhere
         player.setShuffleOrder(Shuffle(IntArray(0), next = { playNext.also { playNext = false } }))
         // the queue as it was left: there, paused, ready to go on
