@@ -129,64 +129,6 @@ object ShareCard {
         ctx.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    /** Lines of a song, picked in the lyrics, as a card ([drawLyric]). */
-    suspend fun shareLyric(ctx: Context, n: Now, lines: List<String>) {
-        if (lines.isEmpty()) return
-        val png = withContext(Dispatchers.Default) {
-            val cover = n.song?.let { runCatching { Covers.of(ctx, it, 640) }.getOrNull() }
-            val card = drawLyric(ctx, n, cover, lines)
-            val dir = File(ctx.cacheDir, "shared").apply { mkdirs() }
-            File(dir, "ink-music-lyric.png").also { f -> f.outputStream().use { card.compress(Bitmap.CompressFormat.PNG, 100, it) } }
-        }
-        send(ctx, png, "${n.title}, ${n.artist.substringBefore(", ")}")
-    }
-
-    /**
-     * Lines of a song as a story (1080 x 1920; 2026-11-11, after SimpMusic's lyric images): the words big, as the
-     * player sings them, set as large as all of them fit; under them the record small, the line along its top in its
-     * colour (the line touches the cover), the song and artist beside it; "ink music" small at the top.
-     */
-    fun drawLyric(ctx: Context, n: Now, cover: Cover?, lines: List<String>): Bitmap {
-        val out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888)
-        val c = Canvas(out)
-        c.drawColor(Ink.black.toArgb())
-        val archivo = ResourcesCompat.getFont(ctx, R.font.archivo_black)
-        val silk = ResourcesCompat.getFont(ctx, R.font.silkscreen)
-        fun pixel(size: Float, color: Color = Ink.mid) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = silk; textSize = size; this.color = color.toArgb() }
-        fun headline(size: Float, color: Color = Ink.ink) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = archivo; textSize = size; this.color = color.toArgb(); letterSpacing = -0.02f
-        }
-        val side = (W - 2 * M).toInt()
-        c.drawText("ink music", M, 250f, pixel(30f))
-
-        // the words: as big as fits the room between the top and the record, from 112 down
-        val room = 1080f
-        val text = lines.joinToString("\n") { it.uppercase() }
-        var size = 112f
-        var words = layout(text, headline(size), side, 40)
-        while (words.height > room && size > 44f) { size -= 6f; words = layout(text, headline(size), side, 40) }
-        val wordsTop = 330f + (room - words.height).coerceAtLeast(0f) / 2
-        c.save(); c.translate(M, wordsTop); words.draw(c); c.restore()
-
-        // the record, small, the line on its top edge in its colour; the song and its artist beside it
-        val box = 220f
-        val top = H - 200f - box
-        val accent = cover?.accent ?: Ink.ink
-        c.drawRect(M, top - 4f, M + box, top, Paint().apply { color = accent.toArgb() })
-        val art = cover?.image?.asAndroidBitmap()
-        if (art != null) {
-            val s = minOf(art.width, art.height)
-            c.drawBitmap(art, Rect((art.width - s) / 2, (art.height - s) / 2, (art.width + s) / 2, (art.height + s) / 2),
-                RectF(M, top, M + box, top + box), Paint(Paint.FILTER_BITMAP_FLAG))
-        } else c.drawRect(M, top, M + box, top + box, Paint().apply { color = Ink.line.toArgb(); style = Paint.Style.STROKE; strokeWidth = 3f })
-        val x = M + box + 40f
-        val wide = (W - M - x).toInt()
-        val title = layout(n.title.uppercase(), headline(52f), wide, 3)
-        c.save(); c.translate(x, top + 4f); title.draw(c); c.restore()
-        layout(n.artist.lowercase(), pixel(30f), wide, 2).let { c.save(); c.translate(x, top + 4f + title.height + 18f); it.draw(c); c.restore() }
-        return out
-    }
-
     /** Your year as a poster: the year, the minutes, the artist, song and record heard most. */
     suspend fun shareYear(ctx: Context, y: Year) {
         val png = withContext(Dispatchers.Default) {

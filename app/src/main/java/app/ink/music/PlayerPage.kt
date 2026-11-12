@@ -956,26 +956,20 @@ fun rememberLyric(n: Now?, lines: List<Line>?): Lyric? {
  * block a drift and fades it in (never sideways). A line is never cut short: a long one is set a
  * size smaller instead. A finger on them shows them all, scrolled by it, the sung one lit, a tap on
  * one plays from there; let go a few seconds and they follow the song again (a listener couldn't
- * read the rest of a long song's words, 2026-11-01). Words with no times: all of them, scrolled. Held, a line is
- * picked (lit; up to four, a tap then picks or lets go another) to share as a card (ShareCard.shareLyric, 2026-11-11,
- * after SimpMusic's lyric images): they stay while any are picked.
+ * read the rest of a long song's words, 2026-11-01). Words with no times: all of them, scrolled.
  */
 @Composable
 private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
     val drift = with(LocalDensity.current) { Motion.drift.roundToPx() }
     val scroll = androidx.compose.foundation.rememberScrollState()
     val scope = rememberCoroutineScope()
-    val ctx = LocalContext.current
     // when a finger last moved them (0: following the song)
     var touched by remember { mutableLongStateOf(0L) }
     val untimed = l.lines.firstOrNull()?.let { it.at < 0 } == true
-    // the lines picked to share, by number (a new song's lines: none)
-    val picked = remember(l.lines) { androidx.compose.runtime.mutableStateListOf<Int>() }
-    fun pick(i: Int) { if (i in picked) picked.remove(i) else if (picked.size < 4) picked.add(i) }
-    LaunchedEffect(touched, picked.size) {
-        if (touched == 0L || picked.isNotEmpty()) return@LaunchedEffect
+    LaunchedEffect(touched) {
+        if (touched == 0L) return@LaunchedEffect
         delay(4_000)
-        if (!scroll.isScrollInProgress && picked.isEmpty()) touched = 0L
+        if (!scroll.isScrollInProgress) touched = 0L
     }
     val drag = androidx.compose.foundation.gestures.rememberDraggableState { d ->
         touched = android.os.SystemClock.elapsedRealtime(); scroll.dispatchRawDelta(-d)
@@ -1005,19 +999,11 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
                     lines.forEachIndexed { i, line ->
                         // untimed: a verse's gap kept
                         if (line.words.isBlank()) { if (untimed) Spacer(Modifier.height(12.dp * k)); return@forEachIndexed }
-                        // the whole row and the gap under it a tap's, not just the words; held, picked to share
-                        val lit = if (picked.isNotEmpty()) i in picked else untimed || i == l.index
-                        BasicText(line.words.uppercase(), style = headline((if (untimed) 20.sp else 24.sp) * k, if (lit) Ink.ink else Ink.dim),
-                            modifier = Modifier.fillMaxWidth().onPlaced { tops[i] = it.positionInParent().y.toInt() }.combinedClickable(
-                                remember { MutableInteractionSource() }, indication = null,
-                                onLongClick = felt { pick(i); touched = android.os.SystemClock.elapsedRealtime() },
-                                onClick = felt {
-                                    when {
-                                        picked.isNotEmpty() -> pick(i)
-                                        !untimed -> { Playback.seek(line.at); touched = 0L }
-                                    }
-                                },
-                            ).padding(bottom = 12.dp * k))
+                        // the whole row and the gap under it a tap's, not just the words
+                        BasicText(line.words.uppercase(), style = headline((if (untimed) 20.sp else 24.sp) * k, if (untimed || i == l.index) Ink.ink else Ink.dim),
+                            modifier = Modifier.fillMaxWidth().onPlaced { tops[i] = it.positionInParent().y.toInt() }.then(
+                                if (untimed) Modifier else Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                    onClick = felt { Playback.seek(line.at); touched = 0L })).padding(bottom = 12.dp * k))
                     }
                 }
             } else AnimatedContent(
@@ -1059,15 +1045,6 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
                     }
                 }
             }
-        }
-        // lines picked: shared as a card, or let go
-        if (picked.isNotEmpty()) Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Ink.black).padding(top = 12.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Word("SHARE ${if (picked.size == 1) "THIS" else "THESE"}", headline(24.sp), Modifier.padding(end = 24.dp), touch = 8.dp) {
-                val words = picked.sorted().mapNotNull { lines.getOrNull(it)?.words }
-                scope.launch { Playback.now.value?.let { ShareCard.shareLyric(ctx, it, words) }; picked.clear() }
-            }
-            Word("let go", pixel(14.sp, Ink.mid), touch = 8.dp) { picked.clear() }
         }
     }
 }
