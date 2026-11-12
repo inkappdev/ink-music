@@ -87,10 +87,9 @@ object Radio {
      * own songs by them and from the same folder: radio always starts.
      */
     fun related(s: Seed): List<Song> {
-        if (s.id.startsWith("y")) return YouTube.related(s.id)
-        Server.similar(s.id, s.title, s.artist).ifEmpty {
-            YouTube.find(s.title, s.artist)?.let { YouTube.related(it.id) }.orEmpty()
-        }.takeIf { it.isNotEmpty() }?.let { return it }
+        // your server's similar for its songs; otherwise the three ears blended, as online radio is (online)
+        if (!s.id.startsWith("y")) Server.similar(s.id, s.title, s.artist).takeIf { it.isNotEmpty() }?.let { return it }
+        online(s).takeIf { it.isNotEmpty() }?.let { return it }
         val known = s.artist.isNotBlank() && s.artist != "unknown"
         val by = s.artist.substringBefore(", ").trim()
         if (known && !Local.on) runCatching { kotlinx.coroutines.runBlocking { YouTube.search(by) }?.songs?.firstOrNull { it.artist.substringBefore(", ").trim().equals(by, true) } }
@@ -99,29 +98,71 @@ object Radio {
     }
 
     /**
-     * Online only: YouTube Music's radio from the song as it's found there, by its tags (title, artist), or by what its
-     * file's name says when it has none; else the artist's own radio; else, so it never stops, songs the critics are
-     * picking now (INK's) near its genre, then any of them. None of it your files.
+     * Online only, none of it your files (2026-11-12, Bronson: radio as good as Chosic's suggestions): three ears blended,
+     * YouTube Music's radio from the song, Deezer's radio for its artist, and Last.fm's artists most like them with their
+     * best-known songs; a song more than one names, or by an artist more than one names, first; the song's own artist
+     * once at most; the picks found on YouTube Music to play. The song found by its tags, or by what it is (Recognize)
+     * or its file's name when it has none. Never empty: the critics' picks near its genre, then any.
      */
     fun online(s: Seed): List<Song> {
         if (Local.on) return emptyList()
-        if (s.id.startsWith("y")) YouTube.related(s.id).takeIf { it.isNotEmpty() }?.let { return it }
         val seed = Library.songs.value.firstOrNull { it.id == s.id }
-        val known = s.artist.isNotBlank() && s.artist != "unknown"
-        // a file with nothing in it: heard (Recognize, Shazam's fingerprint), else its name cleaned of track numbers and
-        // underscores is what's asked
-        val heard = if (!known && seed != null && seed.path.isNotEmpty() && !seed.tube) runCatching { Recognize.of(seed) }.getOrNull() else null
-        if (heard != null) YouTube.find(heard.title, heard.artist)?.let { YouTube.related(it.id) }?.takeIf { it.isNotEmpty() }?.let { return it }
-        val title = if (known) s.title else spoken(seed?.path?.let { java.io.File(it).nameWithoutExtension } ?: s.title)
-        (YouTube.find(title, if (known) s.artist else "") ?: runCatching { kotlinx.coroutines.runBlocking { YouTube.search(title) }?.songs?.firstOrNull() }.getOrNull())
-            ?.let { YouTube.related(it.id) }?.takeIf { it.isNotEmpty() }?.let { return it }
-        if (known) runCatching { kotlinx.coroutines.runBlocking { YouTube.search(s.artist.substringBefore(", ")) }?.songs?.firstOrNull() }.getOrNull()
-            ?.let { YouTube.related(it.id) }?.takeIf { it.isNotEmpty() }?.let { return it }
+        var title = s.title; var artist = s.artist.substringBefore(", ").trim()
+        if (artist.isBlank() || artist == "unknown") {
+            val heard = if (seed != null && seed.path.isNotEmpty() && !seed.tube) runCatching { Recognize.of(seed) }.getOrNull() else null
+            if (heard != null) { title = heard.title; artist = heard.artist.substringBefore(" & ").substringBefore(", ").trim() }
+            else { title = spoken(seed?.path?.let { java.io.File(it).nameWithoutExtension } ?: s.title); artist = "" }
+        }
+        val tube = if (s.id.startsWith("y")) s.id else (YouTube.find(title, artist)
+            ?: runCatching { kotlinx.coroutines.runBlocking { YouTube.search("$artist $title".trim()) }?.songs?.firstOrNull() }.getOrNull())?.id
+        if (artist.isBlank()) tube?.let { YouTube.known(it)?.artist?.substringBefore(", ")?.let { a -> artist = a } }
+
+        // the three, asked at once
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(3)
+        val fromTube = pool.submit<List<Song>> { tube?.let { YouTube.related(it) }.orEmpty() }
+        val fromDeezer = pool.submit<List<Similar.Track>> { if (artist.isNotBlank()) Similar.deezerRadio(artist) else emptyList() }
+        val fromLastFm = pool.submit<List<Similar.Track>> {
+            if (artist.isBlank()) emptyList()
+            else Similar.lastFmArtists(artist, LastFm.key, 8).take(6).flatMap { (a, m) -> Similar.deezerTop(a, 2).map { it.copy(weight = m * it.weight) } }
+        }
+        val yt = runCatching { fromTube.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        val dz = runCatching { fromDeezer.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        val lf = runCatching { fromLastFm.get(25, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        pool.shutdownNow()
+
+        fun who(a: String) = a.lowercase().substringBefore(",").substringBefore(" & ").trim()
+        // which artists each ear names: one named by more than one is surely near
+        val named = HashMap<String, Int>()
+        listOf(yt.map { who(it.artist) }, dz.map { who(it.artist) }, lf.map { who(it.artist) }).forEach { l -> l.toSet().forEach { named[it] = (named[it] ?: 0) + 1 } }
+        class Pick(val title: String, val artist: String, var score: Double, var song: Song? = null)
+        val picks = LinkedHashMap<String, Pick>()
+        fun add(title: String, a: String, w: Double, song: Song?) {
+            val p = picks.getOrPut(key(title, a)) { Pick(title, a, 0.0, song) }
+            p.score += w; if (p.song == null) p.song = song
+        }
+        yt.forEachIndexed { i, x -> add(x.title, x.artist, 1.0 - i.toDouble() / (yt.size + 1), x) }
+        dz.forEach { add(it.title, it.artist, it.weight, null) }
+        lf.forEach { add(it.title, it.artist, it.weight * .9, null) }
+        picks.values.forEach { p -> p.score += .5 * ((named[who(p.artist)] ?: 1) - 1) }
+        val me = who(artist)
+        val by = HashMap<String, Int>()
+        val chosen = picks.values.sortedByDescending { it.score }.filter { p ->
+            val w = who(p.artist)
+            if (odd(p.title) && !odd(title)) return@filter false
+            if (key(p.title, p.artist) == key(title, artist)) return@filter false
+            val most = if (w == me) 1 else 2
+            if ((by[w] ?: 0) >= most) return@filter false
+            by[w] = (by[w] ?: 0) + 1
+            true
+        }.take(14)
+        // played from YouTube Music: those it gave already, the rest found there (in turn, the strongest first)
+        val songs = chosen.mapNotNull { p -> p.song ?: runCatching { YouTube.find(p.title, p.artist) }.getOrNull() }
+        if (songs.isNotEmpty()) return songs
         // never empty: what the critics are picking, those of the seed's genre first
-        val picks = Picks.songs.value.map { it.pick }
-        val tags = Genres.tags(s.artist)?.take(3).orEmpty()
-        val near = picks.filter { p -> tags.isNotEmpty() && Genres.tags(p.artist)?.take(3)?.any { it in tags } == true }
-        return (near + picks.shuffled()).distinctBy { it.artist + it.title }.take(12)
+        val picksNow = Picks.songs.value.map { it.pick }
+        val tags = Genres.tags(artist)?.take(3).orEmpty()
+        val near = picksNow.filter { p -> tags.isNotEmpty() && Genres.tags(p.artist)?.take(3)?.any { it in tags } == true }
+        return (near + picksNow.shuffled()).distinctBy { it.artist + it.title }.take(12)
             .mapNotNull { p -> runCatching { YouTube.find(p.title, p.artist) }.getOrNull() }.take(8)
     }
 
