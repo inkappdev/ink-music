@@ -377,7 +377,11 @@ object Dropped {
     }
 
     fun play(paths: List<File>) = scope.launch {
-        val songs = songsOf(paths)
+        // an .inkmusic file dropped: its list made yours and opened
+        paths.filter { it.name.endsWith(".inkmusic") }.mapNotNull { ListOut.open(it) }.lastOrNull()?.let { m ->
+            javax.swing.SwingUtilities.invokeLater { Nav.open(Page.List(m.id, m.name)) }
+        }
+        val songs = songsOf(paths.filterNot { it.name.endsWith(".inkmusic") })
         val list = into
         if (songs.isEmpty()) return@launch
         if (list != null) HereLists.add(list, songs)

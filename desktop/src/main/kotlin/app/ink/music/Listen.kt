@@ -429,6 +429,9 @@ fun ListsPage(open: (Page) -> Unit) {
     menuAt?.let { at ->
         MenuAt(at, Ink.ink, listOf(listOf(
             "new list" to { val m = HereLists.make(fresh(), emptyList()); open(Page.List(m.id, m.name)) },
+            "open an .inkmusic file" to { chooseFiles { files -> kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                files.filter { it.name.endsWith(".inkmusic") }.mapNotNull { ListOut.open(it) }.lastOrNull()?.let { m -> javax.swing.SwingUtilities.invokeLater { open(Page.List(m.id, m.name)) } }
+            } } },
             "new list from files" to { chooseFiles { files -> kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 val songs = Dropped.songsOf(files)
                 if (songs.isNotEmpty()) { val m = HereLists.make(fresh(), songs); javax.swing.SwingUtilities.invokeLater { open(Page.List(m.id, m.name)) } }
@@ -589,9 +592,12 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 // the list written out: as words, as a spreadsheet, or every song's link (2026-11-11)
                 if (!s.isNullOrEmpty()) {
                     var copied by remember { mutableStateOf(false) }
-                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                    androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                         Word("save as text", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "txt", ListOut.text(s)) }
                         Word("save as csv", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "csv", ListOut.csv(s)) }
+                        Word("save as a page", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "html", ListOut.html(name, s)) }
+                        Word("page with every service", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save("$name, everywhere", "html", ListOut.htmlAll(name, s)) }
+                        Word("save as .inkmusic", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "inkmusic", ListOut.inkmusic(name, s)) }
                         Word(if (copied) "links copied" else "copy links", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.copy(ListOut.links(s)); copied = true }
                         // a list here: let it go (a second click, as remove all's)
                         if (id.startsWith(HereLists.PREFIX)) {
