@@ -92,6 +92,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -941,7 +942,7 @@ private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
     // "go to it" (the now column's title clicked): the song playing scrolled to, near the top
     LaunchedEffect(songs) { GoToPlaying.asked.collect { id -> songs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { list.animateScrollToItem((it - 2).coerceAtLeast(0)) } } }
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) { cascading {
-        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(songs, i) } }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open, order = songs) { Player.play(songs, i) } }
     }}
 }
 
@@ -950,7 +951,7 @@ private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
 fun SongRow(
     s: Song, number: String? = null, said: String? = null, open: ((Page) -> Unit)? = null,
     lit: Boolean? = null, dim: Boolean = false, onRemove: (() -> Unit)? = null, cover: Boolean = false,
-    glow: Color? = null, onClick: () -> Unit,
+    glow: Color? = null, order: List<Song>? = null, onClick: () -> Unit,
 ) {
     val now by Player.now.collectAsState()
     val on = lit ?: (now?.song?.id == s.id)
@@ -971,7 +972,8 @@ fun SongRow(
         Row(
             Modifier.fillMaxWidth().hoverable(src).combinedClickable(src, indication = null,
                 onDoubleClick = felt { options = false; if (!picking) { Selected.choose(s.id, onClick); onClick() } },
-                onClick = felt { options = false; if (picking) Picking.toggle(s) else Selected.choose(s.id, onClick) })
+                // a click selects this one alone (what was picked let go), as a file list does (2026-11-12, a tester)
+                onClick = felt { options = false; if (picking) Picking.clear(); Picking.anchor = s; Selected.choose(s.id, onClick) })
                 // a right click (the phone's hold): its options in a menu where it was clicked
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
@@ -981,10 +983,16 @@ fun SongRow(
                                 clickAt = e.changes.first().position
                                 options = true; e.changes.forEach { it.consume() }
                             }
-                            // ctrl (cmd on a Mac) and a click: picked, not played (Picking)
+                            // ctrl (cmd on a Mac) and a click: this one picked or let go; shift and a click: every song from the
+                            // last clicked to this one picked (in this list's order), as a file list does
                             else if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isPrimaryPressed &&
                                 (e.keyboardModifiers.isCtrlPressed || e.keyboardModifiers.isMetaPressed)) {
-                                Picking.toggle(s); e.changes.forEach { it.consume() }
+                                if (!picking) Selected.id?.takeIf { it != s.id }?.let { id -> Picking.anchor?.takeIf { it.id == id }?.let { Picking.toggle(it) } }
+                                Picking.toggle(s); Picking.anchor = s; e.changes.forEach { it.consume() }
+                            }
+                            else if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isPrimaryPressed &&
+                                e.keyboardModifiers.isShiftPressed && order != null) {
+                                Picking.range(order, Picking.anchor ?: s, s); e.changes.forEach { it.consume() }
                             }
                         }
                     }
@@ -1067,7 +1075,6 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
     val groups = listOf(
         listOfNotNull(
             // this one picked, and then any others clicked: all of them at once from the bar along the foot (PickBar)
-            "pick more" to { Picking.toggle(s) },
             ("play next" to { Player.playNext(s) }).takeIf { !playing },
             ("add to queue" to { Player.add(s) }).takeIf { !playing },
             // radio: this song, then more like it as the queue runs out
@@ -1424,7 +1431,7 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                 // filled in, its place in the record; yours, its own number
                 val n = if (more || s.track <= 0) "${i + 1}" else if (discs) "${s.disc}.${s.track}" else "${s.track}"
                 SongRow(s, number = n, said = if (!mine) "youtube music" else s.artist.takeIf { it != a.artist }?.lowercase(), open = open,
-                    dim = !mine) { Player.play(shown, i) }
+                    dim = !mine, order = shown) { Player.play(shown, i) }
             }
             item { Around(a, albums, open) }
         }
@@ -2159,7 +2166,16 @@ fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, beside: (@Composa
  */
 object Picking {
     val picked = kotlinx.coroutines.flow.MutableStateFlow<List<Song>>(emptyList())
+    /** The song last clicked: a shift-click picks from it. */
+    @Volatile var anchor: Song? = null
     fun toggle(s: Song) { picked.value = if (picked.value.any { it.id == s.id }) picked.value.filter { it.id != s.id } else picked.value + s }
+    /** Every song in `order` from `from` to `to` (either way), picked, with what was already. */
+    fun range(order: List<Song>, from: Song, to: Song) {
+        val a = order.indexOfFirst { it.id == from.id }; val b = order.indexOfFirst { it.id == to.id }
+        if (a < 0 || b < 0) { toggle(to); return }
+        val run = order.subList(minOf(a, b), maxOf(a, b) + 1)
+        picked.value = (picked.value + run).distinctBy { it.id }
+    }
     fun clear() { picked.value = emptyList() }
 }
 

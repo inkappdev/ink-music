@@ -134,7 +134,7 @@ fun SmartPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                     Spacer(Modifier.height(12.dp))
                 }
             }
-            itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(songs, i) } }
+            itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open, order = songs) { Player.play(songs, i) } }
         }
     }
 }

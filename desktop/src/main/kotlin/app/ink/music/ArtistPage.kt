@@ -250,7 +250,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                             listOf(theirs.take(half), theirs.drop(half)).forEachIndexed { c, part ->
                                 Column(Modifier.weight(1f)) { part.forEachIndexed { n, s -> SongRow(s, said = s.album.lowercase().ifEmpty { null }, open = open) { Player.play(theirs, c * half + n) } } }
                             }
-                        } else Column(Modifier.widthIn(max = SONGS)) { theirs.forEachIndexed { n, s -> SongRow(s, said = s.album.lowercase().ifEmpty { null }, open = open) { Player.play(theirs, n) } } }
+                        } else Column(Modifier.widthIn(max = SONGS)) { theirs.forEachIndexed { n, s -> SongRow(s, said = s.album.lowercase().ifEmpty { null }, open = open, order = theirs) { Player.play(theirs, n) } } }
                     }
                 }
                 if (top.isNotEmpty()) item(key = "top") {
