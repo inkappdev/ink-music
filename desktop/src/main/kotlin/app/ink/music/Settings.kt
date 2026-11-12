@@ -587,6 +587,31 @@ private fun swingFolder(): java.io.File? {
 }
 
 /**
+ * Waiting for the phone ([TubeAccount.await]): the QR code (2026-11-12: the phone's camera on it, and nothing typed),
+ * the code beside it for a phone without a camera or an ink music from before, the address, cancel. Under your phone
+ * and under youtube music, wherever it was started.
+ */
+@Composable
+private fun Waiting(c: String) {
+    val link by TubeAccount.link.collectAsState()
+    BasicText("on your phone: ink music, settings, sync with a computer, and point it at this", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(14.dp))
+    Row(verticalAlignment = Alignment.Bottom) {
+        link?.let { QrCode(it, Modifier.size(184.dp)); Spacer(Modifier.width(24.dp)) }
+        Column(Modifier.weight(1f)) {
+            BasicText("or pick ${TubeAccount.name.lowercase()} there, and type", style = pixel(12.sp, Ink.mid))
+            BasicText(c, style = headline(44.sp), maxLines = 1)
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    BasicText("the two agree a key no one else on the wifi can work out; everything between them goes sealed under it", style = pixel(12.sp, Ink.mid))
+    val where by TubeAccount.at.collectAsState()
+    where?.let { BasicText("not listed on the phone? type its address there: $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
+    Spacer(Modifier.height(10.dp))
+    Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
+}
+
+/**
  * YouTube Music: signed in from the phone (the computer has no browser of its own to sign in with). Waiting, the code
  * to type on the phone, big; signed in, who, how much was read, read again or sign out.
  */
@@ -601,7 +626,8 @@ private fun YouTubeSetting() {
     val w = who
     val c = code
     when {
-        c != null -> BasicText("pairing your phone (your phone, on the left): its sign-in comes with it", style = pixel(12.sp, Ink.mid))
+        // the code and its QR here too: pairing started here showed them only under your phone, a part away (2026-11-12)
+        c != null -> Waiting(c)
         w == null -> {
             BasicText("your playlists, liked songs and mixes, and radio made as you, from your own account. " +
                 "signed in from your phone: a computer has no youtube sign-in page of its own here. " +
@@ -634,26 +660,7 @@ private fun PhoneSetting() {
     SettingHead("YOUR PHONE")
     val c = code
     when {
-        c != null -> {
-            // the QR code (2026-11-12): the phone's camera on it, and nothing typed; the code beside it for a phone
-            // without a camera, or an ink music from before
-            val link by TubeAccount.link.collectAsState()
-            BasicText("on your phone: ink music, settings, sync with a computer, and point it at this", style = pixel(12.sp, Ink.mid))
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                link?.let { QrCode(it, Modifier.size(184.dp)); Spacer(Modifier.width(24.dp)) }
-                Column(Modifier.weight(1f)) {
-                    BasicText("or pick ${TubeAccount.name.lowercase()} there, and type", style = pixel(12.sp, Ink.mid))
-                    BasicText(c, style = headline(44.sp), maxLines = 1)
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            BasicText("the two agree a key no one else on the wifi can work out; everything between them goes sealed under it", style = pixel(12.sp, Ink.mid))
-            val where by TubeAccount.at.collectAsState()
-            where?.let { BasicText("not listed on the phone? type its address there: $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
-            Spacer(Modifier.height(10.dp))
-            Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
-        }
+        c != null -> Waiting(c)
         peers.isEmpty() -> {
             BasicText("pair it once, and this computer is signed in to what your phone is (your server, youtube music, listenbrainz), " +
                 "and the two keep in step on your wifi from then on: what you've heard, what you love, what you were playing. " +
