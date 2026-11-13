@@ -227,6 +227,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     menuAt?.let { SongMenu(s, null, null, it, playing = s.id == n.song.id) { menuAt = null } }
                                     val density = androidx.compose.ui.platform.LocalDensity.current.density
                                     CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxSize().graphicsLayer {
+                                        // a DJ set's frame blurred inside its square only: unclipped, the blur spread a
+                                        // smear past the cover over the page and the name along the foot (2026-11-12, Bronson)
+                                        clip = SetHeard.isSet(s)
                                         renderEffect = (if (SetHeard.isSet(s)) Look.BLUR else coverLook)?.takeIf { !s.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
                                     }, px = 1200, moving = n.playing && s.id == n.song.id)
                                     // the record's moving cover over it, where it has one (settings, the look)
@@ -602,13 +605,10 @@ private fun SetSleeve(channel: String, name: String, onOpen: (Page) -> Unit) {
     LaunchedEffect(heard.size) { scroll.animateScrollTo(scroll.maxValue) }
     Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .38f))) {
         Column(Modifier.fillMaxSize().padding(28.dp)) {
-            BasicText("live dj set  ·  ${channel.lowercase()}", style = pixel(12.sp, Ink.mid))
-            Spacer(Modifier.height(6.dp))
-            BasicText(name.uppercase(), style = headline(40.sp), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            Spacer(Modifier.height(14.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+            // the tracklist only: the DJ, the channel and "live dj set" are in the big words beside it (2026-11-12, Bronson:
+            // the sleeve said them all again)
+            BasicText(if (heard.isEmpty()) "listening for the first track" else "heard in this set", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(10.dp))
-            if (heard.isEmpty()) BasicText("listening for the first track", style = pixel(12.sp, Ink.mid))
             Column(Modifier.weight(1f).verticalScroll(scroll)) {
                 heard.forEachIndexed { i, t ->
                     // a tap, their page (their songs, records, more like them); held, the track put next
@@ -728,9 +728,12 @@ private fun RecordSide(n: Player.Now, open: (Page) -> Unit) {
                 Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(record, i) })
                     .padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     BasicText((if (whole == null && s.track > 0) s.track else i + 1).toString().padStart(2, '0'), style = headline(18.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(44.dp))
-                    BasicText(s.title.uppercase(), style = headline(20.sp, if (on) Ink.ink else if (theirs) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (theirs) BasicText("youtube music", style = pixel(12.sp, Ink.dim), maxLines = 1, modifier = Modifier.padding(start = 12.dp))
-                    Spacer(Modifier.weight(1f))
+                    // the name and its mark together, taking the room; the length always at the right (a spacer sharing the
+                    // room with the name had put each length somewhere else, 2026-11-12)
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        BasicText(s.title.uppercase(), style = headline(20.sp, if (on) Ink.ink else if (theirs) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (theirs) BasicText("youtube music", style = pixel(12.sp, Ink.dim), maxLines = 1, modifier = Modifier.padding(start = 12.dp))
+                    }
                     if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.padding(start = 16.dp))
                 }
             }
