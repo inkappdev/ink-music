@@ -16,7 +16,7 @@ import org.xmlpull.v1.XmlPullParser
  */
 internal object AddonMedia {
     private const val MAX_BYTES = 512L * 1024L * 1024L
-    private const val MAX_MANIFEST = 2 * 1024 * 1024
+    private const val MAX_MANIFEST = 2L * 1024L * 1024L
     private const val MAX_SEGMENTS = 512
 
     fun materialize(ctx: Context, response: org.json.JSONObject, addonBase: String): String {
@@ -27,7 +27,7 @@ internal object AddonMedia {
         val inline = response.optString("manifestXml").takeIf { it.isNotBlank() }
             ?: response.optString("mpd").takeIf { it.trimStart().startsWith("<MPD") }
         val manifestUrl = direct?.takeIf { it.substringBefore('?').endsWith(".mpd", true) }
-        val xml = inline ?: manifestUrl?.let { String(fetch(it, addonBase, MAX_MANIFEST), Charsets.UTF_8) }
+        val xml = inline ?: manifestUrl?.let { String(fetch(ctx, it, addonBase, MAX_MANIFEST), Charsets.UTF_8) }
             ?: throw IOException(response.optString("error").ifBlank { "Addon returned no playable media" })
         return downloadDash(ctx, xml, manifestUrl ?: addonBase, addonBase)
     }
@@ -101,14 +101,14 @@ internal object AddonMedia {
                 val n = number ?: throw IOException("Invalid initialization template")
                 n.toString().padStart(m.groupValues.getOrNull(1)?.toIntOrNull() ?: 0, '0')
             }
-            if (result.contains("$" + "Number") || result.contains("$" + "Time")) throw IOException("Unsupported DASH placeholder")
+            if (result.contains("\\$Number") || result.contains("\\$Time")) throw IOException("Unsupported DASH placeholder")
             return java.net.URI(base).resolve(result).toString()
         }
         val start = t["startNumber"]?.toIntOrNull() ?: 1
         val pieces = mutableListOf<ByteArray>()
-        pieces += fetch(expand(init), addonBase, 16L * 1024 * 1024)
+        pieces += fetch(ctx, expand(init), addonBase, 16L * 1024 * 1024)
         timeline.indices.forEach { i ->
-            pieces += fetch(expand(media, start + i), addonBase, 16L * 1024 * 1024)
+            pieces += fetch(ctx, expand(media, start + i), addonBase, 16L * 1024 * 1024)
         }
         val total = pieces.sumOf { it.size.toLong() }
         if (total > MAX_BYTES) throw IOException("DASH media exceeds the size limit")
@@ -121,12 +121,13 @@ internal object AddonMedia {
 
     private inline fun repeatPlus(count: Int, block: () -> Unit) { repeat(count) { block() } }
 
-    private fun fetch(raw: String, addonBase: String, max: Long): ByteArray {
+    private fun fetch(ctx: Context, raw: String, addonBase: String, max: Long): ByteArray {
         val uri = Uri.parse(raw)
-        if (uri.scheme != "https" || java.net.URI(raw).rawUserInfo != null || uri.host.isNullOrBlank()) throw IOException("Unsafe addon media URL")
+        val host = uri.host ?: throw IOException("Unsafe addon media URL")
+        if (uri.scheme != "https" || java.net.URI(raw).rawUserInfo != null || host.isBlank()) throw IOException("Unsafe addon media URL")
         val base = Uri.parse(addonBase)
-        if (uri.host != base.host && (uri.host.contains(".").not() || uri.host.endsWith(".local") ||
-            uri.host.endsWith(".localhost") || uri.host.endsWith(".internal"))) throw IOException("Disallowed addon media host")
+        if (host != base.host && (!host.contains(".") || host.endsWith(".local") ||
+            host.endsWith(".localhost") || host.endsWith(".internal"))) throw IOException("Disallowed addon media host")
         val connection = URL(raw).openConnection() as HttpURLConnection
         connection.connectTimeout = 10000
         connection.readTimeout = 30000
