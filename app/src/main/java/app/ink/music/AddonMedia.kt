@@ -17,6 +17,7 @@ import org.xmlpull.v1.XmlPullParser
  */
 internal object AddonMedia {
     private const val MAX_BYTES = 512L * 1024L * 1024L
+    private const val MAX_CACHE_BYTES = 1024L * 1024L * 1024L
     private const val MAX_MANIFEST = 2L * 1024L * 1024L
     private const val MAX_SEGMENTS = 512
 
@@ -250,8 +251,28 @@ internal object AddonMedia {
                 if (error is IOException) throw error
                 throw IOException("Addon media failed audio validation", error)
             } finally { extractor.release() }
+            pruneCache(dir, target)
             return Uri.fromFile(target).toString()
         } finally { if (part.exists()) part.delete() }
+    }
+
+
+    /**
+     * Keep the addon media cache bounded. Oldest completed files are removed
+     * first; the file just materialized is always retained. Android may clear
+     * cache independently, so a missing file is always a normal cache miss.
+     */
+    private fun pruneCache(dir: File, keep: File) {
+        val budget = MAX_CACHE_BYTES
+        val files = dir.listFiles()?.filter { it.isFile && it.extension != "part" }
+            ?.sortedBy { it.lastModified() }.orEmpty()
+        var total = files.sumOf { it.length() }
+        for (file in files) {
+            if (total <= budget) break
+            if (file == keep) continue
+            val size = file.length()
+            if (file.delete()) total -= size
+        }
     }
 
     private fun looksLikeAudio(b: ByteArray): Boolean =
