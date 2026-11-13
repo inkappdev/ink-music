@@ -235,7 +235,7 @@ object AddonMusic {
                 throw IOException("Addon HTTP $code${errorBody?.takeIf { it.isNotBlank() }?.let { ": ${it.take(240)}" }.orEmpty()}")
             }
             val body = connection.inputStream.bufferedReader().use { it.readText() }.trim()
-            when {
+            return when {
                 body.startsWith("[") -> JSONObject().put("tracks", org.json.JSONArray(body))
                 body.startsWith("http://") || body.startsWith("https://") -> JSONObject().put("url", body)
                 else -> JSONObject(body)
