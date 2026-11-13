@@ -145,7 +145,7 @@ object AddonMusic {
         val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<JSONObject, Boolean>())
         fun find(value: JSONObject, depth: Int): String? {
             if (depth > 6 || !seen.add(value)) return null
-            for (key in listOf("url", "directUrl", "streamUrl", "downloadUrl", "mediaUrl", "audioUrl", "dataUrl", "manifestUrl", "mpdUrl", "dashUrl", "hlsUrl")) {
+            for (key in listOf("directUrl", "streamUrl", "audioUrl", "downloadUrl", "mediaUrl", "url", "dataUrl", "manifestUrl", "mpdUrl", "dashUrl", "hlsUrl")) {
                 val raw = value.optString(key).trim()
                 if (raw.startsWith("https://") || raw.startsWith("http://")) return raw
             }
