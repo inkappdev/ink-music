@@ -580,28 +580,28 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 val room = remember(keptNow) { if (id == KEPT) " · ${Offline.bytes() / 1_048_576} mb" else "" }
                 BasicText(s?.let { "${it.size} ${if (it.size == 1) "song" else "songs"} · ${clock(it.sumOf { x -> x.duration })}$room" } ?: "reading", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(14.dp))
-                if (!s.isNullOrEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                    Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
-                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(s.shuffled()) }
-                    MixWord(name, s)
-                    CoversWord()
-                    KeepOffline(s)
-                }
-                // the list written out: as words, as a spreadsheet, or every song's link (2026-11-11)
                 if (!s.isNullOrEmpty()) {
+                    PlayShuffle(s)
                     var copied by remember { mutableStateOf(false) }
-                    androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                        Word("save as text", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "txt", ListOut.text(s)) }
-                        Word("save as csv", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "csv", ListOut.csv(s)) }
-                        Word("save as a page", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "html", ListOut.html(name, s)) }
-                        Word("page with every service", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save("$name, everywhere", "html", ListOut.htmlAll(name, s)) }
-                        Word("save as .inkmusic", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "inkmusic", ListOut.inkmusic(name, s)) }
-                        Word(if (copied) "links copied" else "copy links", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.copy(ListOut.links(s)); copied = true }
+                    HeadWords {
+                        MixWord(name, s)
+                        CoversWord()
+                        KeepOffline(s)
+                        // the list written out: as words, as a spreadsheet, as a page, a file to share (2026-11-11); one
+                        // word with its kinds dropped down (they were five words in a row of their own)
+                        DropWord("save as", true, listOf(
+                            DropRow("text", null, false) { ListOut.save(name, "txt", ListOut.text(s)) },
+                            DropRow("a spreadsheet (csv)", null, false) { ListOut.save(name, "csv", ListOut.csv(s)) },
+                            DropRow("a page", null, false) { ListOut.save(name, "html", ListOut.html(name, s)) },
+                            DropRow("a page with every service", null, false) { ListOut.save("$name, everywhere", "html", ListOut.htmlAll(name, s)) },
+                            DropRow("an .inkmusic file", null, false) { ListOut.save(name, "inkmusic", ListOut.inkmusic(name, s)) },
+                        ))
+                        Word(if (copied) "links copied" else "copy links", pixel(14.sp, if (copied) Ink.ink else Ink.mid), touch = 8.dp) { ListOut.copy(ListOut.links(s)); copied = true }
                         // a list here: let it go (a second click, as remove all's)
                         if (id.startsWith(HereLists.PREFIX)) {
                             var sure by remember { mutableStateOf(false) }
                             LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
-                            Word(if (sure) "delete it" else "delete list", pixel(13.sp, if (sure) Ink.ink else Ink.dim), touch = 8.dp) {
+                            Word(if (sure) "delete it" else "delete list", pixel(14.sp, if (sure) Ink.ink else Ink.dim), touch = 8.dp) {
                                 if (!sure) sure = true else { HereLists.delete(id); onClose() }
                             }
                         }

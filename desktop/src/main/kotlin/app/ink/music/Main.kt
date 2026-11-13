@@ -813,8 +813,8 @@ private fun PlaceMenu(tab: String, shown: Boolean, modifier: Modifier, onFold: (
                 MenuPlace(i, shown) { Word(t.uppercase(), headline(40.sp, if (t == tab) Ink.ink else Ink.mid), touch = 4.dp) { onPlace(t) } }
             }
             Spacer(Modifier.height(24.dp))
+            // ink mapped held back for now (2026-11-12, Bronson): its page kept, nothing opens it
             MenuPlace(PLACES.size, shown) { Word("your year", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Year) } }
-            MenuPlace(PLACES.size, shown) { Word("ink mapped", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Mapped) } }
             MenuPlace(PLACES.size + 1, shown) { Word("settings", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Settings) } }
             // made by ink, its heart (the rail's, which a narrow window hasn't): the quiet funnel
             MenuPlace(PLACES.size + 2, shown) {
@@ -2023,6 +2023,25 @@ private fun Around(a: Album, albums: List<Album>, open: (Page) -> Unit) {
         }
     }
 }
+
+
+/**
+ * PLAY and SHUFFLE, big, at the head of a page of songs (a list of yours, a smart list, a YouTube record or playlist),
+ * as the songs' SHUFFLE ALL is (2026-11-12, Bronson: "the same big shuffle button as the songs list"); what else there
+ * is to do goes small on the lines under them ([HeadWords]).
+ */
+@Composable
+fun PlayShuffle(songs: List<Song>, modifier: Modifier = Modifier) = Row(modifier, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    Word("PLAY", headline(14.sp), touch = 8.dp) { Player.play(songs) }
+    Word("SHUFFLE", headline(14.sp), touch = 8.dp) { Player.play(songs.shuffled()) }
+}
+
+/** The small words under [PlayShuffle], wrapping onto another line rather than cut short ("copy l..."). */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun HeadWords(modifier: Modifier = Modifier, words: @Composable () -> Unit) =
+    androidx.compose.foundation.layout.FlowRow(modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) { words() }
 
 /** A list's word for covers beside its songs, lit when on (one choice for every list: [ListCovers]). */
 @Composable

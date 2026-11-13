@@ -312,7 +312,9 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 // a record's artists, each their own page (2026-11-09: the name was only words here); a playlist's byline
                 // (its maker, "auto playlist") stays words
-                if (playlist || a.branded) BasicText(a.artist.lowercase(), style = pixel(14.sp))
+                // a playlist's byline only its count ("130 tracks", said again just under): youtube music in its place
+                val by = a.artist.takeUnless { Regex("""^[\d,.]+\s+(tracks?|songs?)$""", RegexOption.IGNORE_CASE).matches(it.trim()) } ?: "youtube music"
+                if (playlist || a.branded) BasicText(by.lowercase(), style = pixel(14.sp))
                 else Row {
                     val names = Artists.named(a.artist)
                     names.forEachIndexed { i, name ->
@@ -321,27 +323,18 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                BasicText(songs?.let { s -> listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration }), "youtube music").joinToString("  ·  ") } ?: "reading",
+                BasicText(songs?.let { s -> listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration })).joinToString("  ·  ") } ?: "reading",
                     style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(16.dp))
                 songs?.takeIf { it.isNotEmpty() }?.let { s ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                        Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
+                    PlayShuffle(s)
+                    // the rest small under them, wrapping (2026-11-12, Bronson: "this could use some work": seven words
+                    // of three kinds in two rows, copy link cut short)
+                    HeadWords {
                         // a playlist played as a DJ's arc, each into the next on the beat (a record keeps its own order)
                         if (playlist) MixWord(a.title, s)
                         // a playlist's songs are from many records: their covers, if wanted
                         if (playlist) CoversWord()
-                        // its link on YouTube Music onto the clipboard, to share or hand on (2026-11-10: a playlist's
-                        // link was only to be had from YouTube's own app)
-                        var copied by remember(a.url) { mutableStateOf(false) }
-                        LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(2_000); copied = false } }
-                        Word(if (copied) "copied" else "copy link", pixel(14.sp, if (copied) Ink.ink else Ink.mid), touch = 8.dp) {
-                            java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(tubeLink(a.url)), null)
-                            copied = true
-                        }
-                    }
-                    // kept on the computer: its own line under the row (beside play, mix and covers it was cut to "keep o...")
-                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
                         KeepOffline(s)
                         // a copy as a list of yours, every song, kept here even if whoever made it takes theirs down
                         // (2026-11-12, a tester: a 300-song playlist found and lost when its owner deleted it)
@@ -350,6 +343,14 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                         Word(if (copy != null) "your list" else "keep as your list", pixel(14.sp, if (copy != null) Ink.ink else Ink.mid), touch = 8.dp) {
                             if (copy != null) open(Page.List(copy.id, copy.name))
                             else HereLists.make(a.title, s)
+                        }
+                        // its link on YouTube Music onto the clipboard, to share or hand on (2026-11-10: a playlist's
+                        // link was only to be had from YouTube's own app)
+                        var copied by remember(a.url) { mutableStateOf(false) }
+                        LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(2_000); copied = false } }
+                        Word(if (copied) "copied" else "copy link", pixel(14.sp, if (copied) Ink.ink else Ink.mid), touch = 8.dp) {
+                            java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(tubeLink(a.url)), null)
+                            copied = true
                         }
                     }
                 }
