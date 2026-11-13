@@ -266,4 +266,3 @@ internal object AddonMedia {
         else -> "audio"
     }
 }
-}
