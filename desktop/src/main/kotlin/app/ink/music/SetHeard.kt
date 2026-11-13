@@ -49,7 +49,8 @@ object SetHeard {
                 }
                 current = id
                 fun pos() = if (watching != null) Watching.at() else Player.position.value
-                val looking = Win.state?.isMinimized != true
+                // minimized too (2026-11-12, Bronson: "lets just have it fill anyway")
+                val looking = true
                 val due = tracks.due(id, pos(), System.currentTimeMillis(), looking)
                 if (due.isNotEmpty()) {
                     val link = watching?.second ?: url?.takeIf { it.first == id }?.second

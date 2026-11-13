@@ -35,6 +35,12 @@ class SetTracks(var dir: File? = null) {
 
     private val file get() = dir?.let { File(it, "sets-heard.json") }
 
+    /** A set's list as it's kept on disk (the phone's screens read what its player found). */
+    fun peek(id: String): List<Track> = keptOf(id)?.second.orEmpty()
+
+    /** When the kept lists last changed (0: never). */
+    fun changed(): Long = file?.takeIf { it.exists() }?.lastModified() ?: 0L
+
     private fun all(): JSONObject = runCatching { JSONObject(file!!.readText()) }.getOrDefault(JSONObject())
 
     private fun keptOf(id: String): Pair<Long, List<Track>>? = runCatching {
