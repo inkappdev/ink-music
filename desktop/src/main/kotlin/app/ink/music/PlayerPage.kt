@@ -216,14 +216,14 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     menuAt?.let { SongMenu(s, null, null, it, playing = s.id == n.song.id) { menuAt = null } }
                                     val density = androidx.compose.ui.platform.LocalDensity.current.density
                                     CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxSize().graphicsLayer {
-                                        renderEffect = coverLook?.takeIf { !s.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
+                                        renderEffect = (if (SetHeard.isSet(s)) Look.BLUR else coverLook)?.takeIf { !s.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
                                     }, px = 1200, moving = n.playing && s.id == n.song.id)
                                     // the record's moving cover over it, where it has one (settings, the look)
                                     if (!s.station && !s.episode) MovingCover(s.albumArtist.ifBlank { s.artist.substringBefore(", ") }, s.album, s.title,
                                         accent, n.playing && s.id == n.song.id, Modifier.fillMaxSize())
                                     if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
                                     // a DJ set: each track as it's heard, typed across the cover (SetHeard)
-                                    if (s.id == n.song.id && SetHeard.isSet(s)) SetMoment()
+                                    if (SetHeard.isSet(s)) SetSleeve(s.artist, s.title)
                                     // the song's way through, inside the cover too (2026-11-12, a tester and Bronson): a band
                                     // along its foot filling in its colour, see-through; clicked or dragged, there in the song
                                     if (s.id == n.song.id) SpectrumOver(s, n.playing, accent, Modifier.fillMaxSize())
@@ -561,31 +561,46 @@ private fun Moment(n: Player.Now, h: Heard?, onTyping: (Boolean) -> Unit) {
 }
 
 /**
- * A track heard in a DJ set (SetHeard): its title typed across the cover, big, its artist under it, held a while, and
- * gone, as a lossless song's moment is; again for each new track.
+ * A DJ set's sleeve (2026-11-12, Bronson: "blurred ... when a track is recognized it types it in and then adds it to a
+ * list on the record that stays there. Essentially building a designed record", "and make them clickable"): over the
+ * set's frame in the blur, the set's name, and its tracklist as it's heard (SetHeard), numbered, the newest typed in; a
+ * track tapped is found and put next.
  */
 @Composable
-private fun SetMoment() {
-    val t = SetHeard.now.collectAsState().value ?: return
-    var big by remember(t) { mutableStateOf("") }
-    var small by remember(t) { mutableStateOf("") }
-    val leave = remember(t) { Animatable(1f) }
-    LaunchedEffect(t) {
-        leave.animateTo(0f, tween(Motion.ENTER, easing = Motion.expo))
-        delay(100)
-        val a = t.title.uppercase(); val b = t.artist.lowercase()
-        for (i in 1..a.length) { big = a.take(i); delay(55) }
-        for (i in 1..b.length) { small = b.take(i); delay(30) }
-        delay(4_000)
-        leave.animateTo(1f, tween(SETTLE, easing = SETTLING))
-    }
-    Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .6f * (1f - leave.value))), contentAlignment = Alignment.Center) {
-        Column(Modifier.padding(24.dp).graphicsLayer { alpha = 1f - leave.value }, horizontalAlignment = Alignment.CenterHorizontally) {
-            BasicText("NOW IN THE SET", style = pixel(12.sp, Ink.mid))
+private fun SetSleeve(channel: String, name: String) {
+    val heard by SetHeard.heard.collectAsState()
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    LaunchedEffect(said) { if (said != null) { delay(1_600); said = null } }
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    LaunchedEffect(heard.size) { scroll.animateScrollTo(scroll.maxValue) }
+    Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .38f))) {
+        Column(Modifier.fillMaxSize().padding(28.dp)) {
+            BasicText("live dj set  ·  ${channel.lowercase()}", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(6.dp))
+            BasicText(name.uppercase(), style = headline(40.sp), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
             Spacer(Modifier.height(10.dp))
-            BasicText(big, style = headline(44.sp).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center))
-            Spacer(Modifier.height(10.dp))
-            BasicText(small, style = pixel(16.sp))
+            if (heard.isEmpty()) BasicText("listening for the first track", style = pixel(12.sp, Ink.mid))
+            Column(Modifier.weight(1f).verticalScroll(scroll)) {
+                heard.forEachIndexed { i, t ->
+                    Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null) {
+                        scope.launch {
+                            val song = withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.find(t.title, t.artist) }
+                            if (song != null) { Player.playNext(song); said = i to "next" } else said = i to "not found"
+                        }
+                    }.padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
+                        BasicText("%02d".format(i + 1), style = pixel(12.sp, Ink.mid), modifier = Modifier.width(32.dp).padding(top = 3.dp))
+                        Column(Modifier.weight(1f)) {
+                            if (i == heard.lastIndex) TypedLine(t.title.uppercase(), headline(18.sp))
+                            else BasicText(t.title.uppercase(), style = headline(18.sp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                        said?.takeIf { it.first == i }?.let { BasicText(it.second, style = pixel(12.sp), modifier = Modifier.padding(start = 8.dp, top = 3.dp)) }
+                    }
+                }
+            }
         }
     }
 }

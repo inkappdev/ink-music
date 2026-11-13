@@ -45,13 +45,16 @@ object SetHeard {
             while (true) {
                 delay(5_000)
                 val n = Playback.now.value
+                if (isSet(n) && n?.song == null) android.util.Log.d("ink-recognize", "set playing, no song for it")
                 val song = n?.song?.takeIf { isSet(n) && n.playing }
                 if (song == null) { if (!isSet(n)) { now.value = null; set = null }; continue }
                 if (set != song.id) { set = song.id; now.value = null; heard.value = emptyList(); lastAsked = System.currentTimeMillis() - 30_000 }
                 if (System.currentTimeMillis() - lastAsked < 45_000) continue
                 lastAsked = System.currentTimeMillis()
                 val pos = n.positionNow()
-                val found = runCatching { Recognize.at(app, song, pos) }.getOrNull() ?: continue
+                val found = runCatching { Recognize.at(app, song, pos) }.onFailure { android.util.Log.d("ink-recognize", "set: $it") }.getOrNull()
+                android.util.Log.d("ink-recognize", "set ${song.id} at ${pos / 1000} s: ${found?.let { it.artist + " - " + it.title } ?: "nothing"}")
+                if (found == null) continue
                 if (set != song.id) continue
                 val last = now.value
                 if (last == null || !found.title.equals(last.title, true) || !found.artist.equals(last.artist, true)) {

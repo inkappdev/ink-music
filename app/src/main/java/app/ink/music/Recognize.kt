@@ -22,7 +22,7 @@ object Recognize {
 
     /** What's playing in `song` from `fromMs` on (blocking: a decode and a request); null when Shazam doesn't know it. */
     fun at(c: Context, song: Song, fromMs: Long): Found? {
-        val (pcm, rate) = Tempos.clip(c, song, fromMs, fromMs + 12_000) ?: return null
+        val (pcm, rate) = Tempos.clip(c, song, fromMs, fromMs + 12_000) ?: return null.also { android.util.Log.d("ink-recognize", "no clip of ${song.id} at $fromMs") }
         // to 16 kHz, as the fingerprint's made at, by straight lines between the samples
         val n = (pcm.size.toLong() * 16_000 / rate).toInt()
         val bytes = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
@@ -45,7 +45,7 @@ object Recognize {
             "?sync=true&webv3=true&sampling=true&connected=&shazamapiversion=v3&sharehub=true&video=v3"
         val r = http(u, "POST", mapOf("Content-Type" to "application/json", "Content-Language" to "en_US",
             "User-Agent" to "Dalvik/2.1.0 (Linux; U; Android 6.0.1; SM-G920F Build/MMB29K)"), body.toString().encodeToByteArray())
-        if (r.code != 200) return null
+        if (r.code != 200) return null.also { android.util.Log.d("ink-recognize", "shazam ${r.code}") }
         val track = JSONObject(r.text).optJSONObject("track") ?: return null
         val album = track.optJSONArray("sections")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }.firstOrNull { it.optString("type") == "SONG" } }
             ?.optJSONArray("metadata")?.let { m -> (0 until m.length()).map { m.getJSONObject(it) }.firstOrNull { it.optString("title") == "Album" }?.optString("text") }
