@@ -45,6 +45,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -587,6 +590,51 @@ private fun SetMoment() {
     }
 }
 
+/**
+ * A DJ set's tracklist as it's heard (SetHeard): each track and where in the set it came, the newest lit; a click finds it
+ * on YouTube Music and puts it next; the lot kept as a list of yours.
+ */
+@Composable
+private fun SetTracklist() {
+    val heard by SetHeard.heard.collectAsState()
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    LaunchedEffect(said) { if (said != null) { delay(1_600); said = null } }
+    Column {
+        BasicText("HEARD IN THIS SET", style = headline(22.sp))
+        BasicText(if (heard.isEmpty()) "listening: each track's name comes as it's heard" else "a click puts it next", style = pixel(12.sp, Ink.mid),
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+        heard.asReversed().forEachIndexed { i, t ->
+            val n = heard.size - 1 - i
+            Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null) {
+                scope.launch {
+                    val song = withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.find(t.title, t.artist) }
+                    if (song != null) { Player.playNext(song); said = n to "next" } else said = n to "not found"
+                }
+            }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText(clock(t.at), style = pixel(12.sp, Ink.mid), modifier = Modifier.width(56.dp))
+                Column(Modifier.weight(1f)) {
+                    BasicText(t.title.uppercase(), style = headline(16.sp, if (i == 0) Ink.ink else Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                said?.takeIf { it.first == n }?.let { BasicText(it.second, style = pixel(12.sp)) }
+            }
+        }
+        if (heard.size > 1) {
+            var kept by remember(heard.size) { mutableStateOf(false) }
+            Word(if (kept) "kept as a list" else "keep them all as a list", pixel(13.sp, if (kept) Ink.ink else Ink.mid), Modifier.padding(top = 12.dp), touch = 8.dp) {
+                if (kept) return@Word
+                kept = true
+                val name = "heard in " + (Player.now.value?.song?.title ?: "a set").lowercase()
+                scope.launch {
+                    val songs = withContext(kotlinx.coroutines.Dispatchers.IO) { heard.mapNotNull { YouTube.find(it.title, it.artist) } }
+                    HereLists.make(name, songs)
+                }
+            }
+        }
+    }
+}
+
 /** The moment's fade, and the word's fade in after it: slow, gentle at both ends. */
 private const val SETTLE = 1_400
 private val SETTLING = CubicBezierEasing(.45f, 0f, .2f, 1f)
@@ -598,6 +646,7 @@ private val SETTLING = CubicBezierEasing(.45f, 0f, .2f, 1f)
  */
 @Composable
 private fun RecordSide(n: Player.Now, open: (Page) -> Unit) {
+    if (SetHeard.isSet(n.song)) return SetTracklist()
     val albums by Library.albums.collectAsState()
     val queue by Player.queue.collectAsState()
     val record = remember(albums, n.song.albumId) { albums.firstOrNull { it.id == n.song.albumId }?.songs }
