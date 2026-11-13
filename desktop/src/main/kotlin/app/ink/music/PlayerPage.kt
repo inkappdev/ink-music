@@ -243,6 +243,11 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 val wordsPart: @Composable (Modifier) -> Unit = { m ->
                     Column(m) {
                         val (title, by) = said(n)
+                        // a station's song, said or heard (OnAirSong): its title opens find with it typed, its artist their
+                        // page, the heart loves the song found (2026-11-12, Bronson: clickable wherever a station's song shows;
+                        // the bar's and the column's were, the player's weren't, its artist not even shown)
+                        val aired = rememberAired(n)
+                        val airedSong = rememberAiredSong(n)
                         // pushed with the cover on a track change; a station's next song (the same station) rising in
                         AnimatedContent(
                             Triple(n.song, title, by),
@@ -256,11 +261,14 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         ) { (s, title, by) ->
                             Column {
                                 Row(verticalAlignment = Alignment.Top) {
-                                    WholeWords(title.uppercase(), headline(44.sp), 3, Modifier.weight(1f, fill = false))
-                                    Heart(s, 3.dp, Modifier.padding(start = 8.dp))
+                                    WholeWords(title.uppercase(), headline(44.sp), 3, Modifier.weight(1f, fill = false).then(
+                                        if (s.station && aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                            onClick = felt { OnAirSong.find(aired.title, aired.artist!!) }) else Modifier))
+                                    Heart(if (s.station) airedSong ?: s else s, 3.dp, Modifier.padding(start = 8.dp))
                                 }
                                 Spacer(Modifier.height(12.dp))
                                 if (s.episode) Word(by.lowercase(), pixel(14.sp)) { show?.let(open) }
+                                else if (s.station && aired != null) Word(by.lowercase(), pixel(14.sp)) { open(Page.Artist(aired.artist!!.substringBefore(", "))) }
                                 else if (!s.station) Word(by.lowercase(), pixel(14.sp)) { open(Page.Artist(s.albumArtist.ifBlank { s.artist.substringBefore(", ") })) }
                                 if (s.album.isNotEmpty() && !s.episode) Word(s.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(s.albumId)) }
                                 Spacer(Modifier.height(4.dp))
@@ -304,7 +312,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                 Word(w, pixel(14.sp, if (w == panel) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 10.dp) { shows = w }
                             Spacer(Modifier.weight(1f))
                             // into one of your playlists (the phone's player's word), its page over the player
-                            if (canAddToList(n.song)) Word("playlist", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 10.dp) { open(Page.AddTo(n.song)) }
+                            // a station's: the song it's playing, found
+                            val listed = if (n.song.station) airedSong else n.song.takeIf { canAddToList(it) }
+                            if (listed != null) Word("playlist", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 10.dp) { open(Page.AddTo(listed)) }
                             Word("stop", pixel(14.sp, if (n.playing) Ink.mid else Ink.dim), touch = 10.dp) { Player.stop(); onClose() }
                         }
                         Spacer(Modifier.height(14.dp))

@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.clipToBounds
@@ -332,18 +334,26 @@ private fun MiniSleeve(n: Player.Now) {
             Marquee(artist, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = 10.dp), size = 64.sp, color = Ink.ink.copy(alpha = .09f))
             Column(Modifier.fillMaxSize()) {
                 Column(Modifier.weight(1f).fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp)) {
+                    // a station's song, said or heard (OnAirSong): its title finds it, its artist opens their page, back in the
+                    // window (2026-11-12, Bronson: clickable wherever a station's song shows)
+                    val aired = rememberAired(n)
+                    val airedSong = rememberAiredSong(n)
                     Row(verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f)) {
-                            BasicText(title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            BasicText(title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = if (aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                    onClick = felt { Mini.close(); OnAirSong.find(aired.title, aired.artist!!) }) else Modifier)
                             Spacer(Modifier.height(2.dp))
-                            BasicText(artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            BasicText(artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = if (aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                    onClick = felt { Mini.close(); Nav.open(Page.Artist(aired.artist!!.substringBefore(", "))) }) else Modifier)
                         }
                         Pixel(OPEN, "back to the window", Ink.mid) { Mini.close() }
                     }
                     Spacer(Modifier.weight(1f))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Controls(n, small = true)
-                        Heart(n.song, 2.dp, Modifier.padding(start = 10.dp))
+                        Heart(airedSong ?: n.song, 2.dp, Modifier.padding(start = 10.dp))
                         Spacer(Modifier.weight(1f))
                         if (!n.song.station && n.duration > 0) BeatCounter(n.song.id, n.playing, Modifier.padding(end = 6.dp), key = false)
                     }
