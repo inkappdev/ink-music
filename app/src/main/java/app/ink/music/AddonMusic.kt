@@ -68,12 +68,44 @@ object AddonMusic {
         }
 
     /**
+     * BitChord's checkValidLossless policy: only contact a gated addon when
+     * Android currently exposes a wired, USB, or HDMI output. Generic Bluetooth
+     * is deliberately not treated as lossless; Android's public output-device
+     * list does not reliably expose the negotiated Bluetooth codec.
+     */
+    private fun eligibleForAddon(ctx: Context, base: String): Boolean {
+        val manifest = runCatching { request(ctx, "$base/manifest.json", emptyMap()) }.getOrNull()
+            ?: return true // Legacy addons without a manifest remain compatible.
+        if (!manifest.optBoolean("checkValidLossless", false)) return true
+        val manager = ctx.getSystemService(android.media.AudioManager::class.java) ?: return false
+        val outputs = manager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+        return outputs.any { device ->
+            when (device.type) {
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                android.media.AudioDeviceInfo.TYPE_LINE_ANALOG,
+                android.media.AudioDeviceInfo.TYPE_LINE_DIGITAL,
+                android.media.AudioDeviceInfo.TYPE_USB_DEVICE,
+                android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+                android.media.AudioDeviceInfo.TYPE_HDMI,
+                android.media.AudioDeviceInfo.TYPE_HDMI_ARC,
+                android.media.AudioDeviceInfo.TYPE_DOCK -> true
+                else -> false
+            }
+        } || UsbDac.held != null
+    }
+
+    /**
      * Find an exact recording in the configured addon and return its playable URL.
      * Called by the player's resolving data source on its IO loader thread.
      */
     fun findStream(ctx: Context, title: String, artist: String, album: String, durationSeconds: Long): String? {
         val base = baseUrl(ctx)
         if (base.isBlank() || title.isBlank() || artist.isBlank()) return null
+        if (!eligibleForAddon(ctx, base)) {
+            android.util.Log.i("ink-addon", "Skipping addon: it requires a lossless output")
+            return null
+        }
         return runCatching {
             val params = settings(ctx, base)
             val searchParams = LinkedHashMap(params).apply {
@@ -143,6 +175,7 @@ object AddonMusic {
     fun stream(ctx: Context, encoded: String): String {
         val decoded = JSONObject(String(Base64.decode(encoded, Base64.URL_SAFE or Base64.NO_WRAP), Charsets.UTF_8))
         val base = decoded.getString("base")
+        if (!eligibleForAddon(ctx, base)) throw IOException("Addon requires a lossless output")
         val direct = decoded.optString("stream")
         if (direct.startsWith("http")) return AddonMedia.materialize(ctx, JSONObject().put("url", direct), base)
         val id = decoded.getString("id")
