@@ -76,8 +76,10 @@ object AddonMusic {
         if (base.isBlank() || title.isBlank() || artist.isBlank()) return null
         return runCatching {
             val params = settings(ctx, base)
-            params["q"] = listOf(title, artist, album).filter { it.isNotBlank() }.joinToString(" ")
-            val response = request(ctx, "$base/search", params)
+            val searchParams = LinkedHashMap(params).apply {
+                put("q", listOf(title, artist, album).filter { it.isNotBlank() }.joinToString(" "))
+            }
+            val response = request(ctx, "$base/search", searchParams)
             val tracks = tracksArray(response) ?: return@runCatching null
             fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
                 .replace(Regex("\\p{M}+"), "").lowercase()
@@ -103,7 +105,9 @@ object AddonMusic {
             val direct = playableUrl(track)
             if (direct != null) return@runCatching direct
             val id = track.getString("id")
-            val stream = request(ctx, "$base/stream/${Uri.encode(id)}", params)
+            // The search query belongs only on /search; stream endpoints receive quality/atmos only.
+            val streamParams = LinkedHashMap(params).apply { remove("q") }
+            val stream = request(ctx, "$base/stream/${Uri.encode(id)}", streamParams)
             playableUrl(stream)
         }.onFailure { android.util.Log.w("ink-addon", "lookup failed: ${it.message}") }.getOrNull()
     }
@@ -131,7 +135,7 @@ object AddonMusic {
         val direct = decoded.optString("stream")
         if (direct.startsWith("http")) return direct
         val id = decoded.getString("id")
-        val params = settings(ctx, base)
+        val params = settings(ctx, base).apply { remove("q") }
         val result = request(ctx, "$base/stream/${Uri.encode(id)}", params)
         val url = playableUrl(result)
         if (url == null) throw IOException(result.optString("error").ifBlank { "Addon returned no stream URL" })
@@ -216,8 +220,9 @@ object AddonMusic {
         connection.readTimeout = 12_000
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "application/json")
-        connection.setRequestProperty("User-Agent", "Ink-Music/1.0")
-        if (Uri.parse(target).path.orEmpty().contains("/stream/")) connection.setRequestProperty("X-LW-Intent", "stream")
+        val isStreamRequest = Uri.parse(target).path.orEmpty().contains("/stream/")
+        connection.setRequestProperty("User-Agent", if (isStreamRequest) "LastWave-Player/1.0" else "Ink-Music/1.0")
+        if (isStreamRequest) connection.setRequestProperty("X-LW-Intent", "stream")
         sign(ctx, target)?.let { (ts, signature) ->
             connection.setRequestProperty("X-LW-TS", ts)
             connection.setRequestProperty("X-LW-Sign", signature)
@@ -225,10 +230,16 @@ object AddonMusic {
         }
         try {
             val code = connection.responseCode
-            if (code !in 200..299) throw IOException("Addon HTTP $code")
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            return if (body.trimStart().startsWith("[")) JSONObject().put("tracks", org.json.JSONArray(body))
-            else JSONObject(body)
+            if (code !in 200..299) {
+                val errorBody = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                throw IOException("Addon HTTP $code${errorBody?.takeIf { it.isNotBlank() }?.let { ": ${it.take(240)}" }.orEmpty()}")
+            }
+            val body = connection.inputStream.bufferedReader().use { it.readText() }.trim()
+            when {
+                body.startsWith("[") -> JSONObject().put("tracks", org.json.JSONArray(body))
+                body.startsWith("http://") || body.startsWith("https://") -> JSONObject().put("url", body)
+                else -> JSONObject(body)
+            }
         } finally { connection.disconnect() }
     }
 
