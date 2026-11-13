@@ -23,16 +23,6 @@ object Recognize {
     /** What's playing in `song` from `fromMs` on (blocking: a decode and a request); null when Shazam doesn't know it. */
     fun at(c: Context, song: Song, fromMs: Long): Found? {
         val (pcm, rate) = Tempos.clip(c, song, fromMs, fromMs + 12_000) ?: return null.also { android.util.Log.d("ink-recognize", "no clip of ${song.id} at $fromMs") }
-        return heard(pcm, rate)
-    }
-
-    /** What a station's playing now, twelve seconds of its stream heard (blocking); null when Shazam doesn't know it. */
-    fun live(c: Context, url: String): Found? {
-        val (pcm, rate) = Tempos.live(c, url) ?: return null.also { android.util.Log.d("ink-recognize", "no clip of $url") }
-        return heard(pcm, rate)
-    }
-
-    private fun heard(pcm: FloatArray, rate: Int): Found? {
         // to 16 kHz, as the fingerprint's made at, by straight lines between the samples
         val n = (pcm.size.toLong() * 16_000 / rate).toInt()
         val bytes = ByteBuffer.allocate(n * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
