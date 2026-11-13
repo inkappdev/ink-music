@@ -22,17 +22,21 @@ import kotlinx.coroutines.launch
  * What's playing in a DJ set, the phone's (the computer's since 2026-11-12; Bronson: the track typed out as it's heard):
  * while a live set plays (listened to, from INK's live sets), every 45 s the twelve seconds playing now are heard
  * (Recognize); a track that's new is [now], typed across the cover and under the set in the mini player, and kept in the
- * set's tracklist ([heard], up next). While ink music is open.
+ * set's tracklist ([heard], up next). Asked only while ink music is on screen; back, the stretch missed is asked over (SetTracks).
  */
 object SetHeard {
-    data class Track(val title: String, val artist: String, val at: Long)
-
-    val now = MutableStateFlow<Track?>(null)
-    val heard = MutableStateFlow<List<Track>>(emptyList())
+    // what to ask when, and the list in the set's order, shared with the computer (SetTracks)
+    private val tracks = SetTracks()
+    val heard = tracks.heard
+    /** The last one found: typed in as it comes. */
+    val added = tracks.added
+    /** The track playing in the set now, as far as it's known. */
+    val now = MutableStateFlow<SetTracks.Track?>(null)
+    /** ink music on screen (Main's started): only then is anything asked; back, what was missed is asked over. */
+    @Volatile var looking = true
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var started = false
-    @Volatile private var set: String? = null
 
     fun isSet(n: Now?) = n != null && n.album == "live dj set"
 
@@ -41,27 +45,24 @@ object SetHeard {
         started = true
         val app = c.applicationContext
         scope.launch {
-            var lastAsked = 0L
+            var current: String? = null
             while (true) {
-                delay(5_000)
+                delay(3_000)
                 val n = Playback.now.value
-                if (isSet(n) && n?.song == null) android.util.Log.d("ink-recognize", "set playing, no song for it")
                 val song = n?.song?.takeIf { isSet(n) && n.playing }
-                if (song == null) { if (!isSet(n)) { now.value = null; set = null }; continue }
-                if (set != song.id) { set = song.id; now.value = null; heard.value = emptyList(); lastAsked = System.currentTimeMillis() - 30_000 }
-                if (System.currentTimeMillis() - lastAsked < 45_000) continue
-                lastAsked = System.currentTimeMillis()
-                val pos = n.positionNow()
-                val found = runCatching { Recognize.at(app, song, pos) }.onFailure { android.util.Log.d("ink-recognize", "set: $it") }.getOrNull()
-                android.util.Log.d("ink-recognize", "set ${song.id} at ${pos / 1000} s: ${found?.let { it.artist + " - " + it.title } ?: "nothing"}")
-                if (found == null) continue
-                if (set != song.id) continue
-                val last = now.value
-                if (last == null || !found.title.equals(last.title, true) || !found.artist.equals(last.artist, true)) {
-                    val t = Track(found.title, found.artist, pos)
-                    now.value = t
-                    heard.value = heard.value + t
+                if (song == null) {
+                    if (!isSet(n)) { if (current != null) tracks.reset(null); current = null; now.value = null }
+                    continue
                 }
+                current = song.id
+                val due = tracks.due(song.id, n.positionNow(), System.currentTimeMillis(), looking)
+                due.forEachIndexed { k, p ->
+                    val found = runCatching { Recognize.at(app, song, p) }.getOrNull()
+                    android.util.Log.d("ink-recognize", "set ${song.id} at ${p / 1000} s: ${found?.let { it.artist + " - " + it.title } ?: "nothing"}")
+                    tracks.found(song.id, p, found?.title, found?.artist, System.currentTimeMillis(), live = k == due.lastIndex)
+                    if (k < due.lastIndex) delay(2_000)
+                }
+                now.value = tracks.at(Playback.now.value?.positionNow() ?: n.positionNow())
             }
         }
     }

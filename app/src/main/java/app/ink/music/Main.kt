@@ -222,6 +222,8 @@ class Main : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // on screen: a DJ set's tracks asked again, what was missed meanwhile too (SetHeard)
+        SetHeard.looking = true
         // your listening read again for the orders (lately, most, this hour: what was played since counts)
         Listened.read(this)
         Colours.start(this)
@@ -237,6 +239,8 @@ class Main : ComponentActivity() {
     }
 
     override fun onStop() {
+        // off screen (the screen off, another app): nothing asked of a DJ set till it's back (SetHeard)
+        SetHeard.looking = false
         Fresh.left(this)
         SyncPhone.closed()
         Playback.release()

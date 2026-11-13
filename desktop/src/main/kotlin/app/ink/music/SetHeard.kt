@@ -16,16 +16,17 @@ import androidx.compose.runtime.setValue
  * set shows, and kept in the set's tracklist ([heard]). Only a live set, only while it plays, watched or listened to.
  */
 object SetHeard {
-    data class Track(val title: String, val artist: String, val at: Long)
-
-    /** The track playing in the set now, as last heard; null when none's been yet (or it's not a set). */
-    val now = MutableStateFlow<Track?>(null)
-    /** Every track heard in the set playing, in order. */
-    val heard = MutableStateFlow<List<Track>>(emptyList())
+    // what to ask when, and the list in the set's order, shared with the phone (SetTracks)
+    private val tracks = SetTracks()
+    /** Every track heard in the set playing, in the order they played. */
+    val heard = tracks.heard
+    /** The last one found: typed in as it comes. */
+    val added = tracks.added
+    /** The track playing in the set now, as far as it's known; null when none's been yet (or it's not a set). */
+    val now = MutableStateFlow<SetTracks.Track?>(null)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var started = false
-    @Volatile private var set: String? = null
 
     fun isSet(s: Song?) = s != null && s.album == "live dj set" && s.tube
 
@@ -33,29 +34,33 @@ object SetHeard {
         if (started || Local.on) return
         started = true
         scope.launch {
-            // every few seconds: what's playing that's a set, watched (Watching) or listened to (Player), and where
+            // every few seconds: what's playing that's a set, watched (Watching) or listened to (Player), and where;
+            // looked at (the window not minimized), the moment playing asked and any stretch missed asked over
             var url: Pair<String, String>? = null
-            var lastAsked = 0L
+            var current: String? = null
             while (true) {
-                delay(5_000)
+                delay(3_000)
                 val watching = Watching.set.value?.takeIf { !Watching.paused }
                 val listening = Player.now.value?.takeIf { it.playing && isSet(it.song) }?.song
                 val id = watching?.first?.let { "y$it" } ?: listening?.id
-                if (id == null) { if (Watching.set.value == null && !isSet(Player.now.value?.song)) { now.value = null; set = null }; continue }
-                if (set != id) { set = id; now.value = null; heard.value = emptyList(); lastAsked = System.currentTimeMillis() - 30_000 }
-                if (System.currentTimeMillis() - lastAsked < 45_000) continue
-                lastAsked = System.currentTimeMillis()
-                val link = watching?.second ?: url?.takeIf { it.first == id }?.second
-                    ?: YouTube.stream(id.removePrefix("y"), small = true)?.also { url = id to it } ?: continue
-                val pos = if (watching != null) Watching.at() else Player.position.value
-                val found = runCatching { Recognize.at(link, pos / 1000.0) }.getOrNull() ?: continue
-                if (set != id) continue
-                val last = now.value
-                if (last == null || !found.title.equals(last.title, true) || !found.artist.equals(last.artist, true)) {
-                    val t = Track(found.title, found.artist, pos)
-                    now.value = t
-                    heard.value = heard.value + t
+                if (id == null) {
+                    if (Watching.set.value == null && !isSet(Player.now.value?.song)) { if (current != null) tracks.reset(null); current = null; now.value = null }
+                    continue
                 }
+                current = id
+                fun pos() = if (watching != null) Watching.at() else Player.position.value
+                val looking = Win.state?.isMinimized != true
+                val due = tracks.due(id, pos(), System.currentTimeMillis(), looking)
+                if (due.isNotEmpty()) {
+                    val link = watching?.second ?: url?.takeIf { it.first == id }?.second
+                        ?: YouTube.stream(id.removePrefix("y"), small = true)?.also { url = id to it } ?: continue
+                    due.forEachIndexed { k, p ->
+                        val found = runCatching { Recognize.at(link, p / 1000.0) }.getOrNull()
+                        tracks.found(id, p, found?.title, found?.artist, System.currentTimeMillis(), live = k == due.lastIndex)
+                        if (k < due.lastIndex) delay(2_000)
+                    }
+                }
+                now.value = tracks.at(pos())
             }
         }
     }

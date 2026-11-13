@@ -570,6 +570,7 @@ private fun Moment(n: Player.Now, h: Heard?, onTyping: (Boolean) -> Unit) {
 @Composable
 private fun SetSleeve(channel: String, name: String, onOpen: (Page) -> Unit) {
     val heard by SetHeard.heard.collectAsState()
+    val added by SetHeard.added.collectAsState()
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<Pair<Int, String>?>(null) }
     LaunchedEffect(said) { if (said != null) { delay(1_600); said = null } }
@@ -597,7 +598,7 @@ private fun SetSleeve(channel: String, name: String, onOpen: (Page) -> Unit) {
                         }).padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
                         BasicText("%02d".format(i + 1), style = pixel(12.sp, Ink.mid), modifier = Modifier.width(32.dp).padding(top = 3.dp))
                         Column(Modifier.weight(1f)) {
-                            if (i == heard.lastIndex) TypedLine(t.title.uppercase(), headline(18.sp))
+                            if (t == added) TypedLine(t.title.uppercase(), headline(18.sp))
                             else BasicText(t.title.uppercase(), style = headline(18.sp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
