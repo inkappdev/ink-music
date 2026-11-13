@@ -1,6 +1,7 @@
 package app.ink.music
 
 import android.content.Context
+import android.media.MediaExtractor
 import android.net.Uri
 import android.util.Xml
 import java.io.File
@@ -96,12 +97,12 @@ internal object AddonMedia {
         val repId = representationId
         fun expand(value: String, number: Int? = null): String {
             var result = value.replace("$" + "RepresentationID$", repId)
-            val re = Regex("""\$Number(?:%0(\\d+)d)?\$""")
+            val re = Regex("""\$Number(?:%0(\d+)d)?\$""")
             result = re.replace(result) { m ->
                 val n = number ?: throw IOException("Invalid initialization template")
                 n.toString().padStart(m.groupValues.getOrNull(1)?.toIntOrNull() ?: 0, '0')
             }
-            if (result.contains("\\$Number") || result.contains("\\$Time")) throw IOException("Unsupported DASH placeholder")
+            if (result.contains("$" + "Number") || result.contains("$" + "Time")) throw IOException("Unsupported DASH placeholder")
             return java.net.URI(base).resolve(result).toString()
         }
         val start = t["startNumber"]?.toIntOrNull() ?: 1
@@ -124,10 +125,14 @@ internal object AddonMedia {
     private fun fetch(ctx: Context, raw: String, addonBase: String, max: Long): ByteArray {
         val uri = Uri.parse(raw)
         val host = uri.host ?: throw IOException("Unsafe addon media URL")
-        if (uri.scheme != "https" || java.net.URI(raw).rawUserInfo != null || host.isBlank()) throw IOException("Unsafe addon media URL")
+        if (uri.scheme != "https" || java.net.URI(raw).rawUserInfo != null || host.isBlank() ||
+            uri.userInfo.isNotEmpty() || uri.fragment != null) throw IOException("Unsafe addon media URL")
         val base = Uri.parse(addonBase)
-        if (host != base.host && (!host.contains(".") || host.endsWith(".local") ||
-            host.endsWith(".localhost") || host.endsWith(".internal"))) throw IOException("Disallowed addon media host")
+        val ipLiteral = runCatching { java.net.InetAddress.getByName(host) }.getOrNull()
+            ?.let { it.hostAddress == host || host.startsWith("[") } == true
+        if (host != base.host && (ipLiteral || !host.contains(".") || host.endsWith(".") ||
+            listOf(".local", ".localhost", ".internal", ".lan", ".home").any(host::endsWith)))
+            throw IOException("Disallowed addon media host")
         val connection = URL(raw).openConnection() as HttpURLConnection
         connection.connectTimeout = 10000
         connection.readTimeout = 30000
@@ -163,6 +168,20 @@ internal object AddonMedia {
         try {
             FileOutputStream(part).use { it.write(bytes); it.fd.sync() }
             if (!part.renameTo(target)) throw IOException("Could not finalize addon media cache")
+            // Verify the completed file with Android's demuxer before Media3 sees it.
+            val extractor = MediaExtractor()
+            try {
+                extractor.setDataSource(target.absolutePath)
+                val hasAudio = (0 until extractor.trackCount).any { index ->
+                    extractor.getTrackFormat(index).getString(android.media.MediaFormat.KEY_MIME)
+                        ?.startsWith("audio/") == true
+                }
+                if (!hasAudio) throw IOException("Addon file contains no decodable audio track")
+            } catch (error: Exception) {
+                target.delete()
+                if (error is IOException) throw error
+                throw IOException("Addon media failed audio validation", error)
+            } finally { extractor.release() }
             return Uri.fromFile(target).toString()
         } finally { if (part.exists()) part.delete() }
     }
