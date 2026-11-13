@@ -338,10 +338,15 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                         // that much height. What's left over goes above and below, as the weights had it (1 : .4)
                         val body = @Composable { room: androidx.compose.ui.unit.Dp ->
                             androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
-                                Column {
+                              // the line as wide as the cover is (it touches the cover's top edge): a cover given less
+                              // height than the width (a DJ set's line under it, a short phone) took the line's right end
+                              // with it (2026-11-12, Bronson: "the album art is shorter on the right side")
+                              BoxWithConstraints {
+                                Column(Modifier.width(minOf(maxWidth, 420.dp, room))) {
                                     Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
                                     Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster) { t -> Moment(t) { typing = it }; if (SetHeard.isSet(t)) SetSleeve(t.artist, t.title, onOpen) }
                                 }
+                              }
                             }
                         }
                         androidx.compose.ui.layout.SubcomposeLayout(Modifier.fillMaxSize()) { c ->
@@ -1569,8 +1574,13 @@ private fun TvPlayer(
                 Box(Modifier.width(room)) {
                     Column(Modifier.width(room)) {
                         androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
-                            Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
-                            Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping); if (SetHeard.isSet(t)) SetSleeve(t.artist, t.title, onOpen) }
+                            // the line as wide as the cover (it touches its top edge), whatever room the cover's given
+                            BoxWithConstraints {
+                              Column(Modifier.width(minOf(maxWidth, 420.dp, room))) {
+                                Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
+                                Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping); if (SetHeard.isSet(t)) SetSleeve(t.artist, t.title, onOpen) }
+                              }
+                            }
                         }
                     }
                     // its foot over the cover's, a little in from the left, as far right as it runs
