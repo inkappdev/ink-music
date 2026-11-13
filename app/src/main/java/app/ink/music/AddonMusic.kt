@@ -103,12 +103,12 @@ object AddonMusic {
             }.sortedWith(compareBy<Triple<JSONObject, Long, Int>> { it.second }.thenBy { it.third })
             val track = candidates.firstOrNull()?.first ?: return@runCatching null
             val direct = playableUrl(track)
-            if (direct != null) return@runCatching direct
+            if (direct != null) return@runCatching AddonMedia.materialize(ctx, JSONObject().put("url", direct), base)
             val id = track.getString("id")
             // The search query belongs only on /search; stream endpoints receive quality/atmos only.
             val streamParams = LinkedHashMap(params).apply { remove("q") }
             val stream = request(ctx, "$base/stream/${Uri.encode(id)}", streamParams, intent = "stream")
-            playableUrl(stream)
+            AddonMedia.materialize(ctx, stream, base)
         }.onFailure { android.util.Log.w("ink-addon", "lookup failed: ${it.message}") }.getOrNull()
     }
 
@@ -133,17 +133,15 @@ object AddonMusic {
         val decoded = JSONObject(String(Base64.decode(encoded, Base64.URL_SAFE or Base64.NO_WRAP), Charsets.UTF_8))
         val base = decoded.getString("base")
         val direct = decoded.optString("stream")
-        if (direct.startsWith("http")) return direct
+        if (direct.startsWith("http")) return AddonMedia.materialize(ctx, JSONObject().put("url", direct), base)
         val id = decoded.getString("id")
         val params = settings(ctx, base).apply { remove("q") }
         val result = request(ctx, "$base/stream/${Uri.encode(id)}", params, intent = "stream")
-        val url = playableUrl(result)
-        if (url == null) throw IOException(result.optString("error").ifBlank { "Addon returned no stream URL" })
-        return url
+        return AddonMedia.materialize(ctx, result, base)
     }
 
     /** Parse LastWave nested wrappers without treating protocol defaults as transport. */
-    private fun playableUrl(response: JSONObject): String? {
+    internal fun playableUrl(response: JSONObject): String? {
         val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<JSONObject, Boolean>())
         fun find(value: JSONObject, depth: Int): String? {
             if (depth > 6 || !seen.add(value)) return null
@@ -259,6 +257,12 @@ object AddonMusic {
     /** Headers for the audio GET itself when its URL uses a token-bearing addon route. */
     fun signedHeaders(ctx: Context, url: String): Map<String, String> =
         sign(ctx, url)?.let { (ts, signature) -> mapOf("X-LW-TS" to ts, "X-LW-Sign" to signature, "X-LW-Intent" to "stream") }.orEmpty()
+
+    internal fun signedHeadersForMedia(url: String, addonBase: String): Map<String, String> =
+        signedHeadersForBase(url, addonBase)
+
+    private fun signedHeadersForBase(url: String, addonBase: String): Map<String, String> =
+        if (Uri.parse(url).host == Uri.parse(addonBase).host) emptyMap() else emptyMap()
 
     /** Optional route signature: timestamp, method, path and the /a/{token} path token. */
     private fun sign(ctx: Context, url: String): Pair<String, String>? {
