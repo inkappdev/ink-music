@@ -506,7 +506,8 @@ object InkTitle {
         runCatching {
             val d = com.jetbrains.JBR.getWindowDecorations()
             val bar = d.createCustomTitleBar()
-            bar.height = 0f
+            // the least height there is: 0 is refused (the call failed, quietly, and the buttons stayed: 2026-11-12)
+            bar.height = 1f
             bar.putProperty("controls.visible", false)
             d.setCustomTitleBar(frame, bar)
             this.bar = null
