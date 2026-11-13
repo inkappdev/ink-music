@@ -34,17 +34,21 @@ object Recognize {
     fun of(song: Song): Found? {
         if (kept.containsKey(song.id)) return kept[song.id]
         val url = Player.where(song).ifEmpty { return null }
-        val from = ((song.duration / 1000.0) * .33).coerceAtLeast(0.0)
-        val (pcm, _) = Crossfade.decode(url, from, 12.0, rate = 16_000) ?: return null
-        val bytes = ByteBuffer.allocate(pcm.size * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
-            pcm.forEach { putShort((it.coerceIn(-1f, 1f) * 32767).toInt().toShort()) }
-        }.array()
-        val found = runCatching { ask(Signature.fromI16(bytes), pcm.size * 1000L / 16_000) }.onFailure { Log.d("recognize: $it") }.getOrNull()
+        val found = at(url, ((song.duration / 1000.0) * .33).coerceAtLeast(0.0))
         kept[song.id] = found
         runCatching { Home.write(file, JSONObject().apply { synchronized(kept) { kept.forEach { (k, f) ->
             put(k, f?.let { JSONObject().put("t", it.title).put("a", it.artist).put("r", it.album ?: "") } ?: JSONObject.NULL)
         } } }.toString()) }
         return found
+    }
+
+    /** What's playing in `url` from `from` seconds on, twelve seconds of it heard (blocking); null when Shazam doesn't know it. */
+    fun at(url: String, from: Double): Found? {
+        val (pcm, _) = Crossfade.decode(url, from.coerceAtLeast(0.0), 12.0, rate = 16_000) ?: return null
+        val bytes = ByteBuffer.allocate(pcm.size * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
+            pcm.forEach { putShort((it.coerceIn(-1f, 1f) * 32767).toInt().toShort()) }
+        }.array()
+        return runCatching { ask(Signature.fromI16(bytes), pcm.size * 1000L / 16_000) }.onFailure { Log.d("recognize: $it") }.getOrNull()
     }
 
     private fun ask(signature: String, ms: Long): Found? {

@@ -219,6 +219,8 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     if (!s.station && !s.episode) MovingCover(s.albumArtist.ifBlank { s.artist.substringBefore(", ") }, s.album, s.title,
                                         accent, n.playing && s.id == n.song.id, Modifier.fillMaxSize())
                                     if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
+                                    // a DJ set: each track as it's heard, typed across the cover (SetHeard)
+                                    if (s.id == n.song.id && SetHeard.isSet(s)) SetMoment()
                                     // the song's way through, inside the cover too (2026-11-12, a tester and Bronson): a band
                                     // along its foot filling in its colour, see-through; clicked or dragged, there in the song
                                     if (s.id == n.song.id) SpectrumOver(s, n.playing, accent, Modifier.fillMaxSize())
@@ -550,6 +552,36 @@ private fun Moment(n: Player.Now, h: Heard?, onTyping: (Boolean) -> Unit) {
         Column(Modifier.graphicsLayer { alpha = 1f - leave.value }, horizontalAlignment = Alignment.CenterHorizontally) {
             BasicText(big, style = headline(56.sp))
             Spacer(Modifier.height(12.dp))
+            BasicText(small, style = pixel(16.sp))
+        }
+    }
+}
+
+/**
+ * A track heard in a DJ set (SetHeard): its title typed across the cover, big, its artist under it, held a while, and
+ * gone, as a lossless song's moment is; again for each new track.
+ */
+@Composable
+private fun SetMoment() {
+    val t = SetHeard.now.collectAsState().value ?: return
+    var big by remember(t) { mutableStateOf("") }
+    var small by remember(t) { mutableStateOf("") }
+    val leave = remember(t) { Animatable(1f) }
+    LaunchedEffect(t) {
+        leave.animateTo(0f, tween(Motion.ENTER, easing = Motion.expo))
+        delay(100)
+        val a = t.title.uppercase(); val b = t.artist.lowercase()
+        for (i in 1..a.length) { big = a.take(i); delay(55) }
+        for (i in 1..b.length) { small = b.take(i); delay(30) }
+        delay(4_000)
+        leave.animateTo(1f, tween(SETTLE, easing = SETTLING))
+    }
+    Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .6f * (1f - leave.value))), contentAlignment = Alignment.Center) {
+        Column(Modifier.padding(24.dp).graphicsLayer { alpha = 1f - leave.value }, horizontalAlignment = Alignment.CenterHorizontally) {
+            BasicText("NOW IN THE SET", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(10.dp))
+            BasicText(big, style = headline(44.sp).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center))
+            Spacer(Modifier.height(10.dp))
             BasicText(small, style = pixel(16.sp))
         }
     }

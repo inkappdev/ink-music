@@ -135,6 +135,7 @@ fun main() {
     Server.start()
     Covers.warm()
     Covers.tidy()
+    SetHeard.start()
     // the next song's cover (and the last's) ready before it plays
     Covers.ahead()
     // the genres you open most, their editors' songs read ahead (their pages open with their block there)
@@ -1565,6 +1566,10 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                     else WholeWords(title.uppercase(), headline((20 + 8 * grown).sp), 2)
                     Spacer(Modifier.height(4.dp))
                     val on by Casting.on.collectAsState()
+                    // a DJ set: the track playing in it, typed out as it's heard (SetHeard)
+                    val inSet by SetHeard.now.collectAsState()
+                    if (SetHeard.isSet(n.song) && inSet != null) TypedLine("now: ${inSet!!.artist.lowercase()} - ${inSet!!.title.lowercase()}", pixel(12.sp, Ink.ink),
+                        Modifier.padding(bottom = 2.dp).clickable(remember { MutableInteractionSource() }, indication = null) { copyText("${inSet!!.artist} - ${inSet!!.title}") })
                     Row {
                         Word(artist.lowercase(), pixel(12.sp, Ink.mid)) {
                             // an episode's show; a song's artist; the artist a station says it's playing
