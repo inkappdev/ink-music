@@ -188,6 +188,7 @@ class Main : ComponentActivity() {
         Seeds.start(this)
         Fresh.start(this)
         Hints.start(this)
+        SetHeard.start(this)
         Stations.curated(this)
         setContent { TvFocus { App() } }
         // the next song's cover (and the last's) ready before it plays (Covers.ahead)
@@ -2932,6 +2933,9 @@ private fun MiniPlayerOf(n: Now, frost: HazeState, onOpen: () -> Unit) {
                 Spacer(Modifier.height(4.dp))
                 BasicText(n.artist.lowercase() + if (n.device.isNotEmpty()) "  on ${n.device.lowercase()}" else "",
                     style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // a DJ set: the track playing in it, typed out as it's heard (SetHeard)
+                val inSet by SetHeard.now.collectAsState()
+                if (SetHeard.isSet(n)) inSet?.let { t -> TypedLine("now: ${t.artist.lowercase()} - ${t.title.lowercase()}", pixel(12.sp), Modifier.padding(top = 2.dp)) }
             }
             Word(if (n.playing) "pause" else "play", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 12.dp) { Playback.toggle() }
         }

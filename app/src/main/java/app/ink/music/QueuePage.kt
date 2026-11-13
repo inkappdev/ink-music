@@ -1,5 +1,7 @@
 package app.ink.music
 
+import kotlinx.coroutines.launch
+
 import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.draw.drawWithContent
@@ -97,6 +99,22 @@ fun QueuePage(onClose: () -> Unit) {
                 val on = now?.radio != false
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Word("similar", pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Playback.radio(!on) }
+                }
+                // a DJ set playing: its tracks as they're heard, the newest first; a tap puts one next (SetHeard)
+                val heardInSet by SetHeard.heard.collectAsState()
+                if (SetHeard.isSet(now) && heardInSet.isNotEmpty()) {
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    var said by remember { mutableStateOf<String?>(null) }
+                    androidx.compose.runtime.LaunchedEffect(said) { if (said != null) { kotlinx.coroutines.delay(1_600); said = null } }
+                    BasicText(said ?: "heard in this set", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
+                    heardInSet.asReversed().take(8).forEachIndexed { i, t ->
+                        Word("${t.at / 60_000}:${"%02d".format((t.at / 1000) % 60)}  ${t.artist.lowercase()} - ${t.title.lowercase()}", pixel(13.sp, if (i == 0) Ink.ink else Ink.mid), touch = 6.dp) {
+                            scope.launch {
+                                val song = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { YouTubeMusic.find(t.title, t.artist) }
+                                if (song != null) { Playback.playNext(song); said = "next: ${t.title.lowercase()}" } else said = "not found"
+                            }
+                        }
+                    }
                 }
             }
             CloseArrow(onClick = onClose)

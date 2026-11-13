@@ -340,7 +340,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                             androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
                                 Column {
                                     Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
-                                    Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster) { t -> Moment(t) { typing = it } }
+                                    Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster) { t -> Moment(t) { typing = it }; if (SetHeard.isSet(t)) SetMoment() }
                                 }
                             }
                         }
@@ -1105,6 +1105,36 @@ private fun sent(quality: String, id: String): Heard? {
     return Heard(id, codec, bits, rate, 0, if (lossless) 0 else m.groupValues[3].toIntOrNull() ?: 0, "", "", -1, false, null)
 }
 
+/**
+ * A track heard in a DJ set (SetHeard): its title typed across the cover, big, its artist under it, held a while and
+ * gone, as a lossless song's moment is; again for each new track.
+ */
+@Composable
+private fun SetMoment() {
+    val t = SetHeard.now.collectAsState().value ?: return
+    var big by remember(t) { mutableStateOf("") }
+    var small by remember(t) { mutableStateOf("") }
+    val leave = remember(t) { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(t) {
+        leave.animateTo(0f, tween(Motion.ENTER, easing = Motion.expo))
+        delay(100)
+        val a = t.title.uppercase(); val b = t.artist.lowercase()
+        for (i in 1..a.length) { big = a.take(i); delay(55) }
+        for (i in 1..b.length) { small = b.take(i); delay(30) }
+        delay(4_000)
+        leave.animateTo(1f, tween(SETTLE, easing = SETTLING))
+    }
+    Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .6f * (1f - leave.value))), contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Column(Modifier.padding(20.dp).graphicsLayer { alpha = 1f - leave.value }, horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+            BasicText("NOW IN THE SET", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(8.dp))
+            BasicText(big, style = headline(34.sp).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center))
+            Spacer(Modifier.height(8.dp))
+            BasicText(small, style = pixel(14.sp))
+        }
+    }
+}
+
 /** The moment's fade, and the word's fade in after it: slow, gentle at both ends. */
 private const val SETTLE = 1_400
 private val SETTLING = androidx.compose.animation.core.CubicBezierEasing(.45f, 0f, .2f, 1f)
@@ -1514,7 +1544,7 @@ private fun TvPlayer(
                     Column(Modifier.width(room)) {
                         androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
                             Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
-                            Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping) }
+                            Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping); if (SetHeard.isSet(t)) SetMoment() }
                         }
                     }
                     // its foot over the cover's, a little in from the left, as far right as it runs
