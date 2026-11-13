@@ -101,7 +101,7 @@ internal object AddonMedia {
                 n.toString().padStart(m.groupValues.getOrNull(1)?.toIntOrNull() ?: 0, '0')
             }
             if (result.contains("$" + "Number") || result.contains("$" + "Time")) throw IOException("Unsupported DASH placeholder")
-            return Uri.parse(base).resolve(result).toString()
+            return java.net.URI(base).resolve(result).toString()
         }
         val start = t["startNumber"]?.toIntOrNull() ?: 1
         val pieces = mutableListOf<ByteArray>()
@@ -122,7 +122,7 @@ internal object AddonMedia {
 
     private fun fetch(raw: String, addonBase: String, max: Long): ByteArray {
         val uri = Uri.parse(raw)
-        if (uri.scheme != "https" || uri.userInfo != null || uri.host.isNullOrBlank()) throw IOException("Unsafe addon media URL")
+        if (uri.scheme != "https" || java.net.URI(raw).rawUserInfo != null || uri.host.isNullOrBlank()) throw IOException("Unsafe addon media URL")
         val base = Uri.parse(addonBase)
         if (uri.host != base.host && (uri.host.contains(".").not() || uri.host.endsWith(".local") ||
             uri.host.endsWith(".localhost") || uri.host.endsWith(".internal"))) throw IOException("Disallowed addon media host")
@@ -131,7 +131,7 @@ internal object AddonMedia {
         connection.readTimeout = 30000
         connection.instanceFollowRedirects = false
         connection.setRequestProperty("Accept", "audio/*,video/mp4,application/dash+xml,*/*")
-        AddonMusic.signedHeadersForMedia(raw, addonBase).forEach { (k,v) -> connection.setRequestProperty(k,v) }
+        AddonMusic.signedHeaders(ctx, raw).forEach { (k,v) -> connection.setRequestProperty(k,v) }
         try {
             val code = connection.responseCode
             if (code !in 200..299) throw IOException("Addon media HTTP $code")
@@ -169,7 +169,7 @@ internal object AddonMedia {
         (b.size >= 4 && String(b, 0, 4, Charsets.US_ASCII) in setOf("fLaC", "OggS", "RIFF", "ID3")) ||
         (b.size >= 8 && String(b, 4, 4, Charsets.US_ASCII) == "ftyp") ||
         (b.size >= 4 && b[0] == 0x1a.toByte() && b[1] == 0x45.toByte() && b[2] == 0xdf.toByte() && b[3] == 0xa3.toByte()) ||
-        (b.size >= 2 && b[0] == 0xff.toByte() && b[1].toInt() and 0xe0 == 0xe0)
+        (b.size >= 2 && b[0] == 0xff.toByte() && (b[1].toInt() and 0xe0) == 0xe0)
 
     private fun extension(url: String): String = when (Uri.parse(url).lastPathSegment?.substringAfterLast('.', "")?.lowercase()) {
         "flac", "mp3", "m4a", "mp4", "ogg", "opus", "wav", "aac", "webm" ->
