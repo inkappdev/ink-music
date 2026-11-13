@@ -235,7 +235,6 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
                                     // a DJ set: each track as it's heard, typed across the cover (SetHeard)
                                     if (SetHeard.isSet(s)) SetSleeve(s.artist, s.title, open)
-                                    if (s.id == n.song.id) SpectrumOver(s, n.playing, accent, Modifier.fillMaxSize())
                                 }
                             }
                         }
