@@ -88,16 +88,18 @@ fun LiveSetsShelf(open: (Page) -> Unit) {
     val clips by LiveSets.clips.collectAsState()
     LaunchedEffect(Unit) { LiveSets.start() }
     if (clips.isEmpty()) return
+    // shuffled each time the shelf's shown, so it's never the same row twice running (2026-11-12, Bronson: "less stale")
+    val sets = remember(clips) { clips.shuffled() }
     Column {
         Section("LIVE DJ SETS", "humano studios, hör berlin, the lot radio, boiler room, kiosk radio")
-        Shelf(clips.size, 300.dp, cover = 16 / 9f) { each ->
-            items(clips, key = { it.id }) { c ->
-                Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {
+        Shelf(sets.size, 300.dp, cover = 16 / 9f) { each ->
+            items(sets, key = { it.id }) { c ->
+                Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, sets)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))
                     UnderCover(c.title, "${c.artist}  ·  ${MusicVideos.ago(c.at)}")
                     androidx.compose.foundation.layout.Row(Modifier.padding(top = 4.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(20.dp)) {
-                        Word("watch", pixel(13.sp), touch = 6.dp) { open(Page.Watch(c, clips)) }
+                        Word("watch", pixel(13.sp), touch = 6.dp) { open(Page.Watch(c, sets)) }
                         Word("listen", pixel(13.sp), touch = 6.dp) { listenTo(c) }
                     }
                 }

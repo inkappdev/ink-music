@@ -26,11 +26,11 @@ object DjSets {
         val each = CHANNELS.map { ch ->
             TubeVideos.uploads(ch.id).filter { it.seconds == 0 || it.seconds >= 20 * 60 }
                 .filter { it.seconds >= 20 * 60 || looksLikeASet(it.title) }
-                .sortedBy { it.days }.take(4)
+                .sortedBy { it.days }.take(8)
                 .map { Set(it.id, dj(it.title), ch.name, it.days, it.seconds) }
                 .filter { it.dj.isNotBlank() }
         }.filter { it.isNotEmpty() }
-        return turns(each, day).take(20)
+        return turns(each, day).take(40)
     }
 
     /**
