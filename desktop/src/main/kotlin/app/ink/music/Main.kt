@@ -1103,10 +1103,9 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
             // this one picked, and then any others clicked: all of them at once from the bar along the foot (PickBar)
             ("play next" to { Player.playNext(s) }).takeIf { !playing },
             ("add to queue" to { Player.add(s) }).takeIf { !playing },
-            // radio: this song, then more like it as the queue runs out: from online only, or from your files only
-            // (2026-11-12, a tester: two, said plainly, in place of one that did either)
-            ("similar, online" to { Player.radioFrom(s, Radio.Mode.ONLINE) }).takeIf { !s.station && !s.episode && !Local.on },
-            ("similar, your files" to { Player.radioFrom(s, Radio.Mode.OFFLINE) }).takeIf { !s.station && !s.episode && Library.songs.value.any { !it.tube && !it.server && it.path.isNotEmpty() } },
+            // similar: this song, then more like it as the queue runs out, from where settings say (sound, similar
+            // songs); it was two here, online and your files, which also changed that setting unseen (2026-11-12)
+            ("similar" to { Player.radioFrom(s) }).takeIf { !s.station && !s.episode },
         ),
         listOfNotNull(
             ((if (s.id in loved) "unlove" else "love") to { Loved.toggle(s) }).takeIf { !s.station && !s.episode },
@@ -1592,17 +1591,9 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                 Heart(airedSong, 3.dp, Modifier.padding(start = 12.dp))
                 Word("add", pixel(14.sp, Ink.mid), Modifier.padding(start = 10.dp), touch = 10.dp) { Nav.open(Page.AddTo(airedSong)) }
             } else Heart(n.song, 3.dp, Modifier.padding(start = 12.dp))
-            // radio by the controls, where it's from said (2026-11-12, a tester: "dedicated, visible buttons ... so users
-            // wouldn't have to guess which mode they're currently using")
-            if (words) {
-                val radioOn by Player.radio.collectAsState()
-                val mode by Player.radioMode.collectAsState()
-                Box(Modifier.padding(start = 14.dp)) {
-                    DropWord(if (radioOn) mode.said else "similar", radioOn,
-                        listOf(Radio.Mode.ONLINE, Radio.Mode.OFFLINE, Radio.Mode.BOTH).map { m -> DropRow(m.word, null, radioOn && mode == m) { Player.radioMode(m); Player.radio(true) } } +
-                            DropRow("off", null, !radioOn) { Player.radio(false) })
-                }
-            }
+            // similar by the controls: lit, up next goes on with songs like these when it runs out; a click turns it on
+            // or off (where they come from is settings', 2026-11-12, Bronson: one control, the same as up next's)
+            if (words) SimilarWord(pixel(14.sp), Modifier.padding(start = 14.dp), "similar")
             // preview on: said, lit, a click turns it off
             val previewing by Preview.secs.collectAsState()
             if (previewing > 0) Word("preview $previewing s", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 10.dp) { Preview.set(0) }
@@ -1722,28 +1713,20 @@ private fun QueuePage(open: (Page) -> Unit, onClose: () -> Unit) {
     }
 }
 
-/**
- * What happens when up next runs out, said as a choice: stop there, or go on with songs like these, and from where (the
- * one chosen lit). Till 2026-11-12 one row: "similar" lit as a label, its three sources lit as a choice, "kept as a
- * list" lit as done, all by brightness alone (Bronson: "a bit confusing"); keeping up next is in a menu now ([saveUpNext]).
- */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+/** Up next's own word for similar ([SimilarWord]): lit, it goes on with songs like these when it runs out. */
 @Composable
-fun RadioWord(modifier: Modifier = Modifier) {
-    val radio by Player.radio.collectAsState()
-    val mode by Player.radioMode.collectAsState()
-    Column(modifier) {
-        androidx.compose.foundation.layout.FlowRow(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            BasicText("when up next ends", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(end = 18.dp, top = 1.dp))
-            Word("stop", pixel(13.sp, if (!radio) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 8.dp) { Player.radio(false) }
-            listOf(Radio.Mode.ONLINE to "similar online", Radio.Mode.OFFLINE to "similar from your files", Radio.Mode.BOTH to "similar from both").forEach { (m, said) ->
-                val on = radio && mode == m
-                Word(said, pixel(13.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 8.dp) {
-                    Player.radioMode(m); Player.radio(true)
-                }
-            }
-        }
-    }
+fun RadioWord(modifier: Modifier = Modifier) = SimilarWord(pixel(13.sp), modifier, "keep playing similar")
+
+/**
+ * Similar on or off, the one control for it wherever it's shown (the bar, up next): lit while on, 35% while off, a
+ * click turns it over. Where its songs come from is a setting (sound, similar songs). Till 2026-11-12 up next spelled
+ * out every source as a row of words beside a "similar" lit as a label, and the bar had a drop-down of them: Bronson,
+ * "a bit confusing", then "looks worse"; his pick, a toggle here and the source in settings.
+ */
+@Composable
+fun SimilarWord(style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier, word: String) {
+    val on by Player.radio.collectAsState()
+    Word(word, style.copy(color = if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { Player.radio(!on) }
 }
 
 /**

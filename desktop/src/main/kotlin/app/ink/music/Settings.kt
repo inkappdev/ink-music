@@ -130,6 +130,8 @@ fun SettingsPage(onClose: () -> Unit) {
                                 if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded").joinToString(" · "), opened) { SoundSetting() }
                             SettingRow("TRANSITIONS", mode, opened) { TransitionsSetting() }
                             SettingRow("EQUALIZER", if (eq.on) eq.label.lowercase() else "off", opened) { EqualizerSetting() }
+                            val similar by Player.radioMode.collectAsState()
+                            SettingRow("SIMILAR SONGS", if (Local.on) Radio.Mode.OFFLINE.word else similar.word, opened) { SimilarSetting() }
                             RowsEnd()
                         }
                         // what's kept on this computer (2026-11-11: its own part, out of sound)
@@ -828,6 +830,24 @@ private fun PrivateSetting() {
     androidx.compose.foundation.layout.Row {
         Word("on", pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Private.set(true) }
         Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { Private.set(false) }
+    }
+}
+
+/**
+ * Where similar's songs come from, when up next runs out (2026-11-12, Bronson: the source here, keep playing similar a
+ * word of its own by up next): YouTube Music only, never your files; only the files on this computer; or both.
+ */
+@Composable
+private fun SimilarSetting() {
+    val mode by Player.radioMode.collectAsState()
+    SettingHead("SIMILAR SONGS")
+    BasicText(if (Local.on) "local files only is on: similar songs come from your files"
+        else "when up next runs out and keep playing similar is on, more songs like these come from", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    if (!Local.on) androidx.compose.foundation.layout.Row {
+        listOf(Radio.Mode.ONLINE, Radio.Mode.OFFLINE, Radio.Mode.BOTH).forEach { m ->
+            Word(m.word, pixel(14.sp, if (mode == m) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.radioMode(m) }
+        }
     }
 }
 
