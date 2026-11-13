@@ -75,19 +75,23 @@ class SetTracks(var dir: File? = null) {
         return out
     }
 
-    /** What was heard at `at` (null: nothing known); `live`, the moment playing (its next ask set by what came of it). */
-    fun found(id: String, at: Long, title: String?, artist: String?, now: Long, live: Boolean) {
-        if (set != id) return
+    /**
+     * What was heard at `at` (null: nothing known); `live`, the moment playing (its next ask set by what came of it).
+     * The track, if it's one new to this set's list (the apps keep every one in a list of their own).
+     */
+    fun found(id: String, at: Long, title: String?, artist: String?, now: Long, live: Boolean): Track? {
+        if (set != id) return null
         if (at > asked) asked = at
         if (live) nextLive = now + if (title != null) 120_000 else 45_000
-        if (title.isNullOrBlank()) { keep(); return }
+        if (title.isNullOrBlank()) { keep(); return null }
         val a = artist.orEmpty()
         // the same track heard again near where it was: once
-        if (heard.value.any { it.title.equals(title, true) && it.artist.equals(a, true) && kotlin.math.abs(it.at - at) < 600_000 }) return
+        if (heard.value.any { it.title.equals(title, true) && it.artist.equals(a, true) && kotlin.math.abs(it.at - at) < 600_000 }) return null
         val t = Track(title, a, at)
         heard.value = (heard.value + t).sortedBy { it.at }
         added.value = t
         keep()
+        return t
     }
 
     /** The track playing at `pos`, as far as it's known: the last heard at or just after it. */

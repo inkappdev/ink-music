@@ -56,7 +56,9 @@ object SetHeard {
                         ?: YouTube.stream(id.removePrefix("y"), small = true)?.also { url = id to it } ?: continue
                     due.forEachIndexed { k, p ->
                         val found = runCatching { Recognize.at(link, p / 1000.0) }.getOrNull()
-                        tracks.found(id, p, found?.title, found?.artist, System.currentTimeMillis(), live = k == due.lastIndex)
+                        val new = tracks.found(id, p, found?.title, found?.artist, System.currentTimeMillis(), live = k == due.lastIndex)
+                        // every track found, kept in "from dj sets" (2026-11-12, Bronson: a playlist of every song it's found)
+                        if (new != null) runCatching { YouTube.find(new.title, new.artist) }.getOrNull()?.let { HereLists.fromSet(it) }
                         if (k < due.lastIndex) delay(2_000)
                     }
                 }

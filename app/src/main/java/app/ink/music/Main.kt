@@ -316,6 +316,8 @@ sealed interface Page {
     data object Import : Page
     data object Equalizer : Page
     data object HandOver : Page
+    /** Every song heard in the DJ sets you've played (FromSets). */
+    data object FromSets : Page
     data class Mood(val mood: TubeMood) : Page
     data class Festival(val name: String) : Page
     data class SettingsPart(val part: String) : Page
@@ -482,6 +484,7 @@ private fun App() {
                         is Page.TubeArtist -> ArtistPage(p.artist.name, pages, p.artist.id)
                         is Page.Weekly -> WeeklyPage(p.week, pages)
                         Page.Kept -> KeptPage(pages)
+                        Page.FromSets -> FromSetsPage(pages)
                         is Page.Smart -> SmartPage(p.id, pages)
                         is Page.SmartEdit -> SmartEditPage(p.id, pages)
                         Page.Import -> ImportPage(pages)
@@ -769,6 +772,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                         // what's on the phone to play with no signal (your server's, YouTube's)
                         val keptIds by Offline.kept.collectAsState()
                         if (keptIds.isNotEmpty()) ListRow("kept on this phone", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}, offline") { pages.open(Page.Kept) }
+                        val fromSets by FromSets.songs.collectAsState()
+                        if (fromSets.isNotEmpty()) ListRow("from dj sets", "${fromSets.size} ${if (fromSets.size == 1) "song" else "songs"}, heard in the sets you played") { pages.open(Page.FromSets) }
                         // lists that fill themselves from rules (SmartLists), and a new one
                         SmartRows(pages)
                         Spacer(Modifier.height(10.dp))
@@ -1782,6 +1787,37 @@ private fun TvArtistSide(name: String, i: ArtistInfo?, room: Dp, records: Int, y
         Spacer(Modifier.height(16.dp))
         BasicText(said.lowercase(), style = pixel(12.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 18.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
     }
+}
+
+/** Every song heard in the DJ sets you've played (FromSets), the newest first: played, shuffled, mixed, like any list. */
+@Composable
+private fun FromSetsPage(pages: Pages) {
+    val covers by ListCovers.on.collectAsState()
+    val songs by FromSets.songs.collectAsState()
+    val list = pageList()
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                BasicText("FROM DJ SETS", style = headline(36.sp), maxLines = 2)
+                Spacer(Modifier.height(6.dp))
+                BasicText("${songs.size} songs heard in the sets you played, the newest first", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(14.dp))
+                if (songs.isNotEmpty()) Row {
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(songs, 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                    MixWord("from dj sets", songs, Modifier.padding(end = 26.dp))
+                    CoversWord()
+                }
+                MixProgress("from dj sets")
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(songs, i) } } }
+    } }
 }
 
 /** The songs kept on the phone (your server's, YouTube Music's), to play with no signal; each let go from its options. */
@@ -3037,6 +3073,10 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "view") { ListsView() }
+        if (FromSets.songs.value.isNotEmpty()) item(key = "fromSets") {
+            val fromSets by FromSets.songs.collectAsState()
+            ListTile("from dj sets", "${fromSets.size} ${if (fromSets.size == 1) "song" else "songs"}", { pages.open(Page.FromSets) }) { Mosaic(fromSets, "from dj sets") }
+        }
         if (lovedIds.isNotEmpty()) item(key = "loved") {
             ListTile("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", { pages.open(Page.Loved) }, heart = true) { Mosaic(loved, "loved") }
         }

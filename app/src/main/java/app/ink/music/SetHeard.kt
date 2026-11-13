@@ -24,6 +24,38 @@ import kotlinx.coroutines.launch
  * (Recognize); a track that's new is [now], typed across the cover and under the set in the mini player, and kept in the
  * set's tracklist ([heard], up next). Asked only while ink music is on screen; back, the stretch missed is asked over (SetTracks).
  */
+/**
+ * Every track ever heard in a DJ set, found on YouTube Music, newest first (2026-11-12, Bronson: "makes you a playlist of
+ * all the songs its ever found in the dj sets you listened to"): lists' from dj sets. In files/dj-set-songs.json.
+ */
+object FromSets {
+    val songs = MutableStateFlow<List<Song>>(emptyList())
+    private fun file(c: Context) = java.io.File(c.filesDir, "dj-set-songs.json")
+
+    fun load(c: Context) {
+        songs.value = runCatching {
+            val a = org.json.JSONArray(file(c).readText())
+            (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+                val v = o.getString("id").removePrefix("y")
+                Song(id = "y$v", uri = android.net.Uri.parse("ytm://$v"), title = o.getString("title"), artist = o.getString("artist"),
+                    album = o.optString("album"), albumId = "y$v", albumArtist = o.getString("artist"), duration = 0, disc = 1, track = 0, year = 0,
+                    format = "youtube").also(YouTubeMusic::remember)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** One more, at the top (each song once). */
+    @Synchronized fun add(c: Context, s: Song) {
+        if (songs.value.any { it.id == s.id }) return
+        songs.value = listOf(s) + songs.value
+        runCatching {
+            Keep.write(file(c), org.json.JSONArray(songs.value.map { x ->
+                org.json.JSONObject().put("id", x.id).put("title", x.title).put("artist", x.artist).put("album", x.album)
+            }).toString())
+        }
+    }
+}
+
 object SetHeard {
     // what to ask when, and the list in the set's order, shared with the computer (SetTracks)
     private val tracks = SetTracks()
@@ -45,6 +77,7 @@ object SetHeard {
         started = true
         val app = c.applicationContext
         tracks.dir = app.filesDir
+        FromSets.load(app)
         scope.launch {
             var current: String? = null
             while (true) {
@@ -60,7 +93,9 @@ object SetHeard {
                 due.forEachIndexed { k, p ->
                     val found = runCatching { Recognize.at(app, song, p) }.getOrNull()
                     android.util.Log.d("ink-recognize", "set ${song.id} at ${p / 1000} s: ${found?.let { it.artist + " - " + it.title } ?: "nothing"}")
-                    tracks.found(song.id, p, found?.title, found?.artist, System.currentTimeMillis(), live = k == due.lastIndex)
+                    val new = tracks.found(song.id, p, found?.title, found?.artist, System.currentTimeMillis(), live = k == due.lastIndex)
+                    // every track found, kept in from dj sets (FromSets)
+                    if (new != null) runCatching { YouTubeMusic.find(new.title, new.artist) }.getOrNull()?.let { FromSets.add(app, it) }
                     if (k < due.lastIndex) delay(2_000)
                 }
                 now.value = tracks.at(Playback.now.value?.positionNow() ?: n.positionNow())

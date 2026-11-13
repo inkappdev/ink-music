@@ -41,6 +41,15 @@ object HereLists {
         return m
     }
 
+    /** The list every track heard in a DJ set goes into (SetHeard), made the first time there's one. */
+    const val DJ_SETS = PREFIX + "djsets"
+
+    /** A song heard in a DJ set, onto the end of "from dj sets" (made if it isn't there; each song once). */
+    fun fromSet(s: Song) {
+        if (all.value.none { it.id == DJ_SETS }) { all.value = all.value + Mine(DJ_SETS, "from dj sets", emptyList()); save() }
+        add(DJ_SETS, listOf(s))
+    }
+
     /** These songs onto the end of a list (each once). */
     fun add(id: String, songs: List<Song>) {
         all.value = all.value.map { m -> if (m.id != id) m else m.copy(songs = (m.songs + songs.filter(::fits)).distinctBy { it.id }) }
