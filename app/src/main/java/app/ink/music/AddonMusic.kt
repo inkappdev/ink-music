@@ -145,11 +145,11 @@ object AddonMusic {
         val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<JSONObject, Boolean>())
         fun find(value: JSONObject, depth: Int): String? {
             if (depth > 6 || !seen.add(value)) return null
-            for (key in listOf("url", "directUrl", "streamUrl", "downloadUrl", "mediaUrl", "audioUrl", "dataUrl")) {
+            for (key in listOf("url", "directUrl", "streamUrl", "downloadUrl", "mediaUrl", "audioUrl", "dataUrl", "manifestUrl", "mpdUrl", "dashUrl", "hlsUrl")) {
                 val raw = value.optString(key).trim()
                 if (raw.startsWith("https://") || raw.startsWith("http://")) return raw
             }
-            for (key in listOf("stream", "data", "result", "audio", "media")) {
+            for (key in listOf("stream", "data", "result", "audio", "media", "manifest", "dash", "hls")) {
                 when (val nested = value.opt(key)) {
                     is JSONObject -> find(nested, depth + 1)?.let { return it }
                     is String -> nested.trim().takeIf { it.startsWith("https://") || it.startsWith("http://") }?.let { return it }
@@ -163,7 +163,7 @@ object AddonMusic {
     /** BitChord/Lokal addons may return an array directly or wrap it in data/results/items. */
     private fun tracksArray(response: JSONObject): org.json.JSONArray? {
         response.optJSONArray("tracks")?.let { return it }
-        for (key in listOf("data", "results", "items")) {
+        for (key in listOf("data", "results", "items", "result")) {
             when (val nested = response.opt(key)) {
                 is org.json.JSONArray -> return nested
                 is JSONObject -> nested.optJSONArray("tracks")?.let { return it }
