@@ -97,7 +97,6 @@ fun QueuePage(onClose: () -> Unit) {
                 val on = now?.radio != false
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Word("similar", pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Playback.radio(!on) }
-                    BasicText(if (on) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
                 }
             }
             CloseArrow(onClick = onClose)

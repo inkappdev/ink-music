@@ -54,8 +54,29 @@ object Radio {
         return (if (near.size >= 3) near else read.sortedBy { Tempos.apart(it.second.bpm, tempo) }.take(5)).take(BATCH).map { it.first }
     }
 
+    // similar's songs left inside half a minute this session, by artist (2026-11-12, Bronson: "smarter logic")
+    private val skips = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    fun skipped(artist: String) { val w = artist.lowercase().substringBefore(",").trim(); skips[w] = (skips[w] ?: 0) + 1 }
+
+    /**
+     * What you make of a song's artist, as a part of its score (2026-11-12, Bronson: "could that use smarter logic?"):
+     * an artist you're near lifted, more so the less you've been wandering lately (your appetite: the more you take to
+     * new things, the less the familiar is favoured); one of similar's skipped this session lowered, twice, gone; one
+     * said not for you, gone. Null: leave it out.
+     */
+    private fun yours(artist: String, taste: Taste, refused: Set<String>): Float? {
+        val w = artist.lowercase().substringBefore(",").trim()
+        if (w in refused) return null
+        val skipped = skips[w] ?: 0
+        if (skipped >= 2) return null
+        val near = taste.of(artist.substringBefore(", ")).toFloat()
+        return near * (1f - taste.appetite.toFloat()) * .6f - skipped * .5f
+    }
+
     /** The seeds' lists (in the seeds' order) made one: scored, sifted, no artist twice running. */
     fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH): List<Song> {
+        val taste = Fresh.taste.value
+        val refused = Fresh.refused().map { it.lowercase().substringBefore(",").trim() }.toSet()
         // a seed's own kind of version is fine (a slowed song's radio may be slowed songs)
         val seedVersions = seeds.any { versions.containsMatchIn(it.title) }
         val seedKeys = seeds.map { key(it.title, it.artist) }.toHashSet()
@@ -69,8 +90,11 @@ object Radio {
                 found.getOrPut(key(s.title, s.artist)) { Found(s, 0f) }.score += w
             }
         }
+        // you, in it: the near lifted, the skipped and the turned down lowered or left out
+        val gone = HashSet<String>()
+        found.forEach { (k, f) -> val y = yours(f.song.artist, taste, refused); if (y == null) gone += k else f.score += y }
         val by = HashMap<String, Int>()
-        val picked = found.entries.sortedByDescending { it.value.score }.filter { (k, f) ->
+        val picked = found.entries.filter { it.key !in gone }.sortedByDescending { it.value.score }.filter { (k, f) ->
             val s = f.song
             val who = s.artist.lowercase().substringBefore(",").trim()
             if (s.id in queued || k in queued || k in seedKeys || s.id in heard || k in heard) return@filter false

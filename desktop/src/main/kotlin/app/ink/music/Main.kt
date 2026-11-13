@@ -1725,7 +1725,6 @@ fun RadioWord(modifier: Modifier = Modifier) {
                 if (on) Player.radio(false) else { Player.radioMode(m); Player.radio(true) }
             }
         }
-        BasicText(if (radio) " then more like these" else " off: stops at the end", style = pixel(12.sp, Ink.mid))
         // what's up next, a shuffle or a radio run you liked, kept as a list of yours (2026-11-12, a tester: "these
         // combinations can be lost every time the shuffle button is pressed again")
         val queue by Player.queue.collectAsState()

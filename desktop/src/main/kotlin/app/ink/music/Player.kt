@@ -492,6 +492,8 @@ object Player {
         // an episode left (on to the next, or played out): where it got to kept
         timing?.takeIf { it.episode }?.let { Pods.keep(it, lastMs, timingLength) }
         timing?.takeIf { !it.station && !it.episode && !Private.on.value }?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
+        // one of similar's left inside half a minute: its artist heard less of for the session (Radio.skipped)
+        timing?.takeIf { it.id in fromRadio && !it.station && playedMs in 1 until 30_000 }?.let { Radio.skipped(it.artist) }
         timing = s; timingAt = System.currentTimeMillis(); playedMs = 0; lastMs = 0; timingLength = s?.duration ?: 0
     }
 

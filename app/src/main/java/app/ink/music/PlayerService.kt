@@ -397,7 +397,7 @@ class PlayerService : MediaLibraryService() {
         net.execute {
             // a mix's queue (its first song the mix's): radio keeps to its tempo
             val tempo = Mixes.keeping(this, firstId)
-            val more = Radio.after(this, seeds, queued, tempo)
+            val more = Radio.after(this, seeds, queued, tempo, synchronized(fromRadio) { fromRadio.toSet() })
             android.util.Log.d("ink-radio", "after ${seeds.joinToString(" + ") { it.title + " - " + it.artist }}: ${more.size} (${more.joinToString { it.title + " - " + it.artist }})")
             if (more.isEmpty()) return@execute
             main.post {

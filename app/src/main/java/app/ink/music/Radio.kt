@@ -32,14 +32,22 @@ object Radio {
      * Songs to follow the seeds (blocking; the last song first): none already queued (`queued`: ids, and
      * title/artist keys, so the same song from another source counts too).
      */
-    fun after(c: Context, seeds: List<Seed>, queued: Set<String>, tempo: Double? = null): List<Song> {
+    fun after(c: Context, seeds: List<Seed>, queued: Set<String>, tempo: Double? = null, fromSimilar: Set<String> = emptySet()): List<Song> {
         if (seeds.isEmpty()) return emptyList()
         val lists = seeds.take(WEIGHT.size).map { related(c, it) }
         val since = System.currentTimeMillis() - RECENT
-        val heard = History.read(c).filter { it.at >= since }.flatMap { listOf(it.id, key(it.title, it.artist)) }.toHashSet()
-        if (tempo == null) return rank(seeds, lists, queued, heard)
-        return atTempo(c, rank(seeds, lists, queued, heard, batch = 30), tempo)
+        val recent = History.read(c).filter { it.at >= since }
+        val heard = recent.flatMap { listOf(it.id, key(it.title, it.artist)) }.toHashSet()
+        // you, in it (2026-11-12, Bronson: "smarter logic"): similar's own songs left inside half a minute, by artist
+        // (once, lower; twice, out for now), and artists said not for you, out
+        val skips = History.skips(c).filter { it.at >= since && it.id in fromSimilar }.groupingBy { who(it.artist) }.eachCount()
+        val refused = Fresh.turnedDownNames(c).map(::who).toSet()
+        val ranked = { batch: Int -> rank(seeds, lists, queued, heard, batch, skips, refused) }
+        if (tempo == null) return ranked(BATCH)
+        return atTempo(c, ranked(30), tempo)
     }
+
+    private fun who(a: String) = a.lowercase().substringBefore(",").trim()
 
     /**
      * Radio after a mix (Mixes: the queue's first song the mix's), keeping to its tempo (2026-11-08): radio's songs read
@@ -62,7 +70,8 @@ object Radio {
     }
 
     /** The seeds' lists (in the seeds' order) made one: scored, sifted, no artist twice running. */
-    fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH): List<Song> {
+    fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH,
+             skips: Map<String, Int> = emptyMap(), refused: Set<String> = emptySet()): List<Song> {
         // a seed's own kind of version is fine (a slowed song's radio may be slowed songs)
         val seedVersions = seeds.any { versions.containsMatchIn(it.title) }
         val seedKeys = seeds.map { key(it.title, it.artist) }.toHashSet()
@@ -76,8 +85,11 @@ object Radio {
                 found.getOrPut(key(s.title, s.artist)) { Found(s, 0f) }.score += w
             }
         }
+        // skipped once this session, lower; twice, or said not for you, out
+        found.values.forEach { f -> f.score -= .5f * (skips[who(f.song.artist)] ?: 0) }
         val by = HashMap<String, Int>()
-        val picked = found.entries.sortedByDescending { it.value.score }.filter { (k, f) ->
+        val picked = found.entries.filter { (_, f) -> who(f.song.artist).let { it !in refused && (skips[it] ?: 0) < 2 } }
+            .sortedByDescending { it.value.score }.filter { (k, f) ->
             val s = f.song
             val who = s.artist.lowercase().substringBefore(",").trim()
             if (s.id in queued || k in queued || k in seedKeys || s.id in heard || k in heard) return@filter false
