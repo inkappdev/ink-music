@@ -30,7 +30,8 @@ object OnAirSong {
 fun aired(n: Now?): OnAir.Said? {
     val s = n?.song?.takeIf { it.station } ?: return null
     if (n.album != s.title || n.title.isBlank() || n.title == s.title || n.artist.isBlank() || n.artist == s.artist) return null
-    return OnAir.Said(n.title, n.artist)
+    // a song heard in the stream (OnAir's hearing): its artist without the word after it
+    return OnAir.Said(n.title, n.artist.removeSuffix(OnAir.HEARD), heard = n.artist.endsWith(OnAir.HEARD))
 }
 
 /** That song found on YouTube Music (null while it's looked for, or where there's none; the play build has none). */

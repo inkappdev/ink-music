@@ -91,6 +91,36 @@ object Tempos {
     }
 
     /**
+     * What a station's playing now, a stretch of it as mono floats at its own rate (blocking): its stream read into a
+     * file for `ms` and a little more (a live stream has no length and no ranges to ask by, so the phone's extractor
+     * can't read it where it is), then decoded. A second connection to the station, closed when it's read. For
+     * [AirHeard], what a station that says nothing is playing.
+     */
+    fun live(c: Context, url: String, ms: Long = 12_000): Pair<FloatArray, Int>? {
+        val tmp = File(c.cacheDir, "air-${url.hashCode()}.part")
+        try {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10_000; conn.readTimeout = 15_000
+            conn.setRequestProperty("User-Agent", "ink music")
+            try {
+                if (conn.responseCode != 200) return null
+                // as long as the stretch takes to come (a station sends live, a few seconds' burst first), a megabyte at most
+                val until = System.currentTimeMillis() + ms + 2_500
+                conn.inputStream.use { inp -> tmp.outputStream().use { out ->
+                    val buf = ByteArray(16 * 1024); var left = 1_048_576
+                    while (left > 0 && System.currentTimeMillis() < until) { val n = inp.read(buf, 0, minOf(buf.size, left)); if (n < 0) break; out.write(buf, 0, n); left -= n }
+                } }
+            } finally { conn.disconnect() }
+            val x = MediaExtractor()
+            try {
+                x.setDataSource(tmp.path)
+                val track = (0 until x.trackCount).firstOrNull { x.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true } ?: return null
+                return decode(x, track, x.getTrackFormat(track), 0, ms)
+            } finally { x.release() }
+        } catch (e: Exception) { return null } finally { tmp.delete() }
+    }
+
+    /**
      * A stretch of a song as mono floats at its own rate (blocking): from where the phone has it, a YouTube song's stream
      * (a small one), a file, a link; the same decoding as its tempo's (Recognize hears a DJ set's tracks from it).
      */

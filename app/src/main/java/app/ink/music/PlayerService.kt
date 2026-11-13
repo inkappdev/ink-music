@@ -734,7 +734,7 @@ class PlayerService : MediaLibraryService() {
         // the widget shows the queue as it was left (paused), till the music says otherwise
         player.currentMediaItem?.let { Widget.show(this, it.mediaId, it.mediaMetadata.title?.toString().orEmpty(), it.mediaMetadata.artist?.toString().orEmpty(), false) }
         radio = prefs.getBoolean("radio", true)
-        onAir = OnAir(player, main, net)
+        onAir = OnAir(player, main, net, this)
         // a paired computer told what plays (Sync): the session's player, so a speaker's what's told and paused
         live = Live(this, { onSpeaker }, { onSpeaker?.device.orEmpty() })
         player.addListener(object : Player.Listener {

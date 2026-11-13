@@ -23,9 +23,68 @@ import java.util.concurrent.Executor
  * KUTX and WFPK. The picture stays the station's own sleeve ([StationSleeve], moving), whatever cover
  * the station sends (2026-10-27: theirs looked bad beside it). In the player's process; logged as `ink-onair`.
  */
-class OnAir(private val player: Player, private val main: Handler, private val net: Executor) {
-    /** What a station says it's playing: the song (no artist: a show, a line), and its record's cover if it gives one. */
-    data class Said(val title: String, val artist: String?, val art: String? = null)
+class OnAir(private val player: Player, private val main: Handler, private val net: Executor, private val c: android.content.Context? = null) {
+    /**
+     * What a station says it's playing: the song (no artist: a show, a line), and its record's cover if it gives one.
+     * `heard`: not said by the station but heard in its stream ([hearing]), its artist shown with [HEARD] after it.
+     */
+    data class Said(val title: String, val artist: String?, val art: String? = null, val heard: Boolean = false)
+
+    /** The playing station's song as heard, while it's shown ([hearing]); and the show's name it came in, if one was said. */
+    private var heardNow: Said? = null
+    private var showNow: Said? = null
+    /** The playing station named its own song last it spoke (ICY or its playlist): nothing to hear. */
+    private var stationSays = false
+    private var hearingFor: String? = null
+    private var hearNext = 0L
+    private var misses = 0
+    @Volatile private var asking = false
+
+    /**
+     * A station that says nothing, heard (2026-11-12, Bronson, as the computer's AirHeard): twelve seconds of its stream
+     * fingerprinted and the song said where its words go, "heard" after the artist. 20 s after it starts saying
+     * nothing, 2 min after a song's found, 45 s after a miss, every 3 min after four misses running; never while the
+     * station names its songs; only with the screen on (a phone's data and battery; the lock screen still shows what
+     * was heard last). Never a listen: stations aren't scrobbled or kept in your history.
+     */
+    private val hearing = object : Runnable {
+        override fun run() {
+            main.postDelayed(this, 5_000)
+            val ctx = c ?: return
+            if (asking) return
+            val item = player.currentMediaItem
+            val id = item?.mediaId?.takeIf { it.startsWith("s") && player.isPlaying }
+            if (id == null) { if (item?.mediaId?.startsWith("s") != true) hearingFor = null; return }
+            val now = System.currentTimeMillis()
+            if (id != hearingFor) { hearingFor = id; hearNext = now + 20_000; misses = 0; heardNow = null; showNow = null; stationSays = false }
+            if (stationSays) { hearNext = now + 20_000; misses = 0; return }
+            if (now < hearNext) return
+            val screenOn = (ctx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
+            if (!screenOn) return
+            val url = item.localConfiguration?.uri?.toString() ?: item.requestMetadata.mediaUri?.toString() ?: return
+            asking = true
+            net.execute {
+                val found = runCatching { Recognize.live(ctx, url) }.getOrNull()
+                android.util.Log.d("ink-recognize", "station $id: ${found?.let { it.artist + " - " + it.title } ?: "nothing"}")
+                main.post {
+                    asking = false
+                    val after = System.currentTimeMillis()
+                    if (player.currentMediaItem?.mediaId != id || stationSays) return@post
+                    if (found != null) {
+                        misses = 0; hearNext = after + 120_000
+                        heardNow = Said(found.title, found.artist, heard = true)
+                        say(id, heardNow, fromHearing = true)
+                    } else {
+                        misses++; hearNext = after + if (misses >= 4) 180_000L else 45_000L
+                        // what was heard before is likely over: back to the show's name, or the station's own words
+                        if (heardNow != null) { heardNow = null; say(id, showNow, fromHearing = true) }
+                    }
+                }
+            }
+        }
+    }
+
+    init { if (c != null) main.postDelayed(hearing, 5_000) }
 
     /** A station's own words, kept as first played: what the queue keeps and what a break puts back. */
     private val plain = HashMap<String, MediaMetadata>()
@@ -69,26 +128,41 @@ class OnAir(private val player: Player, private val main: Handler, private val n
         }
     }
 
-    fun stop() { main.removeCallbacks(poll); polling = null }
+    fun stop() { main.removeCallbacks(poll); polling = null; main.removeCallbacks(hearing) }
 
     private fun stationName(id: String) = plain[id]?.title?.toString() ?: player.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty()
 
     /** The playing station's words: the song and its cover, or its own (its sleeve) with nothing said. */
-    private fun say(id: String, said: Said?) {
+    private fun say(id: String, given: Said?, fromHearing: Boolean = false) {
+        var said = given
+        if (!fromHearing) {
+            // the station's own word: its song wins over what was heard; a show's name or its silence leaves a song
+            // that was heard on show (the show's name kept for after)
+            stationSays = said?.artist?.isNotBlank() == true
+            if (stationSays) heardNow = null
+            else {
+                if (said != null) showNow = said
+                heardNow?.let { said = it }
+            }
+        }
         val at = player.currentMediaItemIndex
         val item = player.currentMediaItem?.takeIf { it.mediaId == id } ?: return
         val own = plain.getOrPut(id) { item.mediaMetadata }
-        val md = if (said == null) own else own.buildUpon()
-            .setTitle(said.title).setArtist(said.artist ?: own.artist).setAlbumTitle(own.title)
+        val s = said
+        val md = if (s == null) own else own.buildUpon()
+            .setTitle(s.title).setArtist(s.artist?.let { if (s.heard) it + HEARD else it } ?: own.artist).setAlbumTitle(own.title)
             // always the station's own sleeve, moving, never the cover it sends (2026-10-27: they looked
             // bad, the sleeve is ink's): the song's words change, the picture stays the station's
             .setArtworkUri(own.artworkUri).build()
         if (md == item.mediaMetadata) return
-        android.util.Log.i("ink-onair", "$id: ${said?.let { "${it.artist} - ${it.title}" + (it.art?.let { a -> " [$a]" } ?: "") } ?: "(its own)"}")
+        android.util.Log.i("ink-onair", "$id: ${s?.let { "${it.artist} - ${it.title}" + (if (it.heard) " (heard)" else "") + (it.art?.let { a -> " [$a]" } ?: "") } ?: "(its own)"}")
         player.replaceMediaItem(at, item.buildUpon().setMediaMetadata(md).build())
     }
 
     companion object {
+        /** After a heard song's artist, wherever it's shown (the player, the lock screen, the car): not the station's word. */
+        const val HEARD = "  ·  heard"
+
         /** The covers the stations gave this run: the only links the cover provider fetches. */
         val arts: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
