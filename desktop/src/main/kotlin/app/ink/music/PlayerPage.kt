@@ -678,27 +678,46 @@ private fun RecordSide(n: Player.Now, open: (Page) -> Unit) {
     if (SetHeard.isSet(n.song)) return SetTracklist()
     val albums by Library.albums.collectAsState()
     val queue by Player.queue.collectAsState()
-    val record = remember(albums, n.song.albumId) { albums.firstOrNull { it.id == n.song.albumId }?.songs }
-        // a YouTube record played whole: its songs as the queue has them
-        ?: queue.filter { it.albumId == n.song.albumId && it.album.isNotEmpty() }.takeIf { it.size > 1 }
-    if (record == null) {
+    val s0 = n.song
+    // what you have of it: the record in your library, else the song playing where it's yours (not YouTube's)
+    val mine = remember(albums, s0.albumId, s0.id) { albums.firstOrNull { it.id == s0.albumId }?.songs ?: listOfNotNull(s0.takeIf { !it.tube }) }
+    // the record whole from YouTube Music, as its page has it (2026-11-12, Bronson: "are we able to fill the record in?");
+    // a YouTube record played whole, its songs as the queue has them
+    val played = remember(queue, s0.albumId) { queue.filter { it.albumId == s0.albumId && it.album.isNotEmpty() }.takeIf { it.size > 1 } }
+    val artist = s0.albumArtist.ifBlank { s0.artist.substringBefore(", ") }
+    val whole by androidx.compose.runtime.produceState<List<Song>?>(played, s0.album, artist) {
+        if (played == null && s0.album.isNotBlank() && !s0.station && !s0.episode) value = runCatching { YouTube.whole(s0.album, artist) }.getOrNull()
+    }
+    val record = remember(mine, whole) { filled(mine, whole) }
+    val yours = remember(mine) { mine.mapTo(HashSet()) { it.id } }
+    if (record.size <= 1) {
         Column {
-            BasicText("just this song from ${n.song.album.ifEmpty { "its record" }.lowercase()} is here", style = pixel(13.sp, Ink.mid))
-            if (n.song.album.isNotEmpty()) Word("its record", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Record(n.song.albumId)) }
+            BasicText("just this song from ${s0.album.ifEmpty { "its record" }.lowercase()} is here", style = pixel(13.sp, Ink.mid))
+            if (s0.album.isNotEmpty()) Word("its record", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Record(s0.albumId)) }
         }
         return
     }
+    // some yours, some YouTube Music's: said above it, and each of YouTube's dimmed and marked, as on the record's page
+    val mixed = yours.isNotEmpty() && record.any { it.id !in yours }
+    // the one playing: by id, else by name (a YouTube song's video can be another id than the record's track)
+    val at = record.indexOfFirst { it.id == s0.id }.takeIf { it >= 0 } ?: record.indexOfFirst { trackKey(it.title) == trackKey(s0.title) }
     val list = rememberLazyListState()
-    val at = record.indexOfFirst { it.id == n.song.id }
-    LaunchedEffect(n.song.id) { if (at > 3) list.animateScrollToItem(at - 3) }
-    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) {
-        itemsIndexed(record, key = { _, s -> s.id }) { i, s ->
-            val on = s.id == n.song.id
-            Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(record, i) })
-                .padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText((if (s.track > 0) s.track else i + 1).toString().padStart(2, '0'), style = headline(18.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(44.dp))
-                BasicText(s.title.uppercase(), style = headline(20.sp, if (on) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.padding(start = 16.dp))
+    LaunchedEffect(s0.id, record.size) { if (at > 3) list.animateScrollToItem(at - 3) }
+    Column {
+        if (mixed) BasicText("${record.count { it.id in yours }} of ${record.size} here · the rest from youtube music", style = pixel(12.sp, Ink.mid),
+            modifier = Modifier.padding(bottom = 8.dp))
+        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) {
+            itemsIndexed(record, key = { _, s -> s.id }) { i, s ->
+                val on = i == at
+                val theirs = mixed && s.id !in yours
+                Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(record, i) })
+                    .padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText((if (whole == null && s.track > 0) s.track else i + 1).toString().padStart(2, '0'), style = headline(18.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(44.dp))
+                    BasicText(s.title.uppercase(), style = headline(20.sp, if (on) Ink.ink else if (theirs) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (theirs) BasicText("youtube music", style = pixel(12.sp, Ink.dim), maxLines = 1, modifier = Modifier.padding(start = 12.dp))
+                    Spacer(Modifier.weight(1f))
+                    if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.padding(start = 16.dp))
+                }
             }
         }
     }

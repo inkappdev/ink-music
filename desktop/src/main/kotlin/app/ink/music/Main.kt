@@ -1404,13 +1404,16 @@ fun Critics(title: String, artist: String, most: Int = 3, across: Boolean = fals
 /**
  * A record's songs, yours and the rest of it from YouTube Music's tracklist ([YouTube.whole]): its order, yours in
  * their places (matched by name, a version in brackets aside), what you haven't from YouTube Music, yours not on it
- * after. Not the same record (under half of yours found in it), or nothing more to it: yours as they are.
+ * after. Not the same record (under half of yours found in it), or nothing more to it: yours as they are. The record
+ * page's and the player's record side's.
  */
-private fun filled(mine: List<Song>, whole: List<Song>?): List<Song> {
+/** A song's name as a tracklist's is matched: lowercase, a version in brackets aside, letters and numbers only. */
+internal fun trackKey(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
+
+internal fun filled(mine: List<Song>, whole: List<Song>?): List<Song> {
     if (whole == null || whole.size <= mine.size) return mine
-    fun plain(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
     val left = mine.toMutableList()
-    val out = whole.map { t -> left.firstOrNull { plain(it.title) == plain(t.title) }?.also { left.remove(it) } ?: t }
+    val out = whole.map { t -> left.firstOrNull { trackKey(it.title) == trackKey(t.title) }?.also { left.remove(it) } ?: t }
     if (mine.size - left.size < (mine.size + 1) / 2) return mine
     return out + left
 }
