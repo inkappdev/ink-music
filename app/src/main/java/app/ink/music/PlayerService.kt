@@ -514,14 +514,20 @@ class PlayerService : MediaLibraryService() {
     private val preferred = java.util.concurrent.ConcurrentHashMap<String, Preferred>()
     private val sourceMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
-    private fun mediaFor(uri: Uri): MediaItem? {
-        val player = exo ?: return null
+    // Resolver callbacks run on Media3 loader threads. Keep an immutable-ish snapshot of the
+    // playlist, refreshed on the player thread, so source resolution never touches ExoPlayer.
+    private val mediaItemsByUri = java.util.concurrent.ConcurrentHashMap<String, MediaItem>()
+
+    private fun refreshMediaItemSnapshot(player: Player) {
+        mediaItemsByUri.clear()
         for (i in 0 until player.mediaItemCount) {
             val item = player.getMediaItemAt(i)
-            if (item.localConfiguration?.uri == uri || item.requestMetadata.mediaUri == uri) return item
+            item.localConfiguration?.uri?.let { mediaItemsByUri[it.toString()] = item }
+            item.requestMetadata.mediaUri?.let { mediaItemsByUri[it.toString()] = item }
         }
-        return null
     }
+
+    private fun mediaFor(uri: Uri): MediaItem? = mediaItemsByUri[uri.toString()]
 
     private suspend fun youtubeMatch(title: String, artist: String, durationMs: Long): Song? {
         if (!YouTubeMusic.available || title.isBlank()) return null
@@ -769,6 +775,12 @@ class PlayerService : MediaLibraryService() {
             .build()
         // The resolving data source needs the timeline from the very first prepare (including a restored queue).
         exo = player
+        player.addListener(object : Player.Listener {
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                refreshMediaItemSnapshot(player)
+            }
+        })
+        refreshMediaItemSnapshot(player)
         // what's added with shuffle on comes next or last, not anywhere
         player.setShuffleOrder(Shuffle(IntArray(0), next = { playNext.also { playNext = false } }))
         // the queue as it was left: there, paused, ready to go on
