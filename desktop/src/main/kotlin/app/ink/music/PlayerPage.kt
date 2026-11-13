@@ -605,10 +605,15 @@ private fun SetSleeve(channel: String, name: String, onOpen: (Page) -> Unit) {
     LaunchedEffect(heard.size) { scroll.animateScrollTo(scroll.maxValue) }
     Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .38f))) {
         Column(Modifier.fillMaxSize().padding(28.dp)) {
-            // the tracklist only: the DJ, the channel and "live dj set" are in the big words beside it (2026-11-12, Bronson:
-            // the sleeve said them all again)
-            BasicText(if (heard.isEmpty()) "listening for the first track" else "heard in this set", style = pixel(12.sp, Ink.mid))
+            // the set's name over its tracklist, as the phone's sleeve has it (2026-11-12, Bronson: with the name gone it was
+            // only a list; "looks nice" with it, though the words beside say it too)
+            BasicText("live dj set  ·  ${channel.lowercase()}", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(6.dp))
+            BasicText(name.uppercase(), style = headline(40.sp), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
             Spacer(Modifier.height(10.dp))
+            if (heard.isEmpty()) BasicText("listening for the first track", style = pixel(12.sp, Ink.mid))
             Column(Modifier.weight(1f).verticalScroll(scroll)) {
                 heard.forEachIndexed { i, t ->
                     // a tap, their page (their songs, records, more like them); held, the track put next
