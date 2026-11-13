@@ -406,7 +406,6 @@ fun ListsPage(open: (Page) -> Unit) {
     val hereLists by HereLists.all.collectAsState()
     LaunchedEffect(account) { Server.readPlaylists() }
     val gridded by ListsGrid.on.collectAsState()
-    if (gridded) return ListsTiles(open)
     val list = pageList()
     // a right click anywhere: a new list, empty or from files (2026-11-12, a tester: the way it's done everywhere)
     var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
@@ -424,6 +423,8 @@ fun ListsPage(open: (Page) -> Unit) {
             } } },
         ))) { menuAt = null }
     }
+    // as a grid, the same right click over it (2026-11-12: the grid had none)
+    if (gridded) { ListsTiles(open); return@Box }
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
         item { ListsView() }
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
@@ -499,6 +500,7 @@ private fun ListsTiles(open: (Page) -> Unit) {
     val keptIds by Offline.kept.collectAsState()
     val kept by produceState(emptyList<Song>(), keptIds) { value = Offline.songs() }
     val tubeLists by TubeAccount.playlists.collectAsState()
+    val here by HereLists.all.collectAsState()
     val grid = pageGrid()
     androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
         androidx.compose.foundation.lazy.grid.GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
@@ -515,6 +517,12 @@ private fun ListsTiles(open: (Page) -> Unit) {
         }
         if (keptIds.isNotEmpty()) item(key = "kept") {
             ListTile("kept on this computer", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}", { open(Page.List(KEPT, "kept on this computer")) }) { Mosaic(kept, "kept") }
+        }
+        // lists kept here, on this computer (HereLists; 2026-11-12, a tester: the grid left out the ones made since 2.1.16)
+        gridItems(here, key = { it.id }) { m ->
+            ListTile(m.name, "${m.songs.size} ${if (m.songs.size == 1) "song" else "songs"}", { open(Page.List(m.id, m.name)) }) {
+                if (m.songs.isEmpty()) Lettered(m.name) else Mosaic(m.songs, m.id)
+            }
         }
         gridItems(lists, key = { it.id }) { p ->
             ListTile(p.name, "${p.count} ${if (p.count == 1) "song" else "songs"}", { open(Page.List(p.id, p.name)) }) {
