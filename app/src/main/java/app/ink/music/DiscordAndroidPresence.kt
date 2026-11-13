@@ -121,7 +121,11 @@ object DiscordAndroidPresence {
             lastKey = ""
             return
         }
-        val isPaused = !p.playWhenReady && !p.isPlaying
+        // Rich presence follows actual playback, not playWhenReady: Android can
+        // leave that flag true while audio is stalled or the app is backgrounded.
+        // Treat every non-playing eligible item as paused so the expiry clock
+        // cannot be held open indefinitely by a stale readiness flag.
+        val isPaused = !p.isPlaying
         val elapsed = android.os.SystemClock.elapsedRealtime()
         if (isPaused) {
             if (pausedMediaId != item!!.mediaId) {
@@ -131,7 +135,10 @@ object DiscordAndroidPresence {
                 pausedSince = elapsed
             }
             if (elapsed - pausedSince >= PAUSED_TTL_MS) {
-                if (lastActive || lastKey.isNotEmpty()) clear()
+                if (lastActive || lastKey.isNotEmpty()) {
+                    Log.i(TAG, "Paused presence expired; clearing Discord activity")
+                    clear()
+                }
                 lastActive = false
                 lastKey = ""
                 return
