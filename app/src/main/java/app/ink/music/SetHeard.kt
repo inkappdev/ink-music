@@ -44,6 +44,7 @@ object SetHeard {
         if (started) return
         started = true
         val app = c.applicationContext
+        tracks.dir = app.filesDir
         scope.launch {
             var current: String? = null
             while (true) {

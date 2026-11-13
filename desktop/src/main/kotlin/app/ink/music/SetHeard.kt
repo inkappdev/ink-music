@@ -17,7 +17,7 @@ import androidx.compose.runtime.setValue
  */
 object SetHeard {
     // what to ask when, and the list in the set's order, shared with the phone (SetTracks)
-    private val tracks = SetTracks()
+    private val tracks = SetTracks(Home.dir)
     /** Every track heard in the set playing, in the order they played. */
     val heard = tracks.heard
     /** The last one found: typed in as it comes. */

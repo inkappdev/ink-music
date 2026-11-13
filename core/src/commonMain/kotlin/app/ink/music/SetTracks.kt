@@ -8,8 +8,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * minutes after a track's found (a track runs three to six), 45 s after a miss. Not looked at (the screen off, the app
  * away), nothing's asked; looked at again, the stretch missed is asked over, every 90 s of it, so the list has no gaps:
  * a set's a recording, any moment of it can be heard after. A track lands where it played, the latest arrival [added].
+ * Each set's list kept in `dir` (sets-heard.json, the last 40): back to a set, its sleeve as it was, and on from the
+ * furthest asked; a set never heard, begun partway, asked from its start.
  */
-class SetTracks {
+class SetTracks(var dir: File? = null) {
     data class Track(val title: String, val artist: String, val at: Long)
 
     /** Every track heard in the set, in the order they played. */
@@ -23,10 +25,36 @@ class SetTracks {
     /** When the moment playing is next asked (wall clock). */
     private var nextLive = 0L
 
-    /** Another set (or none): an empty list. */
+    /** Another set (or none): its list as kept, asked on from the furthest it was; a new one from its start. */
     fun reset(id: String?, pos: Long = 0, now: Long = 0) {
-        set = id; heard.value = emptyList(); added.value = null
-        asked = pos; nextLive = now + 15_000
+        set = id; added.value = null; nextLive = now + 15_000
+        val kept = id?.let { keptOf(it) }
+        heard.value = kept?.second.orEmpty()
+        asked = kept?.first ?: 0L
+    }
+
+    private val file get() = dir?.let { File(it, "sets-heard.json") }
+
+    private fun all(): JSONObject = runCatching { JSONObject(file!!.readText()) }.getOrDefault(JSONObject())
+
+    private fun keptOf(id: String): Pair<Long, List<Track>>? = runCatching {
+        val o = all().optJSONObject(id) ?: return null
+        val a = o.getJSONArray("tracks")
+        o.getLong("asked") to (0 until a.length()).map { a.getJSONObject(it) }.map { Track(it.getString("t"), it.getString("a"), it.getLong("at")) }
+    }.getOrNull()
+
+    /** This set's list written down, the oldest sets let go past 40. */
+    private fun keep() {
+        val id = set ?: return
+        val f = file ?: return
+        runCatching {
+            val o = all()
+            o.put(id, JSONObject().put("asked", asked).put("when", nowMs())
+                .put("tracks", JSONArray().apply { heard.value.forEach { put(JSONObject().put("t", it.title).put("a", it.artist).put("at", it.at)) } }))
+            val ids = o.keys().asSequence().toList()
+            if (ids.size > 40) ids.sortedBy { o.optJSONObject(it)?.optLong("when") ?: 0L }.take(ids.size - 40).forEach { o.remove(it) }
+            dir?.mkdirs(); f.writeText(o.toString())
+        }
     }
 
     /**
@@ -52,13 +80,14 @@ class SetTracks {
         if (set != id) return
         if (at > asked) asked = at
         if (live) nextLive = now + if (title != null) 120_000 else 45_000
-        if (title.isNullOrBlank()) return
+        if (title.isNullOrBlank()) { keep(); return }
         val a = artist.orEmpty()
         // the same track heard again near where it was: once
         if (heard.value.any { it.title.equals(title, true) && it.artist.equals(a, true) && kotlin.math.abs(it.at - at) < 600_000 }) return
         val t = Track(title, a, at)
         heard.value = (heard.value + t).sortedBy { it.at }
         added.value = t
+        keep()
     }
 
     /** The track playing at `pos`, as far as it's known: the last heard at or just after it. */
