@@ -80,7 +80,7 @@ internal object AddonMedia {
         val uri = Uri.parse(raw)
         val host = uri.host ?: throw IOException("Unsafe hybrid CDN URL")
         val base = Uri.parse(addonBase)
-        if (uri.scheme != "https" || uri.userInfo.isNotEmpty() || uri.fragment != null ||
+        if (uri.scheme != "https" || uri.userInfo?.isNotEmpty() == true || uri.fragment != null ||
             (host != base.host && (!host.contains(".") || host.endsWith(".") ||
                 listOf(".local", ".localhost", ".internal", ".lan", ".home").any(host::endsWith))))
             throw IOException("Disallowed hybrid CDN URL")
@@ -103,7 +103,7 @@ internal object AddonMedia {
     }
 
     private fun download(ctx: Context, raw: String, addonBase: String): String {
-        val bytes = fetch(raw, addonBase, MAX_BYTES)
+        val bytes = fetch(ctx, raw, addonBase, MAX_BYTES)
         if (!looksLikeAudio(bytes)) throw IOException("Addon response is not a supported audio file")
         return save(ctx, bytes, extension(raw))
     }
@@ -166,7 +166,7 @@ internal object AddonMedia {
         val repId = representationId
         fun expand(value: String, number: Int? = null): String {
             var result = value.replace("$" + "RepresentationID$", repId)
-            val re = Regex("""\$Number(?:%0(\d+)d)?\$""")
+            val re = Regex("""\${'
             result = re.replace(result) { m ->
                 val n = number ?: throw IOException("Invalid initialization template")
                 n.toString().padStart(m.groupValues.getOrNull(1)?.toIntOrNull() ?: 0, '0')
@@ -195,7 +195,209 @@ internal object AddonMedia {
         val uri = Uri.parse(raw)
         val host = uri.host ?: throw IOException("Unsafe addon media URL")
         if (uri.scheme != "https" || java.net.URI(raw).rawUserInfo != null || host.isBlank() ||
-            uri.userInfo.isNotEmpty() || uri.fragment != null) throw IOException("Unsafe addon media URL")
+            uri.userInfo?.isNotEmpty() == true || uri.fragment != null) throw IOException("Unsafe addon media URL")
+        val base = Uri.parse(addonBase)
+        val ipLiteral = runCatching { java.net.InetAddress.getByName(host) }.getOrNull()
+            ?.let { it.hostAddress == host || host.startsWith("[") } == true
+        if (host != base.host && (ipLiteral || !host.contains(".") || host.endsWith(".") ||
+            listOf(".local", ".localhost", ".internal", ".lan", ".home").any(host::endsWith)))
+            throw IOException("Disallowed addon media host")
+        val connection = URL(raw).openConnection() as HttpURLConnection
+        connection.connectTimeout = 10000
+        connection.readTimeout = 30000
+        connection.instanceFollowRedirects = false
+        connection.setRequestProperty("Accept", "audio/*,video/mp4,application/dash+xml,*/*")
+        AddonMusic.signedHeaders(ctx, raw).forEach { (k,v) -> connection.setRequestProperty(k,v) }
+        try {
+            val code = connection.responseCode
+            if (code !in 200..299) throw IOException("Addon media HTTP $code")
+            val declared = connection.contentLengthLong
+            if (declared > max) throw IOException("Addon media exceeds size limit")
+            val output = java.io.ByteArrayOutputStream()
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    total += n
+                    if (total > max) throw IOException("Addon media exceeds size limit")
+                    output.write(buffer, 0, n)
+                }
+            }
+            if (declared >= 0 && output.size().toLong() != declared) throw IOException("Incomplete addon media response")
+            return output.toByteArray()
+        } finally { connection.disconnect() }
+    }
+
+    private fun save(ctx: Context, bytes: ByteArray, ext: String): String {
+        val dir = File(ctx.cacheDir, "lastwave-media").apply { mkdirs() }
+        val target = File(dir, "lw-${java.util.UUID.randomUUID()}.$ext")
+        val part = File(target.path + ".part")
+        try {
+            FileOutputStream(part).use { it.write(bytes); it.fd.sync() }
+            if (!part.renameTo(target)) throw IOException("Could not finalize addon media cache")
+            // Verify the completed file with Android's demuxer before Media3 sees it.
+            val extractor = MediaExtractor()
+            try {
+                extractor.setDataSource(target.absolutePath)
+                val hasAudio = (0 until extractor.trackCount).any { index ->
+                    extractor.getTrackFormat(index).getString(android.media.MediaFormat.KEY_MIME)
+                        ?.startsWith("audio/") == true
+                }
+                if (!hasAudio) throw IOException("Addon file contains no decodable audio track")
+            } catch (error: Exception) {
+                target.delete()
+                if (error is IOException) throw error
+                throw IOException("Addon media failed audio validation", error)
+            } finally { extractor.release() }
+            return Uri.fromFile(target).toString()
+        } finally { if (part.exists()) part.delete() }
+    }
+
+    private fun looksLikeAudio(b: ByteArray): Boolean =
+        (b.size >= 4 && String(b, 0, 4, Charsets.US_ASCII) in setOf("fLaC", "OggS", "RIFF", "ID3")) ||
+        (b.size >= 8 && String(b, 4, 4, Charsets.US_ASCII) == "ftyp") ||
+        (b.size >= 4 && b[0] == 0x1a.toByte() && b[1] == 0x45.toByte() && b[2] == 0xdf.toByte() && b[3] == 0xa3.toByte()) ||
+        (b.size >= 2 && b[0] == 0xff.toByte() && (b[1].toInt() and 0xe0) == 0xe0)
+
+    private fun extension(url: String): String = when (Uri.parse(url).lastPathSegment?.substringAfterLast('.', "")?.lowercase()) {
+        "flac", "mp3", "m4a", "mp4", "ogg", "opus", "wav", "aac", "webm" ->
+            Uri.parse(url).lastPathSegment!!.substringAfterLast('.').lowercase()
+        else -> "audio"
+    }
+}
+}Number(?:%0(\d+)d)?\${'
+            result = re.replace(result) { m ->
+                val n = number ?: throw IOException("Invalid initialization template")
+                n.toString().padStart(m.groupValues.getOrNull(1)?.toIntOrNull() ?: 0, '0')
+            }
+            if (result.contains("$" + "Number") || result.contains("$" + "Time")) throw IOException("Unsupported DASH placeholder")
+            return java.net.URI(base).resolve(result).toString()
+        }
+        val start = t["startNumber"]?.toIntOrNull() ?: 1
+        val pieces = mutableListOf<ByteArray>()
+        pieces += fetch(ctx, expand(init), addonBase, 16L * 1024 * 1024)
+        timeline.indices.forEach { i ->
+            pieces += fetch(ctx, expand(media, start + i), addonBase, 16L * 1024 * 1024)
+        }
+        val total = pieces.sumOf { it.size.toLong() }
+        if (total > MAX_BYTES) throw IOException("DASH media exceeds the size limit")
+        val joined = ByteArray(total.toInt())
+        var offset = 0
+        pieces.forEach { it.copyInto(joined, offset); offset += it.size }
+        if (joined.size < 12 || String(joined, 4, 4, Charsets.US_ASCII) != "ftyp") throw IOException("Invalid DASH MP4 initialization")
+        return save(ctx, joined, "m4a")
+    }
+
+    private inline fun repeatPlus(count: Int, block: () -> Unit) { repeat(count) { block() } }
+
+    private fun fetch(ctx: Context, raw: String, addonBase: String, max: Long): ByteArray {
+        val uri = Uri.parse(raw)
+        val host = uri.host ?: throw IOException("Unsafe addon media URL")
+        if (uri.scheme != "https" || java.net.URI(raw).rawUserInfo != null || host.isBlank() ||
+            uri.userInfo?.isNotEmpty() == true || uri.fragment != null) throw IOException("Unsafe addon media URL")
+        val base = Uri.parse(addonBase)
+        val ipLiteral = runCatching { java.net.InetAddress.getByName(host) }.getOrNull()
+            ?.let { it.hostAddress == host || host.startsWith("[") } == true
+        if (host != base.host && (ipLiteral || !host.contains(".") || host.endsWith(".") ||
+            listOf(".local", ".localhost", ".internal", ".lan", ".home").any(host::endsWith)))
+            throw IOException("Disallowed addon media host")
+        val connection = URL(raw).openConnection() as HttpURLConnection
+        connection.connectTimeout = 10000
+        connection.readTimeout = 30000
+        connection.instanceFollowRedirects = false
+        connection.setRequestProperty("Accept", "audio/*,video/mp4,application/dash+xml,*/*")
+        AddonMusic.signedHeaders(ctx, raw).forEach { (k,v) -> connection.setRequestProperty(k,v) }
+        try {
+            val code = connection.responseCode
+            if (code !in 200..299) throw IOException("Addon media HTTP $code")
+            val declared = connection.contentLengthLong
+            if (declared > max) throw IOException("Addon media exceeds size limit")
+            val output = java.io.ByteArrayOutputStream()
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    total += n
+                    if (total > max) throw IOException("Addon media exceeds size limit")
+                    output.write(buffer, 0, n)
+                }
+            }
+            if (declared >= 0 && output.size().toLong() != declared) throw IOException("Incomplete addon media response")
+            return output.toByteArray()
+        } finally { connection.disconnect() }
+    }
+
+    private fun save(ctx: Context, bytes: ByteArray, ext: String): String {
+        val dir = File(ctx.cacheDir, "lastwave-media").apply { mkdirs() }
+        val target = File(dir, "lw-${java.util.UUID.randomUUID()}.$ext")
+        val part = File(target.path + ".part")
+        try {
+            FileOutputStream(part).use { it.write(bytes); it.fd.sync() }
+            if (!part.renameTo(target)) throw IOException("Could not finalize addon media cache")
+            // Verify the completed file with Android's demuxer before Media3 sees it.
+            val extractor = MediaExtractor()
+            try {
+                extractor.setDataSource(target.absolutePath)
+                val hasAudio = (0 until extractor.trackCount).any { index ->
+                    extractor.getTrackFormat(index).getString(android.media.MediaFormat.KEY_MIME)
+                        ?.startsWith("audio/") == true
+                }
+                if (!hasAudio) throw IOException("Addon file contains no decodable audio track")
+            } catch (error: Exception) {
+                target.delete()
+                if (error is IOException) throw error
+                throw IOException("Addon media failed audio validation", error)
+            } finally { extractor.release() }
+            return Uri.fromFile(target).toString()
+        } finally { if (part.exists()) part.delete() }
+    }
+
+    private fun looksLikeAudio(b: ByteArray): Boolean =
+        (b.size >= 4 && String(b, 0, 4, Charsets.US_ASCII) in setOf("fLaC", "OggS", "RIFF", "ID3")) ||
+        (b.size >= 8 && String(b, 4, 4, Charsets.US_ASCII) == "ftyp") ||
+        (b.size >= 4 && b[0] == 0x1a.toByte() && b[1] == 0x45.toByte() && b[2] == 0xdf.toByte() && b[3] == 0xa3.toByte()) ||
+        (b.size >= 2 && b[0] == 0xff.toByte() && (b[1].toInt() and 0xe0) == 0xe0)
+
+    private fun extension(url: String): String = when (Uri.parse(url).lastPathSegment?.substringAfterLast('.', "")?.lowercase()) {
+        "flac", "mp3", "m4a", "mp4", "ogg", "opus", "wav", "aac", "webm" ->
+            Uri.parse(url).lastPathSegment!!.substringAfterLast('.').lowercase()
+        else -> "audio"
+    }
+}
+}""")
+            result = re.replace(result) { m ->
+                val n = number ?: throw IOException("Invalid initialization template")
+                n.toString().padStart(m.groupValues.getOrNull(1)?.toIntOrNull() ?: 0, '0')
+            }
+            if (result.contains("$" + "Number") || result.contains("$" + "Time")) throw IOException("Unsupported DASH placeholder")
+            return java.net.URI(base).resolve(result).toString()
+        }
+        val start = t["startNumber"]?.toIntOrNull() ?: 1
+        val pieces = mutableListOf<ByteArray>()
+        pieces += fetch(ctx, expand(init), addonBase, 16L * 1024 * 1024)
+        timeline.indices.forEach { i ->
+            pieces += fetch(ctx, expand(media, start + i), addonBase, 16L * 1024 * 1024)
+        }
+        val total = pieces.sumOf { it.size.toLong() }
+        if (total > MAX_BYTES) throw IOException("DASH media exceeds the size limit")
+        val joined = ByteArray(total.toInt())
+        var offset = 0
+        pieces.forEach { it.copyInto(joined, offset); offset += it.size }
+        if (joined.size < 12 || String(joined, 4, 4, Charsets.US_ASCII) != "ftyp") throw IOException("Invalid DASH MP4 initialization")
+        return save(ctx, joined, "m4a")
+    }
+
+    private inline fun repeatPlus(count: Int, block: () -> Unit) { repeat(count) { block() } }
+
+    private fun fetch(ctx: Context, raw: String, addonBase: String, max: Long): ByteArray {
+        val uri = Uri.parse(raw)
+        val host = uri.host ?: throw IOException("Unsafe addon media URL")
+        if (uri.scheme != "https" || java.net.URI(raw).rawUserInfo != null || host.isBlank() ||
+            uri.userInfo?.isNotEmpty() == true || uri.fragment != null) throw IOException("Unsafe addon media URL")
         val base = Uri.parse(addonBase)
         val ipLiteral = runCatching { java.net.InetAddress.getByName(host) }.getOrNull()
             ?.let { it.hostAddress == host || host.startsWith("[") } == true
