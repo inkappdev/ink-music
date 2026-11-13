@@ -167,9 +167,11 @@ fun ListenPage(open: (Page) -> Unit) {
             // their new music videos (MusicVideos.kt), shown once some are found
             item(key = "videos") { NewVideos(open) }
         }
-        shelf["liveSets"] = {
-            // live DJ sets from four channels that film them (LiveSets.kt)
-            item(key = "live-sets") { LiveSetsShelf(open) }
+        // your own music at a tempo (TempoMixes.yours), once there's enough of it: from INK (2026-11-12), made from yours
+        shelf["yourMix"] = {
+            if (TempoMixes.yoursSize() >= 20) item(key = "yourmix") {
+                MixAt("your music", "MIX YOUR MUSIC", "what you play, love and keep, at a tempo, each into the next on the beat") { TempoMixes.yours(it) }
+            }
         }
         shelf["yours"] = {
             if (first.isNotEmpty()) item {
@@ -263,23 +265,6 @@ fun ListenPage(open: (Page) -> Unit) {
         shelf["newest"] = {
             records("new on your server", "the newest there", newest, open)
         }
-        shelf["inkRadio"] = {
-            if (stars.isNotEmpty()) item {
-                Column {
-                Section("INK RADIO", "the stations we keep") { Word("all of them", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("ink") } }
-                Shelf {
-                    itemsIndexed(stars, key = { _, c -> c.song.id }) { i, c ->
-                        Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null,
-                            onClick = felt { Player.play(stars.drop(i).map { it.song }) })) {
-                            StationCover(c.song, Modifier.fillMaxWidth().aspectRatio(1f))
-                            Spacer(Modifier.height(8.dp))
-                            BasicText(c.city.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-                }
-            }
-        }
         shelf["lists"] = {
             if (lists.isNotEmpty()) item {
                 Column {
@@ -317,8 +302,9 @@ private fun SinceYouWereHere(since: Long, lines: List<NewLine>) {
 }
 
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment); the phone's keys, where shared. */
-val LISTEN_SHELVES = listOf("fromYours", "forYou", "videos", "liveSets", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "because",
-    "newToYou", "jumpBack", "forgotten", "newest", "inkRadio", "lists")
+// listen is you, INK is the world (2026-11-12, Bronson): live sets and ink radio are INK's; your mix is here
+val LISTEN_SHELVES = listOf("fromYours", "forYou", "videos", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "yourMix", "because",
+    "newToYou", "jumpBack", "forgotten", "newest", "lists")
 
 /**
  * Know me (2026-11-11): your listening on Last.fm or ListenBrainz, brought in by name, so INK, listen and the mixes

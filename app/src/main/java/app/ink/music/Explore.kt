@@ -90,6 +90,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val today by Picks.today.collectAsState()
     val air by Picks.onAir.collectAsState()
     val chart by Listen.indie.collectAsState()
+    val liveSets by LiveSets.clips.collectAsState()
     val before = remember(chart) { IndieChart.before(ctx) }
     val moods by produceState<List<TubeMood>?>(Moods.kept(ctx)) { value = Moods.read(ctx) ?: value }
     val scope = rememberCoroutineScope()
@@ -126,6 +127,8 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             }
             Spacer(Modifier.height(14.dp))
         }
+        // live DJ sets, beside what's on the air: the live things together (from listen, 2026-11-12)
+        if (liveSets.isNotEmpty()) item(key = "liveSets") { LiveSetsShelf(liveSets, pages) }
         item(key = "radio") { InkRadioShelf(pages) }
         item(key = "festivals") { FestivalsShelf(pages) }
         // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: 2026-10-28)
@@ -133,8 +136,6 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (!tv) moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }
         // YouTube Music's own lists, the cool ones only (CoolLists)
         if (!tv) item(key = "coollists") { CoolListsShelf(pages) }
-        // your own music at a tempo (Mixes.yours)
-        if (!tv) item(key = "yourmix") { YourMix() }
         if (records.isNotEmpty()) item(key = "picked") {
             Heading("the critics' records")
             ShelfIndexed(rankedRecords) { _, p -> PickTile(p.item, pages, Fresh.reason(p.item, p.stretch, taste), near = !p.stretch && taste.of(p.item.pick.artist) >= .3) }
@@ -142,6 +143,12 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         friday?.let { w -> item(key = "friday") { OutThisFriday(w, pages) } }
         if (electronic.isNotEmpty() && !tv) item(key = "electronic") { Electronic(electronic, pages) }
         if (chart.isNotEmpty()) item(key = "artist") { ArtistOfTheWeek(chart, pages) }
+        // the week on indie radio: what KEXP, KCRW and WXPN played most (from listen, 2026-11-12)
+        if (chart.isNotEmpty() && !tv) item(key = "indie") {
+            val songs = remember(chart) { chart.mapNotNull { it.song } }
+            Heading("the week on indie radio")
+            ShelfIndexed(chart) { i, e -> Tile(e.song, e.title, e.artist, number = i + 1) { Playback.play(songs, i) } }
+        }
         if (songs.isNotEmpty() && !tv) item(key = "songs") {
             var said by remember { mutableStateOf<String?>(null) }
             Heading("the critics' songs") {
@@ -1343,7 +1350,7 @@ internal fun MixProgress(title: String) {
 
 /** Your own music at a tempo (Mixes.yours): a tempo chosen, your songs at it, each into the next on the beat. */
 @Composable
-private fun YourMix() {
+internal fun YourMix() {
     val ctx = LocalContext.current
     // everything you've touched (Mixes.yours): shown once there's enough of it
     val songs by Library.songs.collectAsState()

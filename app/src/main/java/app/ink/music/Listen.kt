@@ -73,9 +73,10 @@ private fun Modifier.moving(scope: androidx.compose.foundation.lazy.LazyItemScop
     else with(scope) { this@moving.animateItem(fadeInSpec = null, placementSpec = tween(Motion.ENTER, easing = Motion.expo), fadeOutSpec = null) }
 
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment). */
-val LISTEN_SHELVES = listOf("fromYours", "videos", "liveSets", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "because", "newToYou",
-    "onRepeat", "fresh", "inkRadio", "indie", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours",
-    "stations", "radio")
+// listen is you, INK is the world (2026-11-12, Bronson): live sets, ink radio, the indie chart and stations are INK's;
+// your mix (your own music at a tempo) is here
+val LISTEN_SHELVES = listOf("fromYours", "videos", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "because", "newToYou",
+    "onRepeat", "fresh", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours")
 
 object Listen {
     /** Each time ink music is opened again after a while: the shelves' order is made anew for it. */
@@ -326,8 +327,6 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     if (videos.isNotEmpty()) sections["videos"] = { NewVideosShelf(videos, pages) }
     // live DJ sets from four channels that film them (LiveSets, the full build's)
     LaunchedEffect(Unit) { LiveSets.start(ctx) }
-    val liveSets by LiveSets.clips.collectAsState()
-    if (liveSets.isNotEmpty()) sections["liveSets"] = { LiveSetsShelf(liveSets, pages) }
     // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: it's INK's cover now)
     if (uFromYours.isNotEmpty()) sections["fromYours"] = {
         Heading("new from your artists")
@@ -380,6 +379,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         Label("mixes for you")
         Shelf(mixes) { a -> Tile(a.hit, a.name, "mix", face = a.face, dither = true) { scope.launch { Listen.mix(a.hit!!) } } }
     }
+    // your own music at a tempo, from INK (2026-11-12): made from yours, so it's listen's
+    if (!Device.tv) sections["yourMix"] = { YourMix() }
     sections["because"] = { BecauseYouLovedShelf() }
     sections["newToYou"] = { NewToYouShelf(pages) }
     if (uOnRepeat.size >= 3) sections["onRepeat"] = {
@@ -390,28 +391,6 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     if (uFresh.isNotEmpty()) sections["fresh"] = {
         Label("new from your artists on youtube music")
         Shelf(uFresh) { a -> TubeTile(a, Modifier.width(140.dp)) { pages.open(Page.Tube(a)) } }
-    }
-    // ink radio: the stations chosen by hand, the stars first
-    sections["inkRadio"] = {
-        val now by Playback.now.collectAsState()
-        val ink = remember { Stations.curated(ctx) }
-        Row(verticalAlignment = Alignment.Bottom) {
-            Label("ink radio")
-            Spacer(Modifier.weight(1f))
-            // a TV: no "all", one more stop for the remote; the shelf has every station instead (2026-11-10)
-            if (!Device.tv) Word("all", pixel(12.sp, Ink.mid), Modifier.padding(end = 16.dp), touch = 8.dp) { pages.open(Page.InkRadio) }
-        }
-        val starred = if (Device.tv) ink.sortedByDescending { it.star } else ink.filter { it.star }
-        ShelfIndexed(starred) { i, st ->
-            val on = now?.song?.id == st.song.id
-            StationTile(st.song, on, now?.playing == true, said = if (on) "on now" else st.city) { Playback.play(starred.map { it.song }, i) }
-        }
-    }
-    // the week on indie radio: what KEXP, KCRW and WXPN played most
-    if (uIndie.isNotEmpty()) sections["indie"] = {
-        val songs = remember(uIndie) { uIndie.mapNotNull { it.song } }
-        Label("the week on indie radio")
-        ShelfIndexed(uIndie) { i, e -> Tile(e.song, e.title, e.artist, number = i + 1) { Playback.play(songs, i) } }
     }
     if (uForgotten.size >= 4) sections["forgotten"] = {
         Label("forgotten favorites")
@@ -445,29 +424,6 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     if (uYours.isNotEmpty()) sections["yours"] = {
         Label("from your records")
         Shelf(uYours) { a -> RecordTile(a, Modifier.width(140.dp)) { pages.open(Page.Record(a.id)) } }
-    }
-    // the genres you like, their stations each
-    if (stations.isNotEmpty()) sections["stations"] = {
-        val now by Playback.now.collectAsState()
-        stations.forEach { (word, list) ->
-            Label("$word radio")
-            ShelfIndexed(list.take(12)) { i, s ->
-                val on = now?.song?.id == s.id
-                StationTile(s, on, now?.playing == true, said = if (on) "on now" else word) { Playback.play(list, i) }
-            }
-        }
-    }
-    if (radio.isNotEmpty()) sections["radio"] = {
-        Label("radio")
-        val now by Playback.now.collectAsState()
-        Shelf(radio) { (word, tag) ->
-            val on = now?.song?.let { s -> s.station && Stations.found(tag)?.any { it.id == s.id } == true } == true
-            // tapped, its stations play (next is the next station)
-            RadioTile(word, on, now?.playing == true) {
-                scope.launch { Stations.top(ctx, tag).takeIf { it.isNotEmpty() }?.let { Playback.play(it, 0) } }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
     }
 
     // the shelves arrive in turn once, as ink music opens (a tab, not a page: its own time, kept for the run)

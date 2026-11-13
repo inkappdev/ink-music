@@ -116,6 +116,8 @@ fun ExplorePage(open: (Page) -> Unit) {
             item(key = "weekly") { InkWeekly() }
             today?.let { d -> item(key = "today") { RecordOfTheDay(d, open) } }
             if (air.isNotEmpty()) item(key = "air") { OnTheAir(air) }
+            // live DJ sets beside what's on the air: the live things together (from listen, 2026-11-12)
+            item(key = "live-sets") { LiveSetsShelf(open) }
             item(key = "radio") { InkRadio(air) }
             item(key = "festivals") { FestivalsShelf(open) }
             item(key = "moods") { InkMoodsShelf() }
@@ -126,10 +128,6 @@ fun ExplorePage(open: (Page) -> Unit) {
                     Section("PLAYLISTS", "youtube music's own, the ones with your artists in them")
                     cool.take(across * 2).chunked(across).forEach { row -> TileRow(row, across) { c -> TubeTile(c.list, Modifier.fillMaxWidth()) { open(Page.Tube(c.list)) } } }
                 }
-            }
-            // your own music at a tempo (TempoMixes.yours), once there's enough of it
-            if (TempoMixes.yoursSize() >= 20) item(key = "yourmix") {
-                MixAt("your music", "MIX YOUR MUSIC", "what you play, love and keep, at a tempo, each into the next on the beat") { TempoMixes.yours(it) }
             }
             if (records.isNotEmpty()) item(key = "picked") {
                 // in your order (Fresh): seven near you and three a stretch of every ten, each saying why
