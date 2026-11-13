@@ -34,7 +34,7 @@ object LiveSets {
         started = true
         val app = ctx.applicationContext
         scope.launch {
-            val file = File(app.filesDir, "youtube/dj-sets-2.json")
+            val file = File(app.filesDir, "youtube/dj-sets-3.json")
             val was = runCatching { JSONObject(file.readText()) }.getOrNull()
             was?.optJSONArray("sets")?.let { a -> _clips.value = (0 until a.length()).map { a.getJSONObject(it) }
                 .map { MusicVideos.Clip(it.getString("id"), it.getString("dj"), it.getString("channel"), it.getLong("when")) } }
