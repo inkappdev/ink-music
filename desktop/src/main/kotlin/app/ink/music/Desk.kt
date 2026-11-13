@@ -476,9 +476,14 @@ object InkTitle {
     /** The bar as it's set now: the strip tells it, at each move of the mouse, that it's the bar's ([TitleStrip]). */
     @Volatile var bar: com.jetbrains.WindowDecorations.CustomTitleBar? = null
 
+    /** The size it was last made at, for putting it back after full screen ([full]). */
+    @Volatile private var k = 1f
+
     /** The main window's bar made ink's, `k` its size (settings): the strip as tall as the pages' [TOP] is drawn. */
     fun apply(window: java.awt.Window, k: Float) {
         if (!on) return
+        this.k = k
+        if (Win.full) return   // full screen: no bar till it's left, and then at this size
         val frame = window as? java.awt.Frame ?: return
         runCatching {
             val d = com.jetbrains.JBR.getWindowDecorations()
@@ -487,6 +492,24 @@ object InkTitle {
             bar.putProperty("controls.dark", true)
             d.setCustomTitleBar(frame, bar)
             this.bar = bar
+        }.onFailure { Log.d("title bar: $it") }
+    }
+
+    /**
+     * Full screen: no minimise, maximise and close over ink's top right (JetBrains' Java draws them itself, so the
+     * window's frame taken off left them: 2026-11-12, Bronson), and no strip to drag; left, the bar as it was.
+     */
+    fun full(window: java.awt.Window, on: Boolean) {
+        if (!this.on) return
+        val frame = window as? java.awt.Frame ?: return
+        if (!on) return apply(window, k)
+        runCatching {
+            val d = com.jetbrains.JBR.getWindowDecorations()
+            val bar = d.createCustomTitleBar()
+            bar.height = 0f
+            bar.putProperty("controls.visible", false)
+            d.setCustomTitleBar(frame, bar)
+            this.bar = null
         }.onFailure { Log.d("title bar: $it") }
     }
 }
@@ -498,7 +521,7 @@ object InkTitle {
  */
 @Composable
 fun TitleStrip(k: Float) {
-    if (!InkTitle.on) return
+    if (!InkTitle.on || Win.full) return
     Box(Modifier.fillMaxWidth().height((InkTitle.HEIGHT * k).dp).pointerInput(Unit) {
         awaitPointerEventScope {
             while (true) {

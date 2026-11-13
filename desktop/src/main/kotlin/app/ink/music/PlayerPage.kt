@@ -103,7 +103,13 @@ object Win {
         if (Home.windows) {
             if (on == covering) return
             val w = window
-            if (w != null && if (on) WinFull.enter(w) else WinFull.leave(w)) { covering = on; return }
+            if (w != null) {
+                // ink's own bar's minimise, maximise and close gone while it covers the screen (InkTitle.full): taken
+                // before the frame comes off, put back after it's on again
+                if (on) InkTitle.full(w, true)
+                if (if (on) WinFull.enter(w) else WinFull.leave(w)) { covering = on; if (!on) InkTitle.full(w, false); return }
+                if (on) InkTitle.full(w, false)
+            }
             covering = on
             if (on) {
                 was = s.placement; before = s.size; beforeAt = s.position
