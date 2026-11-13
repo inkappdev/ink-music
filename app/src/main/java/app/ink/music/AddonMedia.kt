@@ -21,6 +21,8 @@ internal object AddonMedia {
     private const val MAX_SEGMENTS = 512
 
     fun materialize(ctx: Context, response: org.json.JSONObject, addonBase: String): String {
+        val hybrid = findObject(response, "hybrid")
+        if (hybrid != null) return downloadHybrid(ctx, hybrid, addonBase)
         val direct = AddonMusic.playableUrl(response)
         if (direct != null && !direct.substringBefore('?').endsWith(".mpd", true)) {
             return download(ctx, direct, addonBase)
@@ -31,6 +33,73 @@ internal object AddonMedia {
         val xml = inline ?: manifestUrl?.let { String(fetch(ctx, it, addonBase, MAX_MANIFEST), Charsets.UTF_8) }
             ?: throw IOException(response.optString("error").ifBlank { "Addon returned no playable media" })
         return downloadDash(ctx, xml, manifestUrl ?: addonBase, addonBase)
+    }
+
+    private fun findObject(root: org.json.JSONObject, key: String, depth: Int = 0): org.json.JSONObject? {
+        if (depth > 6) return null
+        root.optJSONObject(key)?.let { return it }
+        for (name in listOf("data", "stream", "result", "audio", "media")) {
+            root.optJSONObject(name)?.let { findObject(it, key, depth + 1)?.let { found -> return found } }
+        }
+        return null
+    }
+
+    /** Supports the unencrypted byte-range variant. Encrypted CENC plans fail closed. */
+    private fun downloadHybrid(ctx: Context, plan: org.json.JSONObject, addonBase: String): String {
+        if (plan.optBoolean("encrypted", false) || plan.has("key"))
+            throw IOException("Encrypted hybrid CENC is not yet supported by this adapter")
+        val url = plan.optString("cdnUrl")
+        val init = plan.optJSONObject("initRange") ?: throw IOException("Hybrid init range missing")
+        val ranges = plan.optJSONArray("ranges") ?: throw IOException("Hybrid ranges missing")
+        if (url.isBlank() || ranges.length() == 0 || ranges.length() > MAX_SEGMENTS)
+            throw IOException("Invalid hybrid media plan")
+        fun pair(value: org.json.JSONObject): Pair<Long, Long> {
+            val start = value.optLong("start", -1)
+            val end = value.optLong("end", -1)
+            if (start < 0 || end < start || end - start > 16L * 1024 * 1024)
+                throw IOException("Invalid hybrid byte range")
+            return start to end
+        }
+        val all = mutableListOf(pair(init))
+        for (i in 0 until ranges.length()) all += pair(ranges.optJSONObject(i) ?: throw IOException("Invalid hybrid segment"))
+        if (all.first().first != 0L || all.zipWithNext().any { (a,b) -> b.first <= a.second })
+            throw IOException("Overlapping or unordered hybrid ranges")
+        val output = java.io.ByteArrayOutputStream()
+        for ((start, end) in all) {
+            val bytes = fetchRange(ctx, url, addonBase, start, end)
+            if (output.size().toLong() + bytes.size > MAX_BYTES) throw IOException("Hybrid media exceeds size limit")
+            output.write(bytes)
+        }
+        val bytes = output.toByteArray()
+        if (bytes.size < 12 || String(bytes, 4, 4, Charsets.US_ASCII) != "ftyp")
+            throw IOException("Invalid hybrid MP4 media")
+        return save(ctx, bytes, "m4a")
+    }
+
+    private fun fetchRange(ctx: Context, raw: String, addonBase: String, start: Long, end: Long): ByteArray {
+        val uri = Uri.parse(raw)
+        val host = uri.host ?: throw IOException("Unsafe hybrid CDN URL")
+        val base = Uri.parse(addonBase)
+        if (uri.scheme != "https" || uri.userInfo.isNotEmpty() || uri.fragment != null ||
+            (host != base.host && (!host.contains(".") || host.endsWith(".") ||
+                listOf(".local", ".localhost", ".internal", ".lan", ".home").any(host::endsWith))))
+            throw IOException("Disallowed hybrid CDN URL")
+        val connection = URL(raw).openConnection() as HttpURLConnection
+        connection.connectTimeout = 10000
+        connection.readTimeout = 30000
+        connection.setRequestProperty("Range", "bytes=$start-$end")
+        connection.setRequestProperty("Accept-Encoding", "identity")
+        try {
+            val code = connection.responseCode
+            if (code != 206 && !(code == 200 && start == 0L))
+                throw IOException("Hybrid CDN did not honor byte ranges (HTTP $code)")
+            val expected = end - start + 1
+            if (connection.contentLengthLong >= 0 && connection.contentLengthLong != expected)
+                throw IOException("Incomplete hybrid byte range")
+            val bytes = connection.inputStream.use { it.readBytes() }
+            if (bytes.size.toLong() != expected) throw IOException("Incomplete hybrid byte range")
+            return bytes
+        } finally { connection.disconnect() }
     }
 
     private fun download(ctx: Context, raw: String, addonBase: String): String {
