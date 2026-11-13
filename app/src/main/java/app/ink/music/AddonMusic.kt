@@ -81,9 +81,20 @@ object AddonMusic {
             }
             val response = request(ctx, "$base/search", searchParams, intent = "stream")
             val tracks = tracksArray(response) ?: return@runCatching null
-            fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
-                .replace(Regex("\\p{M}+"), "").lowercase()
-                .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+            // Preserve combining marks in non-Latin scripts (Indic vowel signs,
+            // kana dakuten, Arabic marks, etc.). Strip accents only from Latin
+            // bases, then use locale-independent casing for stable matching.
+            val latinMarks = Regex("(?<=[\\p{Script=Latin}])\\p{M}+")
+            val nonWord = Regex("[^\\p{L}\\p{N}\\p{M}]+")
+            val spaces = Regex("\\s+")
+            fun norm(value: String): String = java.text.Normalizer
+                .normalize(value, java.text.Normalizer.Form.NFD)
+                .replace(latinMarks, "")
+                .let { java.text.Normalizer.normalize(it, java.text.Normalizer.Form.NFKC) }
+                .lowercase(java.util.Locale.ROOT)
+                .replace(nonWord, " ")
+                .replace(spaces, " ")
+                .trim()
             val wantedTitle = norm(title)
             val wantedArtist = norm(artist.substringBefore(',').trim())
             val candidates = (0 until tracks.length()).mapNotNull { i ->
