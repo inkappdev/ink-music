@@ -44,6 +44,7 @@ internal object AddonMedia {
         parser.setInput(xml.reader())
         var adaptationAudio = false
         var representation = false
+        var representationId = ""
         var template: Map<String, String>? = null
         var base = manifestBase
         val timeline = mutableListOf<Int>()
@@ -59,10 +60,10 @@ internal object AddonMedia {
                     "AdaptationSet" -> adaptationAudio =
                         parser.getAttributeValue(null, "contentType") == "audio" ||
                         parser.getAttributeValue(null, "mimeType")?.startsWith("audio/") == true
-                    "Representation" -> if (adaptationAudio && !representation) representation = true
+                    "Representation" -> if (adaptationAudio && !representation) { representation = true; representationId = parser.getAttributeValue(null, "id").orEmpty() }
                     "BaseURL" -> if (representation || adaptationAudio) {
                         val value = parser.nextText().trim()
-                        if (value.isNotEmpty()) base = Uri.parse(base).buildUpon().appendEncodedPath(value).build().toString()
+                        if (value.isNotEmpty()) base = java.net.URI(base).resolve(value).toString()
                     }
                     "SegmentTemplate" -> if (representation || adaptationAudio) {
                         template = (0 until parser.attributeCount).associate {
@@ -92,7 +93,7 @@ internal object AddonMedia {
         val init = t["initialization"] ?: throw IOException("DASH initialization is missing")
         val media = t["media"] ?: throw IOException("DASH media template is missing")
         if (!media.contains("$" + "Number") || timeline.isEmpty()) throw IOException("Unsupported DASH segment template")
-        val repId = ""
+        val repId = representationId
         fun expand(value: String, number: Int? = null): String {
             var result = value.replace("$" + "RepresentationID$", repId)
             val re = Regex("""\$Number(?:%0(\\d+)d)?\$""")
