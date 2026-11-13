@@ -33,6 +33,13 @@ import java.io.File
  * every six hours, kept on disk, watched as the videos are. Each is a clip: the DJ for its title, the channel for its artist.
  */
 object LiveSets {
+    /**
+     * What's kept and what's just read, as one: every set once, a set read again its newer word, the newest [DjSets.KEPT].
+     * The shelf shuffles them each time it's shown.
+     */
+    private fun merged(kept: List<MusicVideos.Clip>, read: List<MusicVideos.Clip>): List<MusicVideos.Clip> =
+        (read + kept).distinctBy { it.id }.sortedByDescending { it.at }.take(DjSets.KEPT)
+
     private val _clips = MutableStateFlow<List<MusicVideos.Clip>>(emptyList())
     val clips: StateFlow<List<MusicVideos.Clip>> = _clips
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -50,12 +57,15 @@ object LiveSets {
                 .map { MusicVideos.Clip(it.getString("id"), it.getString("dj"), it.getString("channel"), it.getLong("when")) } }
             if (was != null && System.currentTimeMillis() - was.optLong("at") < 6 * 3_600_000L) return@launch
             val now = System.currentTimeMillis()
-            val sets = runCatching { DjSets.read(System.currentTimeMillis() / 86_400_000L) }.onFailure { Log.d("dj sets: $it") }.getOrDefault(emptyList())
+            // far back once a week (and the first time), the newest page between; what's been read before kept
+            val deepAt = was?.optLong("deep") ?: 0L
+            val deep = now - deepAt > DjSets.DEEP_EVERY
+            val sets = runCatching { DjSets.read(now / 86_400_000L, deep) }.onFailure { Log.d("dj sets: $it") }.getOrDefault(emptyList())
             if (sets.isEmpty()) return@launch
-            val clips = sets.map { MusicVideos.Clip(it.id, it.dj, it.channel, now - it.days * 86_400_000L) }
+            val clips = merged(_clips.value, sets.map { MusicVideos.Clip(it.id, it.dj, it.channel, now - it.days * 86_400_000L) })
             _clips.value = clips
             runCatching {
-                Home.write(file, JSONObject().put("at", now).put("sets", JSONArray(clips.map {
+                Home.write(file, JSONObject().put("at", now).put("deep", if (deep) now else deepAt).put("sets", JSONArray(clips.map {
                     JSONObject().put("id", it.id).put("dj", it.title).put("channel", it.artist).put("when", it.at)
                 })).toString())
             }
@@ -91,7 +101,7 @@ fun LiveSetsShelf(open: (Page) -> Unit) {
     // shuffled each time the shelf's shown, so it's never the same row twice running (2026-11-12, Bronson: "less stale")
     val sets = remember(clips) { clips.shuffled() }
     Column {
-        Section("LIVE DJ SETS", "humano studios, hör berlin, the lot radio, boiler room, kiosk radio")
+        Section("LIVE DJ SETS", "${clips.size} sets from humano studios, hör berlin, the lot radio, boiler room, kiosk radio")
         Shelf(sets.size, 300.dp, cover = 16 / 9f) { each ->
             items(sets, key = { it.id }) { c ->
                 WithMenu({ listOf(listOf("watch" to { open(Page.Watch(c, sets)) }, "listen" to { listenTo(c) }), listOf("copy link" to { copyText("https://youtu.be/${c.id}") })) }) {
