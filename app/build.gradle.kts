@@ -86,6 +86,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.11.1")
     // moving covers: Apple's are HLS (MovingCover)
     implementation("androidx.media3:media3-exoplayer-hls:1.11.1")
+    // LastWave can return a remote static DASH MPD rather than a progressive audio URL.
+    implementation("androidx.media3:media3-exoplayer-dash:1.11.1")
     implementation("androidx.media3:media3-session:1.11.1")
     // what's behind a bar, softly blurred (Chris Banes' Haze, Apache-2.0; RenderEffect on Android 12+)
     implementation("dev.chrisbanes.haze:haze:2.0.1")
