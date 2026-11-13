@@ -1105,7 +1105,7 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
             ("add to queue" to { Player.add(s) }).takeIf { !playing },
             // similar: this song, then more like it as the queue runs out, from where settings say (sound, similar
             // songs); it was two here, online and your files, which also changed that setting unseen (2026-11-12)
-            ("similar" to { Player.radioFrom(s) }).takeIf { !s.station && !s.episode },
+            ("play similar" to { Player.radioFrom(s) }).takeIf { !s.station && !s.episode },
         ),
         listOfNotNull(
             ((if (s.id in loved) "unlove" else "love") to { Loved.toggle(s) }).takeIf { !s.station && !s.episode },
