@@ -1,5 +1,7 @@
 package app.ink.music
 
+import kotlinx.coroutines.launch
+
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -18,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -105,7 +108,7 @@ fun RecordMenu(a: Album, at: Offset, onClose: () -> Unit) {
             "play" to { Player.play(songs) },
             "shuffle" to { Player.play(songs.shuffled()) },
             "add to queue" to { songs.forEach { Player.add(it) } },
-            "radio" to { songs.firstOrNull()?.let { Player.radioFrom(it) } ?: Unit },
+            "play similar" to { songs.firstOrNull()?.let { Player.radioFrom(it) } ?: Unit },
         ),
         listOfNotNull(
             (if (allLoved) "unlove" else "love") to { songs.filter { (it.id in loved) == allLoved }.forEach { Loved.toggle(it) } },
@@ -132,7 +135,7 @@ fun ArtistMenu(name: String, at: Offset, onClose: () -> Unit) {
         listOfNotNull(
             ("play" to { Player.play(theirs.sortedWith(compareBy({ it.year }, { it.album }, { it.disc }, { it.track }))) }).takeIf { theirs.isNotEmpty() },
             ("shuffle" to { Player.play(theirs.shuffled()) }).takeIf { theirs.isNotEmpty() },
-            ("radio" to { theirs.randomOrNull()?.let { Player.radioFrom(it) } ?: Unit }).takeIf { theirs.isNotEmpty() },
+            ("play similar" to { theirs.randomOrNull()?.let { Player.radioFrom(it) } ?: Unit }).takeIf { theirs.isNotEmpty() },
         ),
         listOf("artist" to { Nav.open(Page.Artist(name)) }),
     ), onClose)
@@ -149,4 +152,40 @@ object GoToPlaying {
         if (Nav.place == "songs" && Nav.pages.isEmpty()) asked.tryEmit(s.id)
         else if (s.album.isNotEmpty() && !s.station && !s.episode) Nav.open(Page.Record(s.albumId))
     }
+}
+
+
+/**
+ * Anything with a right click (2026-11-12, a tester: "right click everywhere ... like a normal Windows program"): the
+ * content as it is, and its options in a menu where it was clicked ([MenuAt]); `groups` asked for only as it opens.
+ */
+@Composable
+fun WithMenu(groups: () -> List<List<Pair<String, () -> Unit>>>, content: @Composable () -> Unit) {
+    var at by remember { androidx.compose.runtime.mutableStateOf<Offset?>(null) }
+    androidx.compose.foundation.layout.Box(Modifier.rightClick { at = it }) {
+        content()
+        at?.let { MenuAt(it, Ink.ink, groups().filter { g -> g.isNotEmpty() }) { at = null } }
+    }
+}
+
+private val menus = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+/** A YouTube Music record or playlist played (or shuffled) from a menu: its songs read, then played. */
+fun playTube(a: TubeAlbum, shuffle: Boolean = false, next: Boolean = false) = menus.launch {
+    val songs = YouTube.album(a).let { if (shuffle) it.shuffled() else it }
+    if (songs.isEmpty()) return@launch
+    javax.swing.SwingUtilities.invokeLater { if (next) songs.reversed().forEach { Player.playNext(it) } else Player.play(songs) }
+}
+
+/** A YouTube Music record or playlist kept whole as a list of yours. */
+fun keepTube(a: TubeAlbum) = menus.launch { YouTube.album(a).takeIf { it.isNotEmpty() }?.let { HereLists.make(a.title, it) } }
+
+/** A list's songs, whatever kind of list (yours, kept, your server's), played or shuffled from a menu. */
+fun playList(id: String, shuffle: Boolean = false) = menus.launch {
+    val songs = when {
+        id == KEPT -> Offline.songs()
+        id.startsWith(HereLists.PREFIX) -> HereLists.of(id)?.songs.orEmpty()
+        else -> runCatching { Server.playlist(id) }.getOrDefault(emptyList())
+    }.let { if (shuffle) it.shuffled() else it }
+    if (songs.isNotEmpty()) javax.swing.SwingUtilities.invokeLater { Player.play(songs) }
 }

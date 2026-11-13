@@ -89,8 +89,10 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -132,6 +134,10 @@ fun main() {
     Library.start()
     Server.start()
     Covers.warm()
+    Covers.tidy()
+    SetHeard.start()
+    // a station that says nothing: its song heard (AirHeard)
+    AirHeard.start()
     // the next song's cover (and the last's) ready before it plays
     Covers.ahead()
     // the genres you open most, their editors' songs read ahead (their pages open with their block there)
@@ -184,6 +190,7 @@ fun main() {
         ) {
             // never dragged smaller than the rail, a page and the now column
             window.minimumSize = java.awt.Dimension(Placed.LEAST.width.value.toInt(), Placed.LEAST.height.value.toInt())
+            Win.window = window
             LaunchedEffect(Unit) {
                 window.minimumSize = java.awt.Dimension(720, 520)
                 window.background = java.awt.Color.BLACK
@@ -198,6 +205,8 @@ fun main() {
             // as the pages' TOP at ink's size
             val chosen by Size.chosen.collectAsState()
             LaunchedEffect(Size.of(chosen)) { InkTitle.apply(window, Size.of(chosen)) }
+            // Windows: back, play and next under the window's preview in the taskbar (WinThumbBar)
+            LaunchedEffect(Unit) { WinThumbBar.start(window) }
             LaunchedEffect(Unit) {
                 // back to the front: the music folder read again (a song added meanwhile shows)
                 window.addWindowFocusListener(object : java.awt.event.WindowAdapter() {
@@ -261,6 +270,7 @@ sealed interface Page {
     data object Playing : Page
     data object Settings : Page
     data object Year : Page
+    data object Mapped : Page
     data class Festival(val name: String) : Page
     data class Mood(val mood: InnerTube.Mood) : Page
     data object Queue : Page
@@ -403,6 +413,14 @@ private fun App() {
                 val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
                 if (held && dy != 0f) { if (dy < 0) Size.bigger() else Size.smaller(); e.changes.forEach { it.consume() } }
             }
+            // space is play and pause, wherever the focus is (2026-11-12, a tester: after clicking next, loop or the heart,
+            // space pressed that instead: the clicked word kept the keys, and a clickable takes space as its own click).
+            // Taken here before anything focused hears it, its press and its release, unless a field is being typed in
+            .onPreviewKeyEvent { k ->
+                if (k.key != Key.Spacebar || Typing.on || k.isCtrlPressed || k.isMetaPressed) return@onPreviewKeyEvent false
+                if (k.type == KeyEventType.KeyDown) { Watching.toggle?.invoke() ?: Player.toggle() }
+                true
+            }
             .onKeyEvent { k ->
                 if (k.type != KeyEventType.KeyDown) return@onKeyEvent false
                 // a text field has the keys (find, a list's name, a search): space and the arrows are its, not play and
@@ -460,6 +478,9 @@ private fun App() {
             },
     ) {
       BoxWithConstraints(Modifier.fillMaxSize()) {
+        // the first open: the welcome over the whole window, till it's through (Welcome)
+        val welcoming by Welcome.showing.collectAsState()
+        if (welcoming) { WelcomePage(); return@BoxWithConstraints }
         val frame = frameOf(maxWidth)
         val tucked by Tuck.on.collectAsState()
         // nothing playing: no now column, the page has its room (it came with the first thing played)
@@ -519,6 +540,7 @@ private fun App() {
                         Page.Playing -> {}
                         Page.Settings -> SettingsPage { Nav.close() }
                         Page.Year -> YearPage({ pages += it }) { Nav.close() }
+                        Page.Mapped -> MappedPage { Nav.close() }
                         is Page.Festival -> FestivalPage(page.name, { pages += it }) { Nav.close() }
                         is Page.Mood -> MoodPage(page.mood, { pages += it }) { Nav.close() }
                         Page.Queue -> QueuePage({ pages += it }) { Nav.close() }
@@ -623,13 +645,20 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             if (tab != "songs") emptyList()
             else Genres.names.map { g -> g to pool.count { Genres.fits(it.artist, g) } }.filter { it.second > 0 }.sortedByDescending { it.second }
         }
+        // the folders your files are in, each by itself (2026-11-12, a tester: "browse the songs within each directory
+        // separately" to make a playlist of one), said from your music folder down, most first
+        val folders = remember(pool, tab) {
+            if (tab != "songs") emptyList()
+            else pool.filter { it.path.isNotEmpty() && !it.server && !it.tube }.groupingBy { java.io.File(it.path).parent.orEmpty() }.eachCount()
+                .entries.sortedBy { it.key.lowercase() }.map { it.key to it.value }
+        }
         // one row (2026-11-12, it was two, the orders ten words across): the order in use, dropped down; the songs' sources
         // and genre after a hairline; then shuffle all, add music, and list or grid
         if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) Row(Modifier.padding(horizontal = SIDE).padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS })
-            if (tab == "songs" && (counts.size > 1 || genres.isNotEmpty())) {
+            if (tab == "songs" && (counts.size > 1 || genres.isNotEmpty() || folders.size > 1)) {
                 Box(Modifier.padding(horizontal = 20.dp).width(1.dp).height(14.dp).background(Ink.line))
-                FilterRow(counts, genres, Modifier.weight(1f).padding(end = 20.dp))
+                FilterRow(counts, genres, folders, Modifier.weight(1f).padding(end = 20.dp))
             } else Spacer(Modifier.weight(1f))
             // everything shuffled, at once, and music added from a folder, here where the music is (2026-11-11, a tester:
             // "importing songs shouldn't require users to navigate through the settings"; "add your songs, hit shuffle")
@@ -710,10 +739,12 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             else -> {
                 val from by SongsFrom.chosen.collectAsState()
                 val genre by SongsFrom.genre.collectAsState()
-                val every = remember(pool, from, genre, kept, tagged, sc, seed, heard, minute) {
+                val folder by SongsFrom.folder.collectAsState()
+                val every = remember(pool, from, genre, folder, kept, tagged, sc, seed, heard, minute) {
                     val shown = pool.filter { s ->
                         (from == "all" || from !in counts || (if (from == "kept") s.id in kept else SongsFrom.of(s) == from)) &&
-                            (genre.isEmpty() || Genres.fits(s.artist, genre))
+                            (genre.isEmpty() || Genres.fits(s.artist, genre)) &&
+                            (folder.isEmpty() || (s.path.isNotEmpty() && java.io.File(s.path).parent == folder))
                     }
                     Sorts.order(shown, sc, seed, { it.id },
                         compareBy<Song>({ Library.sortName(it.albumArtist.ifBlank { it.artist }) }, { it.year }, { Library.sortName(it.album) }, { it.disc }, { it.track })) { s ->
@@ -784,6 +815,7 @@ private fun PlaceMenu(tab: String, shown: Boolean, modifier: Modifier, onFold: (
                 MenuPlace(i, shown) { Word(t.uppercase(), headline(40.sp, if (t == tab) Ink.ink else Ink.mid), touch = 4.dp) { onPlace(t) } }
             }
             Spacer(Modifier.height(24.dp))
+            // ink mapped held back for now (2026-11-12, Bronson): its page kept, nothing opens it
             MenuPlace(PLACES.size, shown) { Word("your year", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Year) } }
             MenuPlace(PLACES.size + 1, shown) { Word("settings", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Settings) } }
             // made by ink, its heart (the rail's, which a narrow window hasn't): the quiet funnel
@@ -838,15 +870,17 @@ fun artistsOf(albums: List<Album>, songs: List<Song>): List<ArtistEntry> {
 @Composable
 private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
     // a grid of faces, as the records are (2026-10-29: one thin list down a wide page)
-    val albums by Library.albums.collectAsState()
-    val covers = remember(albums) { albums.groupBy { it.artist }.mapValues { it.value.first().songs.first() } }
+    // each artist's own records' covers, from the songs (a few records each, so one without art isn't all there is):
+    // what's in the files when no photo of them comes (2026-11-12, a tester: tiles stayed empty when the search failed)
+    val songs by Library.songs.collectAsState()
+    val covers = remember(songs) { songs.groupBy { it.albumArtist }.mapValues { (_, l) -> l.distinctBy { it.albumId }.take(3) } }
     val grid = pageGrid()
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        items(artists, key = { it.name }) { a -> ArtistTile(a, covers[a.name]) { open(Page.Artist(a.name)) } }
+        items(artists, key = { it.name }) { a -> ArtistTile(a, covers[a.name].orEmpty()) { open(Page.Artist(a.name)) } }
     }
 }
 
@@ -855,7 +889,7 @@ private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
  * none; kept after), their record's cover till then; their name, how much of theirs is here.
  */
 @Composable
-private fun ArtistTile(a: ArtistEntry, record: Song?, onClick: () -> Unit) {
+private fun ArtistTile(a: ArtistEntry, records: List<Song>, onClick: () -> Unit) {
     // a click opens them, a double click shuffles their songs here, a right click their options
     var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
     val photo by androidx.compose.runtime.produceState<String?>(null, a.name) {
@@ -870,7 +904,12 @@ private fun ArtistTile(a: ArtistEntry, record: Song?, onClick: () -> Unit) {
         }).rightClick { menuAt = it }) {
         // inside what was clicked, so the menu opens from the click (beside it, from the grid's corner)
         menuAt?.let { ArtistMenu(a.name, it) { menuAt = null } }
-        val face = remember(photo, record) { photo?.let { faceSong(a.name, it, photo = true) } ?: record }
+        // their photo where it comes and draws, else the first of their records whose cover there is (the file's own art
+        // first, as every cover); none, their name on ink's sleeve
+        val tries = remember(photo, records) { listOfNotNull(photo?.let { faceSong(a.name, it, photo = true) }) + records }
+        val face by androidx.compose.runtime.produceState<Song?>(records.firstOrNull(), tries) {
+            for (t in tries) if (Covers.of(t, 400) != null) { value = t; return@produceState }
+        }
         CoverOf(face, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(a.name, listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" },
@@ -926,7 +965,7 @@ private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
     // "go to it" (the now column's title clicked): the song playing scrolled to, near the top
     LaunchedEffect(songs) { GoToPlaying.asked.collect { id -> songs.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { list.animateScrollToItem((it - 2).coerceAtLeast(0)) } } }
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) { cascading {
-        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(songs, i) } }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open, order = songs) { Player.play(songs, i) } }
     }}
 }
 
@@ -935,7 +974,7 @@ private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
 fun SongRow(
     s: Song, number: String? = null, said: String? = null, open: ((Page) -> Unit)? = null,
     lit: Boolean? = null, dim: Boolean = false, onRemove: (() -> Unit)? = null, cover: Boolean = false,
-    glow: Color? = null, onClick: () -> Unit,
+    glow: Color? = null, order: List<Song>? = null, onClick: () -> Unit,
 ) {
     val now by Player.now.collectAsState()
     val on = lit ?: (now?.song?.id == s.id)
@@ -956,7 +995,8 @@ fun SongRow(
         Row(
             Modifier.fillMaxWidth().hoverable(src).combinedClickable(src, indication = null,
                 onDoubleClick = felt { options = false; if (!picking) { Selected.choose(s.id, onClick); onClick() } },
-                onClick = felt { options = false; if (picking) Picking.toggle(s) else Selected.choose(s.id, onClick) })
+                // a click selects this one alone (what was picked let go), as a file list does (2026-11-12, a tester)
+                onClick = felt { options = false; if (picking) Picking.clear(); Picking.anchor = s; Selected.choose(s.id, onClick) })
                 // a right click (the phone's hold): its options in a menu where it was clicked
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
@@ -966,10 +1006,16 @@ fun SongRow(
                                 clickAt = e.changes.first().position
                                 options = true; e.changes.forEach { it.consume() }
                             }
-                            // ctrl (cmd on a Mac) and a click: picked, not played (Picking)
+                            // ctrl (cmd on a Mac) and a click: this one picked or let go; shift and a click: every song from the
+                            // last clicked to this one picked (in this list's order), as a file list does
                             else if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isPrimaryPressed &&
                                 (e.keyboardModifiers.isCtrlPressed || e.keyboardModifiers.isMetaPressed)) {
-                                Picking.toggle(s); e.changes.forEach { it.consume() }
+                                if (!picking) Selected.id?.takeIf { it != s.id }?.let { id -> Picking.anchor?.takeIf { it.id == id }?.let { Picking.toggle(it) } }
+                                Picking.toggle(s); Picking.anchor = s; e.changes.forEach { it.consume() }
+                            }
+                            else if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isPrimaryPressed &&
+                                e.keyboardModifiers.isShiftPressed && order != null) {
+                                Picking.range(order, Picking.anchor ?: s, s); e.changes.forEach { it.consume() }
                             }
                         }
                     }
@@ -1028,6 +1074,11 @@ private fun PlayNow(onClick: () -> Unit) {
         contentAlignment = Alignment.CenterStart) { Sprite(PLAY, Ink.ink, 1.5.dp) }
 }
 
+/** Words on the clipboard, to paste anywhere. */
+fun copyText(text: String) {
+    runCatching { java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(text), null) }
+}
+
 /**
  * A song's options, a menu at the right click: on black, a hairline round it, the words one under another in three
  * kinds (what plays, what's kept, where to go; remove last and dim). It rises a little out of the click as it fades in,
@@ -1052,16 +1103,19 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
     val groups = listOf(
         listOfNotNull(
             // this one picked, and then any others clicked: all of them at once from the bar along the foot (PickBar)
-            "pick more" to { Picking.toggle(s) },
             ("play next" to { Player.playNext(s) }).takeIf { !playing },
             ("add to queue" to { Player.add(s) }).takeIf { !playing },
-            // radio: this song, then more like it as the queue runs out
-            ("radio" to { Player.radioFrom(s) }).takeIf { !s.station && !s.episode },
+            // similar: this song, then more like it as the queue runs out, from where settings say (sound, similar
+            // songs); it was two here, online and your files, which also changed that setting unseen (2026-11-12)
+            ("play similar" to { Player.radioFrom(s) }).takeIf { !s.station && !s.episode },
         ),
         listOfNotNull(
             ((if (s.id in loved) "unlove" else "love") to { Loved.toggle(s) }).takeIf { !s.station && !s.episode },
             // into one of your playlists (the server's, YouTube Music's)
             ("add to a playlist" to { go(Page.AddTo(s)) }).takeIf { canAddToList(s) },
+            // the song playing: the whole of up next kept as a list of yours (moved here from up next's own row,
+            // 2026-11-12, Bronson: "maybe not displayed on the player it should be in a menu")
+            ("save up next as a list" to { saveUpNext() }).takeIf { playing && Player.queue.value.size > 1 },
             // kept on the computer, to play with no signal (your server's, YouTube's)
             (if (s.id in kept) "not offline" to { Offline.remove(listOf(s.id)) } else "keep offline" to { Offline.keep(listOf(s)) }).takeIf { Offline.keepable(s) },
         ),
@@ -1072,6 +1126,8 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
             ("artist" to { go(Page.Artist(s.albumArtist)) }).takeIf { open != null && !s.episode },
             // a file of yours: shown where it is (Explorer, the Finder)
             file?.let { f -> (if (Home.mac) "show in finder" else "show in folder") to { SongLink.reveal(f) } },
+            // its name to paste anywhere, a search or a message (2026-11-12, a tester)
+            ("copy title" to { copyText(listOf(s.artist.substringBefore(", "), s.title).filter { it.isNotBlank() }.joinToString(" - ")) }).takeIf { s.title.isNotBlank() },
         ),
     ).filter { it.isNotEmpty() }
     // copy link, after the keeping kind (its own kind where that's empty): a song with a link (not a station's, an episode's)
@@ -1299,7 +1355,8 @@ fun said(n: Player.Now): Pair<String, String> {
     val air by Player.onAir.collectAsState()
     val s = n.song
     val a = air
-    return if (s.station && a != null) a.title to (a.artist ?: s.title) else s.title to s.artist
+    // heard in the stream, not said by the station (AirHeard): said so beside the artist
+    return if (s.station && a != null) a.title to ((a.artist ?: s.title) + if (a.heard) "  ·  heard" else "") else s.title to s.artist
 }
 
 /**
@@ -1350,13 +1407,16 @@ fun Critics(title: String, artist: String, most: Int = 3, across: Boolean = fals
 /**
  * A record's songs, yours and the rest of it from YouTube Music's tracklist ([YouTube.whole]): its order, yours in
  * their places (matched by name, a version in brackets aside), what you haven't from YouTube Music, yours not on it
- * after. Not the same record (under half of yours found in it), or nothing more to it: yours as they are.
+ * after. Not the same record (under half of yours found in it), or nothing more to it: yours as they are. The record
+ * page's and the player's record side's.
  */
-private fun filled(mine: List<Song>, whole: List<Song>?): List<Song> {
+/** A song's name as a tracklist's is matched: lowercase, a version in brackets aside, letters and numbers only. */
+internal fun trackKey(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
+
+internal fun filled(mine: List<Song>, whole: List<Song>?): List<Song> {
     if (whole == null || whole.size <= mine.size) return mine
-    fun plain(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
     val left = mine.toMutableList()
-    val out = whole.map { t -> left.firstOrNull { plain(it.title) == plain(t.title) }?.also { left.remove(it) } ?: t }
+    val out = whole.map { t -> left.firstOrNull { trackKey(it.title) == trackKey(t.title) }?.also { left.remove(it) } ?: t }
     if (mine.size - left.size < (mine.size + 1) / 2) return mine
     return out + left
 }
@@ -1409,7 +1469,7 @@ private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                 // filled in, its place in the record; yours, its own number
                 val n = if (more || s.track <= 0) "${i + 1}" else if (discs) "${s.disc}.${s.track}" else "${s.track}"
                 SongRow(s, number = n, said = if (!mine) "youtube music" else s.artist.takeIf { it != a.artist }?.lowercase(), open = open,
-                    dim = !mine) { Player.play(shown, i) }
+                    dim = !mine, order = shown) { Player.play(shown, i) }
             }
             item { Around(a, albums, open) }
         }
@@ -1478,7 +1538,10 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
     val side by Bar.side.collectAsState()
     // the beat over the line where the window's wide enough for its four squares and tempo between the times
     var beatOn by remember { mutableStateOf(true) }
-    Column(Modifier.fillMaxWidth().background(Ink.black).padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
+    // a right click anywhere on the bar, its cover too: the song's menu (2026-11-12, a tester: right click everywhere)
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    Column(Modifier.fillMaxWidth().background(Ink.black).rightClick { menuAt = it }.padding(start = SIDE, end = SIDE, bottom = 14.dp)) {
+        menuAt?.let { SongMenu(n.song, null, null, it, playing = true) { menuAt = null } }
         // the bar's top edge over the line's reach: dragged up, the bar taller and its cover bigger (BarEdge)
         Box(Modifier.fillMaxWidth()) {
             SeekLine(n, cover?.accent ?: Ink.ink, beat = beatOn, ends = true)
@@ -1512,6 +1575,10 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                     else WholeWords(title.uppercase(), headline((20 + 8 * grown).sp), 2)
                     Spacer(Modifier.height(4.dp))
                     val on by Casting.on.collectAsState()
+                    // a DJ set: the track playing in it, typed out as it's heard (SetHeard)
+                    val inSet by SetHeard.now.collectAsState()
+                    if (SetHeard.isSet(n.song) && inSet != null) TypedLine("now: ${inSet!!.artist.lowercase()} - ${inSet!!.title.lowercase()}", pixel(12.sp, Ink.ink),
+                        Modifier.padding(bottom = 2.dp).clickable(remember { MutableInteractionSource() }, indication = null) { copyText("${inSet!!.artist} - ${inSet!!.title}") })
                     Row {
                         Word(artist.lowercase(), pixel(12.sp, Ink.mid)) {
                             // an episode's show; a song's artist; the artist a station says it's playing
@@ -1523,13 +1590,19 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                     }
                 }
             }
-            Controls(n, small = true)
+            Controls(n, small = true, both = words)
             // a station's: the song it's playing, found, to love (the heart) or put in a list (add)
             val airedSong = rememberAiredSong(n)
             if (airedSong != null) {
-                Heart(airedSong, 2.dp, Modifier.padding(start = 10.dp))
+                Heart(airedSong, 3.dp, Modifier.padding(start = 12.dp))
                 Word("add", pixel(14.sp, Ink.mid), Modifier.padding(start = 10.dp), touch = 10.dp) { Nav.open(Page.AddTo(airedSong)) }
-            } else Heart(n.song, 2.dp, Modifier.padding(start = 10.dp))
+            } else Heart(n.song, 3.dp, Modifier.padding(start = 12.dp))
+            // similar by the controls: lit, up next goes on with songs like these when it runs out; a click turns it on
+            // or off (where they come from is settings', 2026-11-12, Bronson: one control, the same as up next's)
+            if (words) SimilarWord(pixel(14.sp), Modifier.padding(start = 14.dp), "similar")
+            // preview on: said, lit, a click turns it off
+            val previewing by Preview.secs.collectAsState()
+            if (previewing > 0) Word("preview $previewing s", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 10.dp) { Preview.set(0) }
             if (volume) { Spacer(Modifier.width(12.dp)); Volume(line = 80.dp) }
             if (words) {
                 Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
@@ -1552,6 +1625,11 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                             if (Sleep.at.value == 0L) Sleep.CHOICES.filter { it in setOf(15, 30, 60) }.map { m -> "sleep in $m min" to { Sleep.set(m) } } +
                                 listOf("sleep at the song's end" to { Sleep.set(0) })
                             else listOf("${Sleep.said()} · off" to { Sleep.set(null) }),
+                            // preview: a taste of each song, then the next (Preview)
+                            if (Preview.secs.value == 0) Preview.CHOICES.map { n -> "preview $n s of each" to { Preview.set(n) } }
+                            else listOf("preview · off" to { Preview.set(0) }),
+                            // up next kept as a list of yours (saveUpNext)
+                            listOfNotNull(("save up next as a list" to { saveUpNext() }).takeIf { Player.queue.value.size > 1 }),
                             // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
                             listOf("stop" to { Player.stop() }),
                         ),
@@ -1639,14 +1717,32 @@ private fun QueuePage(open: (Page) -> Unit, onClose: () -> Unit) {
     }
 }
 
-/** Radio: lit, the queue's end brings more like it. */
+/** Up next's own word for similar ([SimilarWord]): lit, it goes on with songs like these when it runs out. */
 @Composable
-fun RadioWord(modifier: Modifier = Modifier) {
-    val radio by Player.radio.collectAsState()
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Word("radio", pixel(13.sp, if (radio) Ink.ink else Ink.dim), touch = 8.dp) { Player.radio(!radio) }
-        BasicText(if (radio) "  then more like these" else "  stops at the end", style = pixel(12.sp, Ink.mid))
-    }
+fun RadioWord(modifier: Modifier = Modifier) = SimilarWord(pixel(13.sp), modifier, "keep playing similar")
+
+/**
+ * Similar on or off, the one control for it wherever it's shown (the bar, up next): lit while on, 35% while off, a
+ * click turns it over. Where its songs come from is a setting (sound, similar songs). Till 2026-11-12 up next spelled
+ * out every source as a row of words beside a "similar" lit as a label, and the bar had a drop-down of them: Bronson,
+ * "a bit confusing", then "looks worse"; his pick, a toggle here and the source in settings.
+ */
+@Composable
+fun SimilarWord(style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier, word: String) {
+    val on by Player.radio.collectAsState()
+    Word(word, style.copy(color = if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { Player.radio(!on) }
+}
+
+/**
+ * What's up next, a shuffle or a similar run you liked, kept as a list of yours, "up next, 12 november" (2026-11-12, a
+ * tester: "these combinations can be lost every time the shuffle button is pressed again"). In the playing song's menu
+ * and the bar's more; it was a word in up next's own row, which Bronson found confusing there.
+ */
+fun saveUpNext() {
+    val queue = Player.queue.value
+    if (queue.size < 2) return
+    val day = java.time.LocalDate.now().let { "${it.dayOfMonth} ${it.month.name.lowercase()}" }
+    HereLists.make("up next, $day", queue)
 }
 
 /** A row's grip, to drag it into another place: six pixels in two columns. */
@@ -1931,6 +2027,25 @@ private fun Around(a: Album, albums: List<Album>, open: (Page) -> Unit) {
     }
 }
 
+
+/**
+ * PLAY and SHUFFLE, big, at the head of a page of songs (a list of yours, a smart list, a YouTube record or playlist),
+ * as the songs' SHUFFLE ALL is (2026-11-12, Bronson: "the same big shuffle button as the songs list"); what else there
+ * is to do goes small on the lines under them ([HeadWords]).
+ */
+@Composable
+fun PlayShuffle(songs: List<Song>, modifier: Modifier = Modifier) = Row(modifier, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    Word("PLAY", headline(14.sp), touch = 8.dp) { Player.play(songs) }
+    Word("SHUFFLE", headline(14.sp), touch = 8.dp) { Player.play(songs.shuffled()) }
+}
+
+/** The small words under [PlayShuffle], wrapping onto another line rather than cut short ("copy l..."). */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun HeadWords(modifier: Modifier = Modifier, words: @Composable () -> Unit) =
+    androidx.compose.foundation.layout.FlowRow(modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(24.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) { words() }
+
 /** A list's word for covers beside its songs, lit when on (one choice for every list: [ListCovers]). */
 @Composable
 fun CoversWord(modifier: Modifier = Modifier) {
@@ -2039,6 +2154,8 @@ object SongsFrom {
     val chosen = kotlinx.coroutines.flow.MutableStateFlow(runCatching { file.readText().trim() }.getOrDefault("").ifEmpty { "all" })
     /** The genre shown, "" for every one. */
     val genre = kotlinx.coroutines.flow.MutableStateFlow(runCatching { genreFile.readText().trim() }.getOrDefault(""))
+    /** The one folder shown, its whole path ("" for all of them); not kept past a restart. */
+    val folder = kotlinx.coroutines.flow.MutableStateFlow("")
     // "kept": kept offline, from wherever it came (2026-11-10, Bronson: "a marked offline category, just youtube")
     val WORDS = listOf("all" to "everything", "computer" to "this computer", "server" to "your server", "youtube" to "youtube", "kept" to "kept offline")
 
@@ -2063,9 +2180,10 @@ object SongsFrom {
  */
 @Composable
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>, modifier: Modifier) {
+private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>, folders: List<Pair<String, Int>>, modifier: Modifier) {
     val from by SongsFrom.chosen.collectAsState()
     val genre by SongsFrom.genre.collectAsState()
+    val folder by SongsFrom.folder.collectAsState()
     val now = if (from in counts) from else "all"
     @Composable
     fun Choice(word: String, count: Int?, lit: Boolean, onClick: () -> Unit) = Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2086,6 +2204,18 @@ private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>,
             DropWord(genre.ifEmpty { "every genre" }, genre.isNotEmpty(),
                 listOf(DropRow("every genre", null, genre.isEmpty()) { SongsFrom.setGenre("") }) +
                     all.map { (g, n) -> DropRow(g, n, g == genre) { SongsFrom.setGenre(g) } })
+        }
+        // each folder by itself, dropped down from one word as the genres are: said from your music folder down
+        if (folders.size > 1) {
+            val roots = Library.folders
+            fun short(path: String): String {
+                val root = roots.firstOrNull { path.startsWith(it.path) }
+                return if (root != null) (java.io.File(root.path).name + path.removePrefix(root.path)).replace('\\', '/').lowercase()
+                    else Library.said(java.io.File(path))
+            }
+            DropWord(if (folder.isEmpty()) "every folder" else short(folder).substringAfterLast('/'), folder.isNotEmpty(),
+                listOf(DropRow("every folder", null, folder.isEmpty()) { SongsFrom.folder.value = "" }) +
+                    folders.map { (f, n) -> DropRow(short(f), n, f == folder) { SongsFrom.folder.value = f } })
         }
     }
 }
@@ -2144,7 +2274,16 @@ fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, beside: (@Composa
  */
 object Picking {
     val picked = kotlinx.coroutines.flow.MutableStateFlow<List<Song>>(emptyList())
+    /** The song last clicked: a shift-click picks from it. */
+    @Volatile var anchor: Song? = null
     fun toggle(s: Song) { picked.value = if (picked.value.any { it.id == s.id }) picked.value.filter { it.id != s.id } else picked.value + s }
+    /** Every song in `order` from `from` to `to` (either way), picked, with what was already. */
+    fun range(order: List<Song>, from: Song, to: Song) {
+        val a = order.indexOfFirst { it.id == from.id }; val b = order.indexOfFirst { it.id == to.id }
+        if (a < 0 || b < 0) { toggle(to); return }
+        val run = order.subList(minOf(a, b), maxOf(a, b) + 1)
+        picked.value = (picked.value + run).distinctBy { it.id }
+    }
     fun clear() { picked.value = emptyList() }
 }
 

@@ -167,9 +167,11 @@ fun ListenPage(open: (Page) -> Unit) {
             // their new music videos (MusicVideos.kt), shown once some are found
             item(key = "videos") { NewVideos(open) }
         }
-        shelf["liveSets"] = {
-            // live DJ sets from four channels that film them (LiveSets.kt)
-            item(key = "live-sets") { LiveSetsShelf(open) }
+        // your own music at a tempo (TempoMixes.yours), once there's enough of it: from INK (2026-11-12), made from yours
+        shelf["yourMix"] = {
+            if (TempoMixes.yoursSize() >= 20) item(key = "yourmix") {
+                MixAt("your music", "MIX YOUR MUSIC", "what you play, love and keep, at a tempo, each into the next on the beat") { TempoMixes.yours(it) }
+            }
         }
         shelf["yours"] = {
             if (first.isNotEmpty()) item {
@@ -263,23 +265,6 @@ fun ListenPage(open: (Page) -> Unit) {
         shelf["newest"] = {
             records("new on your server", "the newest there", newest, open)
         }
-        shelf["inkRadio"] = {
-            if (stars.isNotEmpty()) item {
-                Column {
-                Section("INK RADIO", "the stations we keep") { Word("all of them", pixel(14.sp, Ink.mid), touch = 8.dp) { Nav.go("ink") } }
-                Shelf {
-                    itemsIndexed(stars, key = { _, c -> c.song.id }) { i, c ->
-                        Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null,
-                            onClick = felt { Player.play(stars.drop(i).map { it.song }) })) {
-                            StationCover(c.song, Modifier.fillMaxWidth().aspectRatio(1f))
-                            Spacer(Modifier.height(8.dp))
-                            BasicText(c.city.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-                }
-            }
-        }
         shelf["lists"] = {
             if (lists.isNotEmpty()) item {
                 Column {
@@ -317,8 +302,9 @@ private fun SinceYouWereHere(since: Long, lines: List<NewLine>) {
 }
 
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment); the phone's keys, where shared. */
-val LISTEN_SHELVES = listOf("fromYours", "forYou", "videos", "liveSets", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "because",
-    "newToYou", "jumpBack", "forgotten", "newest", "inkRadio", "lists")
+// listen is you, INK is the world (2026-11-12, Bronson): live sets and ink radio are INK's; your mix is here
+val LISTEN_SHELVES = listOf("fromYours", "forYou", "videos", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "yourMix", "because",
+    "newToYou", "jumpBack", "forgotten", "newest", "lists")
 
 /**
  * Know me (2026-11-11): your listening on Last.fm or ListenBrainz, brought in by name, so INK, listen and the mixes
@@ -403,9 +389,11 @@ private fun partOfDay(at: Long): String {
 /** A list as words: its name, how many songs. */
 @Composable
 fun ListRow(p: Server.Playlist, said: String? = null, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick, "play" to { playList(p.id); Unit }, "shuffle" to { playList(p.id, shuffle = true); Unit }), if (p.id.startsWith(HereLists.PREFIX)) listOf("delete list" to { HereLists.delete(p.id) }) else emptyList()) }) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 8.dp)) {
         BasicText(p.name.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
         BasicText(said ?: ("${p.count} ${if (p.count == 1) "song" else "songs"}" + if (p.mine) "" else "   shared with you"), style = pixel(12.sp, Ink.mid))
+    }
     }
 }
 
@@ -420,8 +408,25 @@ fun ListsPage(open: (Page) -> Unit) {
     val hereLists by HereLists.all.collectAsState()
     LaunchedEffect(account) { Server.readPlaylists() }
     val gridded by ListsGrid.on.collectAsState()
-    if (gridded) return ListsTiles(open)
     val list = pageList()
+    // a right click anywhere: a new list, empty or from files (2026-11-12, a tester: the way it's done everywhere)
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    fun fresh(): String { var n = 1; while (hereLists.any { it.name == if (n == 1) "new list" else "new list $n" }) n++; return if (n == 1) "new list" else "new list $n" }
+    Box(Modifier.fillMaxSize().rightClick { menuAt = it }) {
+    menuAt?.let { at ->
+        MenuAt(at, Ink.ink, listOf(listOf(
+            "new list" to { val m = HereLists.make(fresh(), emptyList()); open(Page.List(m.id, m.name)) },
+            "open an .inkmusic file" to { chooseFiles { files -> kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                files.filter { it.name.endsWith(".inkmusic") }.mapNotNull { ListOut.open(it) }.lastOrNull()?.let { m -> javax.swing.SwingUtilities.invokeLater { open(Page.List(m.id, m.name)) } }
+            } } },
+            "new list from files" to { chooseFiles { files -> kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val songs = Dropped.songsOf(files)
+                if (songs.isNotEmpty()) { val m = HereLists.make(fresh(), songs); javax.swing.SwingUtilities.invokeLater { open(Page.List(m.id, m.name)) } }
+            } } },
+        ))) { menuAt = null }
+    }
+    // as a grid, the same right click over it (2026-11-12: the grid had none)
+    if (gridded) { ListsTiles(open); return@Box }
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
         item { ListsView() }
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
@@ -450,6 +455,7 @@ fun ListsPage(open: (Page) -> Unit) {
             }
         }
     }}
+    }
 }
 
 /** Lists as a list or a grid: two words, the one chosen lit. */
@@ -465,10 +471,12 @@ private fun ListsView() {
 /** A list as a tile: its art square, its name and what it holds under it. */
 @Composable
 private fun ListTile(name: String, said: String, onClick: () -> Unit, art: @Composable () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick)) }) {
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) { art() }
         Spacer(Modifier.height(8.dp))
         UnderCover(name, said)
+    }
     }
 }
 
@@ -496,6 +504,7 @@ private fun ListsTiles(open: (Page) -> Unit) {
     val keptIds by Offline.kept.collectAsState()
     val kept by produceState(emptyList<Song>(), keptIds) { value = Offline.songs() }
     val tubeLists by TubeAccount.playlists.collectAsState()
+    val here by HereLists.all.collectAsState()
     val grid = pageGrid()
     androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
         androidx.compose.foundation.lazy.grid.GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
@@ -512,6 +521,12 @@ private fun ListsTiles(open: (Page) -> Unit) {
         }
         if (keptIds.isNotEmpty()) item(key = "kept") {
             ListTile("kept on this computer", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}", { open(Page.List(KEPT, "kept on this computer")) }) { Mosaic(kept, "kept") }
+        }
+        // lists kept here, on this computer (HereLists; 2026-11-12, a tester: the grid left out the ones made since 2.1.16)
+        gridItems(here, key = { it.id }) { m ->
+            ListTile(m.name, "${m.songs.size} ${if (m.songs.size == 1) "song" else "songs"}", { open(Page.List(m.id, m.name)) }) {
+                if (m.songs.isEmpty()) Lettered(m.name) else Mosaic(m.songs, m.id)
+            }
         }
         gridItems(lists, key = { it.id }) { p ->
             ListTile(p.name, "${p.count} ${if (p.count == 1) "song" else "songs"}", { open(Page.List(p.id, p.name)) }) {
@@ -546,6 +561,9 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
         }
     }
     val list = pageList()
+    // a list of yours: files dropped on the window go into it (Dropped), and files can be added from a folder
+    val mine = id.startsWith(HereLists.PREFIX)
+    androidx.compose.runtime.DisposableEffect(id) { if (mine) Dropped.into = id; onDispose { if (Dropped.into == id) Dropped.into = null } }
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
@@ -562,29 +580,37 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 val room = remember(keptNow) { if (id == KEPT) " · ${Offline.bytes() / 1_048_576} mb" else "" }
                 BasicText(s?.let { "${it.size} ${if (it.size == 1) "song" else "songs"} · ${clock(it.sumOf { x -> x.duration })}$room" } ?: "reading", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(14.dp))
-                if (!s.isNullOrEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                    Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
-                    Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(s.shuffled()) }
-                    MixWord(name, s)
-                    CoversWord()
-                    KeepOffline(s)
-                }
-                // the list written out: as words, as a spreadsheet, or every song's link (2026-11-11)
                 if (!s.isNullOrEmpty()) {
+                    PlayShuffle(s)
                     var copied by remember { mutableStateOf(false) }
-                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                        Word("save as text", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "txt", ListOut.text(s)) }
-                        Word("save as csv", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.save(name, "csv", ListOut.csv(s)) }
-                        Word(if (copied) "links copied" else "copy links", pixel(13.sp, Ink.mid), touch = 8.dp) { ListOut.copy(ListOut.links(s)); copied = true }
+                    HeadWords {
+                        MixWord(name, s)
+                        CoversWord()
+                        KeepOffline(s)
+                        // the list written out: as words, as a spreadsheet, as a page, a file to share (2026-11-11); one
+                        // word with its kinds dropped down (they were five words in a row of their own)
+                        DropWord("save as", true, listOf(
+                            DropRow("text", null, false) { ListOut.save(name, "txt", ListOut.text(s)) },
+                            DropRow("a spreadsheet (csv)", null, false) { ListOut.save(name, "csv", ListOut.csv(s)) },
+                            DropRow("a page", null, false) { ListOut.save(name, "html", ListOut.html(name, s)) },
+                            DropRow("a page with every service", null, false) { ListOut.save("$name, everywhere", "html", ListOut.htmlAll(name, s)) },
+                            DropRow("an .inkmusic file", null, false) { ListOut.save(name, "inkmusic", ListOut.inkmusic(name, s)) },
+                        ))
+                        Word(if (copied) "links copied" else "copy links", pixel(14.sp, if (copied) Ink.ink else Ink.mid), touch = 8.dp) { ListOut.copy(ListOut.links(s)); copied = true }
                         // a list here: let it go (a second click, as remove all's)
                         if (id.startsWith(HereLists.PREFIX)) {
                             var sure by remember { mutableStateOf(false) }
                             LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
-                            Word(if (sure) "delete it" else "delete list", pixel(13.sp, if (sure) Ink.ink else Ink.dim), touch = 8.dp) {
+                            Word(if (sure) "delete it" else "delete list", pixel(14.sp, if (sure) Ink.ink else Ink.dim), touch = 8.dp) {
                                 if (!sure) sure = true else { HereLists.delete(id); onClose() }
                             }
                         }
                     }
+                }
+                // yours: songs from the computer into it, chosen or dropped (2026-11-12, a tester)
+                if (mine) Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(26.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Word("add files", pixel(13.sp), touch = 8.dp) { chooseFiles { files -> kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { HereLists.add(id, Dropped.songsOf(files)) } } }
+                    BasicText("or drop them here", style = pixel(12.sp, Ink.mid))
                 }
                 MixProgress(name)
                 Spacer(Modifier.height(14.dp))
@@ -596,7 +622,7 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                         id == KEPT -> ({ Offline.remove(listOf(x.id)) })
                         id.startsWith(HereLists.PREFIX) -> ({ HereLists.remove(id, i) })
                         else -> null
-                    }) { Player.play(s, i) }
+                    }, order = s) { Player.play(s, i) }
             }
         }}
     }

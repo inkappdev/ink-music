@@ -21,17 +21,28 @@ object DjSets {
         Channel("UCal_TyiLk79vN9-OzEzUM6A", "kiosk radio"),
     )
 
-    /** The sets, the channels taking turns (four each at most), twenty in all. */
-    fun read(day: Long = 0): List<Set> {
+    /**
+     * The sets, the channels taking turns: their newest page each (about thirty videos, every six hours), or `deep`, as
+     * far back as [DEEP_PAGES] pages go (2026-11-12, Bronson: "pull way more ... so many more we can shuffle through";
+     * once a week, kept between, as a deep read's a few megabytes).
+     */
+    fun read(day: Long = 0, deep: Boolean = false): List<Set> {
         val each = CHANNELS.map { ch ->
-            TubeVideos.uploads(ch.id).filter { it.seconds == 0 || it.seconds >= 20 * 60 }
+            TubeVideos.uploads(ch.id, if (deep) DEEP_PAGES else 1).filter { it.seconds == 0 || it.seconds >= 20 * 60 }
                 .filter { it.seconds >= 20 * 60 || looksLikeASet(it.title) }
-                .sortedBy { it.days }.take(4)
+                .sortedBy { it.days }.take(if (deep) 150 else 30)
                 .map { Set(it.id, dj(it.title), ch.name, it.days, it.seconds) }
                 .filter { it.dj.isNotBlank() }
         }.filter { it.isNotEmpty() }
-        return turns(each, day).take(20)
+        return turns(each, day)
     }
+
+    /** How far back a deep read goes: pages of each channel's Videos tab, about thirty videos a page. */
+    const val DEEP_PAGES = 6
+    /** How many sets are kept between reads, the newest. */
+    const val KEPT = 800
+    /** How often a deep read's made (the newest page is read every six hours). */
+    const val DEEP_EVERY = 7 * 86_400_000L
 
     /**
      * Each channel's in turn (its newest first), the channels in an order new each `day` (2026-11-10: newest first, then

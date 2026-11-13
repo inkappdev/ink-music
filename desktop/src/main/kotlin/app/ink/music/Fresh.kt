@@ -98,7 +98,7 @@ object Fresh {
     }
 
     private val refusedFile = File(Home.dir, "not-for-me.json")
-    private fun refused(): List<String> = runCatching {
+    internal fun refused(): List<String> = runCatching {
         JSONArray(refusedFile.readText()).let { a -> (0 until a.length()).map { a.getString(it) } }
     }.getOrDefault(emptyList())
 

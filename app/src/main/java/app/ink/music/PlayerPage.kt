@@ -346,10 +346,15 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                         // that much height. What's left over goes above and below, as the weights had it (1 : .4)
                         val body = @Composable { room: androidx.compose.ui.unit.Dp ->
                             androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
-                                Column {
+                              // the line as wide as the cover is (it touches the cover's top edge): a cover given less
+                              // height than the width (a DJ set's line under it, a short phone) took the line's right end
+                              // with it (2026-11-12, Bronson: "the album art is shorter on the right side")
+                              BoxWithConstraints {
+                                Column(Modifier.width(minOf(maxWidth, 420.dp, room))) {
                                     Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
-                                    Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster) { t -> Moment(t) { typing = it } }
+                                    Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster) { t -> Moment(t) { typing = it }; if (SetHeard.isSet(t)) SetSleeve(t.artist, t.title, onOpen) }
                                 }
+                              }
                             }
                         }
                         androidx.compose.ui.layout.SubcomposeLayout(Modifier.fillMaxSize()) { c ->
@@ -544,6 +549,11 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
             // (not on a TV: a link sent from a TV has nowhere to go)
             if (!Device.tv) ShareWord(Modifier.padding(start = 12.dp).tvLit(), onShare, onPoster)
         }
+        // a DJ set: the track playing in it, typed out as it's heard and kept there (SetHeard)
+        if (SetHeard.isSet(t)) {
+            val inSet by SetHeard.now.collectAsState()
+            inSet?.let { h -> TypedLine("now: ${h.artist.lowercase()} - ${h.title.lowercase()}", pixel(SMALL), Modifier.padding(top = 6.dp)) }
+        }
     }
 }
 
@@ -551,7 +561,9 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
 private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
     val c = rememberCover(t.song, LocalContext.current.resources.displayMetrics.widthPixels.coerceIn(640, 1440))
     // the cover in its own effect (settings, the look: the cover's): dither, pixels, drawn at its own size
-    val look by Moving.cover.collectAsState()
+    // a DJ set: always in the blur, its tracklist over it (SetSleeve)
+    val chosenLook by Moving.cover.collectAsState()
+    val look = if (SetHeard.isSet(t)) Look.BLUR else chosenLook
     val density = LocalDensity.current.density
     val px = side.value * density
     val drawn by produceState<ImageBitmap?>(null, c, look, px) {
@@ -1113,6 +1125,55 @@ private fun sent(quality: String, id: String): Heard? {
     return Heard(id, codec, bits, rate, 0, if (lossless) 0 else m.groupValues[3].toIntOrNull() ?: 0, "", "", -1, false, null)
 }
 
+/**
+ * A DJ set's sleeve (2026-11-12, Bronson: "blurred ... when a track is recognized it types it in and then adds it to a
+ * list on the record that stays there. Essentially building a designed record", "and make them clickable"): over the
+ * set's frame in the blur, the set's name, and its tracklist as it's heard (SetHeard), numbered, the newest typed in; a
+ * track tapped opens its artist's page, held it's found and put next.
+ */
+@Composable
+private fun SetSleeve(channel: String, name: String, onOpen: (Page) -> Unit) {
+    val heard by SetHeard.heard.collectAsState()
+    val added by SetHeard.added.collectAsState()
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    LaunchedEffect(said) { if (said != null) { delay(1_600); said = null } }
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    LaunchedEffect(heard.size) { scroll.animateScrollTo(scroll.maxValue) }
+    Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .38f))) {
+        Column(Modifier.fillMaxSize().padding(18.dp)) {
+            BasicText("live dj set  ·  ${channel.lowercase()}", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(6.dp))
+            BasicText(name.uppercase(), style = headline(28.sp), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+            Spacer(Modifier.height(10.dp))
+            if (heard.isEmpty()) BasicText("listening for the first track", style = pixel(12.sp, Ink.mid))
+            Column(Modifier.weight(1f).verticalScroll(scroll)) {
+                heard.forEachIndexed { i, t ->
+                    // a tap, their page (their songs, records, more like them); held, the track put next
+                    Row(Modifier.fillMaxWidth().combinedClickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = { onOpen(Page.Artist(t.artist.substringBefore(", ").substringBefore(" & ").trim())) },
+                        onLongClick = {
+                            scope.launch {
+                                val song = withContext(kotlinx.coroutines.Dispatchers.IO) { YouTubeMusic.find(t.title, t.artist) }
+                                if (song != null) { Playback.playNext(song); said = i to "next" } else said = i to "not found"
+                            }
+                        }).padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
+                        BasicText("%02d".format(i + 1), style = pixel(12.sp, Ink.mid), modifier = Modifier.width(32.dp).padding(top = 3.dp))
+                        Column(Modifier.weight(1f)) {
+                            if (t == added) TypedLine(t.title.uppercase(), headline(15.sp))
+                            else BasicText(t.title.uppercase(), style = headline(15.sp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                        said?.takeIf { it.first == i }?.let { BasicText(it.second, style = pixel(12.sp), modifier = Modifier.padding(start = 8.dp, top = 3.dp)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** The moment's fade, and the word's fade in after it: slow, gentle at both ends. */
 private const val SETTLE = 1_400
 private val SETTLING = androidx.compose.animation.core.CubicBezierEasing(.45f, 0f, .2f, 1f)
@@ -1521,8 +1582,13 @@ private fun TvPlayer(
                 Box(Modifier.width(room)) {
                     Column(Modifier.width(room)) {
                         androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
-                            Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
-                            Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping) }
+                            // the line as wide as the cover (it touches its top edge), whatever room the cover's given
+                            BoxWithConstraints {
+                              Column(Modifier.width(minOf(maxWidth, 420.dp, room))) {
+                                Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing, onHeard) }
+                                Song(n, dir, small = false, scrub, onOpen, share, onHeard = onHeard, words = false) { t -> Moment(t, onTyping); if (SetHeard.isSet(t)) SetSleeve(t.artist, t.title, onOpen) }
+                              }
+                            }
                         }
                     }
                     // its foot over the cover's, a little in from the left, as far right as it runs

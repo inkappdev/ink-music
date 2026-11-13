@@ -90,6 +90,26 @@ object Tempos {
         return both(head, 2_000, tail, dur - 27_000)
     }
 
+    /**
+     * A stretch of a song as mono floats at its own rate (blocking): from where the phone has it, a YouTube song's stream
+     * (a small one), a file, a link; the same decoding as its tempo's (Recognize hears a DJ set's tracks from it).
+     */
+    fun clip(c: Context, song: Song, fromMs: Long, toMs: Long): Pair<FloatArray, Int>? {
+        val src: Any = when {
+            Offline.file(c, song.id) != null -> Offline.file(c, song.id)!!
+            song.tube -> YouTubeMusic.stream(song.id, false, small = true)?.first ?: return null
+            song.uri.scheme == "content" || song.uri.scheme == "file" -> song.uri
+            else -> song.uri.toString().takeIf { it.startsWith("http") } ?: return null
+        }
+        val ranged = (src as? String)?.let { Ranged(it) }
+        val x = MediaExtractor()
+        try {
+            when (src) { is String -> x.setDataSource(ranged!!); is File -> x.setDataSource(src.path); is android.net.Uri -> x.setDataSource(c, src, null) }
+            val track = (0 until x.trackCount).firstOrNull { x.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true } ?: return null
+            return decode(x, track, x.getTrackFormat(track), fromMs, toMs)
+        } catch (e: Exception) { return null } finally { x.release() }
+    }
+
     /** The two stretches read: each end's beat and key (an end that couldn't be read: the other's). */
     private fun both(head: Pair<FloatArray, Int>?, headAt: Long, tail: Pair<FloatArray, Int>?, tailAt: Long): Read? {
         if (head == null && tail == null) return null

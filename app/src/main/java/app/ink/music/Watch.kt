@@ -126,7 +126,9 @@ fun NewVideosShelf(clips: List<MusicVideos.Clip>, pages: Pages) {
 
 /** Listen's shelf of live DJ sets (LiveSets): each frame wide, the DJ, the channel and how long ago. */
 @Composable
-fun LiveSetsShelf(clips: List<MusicVideos.Clip>, pages: Pages) {
+fun LiveSetsShelf(all: List<MusicVideos.Clip>, pages: Pages) {
+    // shuffled each time the shelf's shown, so it's never the same row twice running (2026-11-12, Bronson: "less stale")
+    val clips = androidx.compose.runtime.remember(all) { all.shuffled() }
     Heading("live dj sets", "humano studios, hör berlin, the lot radio, boiler room, kiosk radio")
     Shelf(clips) { c ->
         Column(Modifier.width(240.dp)) {

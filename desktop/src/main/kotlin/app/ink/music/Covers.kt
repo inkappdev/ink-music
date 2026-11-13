@@ -124,7 +124,10 @@ object Covers {
             } ?: (if (song.server || song.tube || song.episode) null else picture(File(song.path)))
                 // (an artist's face or photo, a song only in shape, is never looked for so)
                 // local files only: no catalogs asked, no YouTube pictures (Local)
-                ?: (if (song.station || song.episode || face(song) || Local.on) null else found(song, px))
+                // a file of yours with no art of its own and no record named: left as it is, ink's sleeve, never a
+                // cover found by its title (2026-11-12, a tester: "if it contains nothing, leave it as it is")
+                ?: (if (song.station || song.episode || face(song) || Local.on || (song.path.isNotEmpty() && !song.server && !song.tube && song.album.isBlank())) null
+                    else found(song, px))
                 ?: (if (song.tube && !face(song) && !Local.on) frame(song, px) else null)
             val t1 = System.nanoTime()
             missed -= song.albumId
@@ -260,14 +263,47 @@ object Covers {
         return File(File(Home.cache, "covers"), key)
     }
     private fun onDisk(art: String, px: Int) = diskFile(art, px).exists()
-    private fun fromDisk(art: String, px: Int): ByteArray? = diskFile(art, px).takeIf { it.exists() }?.readBytes()
+    // read, its date touched: what's still looked at is never what's cleaned away ([cleanUp])
+    private fun fromDisk(art: String, px: Int): ByteArray? = diskFile(art, px).takeIf { it.exists() }?.also { it.setLastModified(System.currentTimeMillis()) }?.readBytes()
     private fun toDisk(art: String, px: Int, bytes: ByteArray) = runCatching {
         val f = diskFile(art, px)
         f.parentFile.mkdirs()
         val tmp = File(f.path + ".part")
-        tmp.writeBytes(bytes)
+        tmp.writeBytes(smaller(bytes, px))
         Keep.replace(tmp, f)
     }
+
+    /**
+     * A cover kept no bigger than it's shown (1600 px at the most, Apple's are 3000) and as WebP (2026-11-12, a tester: 4 MB
+     * covers of 3000 x 3000 in the folder); one already small and light kept as it came.
+     */
+    private fun smaller(bytes: ByteArray, px: Int): ByteArray = runCatching {
+        val most = if (px <= 0) 1600 else maxOf(px, 300).coerceAtMost(1600)
+        val img = Image.makeFromEncoded(bytes)
+        if (img.width <= most && bytes.size < 400_000) return bytes
+        val w = minOf(img.width, most); val h = (img.height.toLong() * w / img.width).toInt().coerceAtLeast(1)
+        val surface = org.jetbrains.skia.Surface.makeRasterN32Premul(w, h)
+        surface.canvas.drawImageRect(img, org.jetbrains.skia.Rect.makeWH(img.width.toFloat(), img.height.toFloat()), org.jetbrains.skia.Rect.makeWH(w.toFloat(), h.toFloat()),
+            org.jetbrains.skia.SamplingMode.MITCHELL, null, true)
+        surface.makeImageSnapshot().encodeToData(org.jetbrains.skia.EncodedImageFormat.WEBP, 86)?.bytes ?: bytes
+    }.getOrDefault(bytes)
+
+    private val folder get() = File(Home.cache, "covers")
+
+    /** How much room the kept covers take, in bytes. */
+    fun room(): Long = folder.listFiles()?.sumOf { it.length() } ?: 0L
+
+    /** Covers not looked at for a month let go (they come again if they're wanted); how much room it gave back. */
+    fun cleanUp(days: Int = 30): Long {
+        val before = System.currentTimeMillis() - days * 86_400_000L
+        var freed = 0L
+        folder.listFiles()?.filter { it.isFile && it.lastModified() < before && !it.name.startsWith("itunes-") && !it.name.startsWith("found-") }
+            ?.forEach { val n = it.length(); if (it.delete()) freed += n }
+        return freed
+    }
+
+    /** At the start, quietly: the covers cleaned up when they've grown past 400 MB. */
+    fun tidy() = Thread({ runCatching { Thread.sleep(60_000); if (room() > 400L * 1_048_576) cleanUp() } }, "covers-tidy").apply { isDaemon = true; start() }
 
     /** A file's record's cover as a 600 px JPEG, for a speaker's screen (blocking); null with none. */
     fun jpeg(song: Song): ByteArray? {

@@ -17,6 +17,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 17: asked before an app may reach devices on the wifi (a server at home) -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <!-- pairing a computer: its QR code read by the camera (asked for only on that page; never kept or sent) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- not a must (a TV has none): CAMERA alone would make Play and F-Droid list these as needed -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <!-- TVs too (Android TV / Google TV): no touch screen needed, and upright is the phone's way, not a must -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -47,6 +53,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <!-- in a TV's row of apps -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- a computer's pairing QR code read by the phone's own camera: inkhome.app/pair#<code>/<port>/<addresses>
+                 (verified by the site's assetlinks.json, so it opens here, not in the browser) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="inkhome.app" android:path="/pair" />
+            </intent-filter>
+            <!-- the site's page, for a phone where the link wasn't verified (an F-Droid build, its own key): its button -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="inkmusic" android:host="pair" />
             </intent-filter>
         </activity>
 

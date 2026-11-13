@@ -1,4 +1,4 @@
-<p>A music player that looks like nothing else on your phone. Your files, your own server, YouTube Music and independent radio, in one place. Nothing to pay, ever.</p>
+<p>A music player that looks like nothing else on your phone. Your files, your own server, YouTube Music, independent radio and podcasts, in one place. Nothing to pay, ever.</p>
 
 <p><b>Picked by people, not a feed</b></p>
 <p>INK is where to find something new: ink weekly, what we're listening to at ink, every Friday night; the record of the day; what critics and DJs are picking right now (Pitchfork, Bandcamp Daily, NPR, the Quietus and more); what's out this Friday; festivals coming up; moods made by ink. Every song plays from your own copy when you have it, and from YouTube Music when you don't.</p>
@@ -13,13 +13,16 @@
 <li><b>YouTube Music</b>: search and play without an account. Signed in: your playlists, likes, mixes and uploads, both ways, Premium's 256 kbps if you have it, and songs kept offline.</li>
 <li><b>Spotify playlists</b>, brought in from a file, each song found in your music or on YouTube Music.</li>
 <li><b>ink radio</b>: sixty-odd listener-powered stations chosen by hand, KEXP to NTS to Radio alHara, each saying what it's playing.</li>
+<li><b>Podcasts</b>: any show from Apple's directory or any feed, at any speed, the silences skipped, kept offline.</li>
 </ul>
 
 <p><b>The player</b></p>
 <ul>
 <li>Whole-screen over the cover in five looks: blur, fluted glass, pixels, dither, plain. Circle the cover to scrub, as on an iPod.</li>
-<li>Synced lyrics, big, over the cover.</li>
-<li>It says exactly what you're hearing: lossless, hi-res, the bit depth and rate.</li>
+<li><b>Automix</b>: one song runs into the next, beats matched where both are clear, the bass handed across halfway. Or a plain crossfade.</li>
+<li><b>Bit-perfect to your USB DAC</b>, on any phone: ink music drives the DAC itself, every sample as in the file, at its own rate. 24 bit stays 24 bit.</li>
+<li>Lyrics word by word, each word lit as it's sung; tap a line to play from there.</li>
+<li>It says exactly what you're hearing, step by step, from the file to your ears.</li>
 <li>An equalizer with tunings for thousands of headphones (AutoEq), even volume (ReplayGain), soft pause.</li>
 <li>Play on Chromecast and Nest speakers, TVs and DLNA receivers, hi-res where they take it. No Google Play services needed.</li>
 <li>Android Auto, a home-screen widget, a sleep timer that eases the music out.</li>

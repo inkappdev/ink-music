@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -132,19 +133,20 @@ private val OFF get() = Ink.dim
  * and repeat a size smaller at the ends, lit when on. `small`: back, play and next alone (the foot bar).
  */
 @Composable
-fun Controls(n: Player.Now, modifier: Modifier = Modifier, small: Boolean = false) {
+fun Controls(n: Player.Now, modifier: Modifier = Modifier, small: Boolean = false, both: Boolean = !small) {
     val shuffle by Player.shuffle.collectAsState()
     val repeat by Player.repeat.collectAsState()
     val cell = if (small) 2.dp else 3.dp
     Row(modifier, horizontalArrangement = if (small) Arrangement.spacedBy(4.dp) else Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        if (!small) Pixel(SHUFFLE, if (shuffle) "shuffle, on" else "shuffle, off", if (shuffle) Ink.ink else OFF) { Player.shuffle() }
+        // shuffle and repeat too where there's room (the bar too since 2026-11-12, a tester: shuffle a click away)
+        if (both) Pixel(SHUFFLE, if (shuffle) "shuffle, on" else "shuffle, off", if (shuffle) Ink.ink else OFF, Modifier.padding(end = if (small) 10.dp else 0.dp), cell = cell) { Player.shuffle() }
         Pixel(BACK, "back", Ink.ink, cell = cell) { Player.previous() }
         Pixel(if (n.playing) PAUSE else PLAY, if (n.playing) "pause" else "play", Ink.ink, cell = cell) { Player.toggle() }
         Pixel(NEXT, "next", Ink.ink, cell = cell) { Player.next() }
-        if (!small) Pixel(
+        if (both) Pixel(
             if (repeat == 2) REPEAT_ONE else REPEAT,
             when (repeat) { 2 -> "repeat one"; 0 -> "repeat, off"; else -> "repeat, on" },
-            if (repeat != 0) Ink.ink else OFF,
+            if (repeat != 0) Ink.ink else OFF, Modifier.padding(start = if (small) 10.dp else 0.dp), cell = cell,
         ) { Player.repeat() }
     }
 }
@@ -225,18 +227,36 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp, shrinks: Boolean = 
 @Composable
 fun CloseArrow(modifier: Modifier = Modifier, onClick: () -> Unit) = Pixel(CLOSE, "close", Ink.ink, modifier, onClick = onClick)
 
-/** A pixel control: a step brighter under the mouse, dimmer while pressed (as a word is), its name for a screen reader. */
+/**
+ * A pixel control: a step brighter under the mouse, dimmer while pressed (as a word is), its name for a screen reader,
+ * and that name said beside the mouse when it rests there a moment (2026-11-12, Bronson: a drawn control should say
+ * what it does): a black box on a hairline, the pixel font, as ink says everything.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun Pixel(rows: List<String>, name: String, colour: Color, modifier: Modifier = Modifier, cell: Dp = 2.dp, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val over by src.collectIsHoveredAsState()
     val c by animateColorAsState(if (pressed) Ink.mid else if (over) brighter(colour) else colour, tween(Motion.FADE), label = name)
-    Box(
-        modifier.semantics { contentDescription = name; role = androidx.compose.ui.semantics.Role.Button }
-            .hoverable(src).clickable(src, indication = null, onClick = felt(then = onClick)).padding(horizontal = cell * 4, vertical = cell * 6),
-    ) { Sprite(rows, c, cell) }
+    androidx.compose.foundation.TooltipArea(
+        tooltip = { Said(name) },
+        modifier = modifier,
+        delayMillis = 500,
+        tooltipPlacement = androidx.compose.foundation.TooltipPlacement.CursorPoint(offset = androidx.compose.ui.unit.DpOffset(0.dp, 20.dp)),
+    ) {
+        Box(
+            Modifier.semantics { contentDescription = name; role = androidx.compose.ui.semantics.Role.Button }
+                .hoverable(src).clickable(src, indication = null, onClick = felt(then = onClick)).padding(horizontal = cell * 4, vertical = cell * 6),
+        ) { Sprite(rows, c, cell) }
+    }
 }
+
+/** What a control does, said beside the mouse ([Pixel]). */
+@Composable
+private fun Said(name: String) = Box(
+    Modifier.background(Color.Black).border(1.dp, Ink.line).padding(horizontal = 8.dp, vertical = 5.dp),
+) { BasicText(name.lowercase(), style = pixel(12.sp, Ink.ink)) }
 
 /** One step up ink's brightness: off (35%) to 70%, 70% to ink. */
 fun brighter(c: Color): Color = when {

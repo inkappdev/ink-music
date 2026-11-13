@@ -168,7 +168,7 @@ object Library {
         val t = a.tag
         fun tag(k: FieldKey) = runCatching { t?.getFirst(k) }.getOrNull()?.trim().orEmpty()
         val artist = said(tag(FieldKey.ARTIST))
-        val album = tag(FieldKey.ALBUM)
+        val album = record(tag(FieldKey.ALBUM))
         val albumArtist = said(tag(FieldKey.ALBUM_ARTIST)).takeIf { it != "unknown" } ?: artist.substringBefore(", ")
         val h = a.audioHeader
         Song(
@@ -198,7 +198,7 @@ object Library {
     private fun byHand(f: File): Song {
         val r = Tags.read(f)
         val artist = said(r?.of("ARTIST").orEmpty())
-        val album = r?.of("ALBUM").orEmpty()
+        val album = record(r?.of("ALBUM").orEmpty())
         val albumArtist = said(r?.of("ALBUMARTIST", "ALBUM ARTIST", "ALBUM_ARTIST").orEmpty()).takeIf { it != "unknown" } ?: artist.substringBefore(", ")
         return Song(
             id = "l" + hash(f.path),
@@ -244,6 +244,14 @@ object Library {
         .take(8).joinToString("") { "%02x".format(it) }
 
     private fun plain(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+
+    /**
+     * A record's name as tagged, a placeholder none ("Unknown Album", "[Unknown Album]", "Untitled"): files a tagger or a
+     * download left so were one record, sharing one cover none of them had (2026-11-12, a tester).
+     */
+    private fun record(album: String): String = album.trim().takeUnless {
+        it.lowercase().trim('[', ']', '<', '>', '(', ')', ' ') in setOf("unknown album", "unknown", "untitled", "no album", "album", "unknown title")
+    }.orEmpty()
 
     /** "Air; Beth Hirsch" or "Air / Beth Hirsch" as said: "Air, Beth Hirsch". None is "unknown". */
     private fun said(s: String) = s.split(';', '\u0000').map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ").ifEmpty { "unknown" }

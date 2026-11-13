@@ -97,9 +97,11 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
         Spacer(Modifier.height(28.dp))
         // find, the lens (⌘F)
         Pixel(SEARCH, "find", Ink.mid, Modifier.rising(PLACES.size).offset(x = (-8).dp), cell = 3.dp, onClick = onFind)
+        // ink mapped held back for now (2026-11-12, Bronson): its page kept, nothing opens it
         Word("your year", pixel(13.sp, Ink.mid), Modifier.rising(PLACES.size + 1), touch = 6.dp) { Nav.open(Page.Year) }
         Word("settings", pixel(13.sp, Ink.mid), Modifier.rising(PLACES.size + 2), touch = 6.dp, onClick = onSettings)
         Spacer(Modifier.weight(1f))
+        RailPairing()
         // a newer version out, said where it's always in sight (2026-11-11, a tester: "a startup notification informing
         // users when a new version is available"): a click shows it on listen, its notes and UPDATE
         val offer by Updates.offer.collectAsState()
@@ -130,6 +132,46 @@ private fun Modifier.rising(@Suppress("UNUSED_PARAMETER") order: Int): Modifier 
     val shown = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(Unit) { shown.animateTo(1f, androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) }
     return graphicsLayer { alpha = shown.value; translationY = (1f - shown.value) * Motion.drift.toPx() * .6f }
+}
+
+/**
+ * Pair your phone, at the rail's foot while no phone is (2026-11-12: pairing was found only in settings). The first time
+ * ink music opens, its QR code is there already, for the phone's own camera; after, a word that shows it again. Gone
+ * once a phone is paired, or for good with "not now".
+ */
+object RailPair {
+    private val away = java.io.File(Home.dir, "rail-pair-away")
+    private val shownOnce = java.io.File(Home.dir, "rail-pair-shown")
+    val hidden = kotlinx.coroutines.flow.MutableStateFlow(away.exists())
+    fun putAway() { hidden.value = true; runCatching { away.writeText("") }; TubeAccount.stop() }
+    /** True the first time ever asked: the code shown at once on a first open. */
+    fun first(): Boolean {
+        if (shownOnce.exists()) return false
+        runCatching { shownOnce.writeText("") }
+        return true
+    }
+}
+
+@Composable
+private fun RailPairing() {
+    val peers by SyncHub.peers.collectAsState()
+    val hidden by RailPair.hidden.collectAsState()
+    if (peers.isNotEmpty() || hidden) return
+    val code by TubeAccount.code.collectAsState()
+    val link by TubeAccount.link.collectAsState()
+    LaunchedEffect(Unit) { if (RailPair.first() && TubeAccount.code.value == null) TubeAccount.await() }
+    Column(Modifier.padding(bottom = 22.dp, end = 18.dp)) {
+        val c = code
+        if (c == null) {
+            Word("PAIR YOUR PHONE", headline(16.sp), touch = 6.dp) { TubeAccount.await() }
+            Word("not now", pixel(12.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 6.dp) { RailPair.putAway() }
+        } else {
+            BasicText("PAIR YOUR PHONE", style = headline(16.sp), modifier = Modifier.padding(bottom = 10.dp))
+            link?.let { QrCode(it, Modifier.size(140.dp)) }
+            BasicText(c, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp))
+            Word("hide", pixel(12.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 6.dp) { TubeAccount.stop() }
+        }
+    }
 }
 
 /** The rail folded in: INK (a click, the INK place) and the arrow by it that brings the rail back out. */

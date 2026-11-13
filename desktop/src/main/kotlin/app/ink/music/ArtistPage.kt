@@ -116,6 +116,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     }
     // what's said of them: its first sentence pulled out big, as a lyric is; the rest small under it, a click for the rest
     val about = @Composable { quote: androidx.compose.ui.unit.TextUnit, lines: Int ->
+      Column {
         // its source line ("From Wikipedia ... under Creative Commons") off, a quiet credit under it instead
         // with no bio anywhere, a line ink writes from what it knows (Bio.facts): never an empty space
         val picked by Picks.said.collectAsState()
@@ -144,6 +145,18 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                 // where it's from: not on the page (2026-11-09, Bronson: cut it); the licence's credit closes the whole bio (Reading)
             }
         }
+        // their own places (Socials: Instagram, TikTok, Bandcamp, their site...), words that open them in the browser;
+        // read once the page knows their records, which tell one of a shared name
+        val ready = i != null || !waiting
+        val titles = remember(records, i) { records.map { it.title } + i?.albums.orEmpty().map { it.title } }
+        val socials by produceState(emptyList<Socials.Link>(), name, ready) {
+            if (ready) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Socials.of(java.io.File(Home.cache, "socials"), name, titles) }
+        }
+        if (socials.isNotEmpty()) androidx.compose.foundation.layout.FlowRow(Modifier.widthIn(max = 720.dp).padding(top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            socials.forEach { l -> Word(l.word, pixel(13.sp, Ink.mid), touch = 6.dp) { browse(l.url) } }
+        }
+      }
     }
     // how many listen, their records, how many of theirs you have; then play, shuffle, radio, follow
     val counts = @Composable {
@@ -164,7 +177,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
             // their songs as a DJ's arc, each into the next on the beat (the phone's artist page has it)
             MixWord("artist $shown", playable, Modifier.padding(end = 26.dp))
             // radio: their best-known song, then more like it (the queue's end brings them)
-            Word("radio", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.radio(true); Player.play(listOf(playable.first())) }
+            Word("similar", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.radio(true); Player.play(listOf(playable.first())) }
             // follow: lit while you do (on YouTube Music too, signed in); their mix comes first among yours
             val following by Follows.all.collectAsState()
             val on = following.any { it.name.equals(shown, true) }
@@ -237,7 +250,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                             listOf(theirs.take(half), theirs.drop(half)).forEachIndexed { c, part ->
                                 Column(Modifier.weight(1f)) { part.forEachIndexed { n, s -> SongRow(s, said = s.album.lowercase().ifEmpty { null }, open = open) { Player.play(theirs, c * half + n) } } }
                             }
-                        } else Column(Modifier.widthIn(max = SONGS)) { theirs.forEachIndexed { n, s -> SongRow(s, said = s.album.lowercase().ifEmpty { null }, open = open) { Player.play(theirs, n) } } }
+                        } else Column(Modifier.widthIn(max = SONGS)) { theirs.forEachIndexed { n, s -> SongRow(s, said = s.album.lowercase().ifEmpty { null }, open = open, order = theirs) { Player.play(theirs, n) } } }
                     }
                 }
                 if (top.isNotEmpty()) item(key = "top") {
@@ -268,8 +281,10 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                 i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
                     shelf("like", "fans also like") {
                         items(like, key = { it.id.ifEmpty { it.name } }) { a ->
+                            var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
                             Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null,
-                                onClick = felt { open(Page.Artist(a.name, a.id)) })) {
+                                onClick = felt { open(Page.Artist(a.name, a.id)) }).rightClick { menuAt = it }) {
+                                menuAt?.let { ArtistMenu(a.name, it) { menuAt = null } }
                                 CoverOf(remember(a.face) { a.face?.let { faceSong(a.name, it) } }, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
                                 Spacer(Modifier.height(8.dp))
                                 UnderCover(a.name, "artist")

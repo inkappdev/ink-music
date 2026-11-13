@@ -178,6 +178,7 @@ private fun kindOf(c: Stations.Curated): String {
 /** A station: its sleeve (its name on it, so not again under it), its city, and what it's playing now, else its line. */
 @Composable
 private fun StationTile(c: Stations.Curated, aired: Curation.Aired?, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("play" to onClick, "copy name" to { copyText(c.song.title) })) }) {
     val now by Player.now.collectAsState()
     val on = now?.song?.id == c.song.id
     Column(Modifier.width(200.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
@@ -187,6 +188,7 @@ private fun StationTile(c: Stations.Curated, aired: Curation.Aired?, onClick: ()
         Spacer(Modifier.height(2.dp))
         if (aired != null) BasicText("playing ${aired.title} by ${aired.artist}".lowercase(), style = pixel(12.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
         else BasicText(c.line.lowercase(), style = pixel(12.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
     }
 }
 

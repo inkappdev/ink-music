@@ -20,19 +20,23 @@ android {
         minSdk = 30
         targetSdk = 37
         // each release: both up (the code by one), and a changelog in fastlane/.../changelogs/<code>.txt
-        versionCode = 67
-        versionName = "2.1.16"
+        versionCode = 68
+        versionName = "2.1.17"
         // ink weekly's weeks (tools/weekly.py writes them); -PweeklyUrl=... to try a week before it's pushed
         val weekly = (project.findProperty("weeklyUrl") as String?) ?: "https://inkhome.app/weekly.json"
         buildConfigField("String", "WEEKLY", "\"$weekly\"")
         // Last.fm's key and secret for ink music, kept out of git with the release key (a build without them has no Last.fm)
         buildConfigField("String", "LASTFM_KEY", "\"${release?.getProperty("lastfmKey").orEmpty()}\"")
         buildConfigField("String", "LASTFM_SECRET", "\"${release?.getProperty("lastfmSecret").orEmpty()}\"")
+        // -Pfdroid: F-Droid's build, which F-Droid keeps up to date itself: no looking at GitHub for a new version
+        buildConfigField("boolean", "UPDATER", "${!project.hasProperty("fdroid")}")
     }
 
+    // the key only where it's kept (Fedora); Windows' keystore.properties holds Last.fm's alone, its builds signed as debug ones
+    val signs = release?.getProperty("storeFile") != null
     signingConfigs {
-        if (release != null) create("release") {
-            storeFile = file(release.getProperty("storeFile"))
+        if (signs) create("release") {
+            storeFile = file(release!!.getProperty("storeFile"))
             storePassword = release.getProperty("storePassword")
             keyAlias = release.getProperty("keyAlias")
             keyPassword = release.getProperty("keyPassword")
@@ -44,7 +48,12 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName(if (release != null) "release" else "debug")
+            // F-Droid's build left unsigned: F-Droid signs it with its own key
+            signingConfig = when {
+                signs -> signingConfigs.getByName("release")
+                project.hasProperty("fdroid") -> null
+                else -> signingConfigs.getByName("debug")
+            }
             // -PbesideDebug: a release build that installs next to the debug one (its own id), to try R8's build
             if (project.hasProperty("besideDebug")) applicationIdSuffix = ".check"
         }
@@ -81,6 +90,12 @@ dependencies {
     // what's behind a bar, softly blurred (Chris Banes' Haze, Apache-2.0; RenderEffect on Android 12+)
     implementation("dev.chrisbanes.haze:haze:2.0.1")
     implementation("dev.chrisbanes.haze:haze-blur:2.0.1")
+    // pairing a computer by its QR code (PairCamera): the camera by CameraX, the code read by ZXing's core (both
+    // Apache-2.0, neither Play services)
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("com.google.zxing:core:3.5.3")
     // YouTube Music, the full build only (NewPipe's extractor, GPL-3.0): never in the play build
     "fullImplementation"("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     "fullImplementation"(project(":youtube"))

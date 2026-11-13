@@ -32,13 +32,43 @@ object Radio {
      * Songs to follow the seeds (blocking; the last song first): none already queued (`queued`: ids, and
      * title/artist keys, so the same song from another source counts too).
      */
-    fun after(c: Context, seeds: List<Seed>, queued: Set<String>, tempo: Double? = null): List<Song> {
+    fun after(c: Context, seeds: List<Seed>, queued: Set<String>, tempo: Double? = null, fromSimilar: Set<String> = emptySet()): List<Song> {
         if (seeds.isEmpty()) return emptyList()
         val lists = seeds.take(WEIGHT.size).map { related(c, it) }
         val since = System.currentTimeMillis() - RECENT
-        val heard = History.read(c).filter { it.at >= since }.flatMap { listOf(it.id, key(it.title, it.artist)) }.toHashSet()
-        if (tempo == null) return rank(seeds, lists, queued, heard)
-        return atTempo(c, rank(seeds, lists, queued, heard, batch = 30), tempo)
+        val recent = History.read(c).filter { it.at >= since }
+        val heard = recent.flatMap { listOf(it.id, key(it.title, it.artist)) }.toHashSet()
+        // you, in it (2026-11-12, Bronson: "smarter logic"): similar's own songs left inside half a minute, by artist
+        // (once, lower; twice, out for now), and artists said not for you, out
+        val skips = History.skips(c).filter { it.at >= since && it.id in fromSimilar }.groupingBy { who(it.artist) }.eachCount()
+        val refused = Fresh.turnedDownNames(c).map(::who).toSet()
+        val lifted = lift(c)
+        val ranked = { batch: Int -> rank(seeds, lists, queued, heard, batch, skips, refused, lifted) }
+        if (tempo == null) return ranked(BATCH)
+        return atTempo(c, ranked(30), tempo)
+    }
+
+    private fun who(a: String) = a.lowercase().substringBefore(",").trim()
+
+    /**
+     * Your taste as the screens last worked it out (Fresh writes files/taste-near.json: your nearest artists and your
+     * appetite), read again when it changes: similar lifts the artists you're near, the more so the less you've been
+     * wandering (the computer's since 2026-11-12).
+     */
+    private var tasteAt = 0L
+    private var tasteNear: Map<String, Double> = emptyMap()
+    private var appetite = ForYou.STRETCH
+    @Synchronized private fun lift(c: Context): (String) -> Float {
+        val f = java.io.File(c.filesDir, "taste-near.json")
+        if (f.lastModified() != tasteAt) runCatching {
+            val o = org.json.JSONObject(f.readText())
+            val n = o.optJSONObject("near")
+            tasteNear = n?.keys()?.asSequence()?.associateWith { n.optDouble(it) }.orEmpty()
+            appetite = o.optDouble("appetite", ForYou.STRETCH)
+            tasteAt = f.lastModified()
+        }
+        val near = tasteNear; val a = appetite
+        return { artist -> ((near[Taste.bare(artist.substringBefore(", "))] ?: 0.0) * (1 - a) * .6).toFloat() }
     }
 
     /**
@@ -62,7 +92,8 @@ object Radio {
     }
 
     /** The seeds' lists (in the seeds' order) made one: scored, sifted, no artist twice running. */
-    fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH): List<Song> {
+    fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH,
+             skips: Map<String, Int> = emptyMap(), refused: Set<String> = emptySet(), lifted: (String) -> Float = { 0f }): List<Song> {
         // a seed's own kind of version is fine (a slowed song's radio may be slowed songs)
         val seedVersions = seeds.any { versions.containsMatchIn(it.title) }
         val seedKeys = seeds.map { key(it.title, it.artist) }.toHashSet()
@@ -76,8 +107,12 @@ object Radio {
                 found.getOrPut(key(s.title, s.artist)) { Found(s, 0f) }.score += w
             }
         }
+        // skipped once this session, lower; twice, or said not for you, out
+        // and lifted for an artist you're near (your taste, as the screens last worked it out)
+        found.values.forEach { f -> f.score += lifted(f.song.artist) - .5f * (skips[who(f.song.artist)] ?: 0) }
         val by = HashMap<String, Int>()
-        val picked = found.entries.sortedByDescending { it.value.score }.filter { (k, f) ->
+        val picked = found.entries.filter { (_, f) -> who(f.song.artist).let { it !in refused && (skips[it] ?: 0) < 2 } }
+            .sortedByDescending { it.value.score }.filter { (k, f) ->
             val s = f.song
             val who = s.artist.lowercase().substringBefore(",").trim()
             if (s.id in queued || k in queued || k in seedKeys || s.id in heard || k in heard) return@filter false
@@ -89,12 +124,66 @@ object Radio {
         return apart(picked, seeds.first().artist)
     }
 
-    /** One seed's songs: the server's similar, else YouTube Music's radio from it. */
-    fun related(c: Context, s: Seed): List<Song> =
-        if (s.id.startsWith("y")) YouTubeMusic.related(s.id)
-        else Server.similar(c, s.id, s.title, s.artist).ifEmpty {
-            YouTubeMusic.find(s.title, s.artist)?.let { YouTubeMusic.related(it.id) }.orEmpty()
+    /**
+     * One seed's songs: the server's similar for its songs; else three ears blended (the computer's since 2026-11-12,
+     * Bronson: radio as good as Chosic's suggestions): YouTube Music's radio from the song, Deezer's radio for its artist,
+     * Last.fm's artists most like them with their best-known songs ([blended]); else YouTube Music's radio alone.
+     */
+    fun related(c: Context, s: Seed): List<Song> {
+        if (!s.id.startsWith("y")) Server.similar(c, s.id, s.title, s.artist).takeIf { it.isNotEmpty() }?.let { return it }
+        runCatching { blended(s) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return it }
+        return if (s.id.startsWith("y")) YouTubeMusic.related(s.id)
+            else YouTubeMusic.find(s.title, s.artist)?.let { YouTubeMusic.related(it.id) }.orEmpty()
+    }
+
+    /**
+     * The three blended, as the computer's online radio: a song more than one names, or by an artist more than one names,
+     * first; the seed's own artist once at most, none other more than twice; the picks found on YouTube Music to play.
+     * Empty in the play build (no YouTube Music) and offline.
+     */
+    private fun blended(s: Seed): List<Song> {
+        // the player's process may not have set it yet (Scrobbling sets it as a song's first told)
+        if (LastFm.key.isBlank()) LastFm.key = BuildConfig.LASTFM_KEY
+        val artist = s.artist.substringBefore(", ").trim()
+        if (artist.isBlank() || artist == "unknown") return emptyList()
+        val tube = if (s.id.startsWith("y")) s.id else YouTubeMusic.find(s.title, artist)?.id
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(3)
+        val fromTube = pool.submit<List<Song>> { tube?.let { YouTubeMusic.related(it) }.orEmpty() }
+        val fromDeezer = pool.submit<List<Similar.Track>> { Similar.deezerRadio(artist) }
+        val fromLastFm = pool.submit<List<Similar.Track>> {
+            Similar.lastFmArtists(artist, LastFm.key, 8).take(6).flatMap { (a, m) -> Similar.deezerTop(a, 2).map { it.copy(weight = m * it.weight) } }
         }
+        val yt = runCatching { fromTube.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        val dz = runCatching { fromDeezer.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        val lf = runCatching { fromLastFm.get(25, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
+        pool.shutdownNow()
+        // without YouTube Music nothing found can be played
+        if (yt.isEmpty() && tube == null) return emptyList()
+        fun who(a: String) = a.lowercase().substringBefore(",").substringBefore(" & ").trim()
+        val named = HashMap<String, Int>()
+        listOf(yt.map { who(it.artist) }, dz.map { who(it.artist) }, lf.map { who(it.artist) }).forEach { l -> l.toSet().forEach { named[it] = (named[it] ?: 0) + 1 } }
+        class Pick(val title: String, val artist: String, var score: Double, var song: Song?)
+        val picks = LinkedHashMap<String, Pick>()
+        fun add(title: String, a: String, w: Double, song: Song?) {
+            val p = picks.getOrPut(key(title, a)) { Pick(title, a, 0.0, song) }
+            p.score += w; if (p.song == null) p.song = song
+        }
+        yt.forEachIndexed { i, x -> add(x.title, x.artist, 1.0 - i.toDouble() / (yt.size + 1), x) }
+        dz.forEach { add(it.title, it.artist, it.weight, null) }
+        lf.forEach { add(it.title, it.artist, it.weight * .9, null) }
+        picks.values.forEach { p -> p.score += .5 * ((named[who(p.artist)] ?: 1) - 1) }
+        val me = who(artist)
+        val by = HashMap<String, Int>()
+        val chosen = picks.values.sortedByDescending { it.score }.filter { p ->
+            val w = who(p.artist)
+            if (versions.containsMatchIn(p.title) && !versions.containsMatchIn(s.title)) return@filter false
+            if (key(p.title, p.artist) == key(s.title, artist)) return@filter false
+            if ((by[w] ?: 0) >= (if (w == me) 1 else 2)) return@filter false
+            by[w] = (by[w] ?: 0) + 1
+            true
+        }.take(14)
+        return chosen.mapNotNull { p -> p.song ?: runCatching { YouTubeMusic.find(p.title, p.artist) }.getOrNull() }
+    }
 
     /** The same order, but no artist twice in a row (nor straight after the song before them), where it can be helped. */
     fun apart(songs: List<Song>, before: String): List<Song> {

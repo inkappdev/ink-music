@@ -181,6 +181,9 @@ object SyncHub {
 
     // ---- listening for the phone ----
 
+    /** The port phones reach it on (told to a phone as it pairs, so it can call without finding it on the wifi first). */
+    fun port(): Int = server?.localPort ?: Sync.PORT
+
     @Synchronized private fun listen() {
         if (server != null) return
         val s = runCatching { ServerSocket(Sync.PORT) }.getOrNull() ?: runCatching { ServerSocket(0) }.getOrNull() ?: return

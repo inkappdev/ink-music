@@ -164,7 +164,7 @@ object ShareCard {
                 c.drawText(name, tx, y, label)
             }
             var y = top + side + 120f
-            c.drawText(InkMap.mood(r.appetite).uppercase(), M, y, headline(96f))
+            c.drawText(r.persona.name, M, y, headline(if (r.persona.name.length > 12) 80f else 96f))
             y += 70f
             layout(r.artists.take(3).joinToString(", ") { it.first.lowercase() }, pixel(34f), side, 2).let { c.save(); c.translate(M, y); it.draw(c); c.restore() }
             // the record you play most, small at the foot, its line along its top

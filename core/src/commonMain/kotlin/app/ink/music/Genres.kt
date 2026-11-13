@@ -48,6 +48,9 @@ object Genres {
     /** An artist's top tags as kept (most given first), or null when they haven't been read (ink mapped places them by these). */
     fun tags(artist: String): List<String>? = kept[key(artist)]?.first
 
+    /** A tag that tells this genre (its first): a genre picked placed on ink mapped's wheel as an artist of it would be. */
+    fun tagOf(genre: String): String? = TAGS[genre.lowercase()]?.firstOrNull()
+
     /** The genres a tag tells (most of them one; "post-punk" is indie and rock both). */
     fun genresOf(tag: String): List<String> = TAGS.entries.filter { tag in it.value }.map { it.key }
 

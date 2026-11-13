@@ -281,11 +281,13 @@ val TubeAlbum.branded: Boolean get() = Curation.tubeBranded(url, artist)
 /** A YouTube Music record as a tile: its cover (from its link), name and artist; YouTube's own playlists in the dither. */
 @Composable
 fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick, "play" to { playTube(a); Unit }, "shuffle" to { playTube(a, shuffle = true); Unit }, "play next" to { playTube(a, next = true); Unit }), listOf("keep as your list" to { keepTube(a); Unit }, "copy link" to { copyText(tubeLink(a.url)) })) }) {
     androidx.compose.foundation.layout.Column(modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         if (a.branded && a.art != null) Covered(face(a), Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         else CoverOf(face(a), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(a.title, a.artist)
+    }
     }
 }
 
@@ -310,7 +312,9 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 // a record's artists, each their own page (2026-11-09: the name was only words here); a playlist's byline
                 // (its maker, "auto playlist") stays words
-                if (playlist || a.branded) BasicText(a.artist.lowercase(), style = pixel(14.sp))
+                // a playlist's byline only its count ("130 tracks", said again just under): youtube music in its place
+                val by = a.artist.takeUnless { Regex("""^[\d,.]+\s+(tracks?|songs?)$""", RegexOption.IGNORE_CASE).matches(it.trim()) } ?: "youtube music"
+                if (playlist || a.branded) BasicText(by.lowercase(), style = pixel(14.sp))
                 else Row {
                     val names = Artists.named(a.artist)
                     names.forEachIndexed { i, name ->
@@ -319,16 +323,27 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                BasicText(songs?.let { s -> listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration }), "youtube music").joinToString("  ·  ") } ?: "reading",
+                BasicText(songs?.let { s -> listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration })).joinToString("  ·  ") } ?: "reading",
                     style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(16.dp))
                 songs?.takeIf { it.isNotEmpty() }?.let { s ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                        Word("play", pixel(14.sp), touch = 8.dp) { Player.play(s) }
+                    PlayShuffle(s)
+                    // the rest small under them, wrapping (2026-11-12, Bronson: "this could use some work": seven words
+                    // of three kinds in two rows, copy link cut short)
+                    HeadWords {
                         // a playlist played as a DJ's arc, each into the next on the beat (a record keeps its own order)
                         if (playlist) MixWord(a.title, s)
                         // a playlist's songs are from many records: their covers, if wanted
                         if (playlist) CoversWord()
+                        KeepOffline(s)
+                        // a copy as a list of yours, every song, kept here even if whoever made it takes theirs down
+                        // (2026-11-12, a tester: a 300-song playlist found and lost when its owner deleted it)
+                        val here by HereLists.all.collectAsState()
+                        val copy = here.firstOrNull { it.name == a.title && it.songs.size == s.size }
+                        Word(if (copy != null) "your list" else "keep as your list", pixel(14.sp, if (copy != null) Ink.ink else Ink.mid), touch = 8.dp) {
+                            if (copy != null) open(Page.List(copy.id, copy.name))
+                            else HereLists.make(a.title, s)
+                        }
                         // its link on YouTube Music onto the clipboard, to share or hand on (2026-11-10: a playlist's
                         // link was only to be had from YouTube's own app)
                         var copied by remember(a.url) { mutableStateOf(false) }
@@ -338,8 +353,6 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                             copied = true
                         }
                     }
-                    // kept on the computer: its own line under the row (beside play, mix and covers it was cut to "keep o...")
-                    Box(Modifier.padding(top = 10.dp)) { KeepOffline(s) }
                 }
                 // the mix as it's found: its tempo beating, the songs dropping in
                 if (playlist) MixProgress(a.title)
@@ -352,7 +365,7 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
             androidx.compose.foundation.layout.Column(Modifier.weight(1f).fillMaxHeight()) {
                 LazyColumn(Modifier.weight(1f, fill = false).feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) {
                     itemsIndexed(s, key = { _, x -> x.id }) { i, x ->
-                        SongRow(x, number = "${i + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase(), cover = playlist && covers) { Player.play(s, i) }
+                        SongRow(x, number = "${i + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase(), cover = playlist && covers, order = s) { Player.play(s, i) }
                     }
                 }
                 if (!playlist) Critics(a.title, a.artist, across = true)

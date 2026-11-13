@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.clipToBounds
@@ -116,7 +118,7 @@ object Placed {
 
     /** Written down as it is now: its plain size (as it was before, while full screen), and whether it's zoomed. */
     fun keep(s: WindowState) {
-        if (s.isMinimized) return
+        if (s.isMinimized || Win.full) return
         val floating = s.placement == WindowPlacement.Floating
         val size = if (floating) s.size else Win.before ?: s.size
         val p = if (floating) s.position else Win.beforeAt ?: s.position
@@ -332,18 +334,26 @@ private fun MiniSleeve(n: Player.Now) {
             Marquee(artist, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = 10.dp), size = 64.sp, color = Ink.ink.copy(alpha = .09f))
             Column(Modifier.fillMaxSize()) {
                 Column(Modifier.weight(1f).fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp)) {
+                    // a station's song, said or heard (OnAirSong): its title finds it, its artist opens their page, back in the
+                    // window (2026-11-12, Bronson: clickable wherever a station's song shows)
+                    val aired = rememberAired(n)
+                    val airedSong = rememberAiredSong(n)
                     Row(verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f)) {
-                            BasicText(title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            BasicText(title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = if (aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                    onClick = felt { Mini.close(); OnAirSong.find(aired.title, aired.artist!!) }) else Modifier)
                             Spacer(Modifier.height(2.dp))
-                            BasicText(artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            BasicText(artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = if (aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                    onClick = felt { Mini.close(); Nav.open(Page.Artist(aired.artist!!.substringBefore(", "))) }) else Modifier)
                         }
                         Pixel(OPEN, "back to the window", Ink.mid) { Mini.close() }
                     }
                     Spacer(Modifier.weight(1f))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Controls(n, small = true)
-                        Heart(n.song, 2.dp, Modifier.padding(start = 10.dp))
+                        Heart(airedSong ?: n.song, 2.dp, Modifier.padding(start = 10.dp))
                         Spacer(Modifier.weight(1f))
                         if (!n.song.station && n.duration > 0) BeatCounter(n.song.id, n.playing, Modifier.padding(end = 6.dp), key = false)
                     }
@@ -366,14 +376,26 @@ val SHRINK = listOf("#.....", ".#....", "..#..#", "...#.#", "....##", "..####")
 object Dropped {
     private val scope = CoroutineScope(Dispatchers.IO)
     val over = MutableStateFlow(false)
+    /** A list of yours open (HereLists): what's dropped goes into it, not played (2026-11-12, a tester). */
+    @Volatile var into: String? = null
+
+    /** Files and folders as songs, a record's in its order. */
+    fun songsOf(paths: List<File>): List<Song> = paths.flatMap { f ->
+        if (f.isDirectory) Library.read(f.walkTopDown().filter { it.isFile }.toList())
+            .sortedWith(compareBy({ it.albumId }, { it.disc }, { it.track }, { it.path }))
+        else Library.read(listOf(f))
+    }
 
     fun play(paths: List<File>) = scope.launch {
-        val songs = paths.flatMap { f ->
-            if (f.isDirectory) Library.read(f.walkTopDown().filter { it.isFile }.toList())
-                .sortedWith(compareBy({ it.albumId }, { it.disc }, { it.track }, { it.path }))
-            else Library.read(listOf(f))
+        // an .inkmusic file dropped: its list made yours and opened
+        paths.filter { it.name.endsWith(".inkmusic") }.mapNotNull { ListOut.open(it) }.lastOrNull()?.let { m ->
+            javax.swing.SwingUtilities.invokeLater { Nav.open(Page.List(m.id, m.name)) }
         }
-        if (songs.isNotEmpty()) javax.swing.SwingUtilities.invokeLater { Player.play(songs) }
+        val songs = songsOf(paths.filterNot { it.name.endsWith(".inkmusic") })
+        val list = into
+        if (songs.isEmpty()) return@launch
+        if (list != null) HereLists.add(list, songs)
+        else javax.swing.SwingUtilities.invokeLater { Player.play(songs) }
     }
 }
 
@@ -403,7 +425,7 @@ fun DropHint() {
     AnimatedVisibility(over, enter = fadeIn(tween(Motion.ENTER, easing = Motion.expo)), exit = fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
         Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .85f)), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                BasicText("LET GO TO PLAY", style = headline(64.sp))
+                BasicText(if (Dropped.into != null) "LET GO TO ADD" else "LET GO TO PLAY", style = headline(64.sp))
                 Spacer(Modifier.height(10.dp))
                 BasicText("songs, a record's folder, a stack of them", style = pixel(14.sp, Ink.mid))
             }
@@ -464,9 +486,14 @@ object InkTitle {
     /** The bar as it's set now: the strip tells it, at each move of the mouse, that it's the bar's ([TitleStrip]). */
     @Volatile var bar: com.jetbrains.WindowDecorations.CustomTitleBar? = null
 
+    /** The size it was last made at, for putting it back after full screen ([full]). */
+    @Volatile private var k = 1f
+
     /** The main window's bar made ink's, `k` its size (settings): the strip as tall as the pages' [TOP] is drawn. */
     fun apply(window: java.awt.Window, k: Float) {
         if (!on) return
+        this.k = k
+        if (Win.full) return   // full screen: no bar till it's left, and then at this size
         val frame = window as? java.awt.Frame ?: return
         runCatching {
             val d = com.jetbrains.JBR.getWindowDecorations()
@@ -475,6 +502,25 @@ object InkTitle {
             bar.putProperty("controls.dark", true)
             d.setCustomTitleBar(frame, bar)
             this.bar = bar
+        }.onFailure { Log.d("title bar: $it") }
+    }
+
+    /**
+     * Full screen: no minimise, maximise and close over ink's top right (JetBrains' Java draws them itself, so the
+     * window's frame taken off left them: 2026-11-12, Bronson), and no strip to drag; left, the bar as it was.
+     */
+    fun full(window: java.awt.Window, on: Boolean) {
+        if (!this.on) return
+        val frame = window as? java.awt.Frame ?: return
+        if (!on) return apply(window, k)
+        runCatching {
+            val d = com.jetbrains.JBR.getWindowDecorations()
+            val bar = d.createCustomTitleBar()
+            // the least height there is: 0 is refused (the call failed, quietly, and the buttons stayed: 2026-11-12)
+            bar.height = 1f
+            bar.putProperty("controls.visible", false)
+            d.setCustomTitleBar(frame, bar)
+            this.bar = null
         }.onFailure { Log.d("title bar: $it") }
     }
 }
@@ -486,7 +532,7 @@ object InkTitle {
  */
 @Composable
 fun TitleStrip(k: Float) {
-    if (!InkTitle.on) return
+    if (!InkTitle.on || Win.full) return
     Box(Modifier.fillMaxWidth().height((InkTitle.HEIGHT * k).dp).pointerInput(Unit) {
         awaitPointerEventScope {
             while (true) {

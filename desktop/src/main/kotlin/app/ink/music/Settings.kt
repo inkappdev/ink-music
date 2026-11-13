@@ -130,6 +130,8 @@ fun SettingsPage(onClose: () -> Unit) {
                                 if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded").joinToString(" · "), opened) { SoundSetting() }
                             SettingRow("TRANSITIONS", mode, opened) { TransitionsSetting() }
                             SettingRow("EQUALIZER", if (eq.on) eq.label.lowercase() else "off", opened) { EqualizerSetting() }
+                            val similar by Player.radioMode.collectAsState()
+                            SettingRow("SIMILAR SONGS", if (Local.on) Radio.Mode.OFFLINE.word else similar.word, opened) { SimilarSetting() }
                             RowsEnd()
                         }
                         // what's kept on this computer (2026-11-11: its own part, out of sound)
@@ -314,6 +316,19 @@ private fun FilesSetting() {
     Spacer(Modifier.height(8.dp))
     Word("add a folder", pixel(14.sp), touch = 8.dp) { chooseFolder { Library.add(it) } }
     Word("read again", pixel(14.sp, Ink.mid), touch = 8.dp) { Library.scan() }
+    // the covers kept on the computer: how much room, and those not looked at for a month let go (they come again)
+    var room by remember { mutableStateOf(-1L) }
+    var said by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(said) { room = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Covers.room() } }
+    Spacer(Modifier.height(14.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        BasicText(if (room < 0) "covers" else "covers kept: ${room / 1_048_576} mb", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.width(20.dp))
+        Word(said ?: "clean up", pixel(14.sp, Ink.mid), touch = 8.dp) {
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { val f = Covers.cleanUp(); said = "${f / 1_048_576} mb freed" }
+        }
+    }
+    BasicText("those not seen for a month; they come again when they're wanted", style = pixel(12.sp, Ink.dim))
 }
 
 /** About: who made this, that it's free and open, the build; ink, from its makers, said once and plainly. */
@@ -347,7 +362,7 @@ private fun AboutSetting() {
 
 /** Signing in to your server: its address, your name and password; what went wrong, said plainly. */
 @Composable
-private fun SignIn() {
+internal fun SignIn() {
     val scope = rememberCoroutineScope()
     var address by remember { mutableStateOf("") }
     var user by remember { mutableStateOf("") }
@@ -550,16 +565,31 @@ private fun SoundSetting() {
     )
     Spacer(Modifier.height(16.dp))
     androidx.compose.foundation.layout.Row {
-        Word("even volume", pixel(14.sp, if (sound.even) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
-            Player.sound(sound.copy(even = true))
+        Word("even volume", pixel(14.sp, if (sound.even && !sound.measured) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
+            Player.sound(sound.copy(even = true, measured = false))
         }
-        Word("as recorded", pixel(14.sp, if (!sound.even) Ink.ink else Ink.dim), touch = 8.dp) { Player.sound(sound.copy(even = false)) }
+        Word("measured", pixel(14.sp, if (sound.measured) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
+            Player.sound(sound.copy(measured = true))
+        }
+        Word("as recorded", pixel(14.sp, if (!sound.even && !sound.measured) Ink.ink else Ink.dim), touch = 8.dp) { Player.sound(sound.copy(even = false, measured = false)) }
     }
     Spacer(Modifier.height(6.dp))
     BasicText(
-        if (sound.even) "every record as loud as the next, by the files' own replaygain tags" else "each file at the level it was made",
+        when {
+            sound.measured -> "every song measured as it plays: the loud ones down, the quiet ones up, tagged or not"
+            sound.even -> "every record as loud as the next, by the files' own replaygain tags"
+            else -> "each file at the level it was made"
+        },
         style = pixel(12.sp, Ink.mid),
     )
+    // measured: to what level
+    if (sound.measured) androidx.compose.foundation.layout.Row(Modifier.padding(top = 8.dp)) {
+        listOf(-18 to "quieter", -14 to "normal", -11 to "louder").forEach { (lufs, word) ->
+            Word(word, pixel(14.sp, if (sound.target == lufs) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
+                Player.sound(sound.copy(target = lufs))
+            }
+        }
+    }
     Spacer(Modifier.height(6.dp))
     BasicText("alone, as recorded, at volume 100: the file's samples reach the output unchanged", style = pixel(12.sp, Ink.mid))
 }
@@ -568,6 +598,14 @@ private fun SoundSetting() {
  * A folder picked in the system's own way (the Mac's open panel, Windows' own picker, both folders only; Swing's
  * elsewhere); [picked] isn't called if it's cancelled.
  */
+/** Songs chosen from the computer, as many as wanted at once (the system's own file picker). */
+internal fun chooseFiles(picked: (List<java.io.File>) -> Unit) {
+    val d = java.awt.FileDialog(null as java.awt.Frame?, "Add songs", java.awt.FileDialog.LOAD)
+    d.isMultipleMode = true
+    d.isVisible = true
+    d.files.toList().takeIf { it.isNotEmpty() }?.let(picked)
+}
+
 internal fun chooseFolder(picked: (java.io.File) -> Unit) {
     if (Home.windows) return WinFolder.choose("Your music", Library.folder, ::swingFolder, picked)
     (if (Home.mac) macFolder() else swingFolder())?.let(picked)
@@ -587,6 +625,29 @@ private fun swingFolder(): java.io.File? {
 }
 
 /**
+ * Waiting for the phone ([TubeAccount.await]): the QR code (2026-11-12: the phone's camera on it, and nothing typed),
+ * the code beside it for a phone without a camera or an ink music from before, the address, cancel. Under your phone
+ * and under youtube music, wherever it was started.
+ */
+@Composable
+private fun Waiting(c: String) {
+    val link by TubeAccount.link.collectAsState()
+    val where by TubeAccount.at.collectAsState()
+    // as few words as can be (2026-11-12): the code for the camera, the number and the address small beside it
+    BasicText("point your phone's camera here", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(14.dp))
+    Row(verticalAlignment = Alignment.Bottom) {
+        link?.let { QrCode(it, Modifier.size(184.dp)); Spacer(Modifier.width(24.dp)) }
+        Column(Modifier.weight(1f)) {
+            BasicText(c, style = headline(44.sp, Ink.mid), maxLines = 1)
+            where?.let { BasicText(it, style = pixel(12.sp, Ink.mid)) }
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
+}
+
+/**
  * YouTube Music: signed in from the phone (the computer has no browser of its own to sign in with). Waiting, the code
  * to type on the phone, big; signed in, who, how much was read, read again or sign out.
  */
@@ -601,7 +662,8 @@ private fun YouTubeSetting() {
     val w = who
     val c = code
     when {
-        c != null -> BasicText("pairing your phone (your phone, on the left): its sign-in comes with it", style = pixel(12.sp, Ink.mid))
+        // the code and its QR here too: pairing started here showed them only under your phone, a part away (2026-11-12)
+        c != null -> Waiting(c)
         w == null -> {
             BasicText("your playlists, liked songs and mixes, and radio made as you, from your own account. " +
                 "signed in from your phone: a computer has no youtube sign-in page of its own here. " +
@@ -634,16 +696,7 @@ private fun PhoneSetting() {
     SettingHead("YOUR PHONE")
     val c = code
     when {
-        c != null -> {
-            BasicText("on your phone: ink music, settings, sync with a computer. pick ${TubeAccount.name.lowercase()}, and type", style = pixel(12.sp, Ink.mid))
-            Spacer(Modifier.height(8.dp))
-            BasicText(c, style = headline(64.sp))
-            BasicText("the two agree a key no one else on the wifi can work out; everything between them goes sealed under it", style = pixel(12.sp, Ink.mid))
-            val where by TubeAccount.at.collectAsState()
-            where?.let { BasicText("not listed on the phone? type its address there: $it", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
-            Spacer(Modifier.height(10.dp))
-            Word("cancel", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.stop() }
-        }
+        c != null -> Waiting(c)
         peers.isEmpty() -> {
             BasicText("pair it once, and this computer is signed in to what your phone is (your server, youtube music, listenbrainz), " +
                 "and the two keep in step on your wifi from then on: what you've heard, what you love, what you were playing. " +
@@ -777,6 +830,24 @@ private fun PrivateSetting() {
     androidx.compose.foundation.layout.Row {
         Word("on", pixel(14.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Private.set(true) }
         Word("off", pixel(14.sp, if (!on) Ink.ink else Ink.dim), touch = 8.dp) { Private.set(false) }
+    }
+}
+
+/**
+ * Where similar's songs come from, when up next runs out (2026-11-12, Bronson: the source here, keep playing similar a
+ * word of its own by up next): YouTube Music only, never your files; only the files on this computer; or both.
+ */
+@Composable
+private fun SimilarSetting() {
+    val mode by Player.radioMode.collectAsState()
+    SettingHead("SIMILAR SONGS")
+    BasicText(if (Local.on) "local files only is on: similar songs come from your files"
+        else "when up next runs out and keep playing similar is on, more songs like these come from", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    if (!Local.on) androidx.compose.foundation.layout.Row {
+        listOf(Radio.Mode.ONLINE, Radio.Mode.OFFLINE, Radio.Mode.BOTH).forEach { m ->
+            Word(m.word, pixel(14.sp, if (mode == m) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.radioMode(m) }
+        }
     }
 }
 

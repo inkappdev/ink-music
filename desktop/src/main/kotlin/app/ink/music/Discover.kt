@@ -359,6 +359,7 @@ fun MadeForYou() {
 
 @Composable
 private fun MixRow(m: Discover.Mix, modifier: Modifier) {
+    WithMenu({ listOf(listOf("play" to { Player.play(m.songs) }, "shuffle" to { Player.play(m.songs.shuffled()) }), listOf("keep as a list" to { HereLists.make(m.title.lowercase(), m.songs); Unit })) }) {
     Row(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(m.songs) }),
         verticalAlignment = Alignment.CenterVertically) {
         // four covers, two by two (what's in it at a look)
@@ -379,6 +380,7 @@ private fun MixRow(m: Discover.Mix, modifier: Modifier) {
         // as a DJ's arc, each into the next on the beat
         MixWord(m.title, m.songs, Modifier.padding(start = 12.dp))
         Word("play", pixel(14.sp), Modifier.padding(start = 12.dp), touch = 8.dp) { Player.play(m.songs) }
+    }
     }
 }
 

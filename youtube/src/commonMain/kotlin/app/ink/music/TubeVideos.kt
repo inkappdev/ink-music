@@ -37,10 +37,30 @@ object TubeVideos {
         (listOfNotNull(seen.firstOrNull { it.own }) + counts.keys.filter { !it.own }.sortedByDescending { counts[it] }).distinctBy { it.id }.take(2)
     }.getOrDefault(emptyList())
 
-    /** A channel's Videos tab, newest first (about thirty), read as youtube.com's own page reads it. */
-    fun uploads(channel: String): List<Upload> = runCatching {
+    /**
+     * A channel's Videos tab, newest first, read as youtube.com's own page reads it: `pages` of it (about thirty each),
+     * each further page asked as the page asks for more when it's scrolled to its foot (its continuation). A page that
+     * fails ends it with what's been read.
+     */
+    fun uploads(channel: String, pages: Int = 1): List<Upload> {
         val web = JSONObject().put("client", JSONObject().put("clientName", "WEB").put("clientVersion", WEB_VERSION).put("hl", "en").put("gl", "US"))
-        val tab = post(WEB, "browse", web, JSONObject().put("browseId", channel).put("params", VIDEOS_TAB))
+        val out = LinkedHashMap<String, Upload>()
+        var body = JSONObject().put("browseId", channel).put("params", VIDEOS_TAB)
+        for (i in 0 until pages.coerceAtLeast(1)) {
+            val page = runCatching { post(WEB, "browse", web, body) }.getOrNull() ?: break
+            read(page).forEach { out.putIfAbsent(it.id, it) }
+            // the grid's last item is what asks for more (the first continuationItemRenderer on the page): its token, if there's more. Not any
+            // continuation on the page: the sort chips (latest, popular, oldest) have theirs too, and the last of those
+            // answered the channel's front page, no videos (2026-11-12)
+            val more = InnerTube.all(page, "continuationItemRenderer").firstOrNull()
+                ?.let { InnerTube.all(it, "continuationCommand").firstOrNull() }?.optString("token")?.ifEmpty { null } ?: break
+            body = JSONObject().put("continuation", more)
+        }
+        return out.values.toList()
+    }
+
+    /** One page of a Videos tab's uploads (the first, or one asked for more). */
+    private fun read(tab: JSONObject): List<Upload> = runCatching {
         // the old row (videoRenderer) or the new one (a lockup), whichever this answer has
         val old = InnerTube.all(tab, "videoRenderer").mapNotNull { v ->
             val id = v.optString("videoId").ifEmpty { return@mapNotNull null }

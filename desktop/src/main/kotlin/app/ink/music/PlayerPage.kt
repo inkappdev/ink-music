@@ -45,6 +45,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -83,10 +87,43 @@ object Win {
     var before: DpSize? = null
     var beforeAt: WindowPosition? = null
     private var was: WindowPlacement = WindowPlacement.Floating
-    val full get() = state?.placement == WindowPlacement.Fullscreen
+    /** The main window itself (Main sets it), for Windows' full screen ([WinFull]). */
+    var window: java.awt.Window? = null
+    val full get() = covering || state?.placement == WindowPlacement.Fullscreen
+
+    /** Windows' full screen as ink makes it ([full]): the window over the whole screen, still an ordinary window. */
+    private var covering by androidx.compose.runtime.mutableStateOf(false)
 
     fun full(on: Boolean) {
         val s = state ?: return
+        // Windows: not Java's full screen, which is exclusive there, and Windows minimizes an exclusive window as soon as
+        // another takes the focus (2026-11-12, a tester: opening a folder to drag a song in, ink music minimized itself;
+        // brought back, it was full screen again, "maximizing itself"; and minimize fought it). Its frame taken off and
+        // laid over the whole monitor instead, as a browser does (WinFull), and put back as it was
+        if (Home.windows) {
+            if (on == covering) return
+            val w = window
+            if (w != null) {
+                // ink's own bar's minimise, maximise and close gone while it covers the screen (InkTitle.full): taken
+                // before the frame comes off, put back after it's on again
+                if (on) InkTitle.full(w, true)
+                if (if (on) WinFull.enter(w) else WinFull.leave(w)) { covering = on; if (!on) InkTitle.full(w, false); return }
+                if (on) InkTitle.full(w, false)
+            }
+            covering = on
+            if (on) {
+                was = s.placement; before = s.size; beforeAt = s.position
+                val b = java.awt.Frame.getFrames().firstOrNull { it.title == "ink music" && it.isDisplayable }?.graphicsConfiguration?.bounds
+                    ?: java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration.bounds
+                s.placement = WindowPlacement.Floating
+                s.position = WindowPosition(b.x.dp, b.y.dp)
+                s.size = DpSize(b.width.dp, b.height.dp)
+            } else {
+                s.placement = was
+                if (was == WindowPlacement.Floating) { before?.let { s.size = it }; beforeAt?.takeIf { it.isSpecified }?.let { s.position = it } }
+            }
+            return
+        }
         if (on == full) return   // closing the player when it wasn't full screen: the window left as it is (zoomed stays zoomed)
         if (on) {
             was = s.placement
@@ -184,15 +221,23 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             Box(Modifier.size(side + off)) {
                                 // its print beside it, while there's no background (the background takes its place)
                                 if (!s.station && behind == Look.PLAIN) Dithered(s, Modifier.offset(off, off).size(side), px = 1200)
-                                Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }) {
+                                var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+                                Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }
+                                    .rightClick { menuAt = it }) {
+                                    menuAt?.let { SongMenu(s, null, null, it, playing = s.id == n.song.id) { menuAt = null } }
                                     val density = androidx.compose.ui.platform.LocalDensity.current.density
                                     CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxSize().graphicsLayer {
-                                        renderEffect = coverLook?.takeIf { !s.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
+                                        // a DJ set's frame blurred inside its square only: unclipped, the blur spread a
+                                        // smear past the cover over the page and the name along the foot (2026-11-12, Bronson)
+                                        clip = SetHeard.isSet(s)
+                                        renderEffect = (if (SetHeard.isSet(s)) Look.BLUR else coverLook)?.takeIf { !s.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
                                     }, px = 1200, moving = n.playing && s.id == n.song.id)
                                     // the record's moving cover over it, where it has one (settings, the look)
                                     if (!s.station && !s.episode) MovingCover(s.albumArtist.ifBlank { s.artist.substringBefore(", ") }, s.album, s.title,
                                         accent, n.playing && s.id == n.song.id, Modifier.fillMaxSize())
                                     if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
+                                    // a DJ set: each track as it's heard, typed across the cover (SetHeard)
+                                    if (SetHeard.isSet(s)) SetSleeve(s.artist, s.title, open)
                                 }
                             }
                         }
@@ -201,6 +246,11 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 val wordsPart: @Composable (Modifier) -> Unit = { m ->
                     Column(m) {
                         val (title, by) = said(n)
+                        // a station's song, said or heard (OnAirSong): its title opens find with it typed, its artist their
+                        // page, the heart loves the song found (2026-11-12, Bronson: clickable wherever a station's song shows;
+                        // the bar's and the column's were, the player's weren't, its artist not even shown)
+                        val aired = rememberAired(n)
+                        val airedSong = rememberAiredSong(n)
                         // pushed with the cover on a track change; a station's next song (the same station) rising in
                         AnimatedContent(
                             Triple(n.song, title, by),
@@ -214,11 +264,14 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         ) { (s, title, by) ->
                             Column {
                                 Row(verticalAlignment = Alignment.Top) {
-                                    WholeWords(title.uppercase(), headline(44.sp), 3, Modifier.weight(1f, fill = false))
-                                    Heart(s, 3.dp, Modifier.padding(start = 8.dp))
+                                    WholeWords(title.uppercase(), headline(44.sp), 3, Modifier.weight(1f, fill = false).then(
+                                        if (s.station && aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
+                                            onClick = felt { OnAirSong.find(aired.title, aired.artist!!) }) else Modifier))
+                                    Heart(if (s.station) airedSong ?: s else s, 3.dp, Modifier.padding(start = 8.dp))
                                 }
                                 Spacer(Modifier.height(12.dp))
                                 if (s.episode) Word(by.lowercase(), pixel(14.sp)) { show?.let(open) }
+                                else if (s.station && aired != null) Word(by.lowercase(), pixel(14.sp)) { open(Page.Artist(aired.artist!!.substringBefore(", "))) }
                                 else if (!s.station) Word(by.lowercase(), pixel(14.sp)) { open(Page.Artist(s.albumArtist.ifBlank { s.artist.substringBefore(", ") })) }
                                 if (s.album.isNotEmpty() && !s.episode) Word(s.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(s.albumId)) }
                                 Spacer(Modifier.height(4.dp))
@@ -237,8 +290,16 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             Spacer(Modifier.width(32.dp))
                             Volume(line = 140.dp)
                         }
-                        Spacer(Modifier.height(18.dp))
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+                        // the rule under the controls the song's line too, its times at its ends (2026-11-12, Bronson: a
+                        // second line "somewhere on the right", in place of a band along the cover's foot he didn't like);
+                        // a station's, nothing to go through, the plain rule
+                        if (!n.song.station && n.duration > 0) {
+                            Spacer(Modifier.height(4.dp))
+                            SeekLine(n, accent, beat = false, ends = true)
+                        } else {
+                            Spacer(Modifier.height(18.dp))
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+                        }
                         Spacer(Modifier.height(14.dp))
                         // the inner sleeve (2026-10-29: the room beside the cover):
                         // the record, its lyrics, up next, its notes, chosen by a word; stop at the row's end
@@ -254,7 +315,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                 Word(w, pixel(14.sp, if (w == panel) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 10.dp) { shows = w }
                             Spacer(Modifier.weight(1f))
                             // into one of your playlists (the phone's player's word), its page over the player
-                            if (canAddToList(n.song)) Word("playlist", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 10.dp) { open(Page.AddTo(n.song)) }
+                            // a station's: the song it's playing, found
+                            val listed = if (n.song.station) airedSong else n.song.takeIf { canAddToList(it) }
+                            if (listed != null) Word("playlist", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 10.dp) { open(Page.AddTo(listed)) }
                             Word("stop", pixel(14.sp, if (n.playing) Ink.mid else Ink.dim), touch = 10.dp) { Player.stop(); onClose() }
                         }
                         Spacer(Modifier.height(14.dp))
@@ -525,6 +588,102 @@ private fun Moment(n: Player.Now, h: Heard?, onTyping: (Boolean) -> Unit) {
     }
 }
 
+/**
+ * A DJ set's sleeve (2026-11-12, Bronson: "blurred ... when a track is recognized it types it in and then adds it to a
+ * list on the record that stays there. Essentially building a designed record", "and make them clickable"): over the
+ * set's frame in the blur, the set's name, and its tracklist as it's heard (SetHeard), numbered, the newest typed in; a
+ * track tapped opens its artist's page, held it's found and put next.
+ */
+@Composable
+private fun SetSleeve(channel: String, name: String, onOpen: (Page) -> Unit) {
+    val heard by SetHeard.heard.collectAsState()
+    val added by SetHeard.added.collectAsState()
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    LaunchedEffect(said) { if (said != null) { delay(1_600); said = null } }
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    LaunchedEffect(heard.size) { scroll.animateScrollTo(scroll.maxValue) }
+    Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = .38f))) {
+        Column(Modifier.fillMaxSize().padding(28.dp)) {
+            // the set's name over its tracklist, as the phone's sleeve has it (2026-11-12, Bronson: with the name gone it was
+            // only a list; "looks nice" with it, though the words beside say it too)
+            BasicText("live dj set  ·  ${channel.lowercase()}", style = pixel(12.sp, Ink.mid))
+            Spacer(Modifier.height(6.dp))
+            BasicText(name.uppercase(), style = headline(40.sp), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+            Spacer(Modifier.height(10.dp))
+            if (heard.isEmpty()) BasicText("listening for the first track", style = pixel(12.sp, Ink.mid))
+            Column(Modifier.weight(1f).verticalScroll(scroll)) {
+                heard.forEachIndexed { i, t ->
+                    // a tap, their page (their songs, records, more like them); held, the track put next
+                    Row(Modifier.fillMaxWidth().combinedClickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = { onOpen(Page.Artist(t.artist.substringBefore(", ").substringBefore(" & ").trim())) },
+                        onLongClick = {
+                            scope.launch {
+                                val song = withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.find(t.title, t.artist) }
+                                if (song != null) { Player.playNext(song); said = i to "next" } else said = i to "not found"
+                            }
+                        }).padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
+                        BasicText("%02d".format(i + 1), style = pixel(12.sp, Ink.mid), modifier = Modifier.width(32.dp).padding(top = 3.dp))
+                        Column(Modifier.weight(1f)) {
+                            if (t == added) TypedLine(t.title.uppercase(), headline(18.sp))
+                            else BasicText(t.title.uppercase(), style = headline(18.sp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                        said?.takeIf { it.first == i }?.let { BasicText(it.second, style = pixel(12.sp), modifier = Modifier.padding(start = 8.dp, top = 3.dp)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A DJ set's tracklist as it's heard (SetHeard): each track and where in the set it came, the newest lit; a click finds it
+ * on YouTube Music and puts it next; the lot kept as a list of yours.
+ */
+@Composable
+private fun SetTracklist() {
+    val heard by SetHeard.heard.collectAsState()
+    val scope = rememberCoroutineScope()
+    var said by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    LaunchedEffect(said) { if (said != null) { delay(1_600); said = null } }
+    Column {
+        BasicText("HEARD IN THIS SET", style = headline(22.sp))
+        BasicText(if (heard.isEmpty()) "listening: each track's name comes as it's heard" else "a click puts it next", style = pixel(12.sp, Ink.mid),
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+        heard.asReversed().forEachIndexed { i, t ->
+            val n = heard.size - 1 - i
+            Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null) {
+                scope.launch {
+                    val song = withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.find(t.title, t.artist) }
+                    if (song != null) { Player.playNext(song); said = n to "next" } else said = n to "not found"
+                }
+            }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText(clock(t.at), style = pixel(12.sp, Ink.mid), modifier = Modifier.width(56.dp))
+                Column(Modifier.weight(1f)) {
+                    BasicText(t.title.uppercase(), style = headline(16.sp, if (i == 0) Ink.ink else Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                said?.takeIf { it.first == n }?.let { BasicText(it.second, style = pixel(12.sp)) }
+            }
+        }
+        if (heard.size > 1) {
+            var kept by remember(heard.size) { mutableStateOf(false) }
+            Word(if (kept) "kept as a list" else "keep them all as a list", pixel(13.sp, if (kept) Ink.ink else Ink.mid), Modifier.padding(top = 12.dp), touch = 8.dp) {
+                if (kept) return@Word
+                kept = true
+                val name = "heard in " + (Player.now.value?.song?.title ?: "a set").lowercase()
+                scope.launch {
+                    val songs = withContext(kotlinx.coroutines.Dispatchers.IO) { heard.mapNotNull { YouTube.find(it.title, it.artist) } }
+                    HereLists.make(name, songs)
+                }
+            }
+        }
+    }
+}
+
 /** The moment's fade, and the word's fade in after it: slow, gentle at both ends. */
 private const val SETTLE = 1_400
 private val SETTLING = CubicBezierEasing(.45f, 0f, .2f, 1f)
@@ -536,29 +695,52 @@ private val SETTLING = CubicBezierEasing(.45f, 0f, .2f, 1f)
  */
 @Composable
 private fun RecordSide(n: Player.Now, open: (Page) -> Unit) {
+    if (SetHeard.isSet(n.song)) return SetTracklist()
     val albums by Library.albums.collectAsState()
     val queue by Player.queue.collectAsState()
-    val record = remember(albums, n.song.albumId) { albums.firstOrNull { it.id == n.song.albumId }?.songs }
-        // a YouTube record played whole: its songs as the queue has them
-        ?: queue.filter { it.albumId == n.song.albumId && it.album.isNotEmpty() }.takeIf { it.size > 1 }
-    if (record == null) {
+    val s0 = n.song
+    // what you have of it: the record in your library, else the song playing where it's yours (not YouTube's)
+    val mine = remember(albums, s0.albumId, s0.id) { albums.firstOrNull { it.id == s0.albumId }?.songs ?: listOfNotNull(s0.takeIf { !it.tube }) }
+    // the record whole from YouTube Music, as its page has it (2026-11-12, Bronson: "are we able to fill the record in?");
+    // a YouTube record played whole, its songs as the queue has them
+    val played = remember(queue, s0.albumId) { queue.filter { it.albumId == s0.albumId && it.album.isNotEmpty() }.takeIf { it.size > 1 } }
+    val artist = s0.albumArtist.ifBlank { s0.artist.substringBefore(", ") }
+    val whole by androidx.compose.runtime.produceState<List<Song>?>(played, s0.album, artist) {
+        if (played == null && s0.album.isNotBlank() && !s0.station && !s0.episode) value = runCatching { YouTube.whole(s0.album, artist) }.getOrNull()
+    }
+    val record = remember(mine, whole) { filled(mine, whole) }
+    val yours = remember(mine) { mine.mapTo(HashSet()) { it.id } }
+    if (record.size <= 1) {
         Column {
-            BasicText("just this song from ${n.song.album.ifEmpty { "its record" }.lowercase()} is here", style = pixel(13.sp, Ink.mid))
-            if (n.song.album.isNotEmpty()) Word("its record", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Record(n.song.albumId)) }
+            BasicText("just this song from ${s0.album.ifEmpty { "its record" }.lowercase()} is here", style = pixel(13.sp, Ink.mid))
+            if (s0.album.isNotEmpty()) Word("its record", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Record(s0.albumId)) }
         }
         return
     }
+    // some yours, some YouTube Music's: said above it, and each of YouTube's dimmed and marked, as on the record's page
+    val mixed = yours.isNotEmpty() && record.any { it.id !in yours }
+    // the one playing: by id, else by name (a YouTube song's video can be another id than the record's track)
+    val at = record.indexOfFirst { it.id == s0.id }.takeIf { it >= 0 } ?: record.indexOfFirst { trackKey(it.title) == trackKey(s0.title) }
     val list = rememberLazyListState()
-    val at = record.indexOfFirst { it.id == n.song.id }
-    LaunchedEffect(n.song.id) { if (at > 3) list.animateScrollToItem(at - 3) }
-    LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) {
-        itemsIndexed(record, key = { _, s -> s.id }) { i, s ->
-            val on = s.id == n.song.id
-            Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(record, i) })
-                .padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText((if (s.track > 0) s.track else i + 1).toString().padStart(2, '0'), style = headline(18.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(44.dp))
-                BasicText(s.title.uppercase(), style = headline(20.sp, if (on) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.padding(start = 16.dp))
+    LaunchedEffect(s0.id, record.size) { if (at > 3) list.animateScrollToItem(at - 3) }
+    Column {
+        if (mixed) BasicText("${record.count { it.id in yours }} of ${record.size} here · the rest from youtube music", style = pixel(12.sp, Ink.mid),
+            modifier = Modifier.padding(bottom = 8.dp))
+        LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) {
+            itemsIndexed(record, key = { _, s -> s.id }) { i, s ->
+                val on = i == at
+                val theirs = mixed && s.id !in yours
+                Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(record, i) })
+                    .padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText((if (whole == null && s.track > 0) s.track else i + 1).toString().padStart(2, '0'), style = headline(18.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.width(44.dp))
+                    // the name and its mark together, taking the room; the length always at the right (a spacer sharing the
+                    // room with the name had put each length somewhere else, 2026-11-12)
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        BasicText(s.title.uppercase(), style = headline(20.sp, if (on) Ink.ink else if (theirs) Ink.dim else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (theirs) BasicText("youtube music", style = pixel(12.sp, Ink.dim), maxLines = 1, modifier = Modifier.padding(start = 12.dp))
+                    }
+                    if (s.duration > 0) BasicText(clock(s.duration), style = pixel(12.sp, if (on) Ink.ink else Ink.dim), modifier = Modifier.padding(start = 16.dp))
+                }
             }
         }
     }
@@ -710,3 +892,5 @@ fun androidx.compose.foundation.layout.BoxScope.ColumnEdge(onBack: () -> Unit) {
         Box(Modifier.padding(end = 14.dp)) { Chevron(BACK_RIGHT, 8.dp, 14.dp, c) }
     }
 }
+
+

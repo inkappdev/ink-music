@@ -154,6 +154,8 @@ class Main : ComponentActivity() {
         super.onCreate(savedInstanceState)
         lifecycle.addObserver(Sun(this))   // the dim words brighter in sunlight
         Moves.start(this)
+        // a computer's QR code read by the camera: kept before anything, so even a Main closing itself below hands it on
+        Computers.take(intent)
         // opened again (the home screen, the notification) over ink music's own screens: those stay
         // as they were (the YouTube sign-in, mid-way), not a second library over them
         if (!isTaskRoot) { finish(); return }
@@ -186,6 +188,7 @@ class Main : ComponentActivity() {
         Seeds.start(this)
         Fresh.start(this)
         Hints.start(this)
+        SetHeard.start(this)
         Stations.curated(this)
         setContent { TvFocus { App() } }
         // the next song's cover (and the last's) ready before it plays (Covers.ahead)
@@ -202,6 +205,12 @@ class Main : ComponentActivity() {
                 mediaController = Playback.token?.takeIf { on }?.let { android.media.session.MediaController(this@Main, it) }
             }
         }
+    }
+
+    /** Open already, and a computer's QR code read by the camera: the pairing page takes it (App). */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        Computers.take(intent)
     }
 
     /** A TV's remote pressed with nothing focused (Compose then hears nothing): the first thing on screen takes focus. */
@@ -303,6 +312,8 @@ sealed interface Page {
     data object Import : Page
     data object Equalizer : Page
     data object HandOver : Page
+    /** Every song heard in the DJ sets you've played (FromSets). */
+    data object FromSets : Page
     data class Mood(val mood: TubeMood) : Page
     data class Festival(val name: String) : Page
     data class SettingsPart(val part: String) : Page
@@ -354,6 +365,9 @@ private fun App() {
     LaunchedEffect(library) { Playback.refresh() }
 
     val pages = remember { Pages() }
+    // a computer's QR code read by the phone's own camera: its pairing page, on top (it pairs from there)
+    val scanned by Computers.scanned.collectAsState()
+    LaunchedEffect(scanned) { if (scanned != null && pages.stack.lastOrNull() != Page.HandOver) pages.open(Page.HandOver) }
     var playerUp by rememberSaveable { mutableStateOf(false) }
     // what plays on another device, opened from its bar ([RemotePlayerPage])
     var remoteUp by remember { mutableStateOf(false) }
@@ -466,6 +480,7 @@ private fun App() {
                         is Page.TubeArtist -> ArtistPage(p.artist.name, pages, p.artist.id)
                         is Page.Weekly -> WeeklyPage(p.week, pages)
                         Page.Kept -> KeptPage(pages)
+                        Page.FromSets -> FromSetsPage(pages)
                         is Page.Smart -> SmartPage(p.id, pages)
                         is Page.SmartEdit -> SmartEditPage(p.id, pages)
                         Page.Import -> ImportPage(pages)
@@ -749,10 +764,12 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                     item {
                         if (lovedIds.isNotEmpty()) ListRow("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", heart = true) { pages.open(Page.Loved) }
                         if (!tv) ListRow("your year", minutes?.let { if (it > 0) "%,d minutes so far".format(it) else "starts now" } ?: "") { pages.open(Page.Year) }
-                        if (!tv) ListRow("ink mapped", "your listening as land, these days") { pages.open(Page.Mapped) }
+                        if (!tv) ListRow("ink mapped", if (Mapped.SOON) "coming soon" else "your listening as land, these days") { pages.open(Page.Mapped) }
                         // what's on the phone to play with no signal (your server's, YouTube's)
                         val keptIds by Offline.kept.collectAsState()
                         if (keptIds.isNotEmpty()) ListRow("kept on this phone", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}, offline") { pages.open(Page.Kept) }
+                        val fromSets by FromSets.songs.collectAsState()
+                        if (fromSets.isNotEmpty()) ListRow("from dj sets", "${fromSets.size} ${if (fromSets.size == 1) "song" else "songs"}, heard in the sets you played") { pages.open(Page.FromSets) }
                         // lists that fill themselves from rules (SmartLists), and a new one
                         SmartRows(pages)
                         Spacer(Modifier.height(10.dp))
@@ -887,8 +904,15 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             Word("settings", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size, menu), touch = 8.dp) { menu = false; pages.open(Page.Settings) }
             Word("your year", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 1, menu), touch = 8.dp) { menu = false; pages.open(Page.Year) }
             Word("ink mapped", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 2, menu), touch = 8.dp) { menu = false; pages.open(Page.Mapped) }
+            // pairing a computer a tap from anywhere, not deep in settings; once one's paired, its name opens its setting
+            if (!tv) {
+                val peers by SyncPhone.peers.collectAsState()
+                Word(if (peers.isEmpty()) "pair a computer" else "your computer", pixel(14.sp, Ink.mid), Modifier.arrive(tabs.size + 3, menu), touch = 8.dp) {
+                    menu = false; pages.open(if (peers.isEmpty()) Page.HandOver else Page.SettingsPart("music"))
+                }
+            }
             // made by ink, its heart (it beats; seven taps and hearts float up), ink its website: the quiet funnel
-            Row(Modifier.arrive(tabs.size + 3, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.arrive(tabs.size + 4, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 val ctx = LocalContext.current
                 BasicText("made by ", style = pixel(12.sp, Ink.dim))
                 Word("ink", pixel(12.sp, Ink.mid), touch = 8.dp) {
@@ -1094,7 +1118,7 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
             Word("pick more", pixel(13.sp), touch = 8.dp) { open = false; Picking.toggle(s) }
             Word("play next", pixel(13.sp), touch = 8.dp) { open = false; Playback.playNext(s) }
             Word("add to queue", pixel(13.sp), touch = 8.dp) { open = false; Playback.add(s) }
-            Word("radio", pixel(13.sp), touch = 8.dp) { open = false; Playback.startRadio(s) }
+            Word("similar", pixel(13.sp), touch = 8.dp) { open = false; Playback.startRadio(s) }
             val lovedIds by Loved.ids.collectAsState()
             Word(if (s.id in lovedIds) "unlove" else "love", pixel(13.sp), touch = 8.dp) { open = false; Loved.toggle(s) }
             val account by Server.account.collectAsState()
@@ -1590,7 +1614,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 if (playable.isNotEmpty()) Row {
                     Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(playable, 0) }
                     Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(playable.shuffled(), 0) }
-                    Word("radio", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.startRadio(playable.first()) }
+                    Word("similar", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.startRadio(playable.first()) }
                     // signed in: followed there (lit), or not
                     val who by YouTubeAccount.who.collectAsState()
                     val followed by YouTubeAccount.followed.collectAsState()
@@ -1674,6 +1698,25 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 Spacer(Modifier.height(22.dp))
             }
         }
+        // their own places (Socials: Instagram, TikTok, Bandcamp, their site...), words that open them; read once the
+        // page knows their records, which tell one of a shared name
+        item(key = "socials") {
+            val ready = i != null || !waiting
+            val titles = remember(records, i) { records.map { it.title } + i?.albums.orEmpty().map { it.title } }
+            val socials by androidx.compose.runtime.produceState(emptyList<Socials.Link>(), name, ready) {
+                if (ready) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Socials.of(java.io.File(ctx.cacheDir, "socials"), name, titles) }
+            }
+            if (socials.isNotEmpty()) {
+                androidx.compose.foundation.layout.FlowRow(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 22.dp),
+                    horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    socials.forEach { l ->
+                        Word(l.word, pixel(14.sp, Ink.mid), touch = 8.dp) {
+                            runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(l.url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }
+                    }
+                }
+            }
+        }
         // the playlists they're on (YouTube Music's "featured on", and their own), each opening as any list
         i?.featured?.takeIf { it.isNotEmpty() }?.let { lists ->
             item(key = "featured") {
@@ -1733,13 +1776,44 @@ private fun TvArtistSide(name: String, i: ArtistInfo?, room: Dp, records: Int, y
     if (playable.isNotEmpty()) Row {
         Word("play", pixel(15.sp), Modifier.padding(end = 24.dp).tvFirst(), touch = 8.dp) { Playback.play(playable, 0) }
         Word("shuffle", pixel(15.sp, Ink.mid), Modifier.padding(end = 24.dp), touch = 8.dp) { Playback.play(playable.shuffled(), 0) }
-        Word("radio", pixel(15.sp, Ink.mid), touch = 8.dp) { Playback.startRadio(playable.first()) }
+        Word("similar", pixel(15.sp, Ink.mid), touch = 8.dp) { Playback.startRadio(playable.first()) }
     }
     i?.about?.let { Bio.of(it) }?.first?.takeIf { it.isNotEmpty() }?.let { about ->
         val said = remember(about) { pullQuote(about).first ?: about }
         Spacer(Modifier.height(16.dp))
         BasicText(said.lowercase(), style = pixel(12.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 18.sp), maxLines = 4, overflow = TextOverflow.Ellipsis)
     }
+}
+
+/** Every song heard in the DJ sets you've played (FromSets), the newest first: played, shuffled, mixed, like any list. */
+@Composable
+private fun FromSetsPage(pages: Pages) {
+    val covers by ListCovers.on.collectAsState()
+    val songs by FromSets.songs.collectAsState()
+    val list = pageList()
+    FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
+        state = list,
+        modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+    ) {
+        item {
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                BasicText("FROM DJ SETS", style = headline(36.sp), maxLines = 2)
+                Spacer(Modifier.height(6.dp))
+                BasicText("${songs.size} songs heard in the sets you played, the newest first", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(14.dp))
+                if (songs.isNotEmpty()) Row {
+                    Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(songs, 0) }
+                    Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                    MixWord("from dj sets", songs, Modifier.padding(end = 26.dp))
+                    CoversWord()
+                }
+                MixProgress("from dj sets")
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(songs, i) } } }
+    } }
 }
 
 /** The songs kept on the phone (your server's, YouTube Music's), to play with no signal; each let go from its options. */
@@ -2905,6 +2979,9 @@ private fun MiniPlayerOf(n: Now, frost: HazeState, onOpen: () -> Unit) {
                 Spacer(Modifier.height(4.dp))
                 BasicText(n.artist.lowercase() + if (n.device.isNotEmpty()) "  on ${n.device.lowercase()}" else "",
                     style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // a DJ set: the track playing in it, typed out as it's heard (SetHeard)
+                val inSet by SetHeard.now.collectAsState()
+                if (SetHeard.isSet(n)) inSet?.let { t -> TypedLine("now: ${t.artist.lowercase()} - ${t.title.lowercase()}", pixel(12.sp), Modifier.padding(top = 2.dp)) }
             }
             Word(if (n.playing) "pause" else "play", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 12.dp) { Playback.toggle() }
         }
@@ -3002,6 +3079,10 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "view") { ListsView() }
+        if (FromSets.songs.value.isNotEmpty()) item(key = "fromSets") {
+            val fromSets by FromSets.songs.collectAsState()
+            ListTile("from dj sets", "${fromSets.size} ${if (fromSets.size == 1) "song" else "songs"}", { pages.open(Page.FromSets) }) { Mosaic(fromSets, "from dj sets") }
+        }
         if (lovedIds.isNotEmpty()) item(key = "loved") {
             ListTile("loved", "${lovedIds.size} ${if (lovedIds.size == 1) "song" else "songs"}", { pages.open(Page.Loved) }, heart = true) { Mosaic(loved, "loved") }
         }
@@ -3013,7 +3094,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
         }
         // ink mapped beside it: your listening as land (2026-11-11)
         if (!Device.tv) item(key = "mapped") {
-            ListTile("ink mapped", "your listening as land", { pages.open(Page.Mapped) }) { MappedArt() }
+            ListTile("ink mapped", if (Mapped.SOON) "coming soon" else "your listening as land", { pages.open(Page.Mapped) }) { MappedArt() }
         }
         if (kept.isNotEmpty()) item(key = "kept") {
             ListTile("kept on this phone", "${kept.size} ${if (kept.size == 1) "song" else "songs"}, offline", { pages.open(Page.Kept) }) { Mosaic(kept, "kept") }

@@ -397,7 +397,7 @@ class PlayerService : MediaLibraryService() {
         net.execute {
             // a mix's queue (its first song the mix's): radio keeps to its tempo
             val tempo = Mixes.keeping(this, firstId)
-            val more = Radio.after(this, seeds, queued, tempo)
+            val more = Radio.after(this, seeds, queued, tempo, synchronized(fromRadio) { fromRadio.toSet() })
             android.util.Log.d("ink-radio", "after ${seeds.joinToString(" + ") { it.title + " - " + it.artist }}: ${more.size} (${more.joinToString { it.title + " - " + it.artist }})")
             if (more.isEmpty()) return@execute
             main.post {
@@ -585,6 +585,22 @@ class PlayerService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        // a DJ set's tracks heard as it plays, here where the music is, the screen locked or not (SetListening)
+        SetListening.start(this) {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var out: SetListening.Now? = null
+            main.post {
+                runCatching {
+                    val p = session?.player
+                    val i = p?.currentMediaItem
+                    if (p != null && i != null) out = SetListening.Now(i.mediaId, i.mediaMetadata.title?.toString().orEmpty(),
+                        i.mediaMetadata.artist?.toString().orEmpty(), i.mediaMetadata.albumTitle?.toString().orEmpty(), p.currentPosition, p.isPlaying)
+                }
+                latch.countDown()
+            }
+            latch.await(1, java.util.concurrent.TimeUnit.SECONDS)
+            out
+        }
         // this process's WebView keeps its own data (YouTube's poToken runs one here, and the
         // screens' process may run another: two processes sharing one data folder crash)
         runCatching { android.webkit.WebView.setDataDirectorySuffix("player") }
