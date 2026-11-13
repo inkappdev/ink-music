@@ -120,6 +120,12 @@ object Fresh {
                 async { name to (withTimeoutOrNull(4_000) { YouTubeAccount.artist(name, "").firstOrNull { it != null } }?.like.orEmpty().map { it.name }) }
             }.awaitAll().filter { it.second.isNotEmpty() }.toMap()
             if (related.isNotEmpty()) taste.value = of(related)
+            // handed to the player's process, where similar picks songs (Radio.near): your nearest 300 and your appetite
+            runCatching {
+                val t = taste.value
+                val near = JSONObject().apply { t.top(300).forEach { put(it, t.of(it)) } }
+                Keep.write(java.io.File(app.filesDir, "taste-near.json"), JSONObject().put("appetite", t.appetite).put("near", near).toString())
+            }
             android.util.Log.d("ink-picks", "taste: ${plays.size} listens, ${skips.size} skips, ${loved.size} loves, ${related.size} artists' fans, ${brought.sumOf { it.artists.size }} brought in; nearest ${taste.value.top(5)}, appetite %.2f".format(taste.value.appetite))
         }
     }

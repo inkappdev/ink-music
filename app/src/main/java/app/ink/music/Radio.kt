@@ -42,12 +42,34 @@ object Radio {
         // (once, lower; twice, out for now), and artists said not for you, out
         val skips = History.skips(c).filter { it.at >= since && it.id in fromSimilar }.groupingBy { who(it.artist) }.eachCount()
         val refused = Fresh.turnedDownNames(c).map(::who).toSet()
-        val ranked = { batch: Int -> rank(seeds, lists, queued, heard, batch, skips, refused) }
+        val lifted = lift(c)
+        val ranked = { batch: Int -> rank(seeds, lists, queued, heard, batch, skips, refused, lifted) }
         if (tempo == null) return ranked(BATCH)
         return atTempo(c, ranked(30), tempo)
     }
 
     private fun who(a: String) = a.lowercase().substringBefore(",").trim()
+
+    /**
+     * Your taste as the screens last worked it out (Fresh writes files/taste-near.json: your nearest artists and your
+     * appetite), read again when it changes: similar lifts the artists you're near, the more so the less you've been
+     * wandering (the computer's since 2026-11-12).
+     */
+    private var tasteAt = 0L
+    private var tasteNear: Map<String, Double> = emptyMap()
+    private var appetite = ForYou.STRETCH
+    @Synchronized private fun lift(c: Context): (String) -> Float {
+        val f = java.io.File(c.filesDir, "taste-near.json")
+        if (f.lastModified() != tasteAt) runCatching {
+            val o = org.json.JSONObject(f.readText())
+            val n = o.optJSONObject("near")
+            tasteNear = n?.keys()?.asSequence()?.associateWith { n.optDouble(it) }.orEmpty()
+            appetite = o.optDouble("appetite", ForYou.STRETCH)
+            tasteAt = f.lastModified()
+        }
+        val near = tasteNear; val a = appetite
+        return { artist -> ((near[Taste.bare(artist.substringBefore(", "))] ?: 0.0) * (1 - a) * .6).toFloat() }
+    }
 
     /**
      * Radio after a mix (Mixes: the queue's first song the mix's), keeping to its tempo (2026-11-08): radio's songs read
@@ -71,7 +93,7 @@ object Radio {
 
     /** The seeds' lists (in the seeds' order) made one: scored, sifted, no artist twice running. */
     fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH,
-             skips: Map<String, Int> = emptyMap(), refused: Set<String> = emptySet()): List<Song> {
+             skips: Map<String, Int> = emptyMap(), refused: Set<String> = emptySet(), lifted: (String) -> Float = { 0f }): List<Song> {
         // a seed's own kind of version is fine (a slowed song's radio may be slowed songs)
         val seedVersions = seeds.any { versions.containsMatchIn(it.title) }
         val seedKeys = seeds.map { key(it.title, it.artist) }.toHashSet()
@@ -86,7 +108,8 @@ object Radio {
             }
         }
         // skipped once this session, lower; twice, or said not for you, out
-        found.values.forEach { f -> f.score -= .5f * (skips[who(f.song.artist)] ?: 0) }
+        // and lifted for an artist you're near (your taste, as the screens last worked it out)
+        found.values.forEach { f -> f.score += lifted(f.song.artist) - .5f * (skips[who(f.song.artist)] ?: 0) }
         val by = HashMap<String, Int>()
         val picked = found.entries.filter { (_, f) -> who(f.song.artist).let { it !in refused && (skips[it] ?: 0) < 2 } }
             .sortedByDescending { it.value.score }.filter { (k, f) ->
