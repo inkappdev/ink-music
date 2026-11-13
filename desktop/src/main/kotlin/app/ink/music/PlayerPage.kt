@@ -87,19 +87,23 @@ object Win {
     var before: DpSize? = null
     var beforeAt: WindowPosition? = null
     private var was: WindowPlacement = WindowPlacement.Floating
+    /** The main window itself (Main sets it), for Windows' full screen ([WinFull]). */
+    var window: java.awt.Window? = null
     val full get() = covering || state?.placement == WindowPlacement.Fullscreen
 
     /** Windows' full screen as ink makes it ([full]): the window over the whole screen, still an ordinary window. */
-    @Volatile private var covering = false
+    private var covering by androidx.compose.runtime.mutableStateOf(false)
 
     fun full(on: Boolean) {
         val s = state ?: return
         // Windows: not Java's full screen, which is exclusive there, and Windows minimizes an exclusive window as soon as
         // another takes the focus (2026-11-12, a tester: opening a folder to drag a song in, ink music minimized itself;
-        // brought back, it was full screen again, "maximizing itself"; and minimize fought it). The window laid over
-        // the whole screen instead, and put back as it was
+        // brought back, it was full screen again, "maximizing itself"; and minimize fought it). Its frame taken off and
+        // laid over the whole monitor instead, as a browser does (WinFull), and put back as it was
         if (Home.windows) {
             if (on == covering) return
+            val w = window
+            if (w != null && if (on) WinFull.enter(w) else WinFull.leave(w)) { covering = on; return }
             covering = on
             if (on) {
                 was = s.placement; before = s.size; beforeAt = s.position
@@ -225,10 +229,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
                                     // a DJ set: each track as it's heard, typed across the cover (SetHeard)
                                     if (SetHeard.isSet(s)) SetSleeve(s.artist, s.title, open)
-                                    // the song's way through, inside the cover too (2026-11-12, a tester and Bronson): a band
-                                    // along its foot filling in its colour, see-through; clicked or dragged, there in the song
                                     if (s.id == n.song.id) SpectrumOver(s, n.playing, accent, Modifier.fillMaxSize())
-                                    if (s.id == n.song.id && !s.station && n.duration > 0) CoverLine(n.duration, accent, Modifier.align(Alignment.BottomStart))
                                 }
                             }
                         }
@@ -273,8 +274,16 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             Spacer(Modifier.width(32.dp))
                             Volume(line = 140.dp)
                         }
-                        Spacer(Modifier.height(18.dp))
-                        Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+                        // the rule under the controls the song's line too, its times at its ends (2026-11-12, Bronson: a
+                        // second line "somewhere on the right", in place of a band along the cover's foot he didn't like);
+                        // a station's, nothing to go through, the plain rule
+                        if (!n.song.station && n.duration > 0) {
+                            Spacer(Modifier.height(4.dp))
+                            SeekLine(n, accent, beat = false, ends = true)
+                        } else {
+                            Spacer(Modifier.height(18.dp))
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
+                        }
                         Spacer(Modifier.height(14.dp))
                         // the inner sleeve (2026-10-29: the room beside the cover):
                         // the record, its lyrics, up next, its notes, chosen by a word; stop at the row's end
@@ -843,31 +852,3 @@ fun androidx.compose.foundation.layout.BoxScope.ColumnEdge(onBack: () -> Unit) {
 }
 
 
-/**
- * A band along the cover's foot, inside it, filling as the song goes (a game's loading bar, see-through so the cover
- * shows under it), thicker under the mouse; a click or a drag along it goes there in the song.
- */
-@Composable
-private fun CoverLine(duration: Long, accent: androidx.compose.ui.graphics.Color, modifier: Modifier) {
-    val position by Player.position.collectAsState()
-    var dragging by remember { mutableStateOf<Float?>(null) }
-    val src = remember { MutableInteractionSource() }
-    val over by src.collectIsHoveredAsState()
-    val tall by androidx.compose.animation.core.animateDpAsState(if (over || dragging != null) 22.dp else 8.dp, tween(Motion.ENTER, easing = Motion.expo), label = "band")
-    val part = dragging ?: (position.toFloat() / duration).coerceIn(0f, 1f)
-    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth().height(28.dp).hoverable(src)
-        .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
-        .pointerInput(duration) {
-            detectTapGestures { o -> Player.seek((o.x / size.width * duration).toLong()) }
-        }
-        .pointerInput(duration) {
-            detectHorizontalDragGestures(
-                onDragStart = { o -> dragging = (o.x / size.width).coerceIn(0f, 1f) },
-                onDragEnd = { dragging?.let { Player.seek((it * duration).toLong()) }; dragging = null },
-                onDragCancel = { dragging = null },
-            ) { change, _ -> dragging = (change.position.x / size.width).coerceIn(0f, 1f) }
-        }, contentAlignment = Alignment.BottomStart) {
-        Box(Modifier.fillMaxWidth().height(tall).background(Ink.black.copy(alpha = .25f)))
-        Box(Modifier.fillMaxWidth(part).height(tall).background(accent.copy(alpha = .55f)))
-    }
-}

@@ -188,6 +188,7 @@ fun main() {
         ) {
             // never dragged smaller than the rail, a page and the now column
             window.minimumSize = java.awt.Dimension(Placed.LEAST.width.value.toInt(), Placed.LEAST.height.value.toInt())
+            Win.window = window
             LaunchedEffect(Unit) {
                 window.minimumSize = java.awt.Dimension(720, 520)
                 window.background = java.awt.Color.BLACK
@@ -1111,6 +1112,9 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
             ((if (s.id in loved) "unlove" else "love") to { Loved.toggle(s) }).takeIf { !s.station && !s.episode },
             // into one of your playlists (the server's, YouTube Music's)
             ("add to a playlist" to { go(Page.AddTo(s)) }).takeIf { canAddToList(s) },
+            // the song playing: the whole of up next kept as a list of yours (moved here from up next's own row,
+            // 2026-11-12, Bronson: "maybe not displayed on the player it should be in a menu")
+            ("save up next as a list" to { saveUpNext() }).takeIf { playing && Player.queue.value.size > 1 },
             // kept on the computer, to play with no signal (your server's, YouTube's)
             (if (s.id in kept) "not offline" to { Offline.remove(listOf(s.id)) } else "keep offline" to { Offline.keep(listOf(s)) }).takeIf { Offline.keepable(s) },
         ),
@@ -1629,6 +1633,8 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                             // preview: a taste of each song, then the next (Preview)
                             if (Preview.secs.value == 0) Preview.CHOICES.map { n -> "preview $n s of each" to { Preview.set(n) } }
                             else listOf("preview · off" to { Preview.set(0) }),
+                            // up next kept as a list of yours (saveUpNext)
+                            listOfNotNull(("save up next as a list" to { saveUpNext() }).takeIf { Player.queue.value.size > 1 }),
                             // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)
                             listOf("stop" to { Player.stop() }),
                         ),
@@ -1716,31 +1722,40 @@ private fun QueuePage(open: (Page) -> Unit, onClose: () -> Unit) {
     }
 }
 
-/** Radio: lit, the queue's end brings more like it. */
+/**
+ * What happens when up next runs out, said as a choice: stop there, or go on with songs like these, and from where (the
+ * one chosen lit). Till 2026-11-12 one row: "similar" lit as a label, its three sources lit as a choice, "kept as a
+ * list" lit as done, all by brightness alone (Bronson: "a bit confusing"); keeping up next is in a menu now ([saveUpNext]).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun RadioWord(modifier: Modifier = Modifier) {
     val radio by Player.radio.collectAsState()
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        // similar, and where from: the one in use lit (off: none lit)
-        val mode by Player.radioMode.collectAsState()
-        BasicText("similar  ", style = pixel(13.sp, if (radio) Ink.ink else Ink.mid))
-        listOf(Radio.Mode.ONLINE, Radio.Mode.OFFLINE, Radio.Mode.BOTH).forEach { m ->
-            val on = radio && mode == m
-            Word(m.word, pixel(13.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 8.dp) {
-                if (on) Player.radio(false) else { Player.radioMode(m); Player.radio(true) }
-            }
-        }
-        // what's up next, a shuffle or a radio run you liked, kept as a list of yours (2026-11-12, a tester: "these
-        // combinations can be lost every time the shuffle button is pressed again")
-        val queue by Player.queue.collectAsState()
-        var kept by remember(queue) { mutableStateOf(false) }
-        if (queue.size > 1) Word(if (kept) "kept as a list" else "keep as a list", pixel(13.sp, if (kept) Ink.ink else Ink.mid), Modifier.padding(start = 24.dp), touch = 8.dp) {
-            if (!kept) {
-                val day = java.time.LocalDate.now().let { "${it.dayOfMonth} ${it.month.name.lowercase()}" }
-                HereLists.make("up next, $day", queue); kept = true
+    val mode by Player.radioMode.collectAsState()
+    Column(modifier) {
+        androidx.compose.foundation.layout.FlowRow(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            BasicText("when up next ends", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(end = 18.dp, top = 1.dp))
+            Word("stop", pixel(13.sp, if (!radio) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 8.dp) { Player.radio(false) }
+            listOf(Radio.Mode.ONLINE to "similar online", Radio.Mode.OFFLINE to "similar from your files", Radio.Mode.BOTH to "similar from both").forEach { (m, said) ->
+                val on = radio && mode == m
+                Word(said, pixel(13.sp, if (on) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 8.dp) {
+                    Player.radioMode(m); Player.radio(true)
+                }
             }
         }
     }
+}
+
+/**
+ * What's up next, a shuffle or a similar run you liked, kept as a list of yours, "up next, 12 november" (2026-11-12, a
+ * tester: "these combinations can be lost every time the shuffle button is pressed again"). In the playing song's menu
+ * and the bar's more; it was a word in up next's own row, which Bronson found confusing there.
+ */
+fun saveUpNext() {
+    val queue = Player.queue.value
+    if (queue.size < 2) return
+    val day = java.time.LocalDate.now().let { "${it.dayOfMonth} ${it.month.name.lowercase()}" }
+    HereLists.make("up next, $day", queue)
 }
 
 /** A row's grip, to drag it into another place: six pixels in two columns. */
