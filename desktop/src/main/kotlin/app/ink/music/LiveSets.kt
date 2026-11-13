@@ -94,7 +94,8 @@ fun LiveSetsShelf(open: (Page) -> Unit) {
         Section("LIVE DJ SETS", "humano studios, hör berlin, the lot radio, boiler room, kiosk radio")
         Shelf(sets.size, 300.dp, cover = 16 / 9f) { each ->
             items(sets, key = { it.id }) { c ->
-                Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, sets)) })) {
+                WithMenu({ listOf(listOf("watch" to { open(Page.Watch(c, sets)) }, "listen" to { listenTo(c) }), listOf("copy link" to { copyText("https://youtu.be/${c.id}") })) }) {
+Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, sets)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))
                     UnderCover(c.title, "${c.artist}  ·  ${MusicVideos.ago(c.at)}")
@@ -103,6 +104,7 @@ fun LiveSetsShelf(open: (Page) -> Unit) {
                         Word("listen", pixel(13.sp), touch = 6.dp) { listenTo(c) }
                     }
                 }
+}
             }
         }
     }

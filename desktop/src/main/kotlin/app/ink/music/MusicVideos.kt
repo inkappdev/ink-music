@@ -237,11 +237,13 @@ fun NewVideos(open: (Page) -> Unit) {
         Section("NEW VIDEOS", "from the artists you play")
         Shelf(clips.size, 300.dp, cover = 16 / 9f) { each ->
             items(clips, key = { it.id }) { c ->
-                Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {
+                WithMenu({ listOf(listOf("watch" to { open(Page.Watch(c, clips)) }, "listen" to { listenTo(c) }), listOf("copy link" to { copyText("https://youtu.be/${c.id}") })) }) {
+Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))
                     UnderCover(c.title, "${c.artist}  ·  ${MusicVideos.ago(c.at)}")
                 }
+}
             }
         }
     }
@@ -518,11 +520,13 @@ fun ArtistVideos(name: String, browseId: String, open: (Page) -> Unit) {
         Label("videos")
         Shelf(cover = 16 / 9f) {
             items(videos, key = { it.id }) { c ->
-                Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, videos)) })) {
+                WithMenu({ listOf(listOf("watch" to { open(Page.Watch(c, videos)) }, "listen" to { listenTo(c) }), listOf("copy link" to { copyText("https://youtu.be/${c.id}") })) }) {
+Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, videos)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))
                     UnderCover(c.title, MusicVideos.ago(c.at))
                 }
+}
             }
         }
         Spacer(Modifier.height(18.dp))

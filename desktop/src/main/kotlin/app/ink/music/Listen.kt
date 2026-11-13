@@ -389,9 +389,11 @@ private fun partOfDay(at: Long): String {
 /** A list as words: its name, how many songs. */
 @Composable
 fun ListRow(p: Server.Playlist, said: String? = null, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick, "play" to { playList(p.id); Unit }, "shuffle" to { playList(p.id, shuffle = true); Unit }), if (p.id.startsWith(HereLists.PREFIX)) listOf("delete list" to { HereLists.delete(p.id) }) else emptyList()) }) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 8.dp)) {
         BasicText(p.name.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
         BasicText(said ?: ("${p.count} ${if (p.count == 1) "song" else "songs"}" + if (p.mine) "" else "   shared with you"), style = pixel(12.sp, Ink.mid))
+    }
     }
 }
 
@@ -469,10 +471,12 @@ private fun ListsView() {
 /** A list as a tile: its art square, its name and what it holds under it. */
 @Composable
 private fun ListTile(name: String, said: String, onClick: () -> Unit, art: @Composable () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick)) }) {
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) { art() }
         Spacer(Modifier.height(8.dp))
         UnderCover(name, said)
+    }
     }
 }
 

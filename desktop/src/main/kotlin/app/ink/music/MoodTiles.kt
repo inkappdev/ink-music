@@ -171,6 +171,7 @@ fun InkMoodsShelf() {
 /** A mood as a tile: a cover of its songs in the dither, its name big on it, its line under it. */
 @Composable
 fun MoodTile(m: InkMoods.Mood, art: String?, side: androidx.compose.ui.unit.Dp = 170.dp, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick)) }) {
     Column(Modifier.width(side).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.BottomStart) {
             if (art != null) Covered(remember(art) { faceSong("mood " + m.key, art, photo = true) }, Modifier.fillMaxSize(), px = 340)
@@ -180,6 +181,7 @@ fun MoodTile(m: InkMoods.Mood, art: String?, side: androidx.compose.ui.unit.Dp =
         }
         Spacer(Modifier.height(8.dp))
         BasicText(m.line, style = pixel(12.sp, Ink.mid), maxLines = 2)
+    }
     }
 }
 

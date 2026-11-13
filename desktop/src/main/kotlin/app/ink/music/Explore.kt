@@ -363,6 +363,7 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
 /** A record or song someone picked: its cover, its name, who picked it; a click opens the record or plays the song. */
 @Composable
 internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit, from: List<Picks.Shown>? = null, why: String? = null) {
+    WithMenu({ listOf(listOf("artist" to { open(Page.Artist(s.pick.artist.substringBefore(", "))) }, "copy title" to { copyText("${s.pick.artist} - ${s.pick.title}") })) }) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember(s) { mutableStateOf<String?>(null) }
     // shown, for Seen: one passed over a while steps back (Fresh)
@@ -391,6 +392,7 @@ internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit, from: List<Picks.Sho
         // why it's here, for you (a stretch, you love them, if you like ..., from your last.fm)
         why?.let { BasicText(it, style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
+    }
 }
 
 /**
@@ -407,6 +409,7 @@ fun plain(title: String) = title.replace(Regex("""\s*[\[(](feat\.?|ft\.?|with|fr
  */
 @Composable
 private fun PickedRow(place: Int?, move: String, face: Song?, title: String, artist: String, by: String, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick, "copy title" to { copyText("$artist - $title") })) }) {
     val src = remember { MutableInteractionSource() }
     val over by src.collectIsHoveredAsState()
     Row(Modifier.fillMaxWidth().hoverable(src).clickable(src, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp),
@@ -423,6 +426,7 @@ private fun PickedRow(place: Int?, move: String, face: Song?, title: String, art
             BasicText(artist.lowercase(), style = pixel(13.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (by.isNotEmpty()) BasicText(by, style = pixel(12.sp, Ink.dim), maxLines = 1, modifier = Modifier.padding(start = 16.dp))
+    }
     }
 }
 
@@ -656,11 +660,13 @@ private val GENRE = 84.dp
 /** A genre as a tile: its name in a hairline frame (as the phone's), lit if it's yours, brighter under the mouse. */
 @Composable
 private fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick)) }) {
     val src = remember { MutableInteractionSource() }
     val over by src.collectIsHoveredAsState()
     Box(Modifier.width(186.dp).height(GENRE).border(1.dp, if (yours || over) Ink.mid else Ink.line).hoverable(src)
         .clickable(src, indication = null, onClick = felt(then = onClick)).padding(14.dp), contentAlignment = Alignment.BottomStart) {
         BasicText(name.uppercase(), style = headline(17.sp, if (yours || over) Ink.ink else Ink.mid).copy(lineHeight = 19.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
     }
 }
 

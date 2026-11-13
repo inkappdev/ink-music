@@ -281,8 +281,10 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                 i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
                     shelf("like", "fans also like") {
                         items(like, key = { it.id.ifEmpty { it.name } }) { a ->
+                            var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
                             Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null,
-                                onClick = felt { open(Page.Artist(a.name, a.id)) })) {
+                                onClick = felt { open(Page.Artist(a.name, a.id)) }).rightClick { menuAt = it }) {
+                                menuAt?.let { ArtistMenu(a.name, it) { menuAt = null } }
                                 CoverOf(remember(a.face) { a.face?.let { faceSong(a.name, it) } }, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
                                 Spacer(Modifier.height(8.dp))
                                 UnderCover(a.name, "artist")

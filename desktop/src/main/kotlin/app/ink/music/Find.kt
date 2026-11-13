@@ -281,11 +281,13 @@ val TubeAlbum.branded: Boolean get() = Curation.tubeBranded(url, artist)
 /** A YouTube Music record as a tile: its cover (from its link), name and artist; YouTube's own playlists in the dither. */
 @Composable
 fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick, "play" to { playTube(a); Unit }, "shuffle" to { playTube(a, shuffle = true); Unit }, "play next" to { playTube(a, next = true); Unit }), listOf("keep as your list" to { keepTube(a); Unit }, "copy link" to { copyText(tubeLink(a.url)) })) }) {
     androidx.compose.foundation.layout.Column(modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         if (a.branded && a.art != null) Covered(face(a), Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         else CoverOf(face(a), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(a.title, a.artist)
+    }
     }
 }
 

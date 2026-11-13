@@ -137,10 +137,12 @@ private fun FindShow() {
 /** A show as a tile: its cover, its name, who makes it. */
 @Composable
 private fun ShowTile(s: Podcasts.Show, onClick: () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick, "copy feed" to { copyText(s.feed) })) }) {
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         CoverOf(remember(s.feed, s.art) { Pods.face(s) }, s.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
         UnderCover(s.title, s.author)
+    }
     }
 }
 
@@ -152,10 +154,13 @@ private fun ShowTile(s: Podcasts.Show, onClick: () -> Unit) {
 @Composable
 private fun EpisodeRow(e: Song, place: Long, withShow: Boolean, on: Boolean, open: (Page) -> Unit) {
     val heard = place < 0
+    var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
     Row(
-        Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(listOf(e)) }),
+        Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(listOf(e)) })
+            .rightClick { menuAt = it },
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        menuAt?.let { SongMenu(e, open, null, it, playing = on) { menuAt = null } }
         if (withShow) {
             CoverOf(e, e.album, Modifier.size(56.dp), px = 160)
             Spacer(Modifier.width(16.dp))
