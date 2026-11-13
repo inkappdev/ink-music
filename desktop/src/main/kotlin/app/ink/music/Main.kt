@@ -136,6 +136,8 @@ fun main() {
     Covers.warm()
     Covers.tidy()
     SetHeard.start()
+    // a station that says nothing: its song heard (AirHeard)
+    AirHeard.start()
     // the next song's cover (and the last's) ready before it plays
     Covers.ahead()
     // the genres you open most, their editors' songs read ahead (their pages open with their block there)
@@ -1353,7 +1355,8 @@ fun said(n: Player.Now): Pair<String, String> {
     val air by Player.onAir.collectAsState()
     val s = n.song
     val a = air
-    return if (s.station && a != null) a.title to (a.artist ?: s.title) else s.title to s.artist
+    // heard in the stream, not said by the station (AirHeard): said so beside the artist
+    return if (s.station && a != null) a.title to ((a.artist ?: s.title) + if (a.heard) "  ·  heard" else "") else s.title to s.artist
 }
 
 /**

@@ -8,8 +8,11 @@ import kotlinx.coroutines.launch
  * OnAir also asks a few stations' own playlists (KEXP, KCRW...); not yet here.
  */
 object OnAir {
-    /** What a station says it's playing: the song (no artist: a show, a line). */
-    data class Said(val title: String, val artist: String?)
+    /**
+     * What a station says it's playing: the song (no artist: a show, a line). `heard`: not said by the station but
+     * heard in its stream ([AirHeard]), shown so; `show`, the show it's heard in, where the station named one (NTS).
+     */
+    data class Said(val title: String, val artist: String?, val heard: Boolean = false, val show: String? = null)
 
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
     @Volatile private var asking: kotlinx.coroutines.Job? = null
@@ -38,7 +41,11 @@ object OnAir {
                         if (ch.optString("channel_name") != channel) continue
                         // its names come HTML-escaped ("MANTRA &amp; DOUBLE O")
                         val show = ch.optJSONObject("now")?.optString("broadcast_title")?.let(::unescape)?.trim().orEmpty()
-                        if (show.isNotEmpty() && Player.now.value?.song?.id.let { it == null || it == id }) Player.onAir.value = Said(show, null)
+                        if (show.isNotEmpty() && Player.now.value?.song?.id.let { it == null || it == id }) {
+                            // a song heard in the show (AirHeard) stays, the show's name kept beside it
+                            val was = Player.onAir.value
+                            Player.onAir.value = if (was?.heard == true) was.copy(show = show) else Said(show, null)
+                        }
                     }
                 }
                 kotlinx.coroutines.delay(60_000)
