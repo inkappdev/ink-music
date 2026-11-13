@@ -39,7 +39,7 @@ object AddonMusic {
             runCatching {
                 val params = settings(ctx, base)
                 params["q"] = query
-                val result = request(ctx, "$base/search", params)
+                val result = request(ctx, "$base/search", params, intent = "stream")
                 val tracks = tracksArray(result) ?: return@runCatching emptyList()
                 buildList {
                     for (i in 0 until tracks.length()) {
@@ -79,7 +79,7 @@ object AddonMusic {
             val searchParams = LinkedHashMap(params).apply {
                 put("q", listOf(title, artist, album).filter { it.isNotBlank() }.joinToString(" "))
             }
-            val response = request(ctx, "$base/search", searchParams)
+            val response = request(ctx, "$base/search", searchParams, intent = "stream")
             val tracks = tracksArray(response) ?: return@runCatching null
             fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
                 .replace(Regex("\\p{M}+"), "").lowercase()
@@ -107,7 +107,7 @@ object AddonMusic {
             val id = track.getString("id")
             // The search query belongs only on /search; stream endpoints receive quality/atmos only.
             val streamParams = LinkedHashMap(params).apply { remove("q") }
-            val stream = request(ctx, "$base/stream/${Uri.encode(id)}", streamParams)
+            val stream = request(ctx, "$base/stream/${Uri.encode(id)}", streamParams, intent = "stream")
             playableUrl(stream)
         }.onFailure { android.util.Log.w("ink-addon", "lookup failed: ${it.message}") }.getOrNull()
     }
@@ -136,27 +136,30 @@ object AddonMusic {
         if (direct.startsWith("http")) return direct
         val id = decoded.getString("id")
         val params = settings(ctx, base).apply { remove("q") }
-        val result = request(ctx, "$base/stream/${Uri.encode(id)}", params)
+        val result = request(ctx, "$base/stream/${Uri.encode(id)}", params, intent = "stream")
         val url = playableUrl(result)
         if (url == null) throw IOException(result.optString("error").ifBlank { "Addon returned no stream URL" })
         return url
     }
 
-    /** Accept direct and wrapped stream response shapes used by addon servers. */
+    /** Parse LastWave nested wrappers without treating protocol defaults as transport. */
     private fun playableUrl(response: JSONObject): String? {
-        fun find(value: JSONObject): String? {
-            for (key in listOf("url", "streamURL", "streamUrl", "audioUrl", "mediaUrl", "directUrl", "downloadUrl", "dataUrl")) {
-                value.optString(key).takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { return it }
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<JSONObject, Boolean>())
+        fun find(value: JSONObject, depth: Int): String? {
+            if (depth > 6 || !seen.add(value)) return null
+            for (key in listOf("url", "directUrl", "streamUrl", "downloadUrl", "mediaUrl", "audioUrl", "dataUrl")) {
+                val raw = value.optString(key).trim()
+                if (raw.startsWith("https://") || raw.startsWith("http://")) return raw
             }
-            for (key in listOf("stream", "data", "result")) {
+            for (key in listOf("stream", "data", "result", "audio", "media")) {
                 when (val nested = value.opt(key)) {
-                    is JSONObject -> find(nested)?.let { return it }
-                    is String -> nested.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { return it }
+                    is JSONObject -> find(nested, depth + 1)?.let { return it }
+                    is String -> nested.trim().takeIf { it.startsWith("https://") || it.startsWith("http://") }?.let { return it }
                 }
             }
             return null
         }
-        return find(response)
+        return find(response, 0)
     }
 
     /** BitChord/Lokal addons may return an array directly or wrap it in data/results/items. */
@@ -211,36 +214,46 @@ object AddonMusic {
         return result
     }
 
-    private fun request(ctx: Context, endpoint: String, params: Map<String, String>): JSONObject {
+    private fun request(ctx: Context, endpoint: String, params: Map<String, String>, intent: String? = null): JSONObject {
         val builder = Uri.parse(endpoint).buildUpon()
         params.forEach { (key, value) -> builder.appendQueryParameter(key, value) }
         val target = builder.build().toString()
-        val connection = URL(target).openConnection() as HttpURLConnection
-        connection.connectTimeout = 8_000
-        connection.readTimeout = 12_000
-        connection.requestMethod = "GET"
-        connection.setRequestProperty("Accept", "application/json")
-        val isStreamRequest = Uri.parse(target).path.orEmpty().contains("/stream/")
-        connection.setRequestProperty("User-Agent", if (isStreamRequest) "LastWave-Player/1.0" else "Ink-Music/1.0")
-        if (isStreamRequest) connection.setRequestProperty("X-LW-Intent", "stream")
-        sign(ctx, target)?.let { (ts, signature) ->
-            connection.setRequestProperty("X-LW-TS", ts)
-            connection.setRequestProperty("X-LW-Sign", signature)
-            if (Uri.parse(target).path.orEmpty().contains("/stream/")) connection.setRequestProperty("X-LW-Intent", "stream")
+        val isStreamRequest = intent != null || Uri.parse(target).path.orEmpty().contains("/stream/")
+        var lastError: IOException? = null
+        repeat(2) { attempt ->
+            val connection = URL(target).openConnection() as HttpURLConnection
+            connection.connectTimeout = 8_000
+            connection.readTimeout = 20_000
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Accept", "application/json, application/dash+xml, */*")
+            connection.setRequestProperty("User-Agent", if (isStreamRequest) "LastWave-Player/1.0" else "Ink-Music/1.0")
+            val signedIntent = intent ?: if (isStreamRequest) "stream" else null
+            signedIntent?.let { connection.setRequestProperty("X-LW-Intent", it) }
+            sign(ctx, target)?.let { (ts, signature) ->
+                connection.setRequestProperty("X-LW-TS", ts)
+                connection.setRequestProperty("X-LW-Sign", signature)
+            }
+            try {
+                val code = connection.responseCode
+                if (code in 502..503 && attempt == 0) {
+                    lastError = IOException("Addon HTTP $code")
+                    Thread.sleep(150)
+                    return@repeat
+                }
+                if (code !in 200..299) {
+                    val errorBody = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                    throw IOException("Addon HTTP $code" + (errorBody?.takeIf { it.isNotBlank() }?.let { ": ${it.take(240)}" } ?: ""))
+                }
+                val responseBody = connection.inputStream.bufferedReader().use { it.readText() }.trim()
+                return when {
+                    responseBody.startsWith("[") -> JSONObject().put("tracks", org.json.JSONArray(responseBody))
+                    responseBody.startsWith("http://") || responseBody.startsWith("https://") -> JSONObject().put("url", responseBody)
+                    responseBody.startsWith("<MPD") || responseBody.startsWith("<?xml") -> JSONObject().put("manifestXml", responseBody)
+                    else -> JSONObject(responseBody)
+                }
+            } finally { connection.disconnect() }
         }
-        try {
-            val code = connection.responseCode
-            if (code !in 200..299) {
-                val errorBody = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
-                throw IOException("Addon HTTP $code${errorBody?.takeIf { it.isNotBlank() }?.let { ": ${it.take(240)}" }.orEmpty()}")
-            }
-            val body = connection.inputStream.bufferedReader().use { it.readText() }.trim()
-            return when {
-                body.startsWith("[") -> JSONObject().put("tracks", org.json.JSONArray(body))
-                body.startsWith("http://") || body.startsWith("https://") -> JSONObject().put("url", body)
-                else -> JSONObject(body)
-            }
-        } finally { connection.disconnect() }
+        throw lastError ?: IOException("Addon request failed")
     }
 
     /** Headers for the audio GET itself when its URL uses a token-bearing addon route. */
