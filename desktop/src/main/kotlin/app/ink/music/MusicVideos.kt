@@ -221,6 +221,10 @@ object Watching {
     @Volatile var setFull: ((Boolean) -> Unit)? = null
     /** A video full screen, in its own window over the screen (the app's window left as it is). */
     val full = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** A live set being watched (SetHeard hears it): its video's id and its sound's link; where it is; whether it's paused. */
+    val set = kotlinx.coroutines.flow.MutableStateFlow<Pair<String, String>?>(null)
+    @Volatile var at: () -> Long = { 0L }
+    @Volatile var paused = false
 }
 
 /** Listen's shelf of them: each frame wide, its song and artist, how long ago. */
@@ -318,6 +322,16 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
         onDispose { Watching.seekBy = null; Watching.setFull = null }
     }
     DisposableEffect(Unit) { onDispose { Watching.full.value = false } }
+    // a live set: heard as it plays (SetHeard), from its sound's own link, where the video is
+    DisposableEffect(video, stream) {
+        val snd = stream?.second ?: stream?.first
+        if (video != null && snd != null && LiveSets.clips.value.any { it.id == c.id }) {
+            Watching.at = { video.at() }
+            Watching.set.value = c.id to snd
+        }
+        onDispose { if (Watching.set.value?.first == c.id) Watching.set.value = null }
+    }
+    LaunchedEffect(paused) { Watching.paused = paused }
     val shape = frame?.image?.let { (it.width.toFloat() / it.height).coerceIn(1.2f, 2.8f) } ?: (16 / 9f)
     val next = clips.getOrNull(clips.indexOfFirst { it.id == c.id } + 1)
     @Composable
@@ -363,6 +377,11 @@ fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) ->
                         Row {
                             Word(c.artist.lowercase(), pixel(14.sp)) { open(Page.Artist(c.artist)) }
                             BasicText("  ·  ${MusicVideos.ago(c.at)}", style = pixel(14.sp, Ink.mid))
+                        }
+                        // a live set: the track playing in it, typed out as it's heard (SetHeard)
+                        val inSet by SetHeard.now.collectAsState()
+                        inSet?.takeIf { Watching.set.value?.first == c.id }?.let { t ->
+                            TypedLine("now: ${t.artist.lowercase()} - ${t.title.lowercase()}", pixel(14.sp), Modifier.padding(top = 6.dp))
                         }
                     }
                     // stop: the video gone, back where it was opened from (play, the line, next and full screen on the picture)
