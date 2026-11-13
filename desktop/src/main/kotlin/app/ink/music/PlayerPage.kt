@@ -45,6 +45,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -223,7 +224,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                         accent, n.playing && s.id == n.song.id, Modifier.fillMaxSize())
                                     if (s.id == n.song.id) Moment(n, heard?.takeIf { it.id == n.song.id }) { typing = it }
                                     // a DJ set: each track as it's heard, typed across the cover (SetHeard)
-                                    if (SetHeard.isSet(s)) SetSleeve(s.artist, s.title)
+                                    if (SetHeard.isSet(s)) SetSleeve(s.artist, s.title, open)
                                     // the song's way through, inside the cover too (2026-11-12, a tester and Bronson): a band
                                     // along its foot filling in its colour, see-through; clicked or dragged, there in the song
                                     if (s.id == n.song.id) SpectrumOver(s, n.playing, accent, Modifier.fillMaxSize())
@@ -564,10 +565,10 @@ private fun Moment(n: Player.Now, h: Heard?, onTyping: (Boolean) -> Unit) {
  * A DJ set's sleeve (2026-11-12, Bronson: "blurred ... when a track is recognized it types it in and then adds it to a
  * list on the record that stays there. Essentially building a designed record", "and make them clickable"): over the
  * set's frame in the blur, the set's name, and its tracklist as it's heard (SetHeard), numbered, the newest typed in; a
- * track tapped is found and put next.
+ * track tapped opens its artist's page, held it's found and put next.
  */
 @Composable
-private fun SetSleeve(channel: String, name: String) {
+private fun SetSleeve(channel: String, name: String, onOpen: (Page) -> Unit) {
     val heard by SetHeard.heard.collectAsState()
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<Pair<Int, String>?>(null) }
@@ -585,12 +586,15 @@ private fun SetSleeve(channel: String, name: String) {
             if (heard.isEmpty()) BasicText("listening for the first track", style = pixel(12.sp, Ink.mid))
             Column(Modifier.weight(1f).verticalScroll(scroll)) {
                 heard.forEachIndexed { i, t ->
-                    Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null) {
-                        scope.launch {
-                            val song = withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.find(t.title, t.artist) }
-                            if (song != null) { Player.playNext(song); said = i to "next" } else said = i to "not found"
-                        }
-                    }.padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
+                    // a tap, their page (their songs, records, more like them); held, the track put next
+                    Row(Modifier.fillMaxWidth().combinedClickable(remember { MutableInteractionSource() }, indication = null,
+                        onClick = { onOpen(Page.Artist(t.artist.substringBefore(", ").substringBefore(" & ").trim())) },
+                        onLongClick = {
+                            scope.launch {
+                                val song = withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.find(t.title, t.artist) }
+                                if (song != null) { Player.playNext(song); said = i to "next" } else said = i to "not found"
+                            }
+                        }).padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
                         BasicText("%02d".format(i + 1), style = pixel(12.sp, Ink.mid), modifier = Modifier.width(32.dp).padding(top = 3.dp))
                         Column(Modifier.weight(1f)) {
                             if (i == heard.lastIndex) TypedLine(t.title.uppercase(), headline(18.sp))
