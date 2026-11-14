@@ -135,8 +135,8 @@ fun SettingsPage(pages: Pages, part: String? = null) {
 
                 var addonUrl by remember { mutableStateOf(AddonMusic.baseUrl(ctx)) }
                 var addonDialog by remember { mutableStateOf(false) }
-                SettingRow("BITCHORD ADDON", addonUrl.ifBlank { "not configured" }, opened,
-                    "try this addon before the song's usual source; optional request signing") {
+                SettingRow("BITCHORD ADDON · EXPERIMENTAL", addonUrl.ifBlank { "not configured" }, opened,
+                    "experimental: may be unreliable or change; tries this addon before the song's usual source; optional request signing") {
                     Word(if (addonUrl.isBlank()) "add addon >" else "configure addon >", pixel(14.sp, Ink.mid), touch = 8.dp) {
                         addonDialog = true
                     }
@@ -843,7 +843,8 @@ private fun AddonConfigDialog(ctx: android.content.Context, onDismiss: () -> Uni
             Modifier.fillMaxWidth().background(Ink.black).border(1.dp, Ink.mid).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            BasicText("BITCHORD ADDON", style = headline(18.sp))
+            BasicText("BITCHORD ADDON · EXPERIMENTAL", style = headline(18.sp))
+            BasicText("Experimental feature: compatibility and playback behavior may change between releases.", style = pixel(10.sp, Ink.mid))
             BasicText("Addon base URL or manifest.json URL", style = pixel(10.sp, Ink.mid))
             BasicTextField(
                 value = url, onValueChange = { url = it }, singleLine = true,
