@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -130,6 +131,20 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     if (folders.isEmpty()) "voice notes and clips under 30 seconds left out" else "only these. a tap takes one off") {
                     folders.forEach { f -> Word(f.trimEnd('/').lowercase(), pixel(14.sp), Modifier.padding(bottom = 6.dp), touch = 6.dp) { Folders.remove(ctx, f) } }
                     Word("add a folder >", pixel(14.sp, Ink.mid), touch = 8.dp) { runCatching { pick.launch(null) } }
+                }
+
+                var addonUrl by remember { mutableStateOf(AddonMusic.baseUrl(ctx)) }
+                var addonDialog by remember { mutableStateOf(false) }
+                SettingRow("BITCHORD ADDON · EXPERIMENTAL", addonUrl.ifBlank { "not configured" }, opened,
+                    "experimental: may be unreliable or change; tries this addon before the song's usual source; optional request signing") {
+                    Word(if (addonUrl.isBlank()) "add addon >" else "configure addon >", pixel(14.sp, Ink.mid), touch = 8.dp) {
+                        addonDialog = true
+                    }
+                    if (addonDialog) AddonConfigDialog(
+                        ctx = ctx,
+                        onDismiss = { addonDialog = false },
+                        onSave = { addonUrl = AddonMusic.baseUrl(ctx); addonDialog = false },
+                    )
                 }
 
                 val a = account
@@ -344,6 +359,15 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     if (hidden) "nothing kept or told. it's okay, we know you like taylor swift" else "while on, nothing you play is kept or told") {
                     Pick(listOf("on" to hidden, "off" to !hidden)) { hidden = it == 0; Private.set(ctx, hidden) }
                 }
+                // Android Discord RPC is independent of the desktop IPC integration.
+                var discordPresence by remember { mutableStateOf(DiscordAndroidPresence.enabled(ctx)) }
+                SettingRow("DISCORD RICH PRESENCE", if (discordPresence) "on" else "off", opened,
+                    "show the song playing on your Discord profile; hidden during private listening") {
+                    Pick(listOf("on" to discordPresence, "off" to !discordPresence)) {
+                        discordPresence = it == 0
+                        DiscordAndroidPresence.setEnabled(ctx, discordPresence)
+                    }
+                }
                 // a YouTube video's talking skipped (SponsorBlock: the player reads files/skip-talking-off), the full build's
                 if (YouTubeMusic.available) {
                     var skip by remember { mutableStateOf(!java.io.File(ctx.filesDir, "skip-talking-off").exists()) }
@@ -374,6 +398,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics" + (if (YouTubeMusic.available) " (and to youtube music when lrclib has none)" else "") + "; " +
                             (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library, and the youtube songs you play, for your history there); " else "") +
                             "with listenbrainz or last.fm connected, what you play goes there. " +
+                            (if (AddonMusic.baseUrl(ctx).isNotBlank()) "your configured addon server receives your searches and audio stream requests; its optional secret signs token-based requests. " else "") +
                             (if (Moving.available) "with moving covers on, the record playing goes to apple music, for its moving cover; " +
                                 "signed in to spotify, the song playing goes to spotify, for its canvas (and your playlists, when you bring one in). " else "") +
                             (if (YouTubeMusic.available) "with skip the talking on, the first four characters of a scrambled youtube video id go to sponsorblock, never the id itself. " else "") +
@@ -805,4 +830,40 @@ fun TvSettingsPage(pages: Pages) {
             }
         }
     } }
+}
+
+
+/** Configure a BitChord-compatible addon from Your Music, not from Search. */
+@Composable
+private fun AddonConfigDialog(ctx: android.content.Context, onDismiss: () -> Unit, onSave: () -> Unit) {
+    var url by remember { mutableStateOf(AddonMusic.baseUrl(ctx)) }
+    var secret by remember { mutableStateOf(AddonMusic.secret(ctx)) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().background(Ink.black).border(1.dp, Ink.mid).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            BasicText("BITCHORD ADDON · EXPERIMENTAL", style = headline(18.sp))
+            BasicText("Experimental feature: compatibility and playback behavior may change between releases.", style = pixel(10.sp, Ink.mid))
+            BasicText("Addon base URL or manifest.json URL", style = pixel(10.sp, Ink.mid))
+            BasicTextField(
+                value = url, onValueChange = { url = it }, singleLine = true,
+                textStyle = pixel(12.sp, Ink.ink),
+                modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
+            )
+            BasicText("Optional addon signing secret", style = pixel(10.sp, Ink.mid))
+            BasicTextField(
+                value = secret, onValueChange = { secret = it }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                textStyle = pixel(12.sp, Ink.ink),
+                modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
+            )
+            BasicText("Leave the secret empty unless your addon requires signed /a/{token} requests.", style = pixel(10.sp, Ink.mid))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Word("save", pixel(12.sp, Ink.ink), onClick = { AddonMusic.configure(ctx, url, secret); onSave() })
+                Word("clear", pixel(12.sp, Ink.mid), onClick = { AddonMusic.configure(ctx, "", ""); url = ""; secret = ""; onSave() })
+                Word("cancel", pixel(12.sp, Ink.mid), onClick = onDismiss)
+            }
+        }
+    }
 }

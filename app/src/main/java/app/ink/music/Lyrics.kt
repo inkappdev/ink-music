@@ -3,6 +3,7 @@ package app.ink.music
 import android.content.Context
 import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -50,15 +51,124 @@ object Lyrics {
         prefs().edit().putBoolean("on", _on.value).apply()
     }
 
+    /** The selected lyrics source; "auto" preserves the original best-available behaviour. */
+    fun selectedSource(): String = prefs().getString("source", "auto") ?: "auto"
+
+    fun selectSource(id: String) {
+        if (LyricsSources.sources.none { it.id == id }) return
+        prefs().edit().putString("source", id).apply()
+        retry.clear()
+    }
+
+    fun spicyKey(): String = prefs().getString("spicy_key", "").orEmpty()
+
+    fun setSpicyKey(key: String) {
+        prefs().edit().putString("spicy_key", key.trim()).apply()
+        retry.clear()
+    }
+
+    private fun cachedSource(t: Now, base: File, id: String): List<Line>? {
+        val file = File("${base.path}.$id.lrc")
+        if (file.exists()) return runCatching { parse(file.readText()).ifEmpty { plain(file) } }.getOrNull()
+        val artist = t.artist.split(',').first().trim()
+        val lines = when (id) {
+            "better" -> BetterLyrics.of(t.title, artist, t.duration / 1000, AGENT)?.map { Line(it.at, it.words, it.parts) }
+            "youtube" -> YouTubeMusic.lyrics(t.song?.id.orEmpty(), t.title, artist)
+            else -> null
+        }
+        return lines?.takeIf { it.isNotEmpty() }?.also { result ->
+            runCatching { dir.mkdirs(); file.writeText(lrcOf(result)) }
+        }
+    }
+
+    /** Local sidecar lyrics beside an indexed audio file; content URIs are resolved by MediaStore. */
+    private fun local(t: Now): List<Line>? {
+        val uri = t.song?.uri ?: return null
+        val path = if (uri.scheme == "file") uri.path else runCatching {
+            ctx.contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
+        val audio = path?.let(::File)?.takeIf { it.isFile } ?: return null
+        val stem = audio.nameWithoutExtension
+        val folder = audio.parentFile ?: return null
+        val lrc = File(folder, "$stem.lrc")
+        if (lrc.isFile) return runCatching { parse(lrc.readText()).takeIf { it.isNotEmpty() } }.getOrNull()
+        val ttml = File(folder, "$stem.ttml")
+        if (ttml.isFile) return runCatching {
+            BetterLyrics.parse(ttml.readText()).map { Line(it.at, it.words, it.parts) }.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+        val txt = File(folder, "$stem.txt")
+        if (txt.isFile) return runCatching { plain(txt.readText()).takeIf { it.isNotEmpty() } }.getOrNull()
+        return null
+    }
+
+    private suspend fun selected(t: Now, base: File, id: String): List<Line>? {
+        if (id == "local") return local(t)
+        if (id == "better" || id == "youtube") return cachedSource(t, base, id)
+        if (id == "better_qq") {
+            cachedSource(t, base, id)?.let { return it }
+            val artist = t.artist.split(',').first().trim()
+            val lines = if (id == "local") local(t) else LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
+            if (lines != null) runCatching { dir.mkdirs(); File("${base.path}.$id.lrc").writeText(sourceText(lines)) }
+            return lines
+        }
+        cachedSource(t, base, id)?.let { return it }
+        val artist = t.artist.split(',').first().trim()
+        val lines = if (id == "lrclib") {
+            val result = ask(artist, t.title, t.album, t.duration / 1000) ?: return null
+            parse(result.first).ifEmpty { plain(result.second) }
+        } else LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
+        if (lines != null) runCatching {
+            dir.mkdirs()
+            File("${base.path}.$id.lrc").writeText(sourceText(lines))
+        }
+        return lines
+    }
+
+    private suspend fun additional(t: Now, base: File, ids: List<String>): List<Line>? =
+        kotlinx.coroutines.coroutineScope {
+            // Start every provider together, but inspect answers in the configured priority order.
+            // This avoids making a slow catalogue hold up every source behind it.
+            val jobs = ids.map { id ->
+                async {
+                    val file = File("${base.path}.$id.lrc")
+                    if (file.exists()) {
+                        id to runCatching { parse(file.readText()).ifEmpty { plain(file) } }.getOrNull()
+                    } else {
+                        val artist = t.artist.split(',').first().trim()
+                        val lines = if (id == "local") local(t) else LyricsSources.fetch(id, t.title, artist, t.album, t.duration / 1000, spicyKey())
+                        if (!lines.isNullOrEmpty() && id != "local") {
+                            runCatching { dir.mkdirs(); file.writeText(sourceText(lines)) }
+                            android.util.Log.d("ink-lyrics", "${t.artist} - ${t.title}: ${lines.size} lines from $id")
+                        }
+                        id to lines
+                    }
+                }
+            }
+            for (job in jobs) {
+                val (_, lines) = job.await()
+                if (!lines.isNullOrEmpty()) {
+                    jobs.filter { it !== job }.forEach { it.cancel() }
+                    return@coroutineScope lines
+                }
+            }
+            null
+        }
+
     /** The song's lines (synced, or else untimed: at -1); empty when there are none; null when lrclib couldn't be reached. */
     suspend fun of(t: Now): List<Line>? = withContext(Dispatchers.IO) {
         val artist = t.artist.split(',').first().trim()
         val key = "$artist|${t.title}"
         val base = File(dir, sha1(key))
+        val chosen = selectedSource()
+        if (chosen != "auto") return@withContext selected(t, base, chosen)
         val lrc = File("${base.path}.lrc")
         val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
         val better = File("${base.path}.bl")  // Better Lyrics asked (word by word, when it has them)
-        // word by word first, where Better Lyrics has the song (asked once a song, words kept before it too)
+        // Follow Lokal's order: local sidecars, exact-recording Apple Music, then Spicy Lyrics.
+        additional(t, base, listOf("local", "bini", "spicy"))?.let { return@withContext it }
+        // BetterLyrics is the next word-synced source (asked once a song, words kept before it too)
         if (!better.exists()) {
             val timed = BetterLyrics.of(t.title, artist, t.duration / 1000, AGENT)
             if (timed != null) runCatching { dir.mkdirs(); better.writeText("") }
@@ -69,10 +179,15 @@ object Lyrics {
                 return@withContext lines
             }
         }
+        // QQ karaoke through BetterLyrics, then community syllable and listener-contributed timings.
+        additional(t, base, listOf("better_qq", "lyricsplus", "unison"))?.let { return@withContext it }
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
             if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
-            return@withContext parse(text).ifEmpty { plain(File("${base.path}.txt")) }
+            val existing = parse(text).ifEmpty { plain(File("${base.path}.txt")) }
+            if (existing.isNotEmpty()) return@withContext existing
+            additional(t, base, listOf("kugou", "ovh"))?.let { return@withContext it }
+            return@withContext existing
         }
         if ((retry[key] ?: 0L) > SystemClock.elapsedRealtime()) return@withContext null
         val got = ask(artist, t.title, t.album, t.duration / 1000)
@@ -80,6 +195,7 @@ object Lyrics {
             retry[key] = SystemClock.elapsedRealtime() + 60_000
             // lrclib down (503s, 2026-11-01): YouTube Music's meanwhile, kept if it has some; else lrclib again in a minute
             if (YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
+            additional(t, base, listOf("kugou", "ovh"))?.let { return@withContext it }
             return@withContext null
         }
         // kept, so lrclib isn't asked again (a full disk only means asking again)
@@ -90,7 +206,8 @@ object Lyrics {
         }
         // none synced on lrclib: YouTube Music's (the full build), timed by Musixmatch
         if (got.first.isBlank() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
-        parse(got.first).ifEmpty { plain(got.second) }
+        val primary = parse(got.first).ifEmpty { plain(got.second) }
+        if (primary.isNotEmpty()) primary else additional(t, base, listOf("kugou", "ovh")) ?: primary
     }
 
     /** Untimed words as lines (at -1), a verse's gap kept as a blank one. */
@@ -165,6 +282,11 @@ object Lyrics {
     private val wordStamp = Regex("""<(\d+):(\d+(?:\.\d+)?)>([^<]*)""")
 
     private fun clock(ms: Long) = "%02d:%05.2f".format(java.util.Locale.US, ms / 60_000, (ms % 60_000) / 1000.0)
+
+    /** Provider cache: untimed plain-text lines must not be serialized with a fake timestamp. */
+    private fun sourceText(lines: List<Line>) = lines.joinToString("\n") { line ->
+        if (line.at < 0) line.words else lrcOf(listOf(line))
+    }
 
     /** Lines kept as lrc, a line timed word by word as enhanced lrc. */
     private fun lrcOf(lines: List<Line>) = lines.joinToString("\n") { l ->

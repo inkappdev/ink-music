@@ -226,7 +226,7 @@ object Playback {
      * A queue item's song; a YouTube one not seen this run (a queue kept from before) made again
      * from the item's own words and cover.
      */
-    private fun songOf(item: MediaItem): Song? = songOf(item.mediaId) ?: item.mediaId.takeIf { it.startsWith("y") }?.let { id ->
+    private fun songOf(item: MediaItem): Song? = songOf(item.mediaId) ?: AddonMusic.songFrom(item) ?: item.mediaId.takeIf { it.startsWith("y") }?.let { id ->
         val md = item.mediaMetadata
         Song(id, android.net.Uri.parse("ytm://" + id.removePrefix("y")), md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(),
             md.albumTitle?.toString().orEmpty(), id, md.albumArtist?.toString().orEmpty(), 0, 1, 0, 0,
@@ -457,7 +457,7 @@ object Playback {
             MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
                 .setAlbumArtist(s.albumArtist).setTrackNumber(s.track).setIsPlayable(true).setExtras(Levelling.extras(s))
                 // a cover for the notification, the lock screen and the car: YouTube's link, else ink music's own
-                .setArtworkUri(if (s.tube || s.episode) s.art?.let(android.net.Uri::parse) else CoverProvider.of(s.id)).build(),
+                .setArtworkUri(if (s.tube || s.episode || s.addon) s.art?.let(android.net.Uri::parse) else CoverProvider.of(s.id)).build(),
         )
         .build()
 }

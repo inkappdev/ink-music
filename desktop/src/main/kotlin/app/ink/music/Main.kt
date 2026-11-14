@@ -160,11 +160,11 @@ fun main() {
     // podcasts (Pods): the shows followed and where each episode was left, kept here and carried by sync with the phone
     Podcasts.dir = java.io.File(Home.dir, "podcasts")
     SyncHub.start()
-    // what plays, on your Discord profile (Discord)
-    Discord.start()
     Follows.start()
     Colours.start()
     Player.start()
+    // start RPC after the player has initialized its current state
+    Discord.start()
     // your taste (Fresh): INK's picks in your order
     Fresh.opened()
     // ink's icon on every window Java makes, not Java's own (Duke): Windows' restart screen showed Duke beside ink music

@@ -1,0 +1,60 @@
+name: Android build
+on:
+  push:
+    branches:
+      - feature/discord-bitchord-lyrics-sources
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ink-music-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Install Android platform and native build tools
+        run: |
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.31.6"
+          # AGP resolves compileSdk 37 as android-37 while the SDK package is named android-37.0.
+          ln -sfn android-37.0 "$ANDROID_HOME/platforms/android-37"
+      - name: Assemble full debug APK
+        run: ./gradlew --no-daemon :app:assembleFullDebug
+      - name: Run unit tests
+        run: ./gradlew --no-daemon :app:testFullDebugUnitTest
+        continue-on-error: true
+      - name: Upload full debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ink-music-full-debug
+          path: app/build/outputs/apk/full/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Compile desktop app (including Discord RPC)
+        run: ./gradlew --no-daemon :desktop:compileKotlin
