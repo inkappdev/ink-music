@@ -165,6 +165,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     }
     var dir by remember { mutableIntStateOf(1) }   // the push's way: next in from the right, back from the left
     var queueUp by remember { mutableStateOf(false) }
+    var lyricsSourcesUp by remember { mutableStateOf(false) }
+    var lyricsSourceVersion by remember { mutableIntStateOf(0) }
     // into a playlist, from here (2026-10-29): your lists over the player, and back
     var addUp by remember { mutableStateOf(false) }
     var added by remember { mutableStateOf<String?>(null) }
@@ -177,6 +179,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     val close by rememberUpdatedState(onClose)
     val scrub = remember { Scrub() }
     androidx.activity.compose.BackHandler(queueUp) { queueUp = false }
+    androidx.activity.compose.BackHandler(lyricsSourcesUp) { lyricsSourcesUp = false }
     androidx.activity.compose.BackHandler(addUp) { addUp = false }
     // pulled down, the player comes with the finger: past a fifth of the screen (or flung) it goes, else it settles
     // back (it had closed on a pull without moving, and a tester found no pull at all)
@@ -247,7 +250,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         val sing by Lyrics.on.collectAsState()
         // a TV looks them up with lyrics off too: its lyrics word is there only for a song with timed lines (2026-11-10)
         val tv = onTv()
-        val lines = rememberLines(n, sing || tv)
+        val lines = rememberLines(n, sing || tv, lyricsSourceVersion)
         val lyric = rememberLyric(n, lines)?.takeIf { sing || !tv }
         val timed = lines?.firstOrNull()?.let { it.at >= 0 } == true
         // the artist read ahead (their name, here, is a way to their page)
@@ -264,6 +267,11 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         // the controls and the words under them: under the cover on the phone, beside it on a TV (where the remote
         // starts on play)
         val playFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+        if (lyricsSourcesUp) LyricsSourcesDialog(
+            selected = Lyrics.selectedSource(),
+            onDismiss = { lyricsSourcesUp = false },
+            onSelect = { id -> Lyrics.selectSource(id); lyricsSourcesUp = false; lyricsSourceVersion++ },
+        )
         val controls = @Composable {
             // what's played with, drawn (as the speaker is), by how often it's pressed: play in the middle, under the
             // thumb, the biggest; back and next either side; shuffle and repeat a size smaller at the ends, lit when on.
@@ -294,11 +302,11 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             val none = sing && lines?.isEmpty() == true
             Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
                 if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
-                added = added, onAdd = if (canAddToList(airedSong ?: n.song)) ({ addUp = true }) else null, episode = episode,
-                lyricsWord = !tv || episode || timed)
+                added = added, onAdd = if ((airedSong ?: n.song) != null) ({ addUp = true }) else null, episode = episode,
+                lyricsWord = !tv || episode || timed, onLyricsSources = { lyricsSourcesUp = true })
         }
         // a TV: what opens over the player (the queue, the speakers, a list, what's heard) has the remote; the player under it none
-        val over = queueUp || addUp || playOnUp || heardUp
+        val over = queueUp || addUp || playOnUp || heardUp || lyricsSourcesUp
         TvRefocus(over)
         if (onTv()) Box(Modifier.covered(over)) {
             TvPlayer(n, line, accent, scrub, mixK, oldAccent, newAccent, dir, typing, { typing = it }, lyric, notes, sing, onOpen, share,
@@ -403,7 +411,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
  * The player's second row, smaller: up next, lyrics, into a playlist, stop (sleep gone: 2026-10-29).
  */
 @Composable
-private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null, episode: Boolean = false, lyricsWord: Boolean = true) {
+private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null, episode: Boolean = false, lyricsWord: Boolean = true, onLyricsSources: () -> Unit = {}) {
     val style = 14.sp
     // the words with no drawing everyone reads, stop last, away from next (it ends everything and closes the player)
     // a TV: the words together from the left under shuffle, not spread the width (they sat oddly far apart, 2026-11-10)
@@ -411,7 +419,7 @@ private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit
     Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = if (tv) 14.dp else 20.dp),
         horizontalArrangement = if (tv) Arrangement.spacedBy(44.dp) else Arrangement.SpaceBetween) {
         Word("up next", pixel(style, SAID), Modifier.tvLit(), touch = 10.dp, onClick = onQueue)
-        if (lyricsWord) Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp) { Lyrics.toggle() }
+        if (lyricsWord) Word(lyrics, pixel(style, if (lyricsOn) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp, onLongClick = onLyricsSources) { Lyrics.toggle() }
         // into one of your playlists (lit a moment once it's in)
         if (onAdd != null) Word(if (added != null) "added" else "playlist", pixel(style, if (added != null) Ink.ink else SAID), Modifier.tvLit(), touch = 10.dp, onClick = onAdd)
         // an episode: its pauses skipped, lit when on (one choice for every episode)
@@ -467,7 +475,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                 }
             }
         } else Column {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val side = minOf(maxWidth, 420.dp, LocalCoverRoom.current)
                 Sleeve(t, side, Modifier.clickwheel({ live }, scrub))
                 Box(Modifier.size(side)) { over(t) }
@@ -937,8 +945,8 @@ data class Lyric(val lines: List<Line>, val index: Int, val position: Long = 0L)
 
 /** The song's synced lines while lyrics are on: empty for a song lrclib has none for; null while looking, or off. */
 @Composable
-fun rememberLines(n: Now?, on: Boolean): List<Line>? {
-    val lines by produceState<List<Line>?>(null, n?.artist, n?.title, on) {
+fun rememberLines(n: Now?, on: Boolean, sourceVersion: Int = 0): List<Line>? {
+    val lines by produceState<List<Line>?>(null, n?.artist, n?.title, on, sourceVersion) {
         value = null
         // a station's song: live, its place unknown, so no lines to follow
         // nor a podcast's episode (its notes are where its lyrics would be)
@@ -1610,5 +1618,45 @@ private fun TvPlayer(
         if (moving) Marquee(n.artist, n.moving, Modifier.fillMaxWidth(), size = 72.sp)
         else Spacer(Modifier.height(24.dp))
     }
+    }
+}
+
+
+/** A long press on the lyrics control chooses one source for the current and next tracks. */
+@Composable
+private fun LyricsSourcesDialog(selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().background(Ink.black).border(1.dp, Ink.mid).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            BasicText("LYRICS SOURCE", style = headline(18.sp))
+            var spicyKey by remember { mutableStateOf(Lyrics.spicyKey()) }
+            BasicText("Spicy Lyrics API key (optional)", style = pixel(10.sp, Ink.mid))
+            androidx.compose.foundation.text.BasicTextField(
+                value = spicyKey,
+                onValueChange = { spicyKey = it },
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                textStyle = pixel(12.sp, Ink.ink),
+                modifier = Modifier.fillMaxWidth().background(Ink.plate).padding(8.dp),
+            )
+            Word("save API key", pixel(11.sp, SAID), onClick = { Lyrics.setSpicyKey(spicyKey) })
+            LyricsSources.sources.forEach { source ->
+                val active = source.id == selected
+                Column(
+                    Modifier.fillMaxWidth().clickable(
+                        remember { MutableInteractionSource() }, indication = null,
+                    ) { onSelect(source.id) }.padding(vertical = 4.dp),
+                ) {
+                    BasicText(
+                        (if (active) "•  " else "   ") + source.label,
+                        style = pixel(14.sp, if (active) Ink.ink else SAID),
+                    )
+                    BasicText(source.detail, style = pixel(10.sp, Ink.mid))
+                }
+            }
+            BasicText("Tap a source to use it. Choose Automatic to return to fallback search.", style = pixel(10.sp, Ink.mid))
+        }
     }
 }

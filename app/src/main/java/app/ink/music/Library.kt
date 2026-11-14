@@ -46,6 +46,8 @@ data class Song(
     val added: Long = 0,       // when it came in (ms): the phone's index's date added, the server's "created"; 0 not known
 ) {
     val server get() = id.startsWith("n")
+    /** From a BitChord-compatible JSON addon. */
+    val addon get() = id.startsWith("a")
     /** From YouTube Music (the full build only). */
     val tube get() = id.startsWith("y")
     /** A radio station ([Stations]): live, no end, no record. */

@@ -2268,6 +2268,12 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Searches.keep(pages.query) } }
     val typed = query.trim()
     val q = Search.fold(typed)
+    val addonBase = AddonMusic.baseUrl(ctx)
+    val addonSongs by androidx.compose.runtime.produceState(emptyList<Song>(), q, addonBase) {
+        if (addonBase.isBlank() || q.length < 2) { value = emptyList(); return@produceState }
+        kotlinx.coroutines.delay(300)
+        value = AddonMusic.search(ctx, typed)
+    }
     // YouTube Music too (the full build), once the typing rests
     val tube by androidx.compose.runtime.produceState(TubeFound(), q) {
         if (!YouTubeMusic.available || q.length < 2) { value = TubeFound(); return@produceState }
@@ -2297,7 +2303,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             .distinctBy { it.name.lowercase() }.take(8)
     }
     // go plays what's found: your songs, else YouTube Music's
-    val go = foundSongs.ifEmpty { tube.songs }
+    val go = foundSongs.ifEmpty { tube.songs.ifEmpty { addonSongs } }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val list = pageList()
@@ -2327,7 +2333,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             Spacer(Modifier.height(18.dp))
             // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
             if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() &&
-                foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty())
+                foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty() && addonSongs.isEmpty())
                 BasicText("nothing called that", style = pixel(12.sp, Ink.mid), modifier = row)
             // what you looked for lately, a tap to look again
             if (q.isEmpty() && recent.isNotEmpty()) FlowRow(row, horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2392,6 +2398,10 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         if (tube.songs.isNotEmpty()) item { Label("songs on youtube music") }
         itemsIndexed(tube.songs, key = { _, s -> "t" + s.id }) { i, s ->
             Box(row) { SongRow(s, pages = pages) { Playback.play(tube.songs, i) } }
+        }
+        if (addonSongs.isNotEmpty()) item { Label("songs from addon") }
+        itemsIndexed(addonSongs, key = { _, s -> "a" + s.id }) { i, s ->
+            Box(row) { SongRow(s, pages = pages) { Playback.play(addonSongs, i) } }
         }
         if (tube.lists.isNotEmpty()) item {
             Label("playlists on youtube music")

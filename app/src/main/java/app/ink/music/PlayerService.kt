@@ -501,6 +501,53 @@ class PlayerService : MediaLibraryService() {
     /** Each stream's quality as chosen when the song began (Quality), when, and on mobile data or not: an hour, then chosen anew. */
     private data class Chosen(val quality: Int, val at: Long, val metered: Boolean)
     private val chosen = java.util.concurrent.ConcurrentHashMap<String, Chosen>()
+    // Preferred remote source for each original media URI; on failure, try YouTube, then the original source.
+    private data class Preferred(
+        val original: Uri,
+        val title: String,
+        val artist: String,
+        val album: String,
+        val durationMs: Long,
+        val fromAddon: Boolean,
+        val streamUrl: String,
+    )
+    private val preferred = java.util.concurrent.ConcurrentHashMap<String, Preferred>()
+    private val sourceMisses = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    // Resolver callbacks run on Media3 loader threads. Keep an immutable-ish snapshot of the
+    // playlist, refreshed on the player thread, so source resolution never touches ExoPlayer.
+    private val mediaItemsByUri = java.util.concurrent.ConcurrentHashMap<String, MediaItem>()
+
+    private fun refreshMediaItemSnapshot(player: Player) {
+        mediaItemsByUri.clear()
+        for (i in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(i)
+            item.localConfiguration?.uri?.let { mediaItemsByUri[it.toString()] = item }
+            item.requestMetadata.mediaUri?.let { mediaItemsByUri[it.toString()] = item }
+        }
+    }
+
+    private fun mediaFor(uri: Uri): MediaItem? = mediaItemsByUri[uri.toString()]
+
+    private suspend fun youtubeMatch(title: String, artist: String, durationMs: Long): Song? {
+        if (!YouTubeMusic.available || title.isBlank()) return null
+        val found = YouTubeMusic.search("$title $artist", all = true)
+        fun norm(value: String) = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
+            .replace(Regex("\\p{M}+"), "").lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        val wantedTitle = norm(title)
+        val wantedArtist = norm(artist.substringBefore(',').trim())
+        return found.songs.mapNotNull { song ->
+            if (norm(song.title) != wantedTitle) return@mapNotNull null
+            val foundArtist = norm(song.artist)
+            if (wantedArtist.isNotEmpty() && foundArtist != wantedArtist &&
+                !foundArtist.contains(wantedArtist) && !wantedArtist.contains(foundArtist)) return@mapNotNull null
+            val difference = if (durationMs > 0 && song.duration > 0) kotlin.math.abs(song.duration - durationMs) else 0L
+            if (difference > 15_000) return@mapNotNull null
+            song to difference
+        }.minByOrNull { it.second }?.first
+    }
+
     // YouTube songs found again after their stream failed, and how often (onPlayerError)
     private val retried = HashMap<String, Int>()
 
@@ -583,7 +630,61 @@ class PlayerService : MediaLibraryService() {
                     val metered = Quality.metered(this)
                     return Quality.now(this).also { chosen[key] = Chosen(it, now, metered) }
                 }
+                // Addon is preferred for every song, no matter which page or library it came from.
+                // If the addon has no match, the full build tries YouTube before the original source.
+                val original = spec.uri
+                val preferredSpec = if (original.scheme != "addon" && AddonMusic.baseUrl(this).isNotBlank()) {
+                    runCatching {
+                        val item = mediaFor(original)
+                        if (item == null || item.mediaId.startsWith("s") || item.mediaId.startsWith("e")) null
+                        else {
+                            val key = original.toString()
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            val cached = preferred[key]
+                            when {
+                                cached != null -> spec.buildUpon().setUri(Uri.parse(cached.streamUrl))
+                                    .setHttpRequestHeaders(spec.httpRequestHeaders + if (cached.fromAddon) AddonMusic.signedHeaders(this, cached.streamUrl) else emptyMap()).build()
+                                sourceMisses[key]?.let { it > now } == true -> null
+                                else -> {
+                                    val md = item.mediaMetadata
+                                    val title = md.title?.toString().orEmpty()
+                                    val artist = md.artist?.toString().orEmpty()
+                                    val album = md.albumTitle?.toString().orEmpty()
+                                    val duration = Library.song(item.mediaId)?.duration ?: 0L
+                                    val addonUrl = AddonMusic.findStream(this, title, artist, album, duration / 1000)
+                                    if (addonUrl != null) {
+                                        preferred[key] = Preferred(original, title, artist, album, duration, true, addonUrl)
+                                        android.util.Log.i("ink-addon", "playing $title from addon")
+                                        spec.buildUpon().setUri(Uri.parse(addonUrl))
+                                            .setHttpRequestHeaders(spec.httpRequestHeaders + AddonMusic.signedHeaders(this, addonUrl)).build()
+                                    } else if (original.scheme != "ytm" && YouTubeMusic.available) {
+                                        val yt = kotlinx.coroutines.runBlocking(Dispatchers.IO) { youtubeMatch(title, artist, duration) }
+                                        val ytUrl = yt?.let { YouTubeMusic.stream(it.id, false, small = quality() == Quality.SAVER)?.first }
+                                        if (ytUrl != null) {
+                                            preferred[key] = Preferred(original, title, artist, album, duration, false, ytUrl)
+                                            android.util.Log.i("ink-addon", "addon miss; playing $title from YouTube Music")
+                                            spec.withUri(Uri.parse(ytUrl))
+                                        } else {
+                                            sourceMisses[key] = now + 300_000L
+                                            null
+                                        }
+                                    } else {
+                                        sourceMisses[key] = now + 300_000L
+                                        null
+                                    }
+                                }
+                            }
+                        }
+                    }.onFailure { android.util.Log.w("ink-addon", "source selection failed: ${it.message}") }.getOrNull()
+                } else null
                 when {
+                    // A BitChord addon search result resolves directly through its stored addon id.
+                    original.scheme == "addon" -> {
+                        val url = AddonMusic.stream(this, original.toString().removePrefix("addon://").substringBefore('/'))
+                        spec.buildUpon().setUri(Uri.parse(url))
+                            .setHttpRequestHeaders(spec.httpRequestHeaders + AddonMusic.signedHeaders(this, url)).build()
+                    }
+                    preferredSpec != null -> preferredSpec
                     // a YouTube song kept on the phone plays from there, no signal needed (Offline)
                     spec.uri.scheme == "ytm" && Offline.file(this, "y" + spec.uri.host) != null ->
                         spec.withUri(Uri.fromFile(Offline.file(this, "y" + spec.uri.host)!!)).also { android.util.Log.d("ink-offline", "kept: y${spec.uri.host}") }
@@ -672,6 +773,14 @@ class PlayerService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)   // headphones out: pause
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
+        // The resolving data source needs the timeline from the very first prepare (including a restored queue).
+        exo = player
+        player.addListener(object : Player.Listener {
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                refreshMediaItemSnapshot(player)
+            }
+        })
+        refreshMediaItemSnapshot(player)
         // what's added with shuffle on comes next or last, not anywhere
         player.setShuffleOrder(Shuffle(IntArray(0), next = { playNext.also { playNext = false } }))
         // the queue as it was left: there, paused, ready to go on
@@ -747,7 +856,30 @@ class PlayerService : MediaLibraryService() {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 // the network's fault (any song's): tried again once it's back, whatever the tries below came to
                 if (error.errorCode in 2000 until 3000) againWhenOnline()
-                val uri = player.currentMediaItem?.localConfiguration?.uri ?: return
+                val current = player.currentMediaItem ?: return
+                val uri = current.localConfiguration?.uri ?: return
+                val selected = preferred.remove(uri.toString())
+                if (selected != null) {
+                    sourceMisses[uri.toString()] = android.os.SystemClock.elapsedRealtime() + 300_000L
+                    val failedId = current.mediaId
+                    val failedIndex = player.currentMediaItemIndex
+                    android.util.Log.w("ink-addon", "${selected.title}: ${if (selected.fromAddon) "addon" else "YouTube"} stream failed; trying ${if (selected.fromAddon) "YouTube Music" else "original source"}")
+                    work.launch {
+                        val yt = if (selected.fromAddon) runCatching { youtubeMatch(selected.title, selected.artist, selected.durationMs) }.getOrNull() else null
+                        if (player.currentMediaItem?.mediaId != failedId || player.currentMediaItemIndex != failedIndex) return@launch
+                        if (yt != null) {
+                            YouTubeMusic.remember(yt)
+                            val targetUri = yt.uri
+                            sourceMisses[targetUri.toString()] = android.os.SystemClock.elapsedRealtime() + 300_000L
+                            player.replaceMediaItem(failedIndex, Playback.item(yt))
+                            android.util.Log.i("ink-addon", "fallback to YouTube Music: ${yt.title}")
+                        } else {
+                            android.util.Log.w("ink-addon", "${selected.title}: no YouTube match; using original source")
+                        }
+                        player.prepare()
+                    }
+                    return
+                }
                 if (uri.scheme != "ytm" || error.errorCode !in 2000 until 3000) return
                 val id = "y" + uri.host
                 val tries = (retried[id] ?: 0) + 1
@@ -820,6 +952,8 @@ class PlayerService : MediaLibraryService() {
                     session?.player?.let { setSleep(it, 0) }
             }
         })
+        // Discord presence observes the player directly in this process; it never gates audio.
+        DiscordAndroidPresence.start(this, player)
         main.post(keepPlace)
         main.post(dacSays)
         main.post { effects(true); equalize(); tell() }   // the session's there once onCreate is done
@@ -1049,6 +1183,7 @@ class PlayerService : MediaLibraryService() {
     }.getOrNull()
 
     override fun onDestroy() {
+        DiscordAndroidPresence.stop()
         waiting?.let { cb -> runCatching { getSystemService(android.net.ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } }
         runCatching { unregisterReceiver(usbSeen) }
         crossfade?.release()
