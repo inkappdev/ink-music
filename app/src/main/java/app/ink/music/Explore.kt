@@ -83,10 +83,12 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val electronic by Picks.electronic.collectAsState()
     val friday by Picks.friday.collectAsState()
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
-    val records by Picks.records.collectAsState()
+    val recordsAll by Picks.records.collectAsState()
+    val records = recordsAll.unblocked { it.pick.title to it.pick.artist }
     // the picks' artists tagged ahead, on wifi, so a genre's page has its picks when it opens (GenrePicks)
     LaunchedEffect(records.size) { if (records.isNotEmpty() && !Quality.metered(ctx)) GenrePicks.tag(ctx) }
-    val songs by Picks.songs.collectAsState()
+    val songsAll by Picks.songs.collectAsState()
+    val songs = songsAll.unblocked { it.pick.title to it.pick.artist }
     val today by Picks.today.collectAsState()
     val air by Picks.onAir.collectAsState()
     val chart by Listen.indie.collectAsState()
@@ -777,8 +779,10 @@ fun MoodPage(m: TubeMood, pages: Pages) {
     val listSongs by produceState(if (listed) GenreSongs.now(ctx, m.title) else emptyList(), m.title) { if (listed) value = GenreSongs.of(ctx, m.title) }
     val ours = !listed && m.genre && Genres.known(m.title)
     val tagged by GenrePicks.tagged.collectAsState()
-    val records by Picks.records.collectAsState()
-    val songs by Picks.songs.collectAsState()
+    val recordsAll by Picks.records.collectAsState()
+    val records = recordsAll.unblocked { it.pick.title to it.pick.artist }
+    val songsAll by Picks.songs.collectAsState()
+    val songs = songsAll.unblocked { it.pick.title to it.pick.artist }
     LaunchedEffect(ours, records.size + songs.size) { if (ours) GenrePicks.tag(ctx) }
     val picks = remember(ours, tagged, records, songs) { if (!ours) emptyList() else GenrePicks.all().filter { Genres.fits(it.pick.artist, m.title) } }
     val listArtists = remember(listSongs) { listSongs.flatMap { it.pick.artist.split(", ") }.map { Curation.folded(it.trim()) }.filter { it.length >= 2 }.toSet() }
@@ -869,7 +873,10 @@ fun MoodPage(m: TubeMood, pages: Pages) {
 /** Made for you on listen: each list its four covers, its name, what it is and when it changes; a tap plays it. */
 @Composable
 fun MadeForYouShelf() {
-    val all by Discover.mixes.collectAsState()
+    val made by Discover.mixes.collectAsState()
+    // what's blocked left out of each (Blocked)
+    val blocked by Blocked.kept.collectAsState()
+    val all = remember(made, blocked) { made.map { m -> m.copy(songs = m.songs.filterNot { Blocked.hides(it) }) }.filter { it.songs.isNotEmpty() } }
     if (all.isEmpty()) return
     // in the day's own order, the ones passed over a few days stepping back (Fresh): the front changes day to day
     val mixes = remember(all) {
@@ -894,7 +901,8 @@ fun MadeForYouShelf() {
 @Composable
 fun BecauseYouLovedShelf() {
     val b by Discover.because.collectAsState()
-    val (seed, songs) = b ?: return
+    val (seed, every) = b ?: return
+    val songs = every.unblocked { it.title to it.artist }
     Row(verticalAlignment = Alignment.Bottom) {
         Label("because you loved ${seed.title.lowercase()}")
         Spacer(Modifier.weight(1f))
@@ -906,7 +914,8 @@ fun BecauseYouLovedShelf() {
 /** New to you: artists close to what you play whom you've never played, in the dither, via whom; a station of them. */
 @Composable
 fun NewToYouShelf(pages: Pages) {
-    val list by Discover.newToYou.collectAsState()
+    val listAll by Discover.newToYou.collectAsState()
+    val list = listAll.unblocked { "" to it.artist.name }
     if (list.isEmpty()) return
     Row(verticalAlignment = Alignment.Bottom) {
         Label("new to you")

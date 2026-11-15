@@ -1,0 +1,8 @@
+- Block an artist or a song: never suggested again
+- Find songs that are only on YouTube as a video
+- Similar from your files stays near the song and repeats less
+- Mixes come in waves: fast, a drop, then back up, keys that fit
+- Crossfade keeps going after you turn shuffle off
+- On the computer: a scrollbar, shuffle a folder, ctrl and shift picking that works (in the grid too), volume as you drag, and no more crash at start
+- Waves are also a nice thing to look at
+- Text someone back today

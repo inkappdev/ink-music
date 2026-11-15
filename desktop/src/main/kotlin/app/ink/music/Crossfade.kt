@@ -173,8 +173,11 @@ object Crossfade {
     private fun allowed(s: Song, n: Song, i: Int, nextAt: Int): Boolean {
         if (Player.repeat.value == 2) return false
         if (listOf(s, n).any { it.station || it.episode }) return false
-        // a record in order: its songs run into each other as they were made
-        if (s.albumId.isNotEmpty() && s.albumId == n.albumId && nextAt == i + 1 && n.track > s.track) return false
+        // a record played in order (the queue that record alone): its songs run into each other as they were made. Not
+        // a list that only happens to hold a record's songs in turn (2026-11-15, a tester: no fades after shuffle was
+        // turned off mid-song, more so with files: the queue's own order back, your library's songs a record at a time)
+        if (s.albumId.isNotEmpty() && s.albumId == n.albumId && nextAt == i + 1 && n.track > s.track &&
+            Player.queue.value.all { it.albumId == s.albumId }) return false
         val d = Player.length().takeIf { it > 0 } ?: s.duration
         return d > FADE * 3 && (n.duration == 0L || n.duration > FADE * 3)
     }

@@ -193,11 +193,13 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp, shrinks: Boolean = 
                 .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)))
                 .pointerInput(Unit) { detectTapGestures { Player.volume((it.x / size.width * 100).toInt()) } }
                 .pointerInput(Unit) {
+                    // heard as it's dragged (the player's own glide between), kept once let go
+                    fun at(x: Float) = (x / size.width * 100).toInt().coerceIn(0, 100)
                     detectHorizontalDragGestures(
-                        onDragStart = { dragging = (it.x / size.width * 100).toInt().coerceIn(0, 100) },
-                        onDragEnd = { dragging?.let(Player::volume); dragging = null },
-                        onDragCancel = { dragging = null },
-                    ) { c, _ -> c.consume(); dragging = (c.position.x / size.width * 100).toInt().coerceIn(0, 100) }
+                        onDragStart = { dragging = at(it.x).also { v -> Player.volume(v, keep = false) } },
+                        onDragEnd = { dragging?.let { Player.volume(it) }; dragging = null },
+                        onDragCancel = { dragging?.let { Player.volume(it) }; dragging = null },
+                    ) { c, _ -> c.consume(); val v = at(c.position.x); if (v != dragging) { dragging = v; Player.volume(v, keep = false) } }
                 },
             contentAlignment = Alignment.CenterStart,
         ) {

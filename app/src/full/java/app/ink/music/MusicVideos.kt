@@ -94,8 +94,10 @@ object MusicVideos {
             found += videos.take(2).map { clip(it, name, now) }
             android.util.Log.d("ink-youtube", "videos: $name, ${theirs.joinToString { it.name }}: ${videos.size}")
         }
-        // newest first, never two of one artist's side by side
-        val clips = Curation.apart(found.sortedByDescending { it.at }.take(16)) { it.artist.lowercase() }
+        // newest first, never two of one artist's side by side; a video two of your artists share (a feature, or two names
+        // finding one channel) once only: twice, the computer's shelf clashed on its keys and stopped at every start
+        // (2026-11-15, a tester)
+        val clips = Curation.apart(found.distinctBy { it.id }.sortedByDescending { it.at }.take(16)) { it.artist.lowercase() }
         _clips.value = clips
         runCatching {
             file.parentFile?.mkdirs()
@@ -113,7 +115,7 @@ object MusicVideos {
 
     private fun read(o: JSONObject) {
         _clips.value = Curation.apart(o.optJSONArray("clips")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
-            .map { Clip(it.getString("id"), it.getString("title"), it.getString("artist"), it.getLong("when")) }) { it.artist.lowercase() }
+            .map { Clip(it.getString("id"), it.getString("title"), it.getString("artist"), it.getLong("when")) }.distinctBy { it.id }) { it.artist.lowercase() }
         o.optJSONObject("channels2")?.let { c ->
             for (k in c.keys()) c.getJSONObject(k).let { j ->
                 val list = j.optJSONArray("list")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()

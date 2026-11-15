@@ -180,7 +180,8 @@ internal fun ClipFrame(c: MusicVideos.Clip, modifier: Modifier) {
 @Composable
 fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, pages: Pages) {
     val ctx = LocalContext.current
-    val newest by MusicVideos.clips.collectAsState()
+    val newestAll by MusicVideos.clips.collectAsState()
+    val newest = newestAll.unblocked { it.title to it.artist }
     // the videos it was opened among (the shelf's, an artist's): up next is the rest of them
     val clips = list.ifEmpty { newest }
     val frame by produceState<VideoFrame?>(frames.get(c.id), c.id) { if (value == null) value = frameOf(c.id) }

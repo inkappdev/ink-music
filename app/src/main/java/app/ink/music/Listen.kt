@@ -181,8 +181,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val putAside by SyncPhone.dismissed.collectAsState()
     val firstHeard by EggsNow.first.collectAsState()
     val continued = offer?.takeUnless { it.at <= SyncPhone.playedAt || it.at <= putAside || nowHere?.playing == true }
-    val pickedRecords by Picks.records.collectAsState()
-    val pickedSongs by Picks.songs.collectAsState()
+    val pickedRecordsAll by Picks.records.collectAsState()
+    val pickedRecords = pickedRecordsAll.unblocked { it.pick.title to it.pick.artist }
+    val pickedSongsAll by Picks.songs.collectAsState()
+    val pickedSongs = pickedSongsAll.unblocked { it.pick.title to it.pick.artist }
     val friday by Picks.friday.collectAsState()
     val electronic by Picks.electronic.collectAsState()
     val listened by Listened.now.collectAsState()
@@ -322,7 +324,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val uRecords = one<TubeAlbum>("records"); val uNewest = one<Album>("newest"); val uYours = one<Album>("yours")
     val sections = LinkedHashMap<String, @Composable () -> Unit>()
     // their new music videos (MusicVideos, the full build's), once some are found
-    val videos by MusicVideos.clips.collectAsState()
+    val videosAll by MusicVideos.clips.collectAsState()
+    val videos = videosAll.unblocked { it.title to it.artist }
     LaunchedEffect(Unit) { MusicVideos.start(ctx) }
     if (videos.isNotEmpty()) sections["videos"] = { NewVideosShelf(videos, pages) }
     // live DJ sets from four channels that film them (LiveSets, the full build's)
@@ -660,7 +663,8 @@ fun TvListenPage(pages: Pages, state: LazyListState) {
     val tubeRecent = remember(tubeHeard, recent) { val said = recent.map { it.id }.toSet(); tubeHeard.filter { it.id !in said }.distinctBy { it.album.ifEmpty { it.id } }.take(10) }
     val listened by Listened.now.collectAsState()
     val allSongs by Library.songs.collectAsState()
-    val pickedRecords by Picks.records.collectAsState()
+    val pickedRecordsAll by Picks.records.collectAsState()
+    val pickedRecords = pickedRecordsAll.unblocked { it.pick.title to it.pick.artist }
     val broughtIn by Fresh.brought.collectAsState()
     val fromYours = remember(pickedRecords, listened, allSongs, broughtIn) { Picks.yours(listened, allSongs, broughtIn) }
     LaunchedEffect(Unit) { LiveSets.start(ctx) }

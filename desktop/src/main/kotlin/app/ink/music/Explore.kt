@@ -70,7 +70,7 @@ private object ExploreKept {
 @Composable
 fun ExplorePage(open: (Page) -> Unit) {
     // the picks' artists tagged ahead, so a genre's page has its picks when it opens (GenrePicks)
-    val picked by Picks.records.collectAsState()
+    val picked = Picks.records.shown { it.pick.title to it.pick.artist }
     LaunchedEffect(picked.size) { if (picked.isNotEmpty()) GenrePicks.tag() }
     // YouTube's cool lists read as INK opens, once the critics' picks are in to score them by
     LaunchedEffect(picked.isNotEmpty()) { if (picked.isNotEmpty()) CoolLists.read() }
@@ -98,8 +98,8 @@ fun ExplorePage(open: (Page) -> Unit) {
     val friday by Picks.friday.collectAsState()
     // what's on the air, asked again each minute while explore is up
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
-    val records by Picks.records.collectAsState()
-    val songs by Picks.songs.collectAsState()
+    val records = Picks.records.shown { it.pick.title to it.pick.artist }
+    val songs = Picks.songs.shown { it.pick.title to it.pick.artist }
     val today by Picks.today.collectAsState()
     val air by Picks.onAir.collectAsState()
     val list = pageList()
@@ -363,7 +363,9 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
 /** A record or song someone picked: its cover, its name, who picked it; a click opens the record or plays the song. */
 @Composable
 internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit, from: List<Picks.Shown>? = null, why: String? = null) {
-    WithMenu({ listOf(listOf("artist" to { open(Page.Artist(s.pick.artist.substringBefore(", "))) }, "copy title" to { copyText("${s.pick.artist} - ${s.pick.title}") })) }) {
+    WithMenu({ listOf(listOf("artist" to { open(Page.Artist(s.pick.artist.substringBefore(", "))) }, "copy title" to { copyText("${s.pick.artist} - ${s.pick.title}") }),
+        // never suggested again (Blocked)
+        listOf("block artist" to { Blocked.blockArtist(s.pick.artist) })) }) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var said by remember(s) { mutableStateOf<String?>(null) }
     // shown, for Seen: one passed over a while steps back (Fresh)
@@ -483,7 +485,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit)
     // the week's turn through the chart's top fifteen, passing over the very famous (a discovery, not the Rolling Stones)
     // the chart's artists and the critics' picks', the week's turn through them; someone with under a million and a half
     // listeners a month (2026-10-28), with a photo to show
-    val picked by Picks.records.collectAsState()
+    val picked = Picks.records.shown { it.pick.title to it.pick.artist }
     val names = remember(chart, picked) {
         (chart.map { it.artist } + picked.map { it.pick.artist }).map { it.substringBefore(",").substringBefore(" & ").trim() }
             .filter { it.isNotBlank() && !it.equals("various artists", true) }.distinctBy { it.lowercase() }
@@ -693,8 +695,8 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
     val listSongs by produceState(if (listed) Picks.genreNow(m.title) else emptyList(), m.title) { if (listed) value = Picks.genre(m.title) }
     val ours = !listed && m.genre && Genres.known(m.title)
     val tagged by GenrePicks.tagged.collectAsState()
-    val records by Picks.records.collectAsState()
-    val songs by Picks.songs.collectAsState()
+    val records = Picks.records.shown { it.pick.title to it.pick.artist }
+    val songs = Picks.songs.shown { it.pick.title to it.pick.artist }
     LaunchedEffect(ours, records.size + songs.size) { if (ours) GenrePicks.tag() }
     val picks = remember(ours, tagged, records, songs) { if (!ours) emptyList() else GenrePicks.all().filter { Genres.fits(it.pick.artist, m.title) } }
     val listArtists = remember(listSongs) { listSongs.flatMap { it.pick.artist.split(", ") }.map { Curation.folded(it.trim()) }.filter { it.length >= 2 }.toSet() }

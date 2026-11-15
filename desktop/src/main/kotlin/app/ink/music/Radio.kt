@@ -37,7 +37,32 @@ object Radio {
     private val versions = Regex("""\b(sped ?up|slowed|nightcore|karaoke|8d audio|bass ?boosted|reverb)\b""", RegexOption.IGNORE_CASE)
 
     /** Songs to follow the seeds (blocking; the last song first): none already queued (ids, and title/artist keys). */
-    fun after(seeds: List<Seed>, queued: Set<String>, tempo: Double? = null, mode: Mode = Mode.BOTH): List<Song> {
+    fun after(seeds: List<Seed>, queued: Set<String>, tempo: Double? = null, mode: Mode = Mode.BOTH): List<Song> =
+        found(seeds, queued, tempo, mode).also { suggested(it) }
+
+    /**
+     * What similar has suggested these three weeks (2026-11-15, after Metrolist 14's, which remembers its last 500): those
+     * put back behind the rest, so the same few don't come round again each time; never left out, so it never runs dry.
+     * Kept in similar-suggested.json, the newest 600.
+     */
+    private const val SUGGESTED_FOR = 21L * 86_400_000
+    private val suggestedFile get() = java.io.File(Home.dir, "similar-suggested.json")
+    private val said: MutableMap<String, Long> by lazy {
+        java.util.concurrent.ConcurrentHashMap<String, Long>().also { m ->
+            runCatching { org.json.JSONObject(suggestedFile.readText()).let { o -> o.keys().forEach { k -> m[k] = o.getLong(k) } } }
+        }
+    }
+    private fun suggested(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        val now = System.currentTimeMillis()
+        songs.forEach { said[key(it.title, it.artist)] = now }
+        val kept = said.entries.filter { now - it.value < SUGGESTED_FOR }.sortedByDescending { it.value }.take(600)
+        said.keys.retainAll(kept.map { it.key }.toSet())
+        runCatching { Keep.write(suggestedFile, org.json.JSONObject(kept.associate { it.key to it.value }).toString()) }
+    }
+    private fun saidLately(k: String) = said[k]?.let { System.currentTimeMillis() - it < SUGGESTED_FOR } == true
+
+    private fun found(seeds: List<Seed>, queued: Set<String>, tempo: Double?, mode: Mode): List<Song> {
         if (seeds.isEmpty()) return emptyList()
         val lists = seeds.take(WEIGHT.size).map { when (mode) { Mode.BOTH -> related(it); Mode.ONLINE -> online(it); Mode.OFFLINE -> offline(it) } }
         val since = System.currentTimeMillis() - RECENT
@@ -91,14 +116,16 @@ object Radio {
                 found.getOrPut(key(s.title, s.artist)) { Found(s, 0f) }.score += w
             }
         }
-        // you, in it: the near lifted, the skipped and the turned down lowered or left out
+        // you, in it: the near lifted, the skipped and the turned down lowered or left out; suggested lately, put back
         val gone = HashSet<String>()
-        found.forEach { (k, f) -> val y = yours(f.song.artist, taste, refused); if (y == null) gone += k else f.score += y }
+        found.forEach { (k, f) -> val y = yours(f.song.artist, taste, refused); if (y == null) gone += k else f.score += y - (if (saidLately(k)) .8f else 0f) }
         val by = HashMap<String, Int>()
         val picked = found.entries.filter { it.key !in gone }.sortedByDescending { it.value.score }.filter { (k, f) ->
             val s = f.song
             val who = s.artist.lowercase().substringBefore(",").trim()
             if (s.id in queued || k in queued || k in seedKeys || s.id in heard || k in heard) return@filter false
+            // blocked from a song's menu (Blocked): never suggested
+            if (Blocked.hides(s)) return@filter false
             if (!seedVersions && versions.containsMatchIn(s.title)) return@filter false
             if ((by[who] ?: 0) >= SAME_ARTIST) return@filter false
             by[who] = (by[who] ?: 0) + 1
@@ -134,13 +161,33 @@ object Radio {
         if (Local.on) return emptyList()
         val seed = Library.songs.value.firstOrNull { it.id == s.id }
         var title = s.title; var artist = s.artist.substringBefore(", ").trim()
+        var recognized = false
         if (artist.isBlank() || artist == "unknown") {
             val heard = if (seed != null && seed.path.isNotEmpty() && !seed.tube) runCatching { Recognize.of(seed) }.getOrNull() else null
+            recognized = true
             if (heard != null) { title = heard.title; artist = heard.artist.substringBefore(" & ").substringBefore(", ").trim() }
             else { title = spoken(seed?.path?.let { java.io.File(it).nameWithoutExtension } ?: s.title); artist = "" }
         }
-        val tube = if (s.id.startsWith("y")) s.id else (YouTube.find(title, artist)
-            ?: runCatching { kotlinx.coroutines.runBlocking { YouTube.search("$artist $title".trim()) }?.songs?.firstOrNull() }.getOrNull())?.id
+        // the seed on YouTube Music, sure it's the same song (2026-11-15, a tester: similar from their files "tends to drift
+        // toward unrelated recommendations"): its title and artist as said and its length near the file's. A search's first
+        // answer was taken before, any song at all, and YouTube's radio then ran from that. Not found so: the file
+        // recognized by its sound (Recognize) and looked for again; still not, no YouTube radio (the artist's ears only).
+        val seedMs = seed?.takeIf { !it.tube }?.duration ?: 0L
+        fun fits(x: Song) = seedMs <= 0 || x.duration <= 0 || kotlin.math.abs(x.duration - seedMs) <= maxOf(20_000L, seedMs * 12 / 100)
+        fun look(t: String, a: String): String? {
+            YouTube.find(t, a)?.takeIf(::fits)?.let { return it.id }
+            val found = runCatching { kotlinx.coroutines.runBlocking { YouTube.search("$a $t".trim()) }?.songs }.getOrNull().orEmpty()
+            return (if (a.isNotBlank()) found.firstOrNull { Pipe.same(it.title, it.artist, t, a) && fits(it) }
+                else found.firstOrNull { fits(it) && it.duration > 0 })?.id
+        }
+        var tube = if (s.id.startsWith("y")) s.id else look(title, artist)
+        if (tube == null && seed != null && seed.path.isNotEmpty() && !seed.tube && !recognized) {
+            runCatching { Recognize.of(seed) }.getOrNull()?.let { heard ->
+                Log.d("similar: ${s.title} not found as tagged; heard as ${heard.artist} - ${heard.title}")
+                title = heard.title; artist = heard.artist.substringBefore(" & ").substringBefore(", ").trim()
+                tube = look(title, artist)
+            }
+        }
         if (artist.isBlank()) tube?.let { YouTube.known(it)?.artist?.substringBefore(", ")?.let { a -> artist = a } }
 
         // the three, asked at once
@@ -202,7 +249,7 @@ object Radio {
      * rest of the library after, so it never stops while there's a file to play.
      */
     fun offline(s: Seed): List<Song> {
-        val all = Library.songs.value.filter { !it.tube && !it.server && !it.station && !it.episode && it.path.isNotEmpty() && it.id != s.id }
+        val all = Library.songs.value.filter { !it.tube && !it.server && !it.station && !it.episode && it.path.isNotEmpty() && it.id != s.id && !Blocked.hides(it) }
         if (all.isEmpty()) return emptyList()
         val seed = Library.songs.value.firstOrNull { it.id == s.id }
         fun who(a: String) = a.lowercase().substringBefore(",").trim()

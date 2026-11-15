@@ -147,15 +147,17 @@ object MusicVideos {
             found += theirs.take(2).map { clip(it, name, now) }
             Log.d("videos: $name, ${theirChannels.joinToString { it.name }}: ${theirs.size}")
         }
-        // newest first, never two of one artist's side by side
-        val clips = Curation.apart(found.sortedByDescending { it.at }.take(16)) { it.artist.lowercase() }
+        // newest first, never two of one artist's side by side; a video two of your artists share (a feature, or two
+        // names finding one channel) once only: twice, the shelf's keys clashed and the app stopped at every start,
+        // the list kept so (2026-11-15, a tester: "Key ... was already used", gone only with the cache deleted)
+        val clips = Curation.apart(found.distinctBy { it.id }.sortedByDescending { it.at }.take(16)) { it.artist.lowercase() }
         _clips.value = clips
         runCatching { Home.write(file, write(now, clips).toString()) }
     }
 
     private fun read(o: JSONObject) {
         _clips.value = Curation.apart(o.optJSONArray("clips")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
-            .map { Clip(it.getString("id"), it.getString("title"), it.getString("artist"), it.getLong("when")) }) { it.artist.lowercase() }
+            .map { Clip(it.getString("id"), it.getString("title"), it.getString("artist"), it.getLong("when")) }.distinctBy { it.id }) { it.artist.lowercase() }
         o.optJSONObject("channels")?.let { c ->
             for (k in c.keys()) c.getJSONObject(k).let { j ->
                 val list = j.optJSONArray("list")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
@@ -230,14 +232,14 @@ object Watching {
 /** Listen's shelf of them: each frame wide, its song and artist, how long ago. */
 @Composable
 fun NewVideos(open: (Page) -> Unit) {
-    val clips by MusicVideos.clips.collectAsState()
+    val clips = MusicVideos.clips.shown { it.title to it.artist }
     LaunchedEffect(Unit) { MusicVideos.start() }
     if (clips.isEmpty()) return
     Column {
         Section("NEW VIDEOS", "from the artists you play")
         Shelf(clips.size, 300.dp, cover = 16 / 9f) { each ->
             items(clips, key = { it.id }) { c ->
-                WithMenu({ listOf(listOf("watch" to { open(Page.Watch(c, clips)) }, "listen" to { listenTo(c) }), listOf("copy link" to { copyText("https://youtu.be/${c.id}") })) }) {
+                WithMenu({ listOf(listOf("watch" to { open(Page.Watch(c, clips)) }, "listen" to { listenTo(c) }), listOf("copy link" to { copyText("https://youtu.be/${c.id}") }), listOf("block artist" to { Blocked.blockArtist(c.artist) })) }) {
 Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, clips)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))
@@ -263,7 +265,7 @@ internal fun VideoFrame(c: MusicVideos.Clip, modifier: Modifier) {
  */
 @Composable
 fun WatchPage(c: MusicVideos.Clip, list: List<MusicVideos.Clip>, open: (Page) -> Unit, onClose: () -> Unit) {
-    val newest by MusicVideos.clips.collectAsState()
+    val newest = MusicVideos.clips.shown { it.title to it.artist }
     // the videos it was opened among (the shelf's, an artist's): next is the next of them
     val clips = list.ifEmpty { newest }
     val frame by produceState<MusicVideos.Frame?>(null, c.id) { value = MusicVideos.frame(c.id) }
@@ -520,7 +522,7 @@ fun ArtistVideos(name: String, browseId: String, open: (Page) -> Unit) {
         Label("videos")
         Shelf(cover = 16 / 9f) {
             items(videos, key = { it.id }) { c ->
-                WithMenu({ listOf(listOf("watch" to { open(Page.Watch(c, videos)) }, "listen" to { listenTo(c) }), listOf("copy link" to { copyText("https://youtu.be/${c.id}") })) }) {
+                WithMenu({ listOf(listOf("watch" to { open(Page.Watch(c, videos)) }, "listen" to { listenTo(c) }), listOf("copy link" to { copyText("https://youtu.be/${c.id}") }), listOf("block artist" to { Blocked.blockArtist(c.artist) })) }) {
 Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Watch(c, videos)) })) {
                     VideoFrame(c, Modifier.fillMaxWidth().aspectRatio(16 / 9f))
                     Spacer(Modifier.height(8.dp))

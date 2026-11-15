@@ -381,7 +381,7 @@ class PlayerService : MediaLibraryService() {
         if (radioFrom == last.mediaId || last.mediaId.startsWith("s") || last.mediaId.startsWith("e")) return
         radioFrom = last.mediaId
         fun seed(i: androidx.media3.common.MediaItem) =
-            Radio.Seed(i.mediaId, i.mediaMetadata.title?.toString().orEmpty(), i.mediaMetadata.artist?.toString().orEmpty())
+            Radio.Seed(i.mediaId, i.mediaMetadata.title?.toString().orEmpty(), i.mediaMetadata.artist?.toString().orEmpty(), i.mediaMetadata.durationMs ?: 0L)
         val queued = HashSet<String>()
         for (i in 0 until p.mediaItemCount) p.getMediaItemAt(i).let {
             queued += it.mediaId

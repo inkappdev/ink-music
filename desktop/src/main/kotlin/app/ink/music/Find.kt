@@ -98,8 +98,18 @@ fun FindTab(open: (Page) -> Unit) {
         kotlinx.coroutines.delay(300)
         value = Stations.search(typed)
     }
+    // youtube.com's own videos (YouTube.videos): songs never put on YouTube Music, apart from its songs; none it already gave
+    val tubeVideosAll by androidx.compose.runtime.produceState(emptyList<Song>(), q) {
+        if (q.length < 2) { value = emptyList(); return@produceState }
+        kotlinx.coroutines.delay(300)
+        value = runCatching { YouTube.videos(typed) }.getOrDefault(emptyList())
+    }
     val found = tube ?: TubeFound()
     val tubeSongs = found.songs
+    val tubeVideos = remember(tubeVideosAll, tubeSongs) {
+        val have = tubeSongs.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) }.toSet()
+        tubeVideosAll.filter { it.id !in have && Radio.key(it.title, it.artist) !in have }.take(12)
+    }
     val tubeRecords = found.albums
     // its artists, their faces (any you have already shown as yours); else whose its songs and records are
     // (2026-10-29: Mac DeMarco found, no page of his to open)
@@ -140,7 +150,7 @@ fun FindTab(open: (Page) -> Unit) {
         Spacer(Modifier.height(if (big) 8.dp else 18.dp))
         if (q.length >= 2 && tube == null) BasicText("couldn't reach youtube music", style = pixel(12.sp, Ink.mid))
         else if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() &&
-            foundTubeLists.isEmpty() && stations.isEmpty() && tubeSongs.isEmpty() && tubeRecords.isEmpty() && tubeArtists.isEmpty() && tubePlaylists.isEmpty())
+            foundTubeLists.isEmpty() && stations.isEmpty() && tubeSongs.isEmpty() && tubeVideos.isEmpty() && tubeRecords.isEmpty() && tubeArtists.isEmpty() && tubePlaylists.isEmpty())
             BasicText("nothing called that", style = pixel(12.sp, Ink.mid))
         else if (big) BasicText(
             if (q.isEmpty()) "your artists, records, songs and playlists, radio's stations, and youtube music's; enter plays the songs found; esc clears"
@@ -220,6 +230,10 @@ fun FindTab(open: (Page) -> Unit) {
                         itemsIndexed(tubeSongs, key = { _, s -> "t" + s.id }) { i, s -> SongRow(s, said = s.artist.lowercase(), open = open) { Player.play(tubeSongs, i) } }
                     }
                     if (tubePlaylists.isNotEmpty()) item { Label("playlists on youtube music"); records(emptyList(), tubePlaylists) }
+                    if (tubeVideos.isNotEmpty()) {
+                        item { Label("from youtube videos") }
+                        itemsIndexed(tubeVideos, key = { _, s -> "v" + s.id }) { i, s -> SongRow(s, said = s.artist.lowercase(), open = open) { Player.play(tubeVideos, i) } }
+                    }
                 }
             }
         } else {
@@ -250,6 +264,10 @@ fun FindTab(open: (Page) -> Unit) {
                     SongRow(s, said = s.artist.lowercase(), open = open) { Player.play(tubeSongs, i) }
                 }
                 if (tubePlaylists.isNotEmpty()) item { Label("playlists on youtube music"); records(emptyList(), tubePlaylists) }
+                if (tubeVideos.isNotEmpty()) item { Label("from youtube videos") }
+                itemsIndexed(tubeVideos, key = { _, s -> "v" + s.id }) { i, s ->
+                    SongRow(s, said = s.artist.lowercase(), open = open) { Player.play(tubeVideos, i) }
+                }
                 if (rest.isNotEmpty()) {
                     item { Label("more of your songs") }
                     itemsIndexed(rest, key = { _, s -> "s" + s.id }) { i, s ->

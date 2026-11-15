@@ -245,11 +245,19 @@ class Crossfade(
         val n = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET } ?: return false
         val a = exo.getMediaItemAt(i); val b = exo.getMediaItemAt(n)
         if (listOf(a, b).any { it.mediaId.startsWith("e") || it.mediaId.startsWith("s") }) return false
-        // a record in order: its songs run into each other as they were made
+        // a record played in order (the queue that record alone): its songs run into each other as they were made. Not a
+        // list that only happens to hold a record's songs in turn (2026-11-15, a tester: no fades after shuffle was
+        // turned off mid-song, the queue's own order back, a library's songs a record at a time)
         val ra = a.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
-        if (ra.isNotEmpty() && ra == b.mediaMetadata.extras?.getString(Levelling.RECORD) && n == i + 1) return false
+        if (ra.isNotEmpty() && ra == b.mediaMetadata.extras?.getString(Levelling.RECORD) && n == i + 1 && oneRecord(ra)) return false
         return exo.duration != C.TIME_UNSET && exo.duration > FADE * 3
     }
+
+    /** Whether every song in the queue is from this record (a record played, not a list holding its songs). */
+    private fun oneRecord(record: String) =
+        (0 until exo.mediaItemCount).all { exo.getMediaItemAt(it).mediaMetadata.extras?.getString(Levelling.RECORD) == record }
+
+    private fun oneRecord(record: String, items: List<MediaItem>) = items.all { it.mediaMetadata.extras?.getString(Levelling.RECORD) == record }
 
     private fun look() {
         // a song cut short for the blend: its end is mixed in the player's own sound (Blend), not the two-player way
@@ -478,7 +486,7 @@ class Crossfade(
         val id = item.mediaId
         if (listOf(id, next.mediaId).any { it.startsWith("e") || it.startsWith("s") }) return items
         val record = item.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
-        if (record.isNotEmpty() && record == next.mediaMetadata.extras?.getString(Levelling.RECORD)) return items
+        if (record.isNotEmpty() && record == next.mediaMetadata.extras?.getString(Levelling.RECORD) && oneRecord(record, items)) return items
         val k = cuts[id] ?: return items
         val handover = k[0]; val fade = (k[1] - handover).coerceIn(2_000, 12_000)
         if (at >= handover - 5_000) return items
@@ -501,7 +509,7 @@ class Crossfade(
         val next = items.getOrNull(start + 1) ?: return
         // a record in order runs into itself as made: nothing to wait for
         val record = item.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
-        if (record.isNotEmpty() && record == next.mediaMetadata.extras?.getString(Levelling.RECORD)) return
+        if (record.isNotEmpty() && record == next.mediaMetadata.extras?.getString(Levelling.RECORD) && oneRecord(record, items)) return
         val id = item.mediaId
         if (cuts.containsKey(id) || id.startsWith("e") || id.startsWith("s")) return
         val uri = item.localConfiguration?.uri ?: item.requestMetadata.mediaUri ?: return
@@ -573,7 +581,7 @@ class Crossfade(
         val following = exo.getMediaItemAt(f)
         if (following.mediaId.startsWith("e") || following.mediaId.startsWith("s")) return why(id, "a station or an episode after it")
         val record = item.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
-        if (record.isNotEmpty() && record == following.mediaMetadata.extras?.getString(Levelling.RECORD) && f == n + 1) return why(id, "a record in order")
+        if (record.isNotEmpty() && record == following.mediaMetadata.extras?.getString(Levelling.RECORD) && f == n + 1 && oneRecord(record)) return why(id, "a record in order")
         // the beats matched, where both are sure and their tempos near: worked out (and the end stretched) apart
         val pcmEnd = pcm.start + all.size / pcm.channels * 1000L / pcm.rate
         if (id in planning) return

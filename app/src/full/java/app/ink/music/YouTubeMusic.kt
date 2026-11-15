@@ -111,6 +111,20 @@ object YouTubeMusic {
     }
 
     /** A song as YouTube Music's own pages list it; on a record's page, the record's words and cover. */
+    /**
+     * Videos on youtube.com itself by these words, as songs (the computer's, 2026-11-15, a tester: songs never put on
+     * YouTube Music are often up as a video): a song's length (1 to 10 minutes), its title and artist read from the
+     * video's title and channel, played as any YouTube song. Shown in find apart from YouTube Music's own.
+     */
+    suspend fun videos(q: String): List<Song> = withContext(Dispatchers.IO) {
+        TubeVideos.search(q).filter { it.seconds == 0 || it.seconds in 60..600 }.map { f ->
+            val (title, artist) = Pipe.tidy(f.title, f.channel)
+            Song(id = "y${f.id}", uri = Uri.parse("ytm://${f.id}"), title = title.ifEmpty { f.title }, artist = artist.ifEmpty { f.channel.ifEmpty { "unknown" } },
+                album = "", albumId = "y${f.id}", albumArtist = artist.ifEmpty { f.channel }, duration = f.seconds * 1000L, disc = 1, track = 0,
+                year = 0, art = "https://i.ytimg.com/vi/${f.id}/hqdefault.jpg", format = "youtube").also(::remember)
+        }
+    }
+
     private fun trackSong(t: InnerTube.Track, album: String? = null, albumId: String? = null, albumArtist: String? = null, number: Int = 0, art: String? = null): Song {
         val artist = t.artists.joinToString(", ").ifEmpty { albumArtist ?: "unknown" }
         return Song(

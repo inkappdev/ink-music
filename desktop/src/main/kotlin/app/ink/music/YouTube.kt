@@ -131,6 +131,21 @@ object YouTube {
         return mix.also { if (it.isNotEmpty()) mixes[id] = it }
     }
 
+    /**
+     * Videos on youtube.com itself by these words, as songs (2026-11-15, a tester: songs that were never put on YouTube Music
+     * are often up as a video): a song's length (1 to 10 minutes: how-tos and longer streams left out), its title and artist read from the video's title and
+     * channel, its audio played as any YouTube song's. Shown in find apart from YouTube Music's own.
+     */
+    suspend fun videos(q: String): List<Song> = withContext(Dispatchers.IO) {
+        if (Local.on) return@withContext emptyList()
+        TubeVideos.search(q).filter { it.seconds == 0 || it.seconds in 60..600 }.map { f ->
+            val (title, artist) = Pipe.tidy(f.title, f.channel)
+            Song(id = "y${f.id}", path = "", title = title.ifEmpty { f.title }, artist = artist.ifEmpty { f.channel.ifEmpty { "unknown" } },
+                album = "", albumId = "y${f.id}", albumArtist = artist.ifEmpty { f.channel }, duration = f.seconds * 1000L, disc = 1, track = 0,
+                year = 0, format = "youtube", art = "https://i.ytimg.com/vi/${f.id}/hqdefault.jpg").also(::remember)
+        }
+    }
+
     /** YouTube Music's song by these words, if it has one (blocking). */
     fun find(title: String, artist: String): Song? = if (Local.on) null else runCatching {
         Pipe.init()

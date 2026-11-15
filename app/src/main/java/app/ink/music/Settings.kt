@@ -354,6 +354,28 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         }
                     }
                 }
+                // blocked from a held song: never suggested (Blocked), each let back here
+                remember { Blocked.load(ctx) }
+                val blocked by Blocked.kept.collectAsState()
+                val nb = blocked.artists.size + blocked.songs.size
+                if (nb > 0 || YouTubeMusic.available) SettingRow("BLOCKED", if (nb == 0) "none" else listOfNotNull(
+                    blocked.artists.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "artist" else "artists"}" },
+                    blocked.songs.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "song" else "songs"}" }).joinToString(" · "), opened,
+                    "never in similar songs or listen's shelves. hold a youtube song to block it or its artist") {
+                    if (nb == 0) BasicText("nothing blocked", style = pixel(13.sp, Ink.dim))
+                    blocked.artists.forEach { a ->
+                        Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            BasicText(a.lowercase(), style = pixel(13.sp), modifier = Modifier.weight(1f, fill = false).padding(end = 20.dp))
+                            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockArtist(ctx, a) }
+                        }
+                    }
+                    blocked.songs.forEach { b ->
+                        Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            BasicText("${b.title.lowercase()} · ${b.artist.lowercase()}", style = pixel(13.sp), modifier = Modifier.weight(1f, fill = false).padding(end = 20.dp))
+                            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockSong(ctx, b.id) }
+                        }
+                    }
+                }
                 // listenbrainz: what you play, told there (the player's process sends it)
                 val lb by ListenBrainz.account.collectAsState()
                 SettingRow("LISTENBRAINZ", lb?.user?.lowercase() ?: "connect", opened) { ListenBrainzSetting(head = false) }

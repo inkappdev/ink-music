@@ -31,10 +31,13 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
@@ -243,4 +246,81 @@ fun Modifier.feather(state: androidx.compose.foundation.gestures.ScrollableState
     val top by androidx.compose.animation.core.animateFloatAsState(if (state.canScrollBackward) 1f else 0f, tween(Motion.FADE), label = "top")
     val bottom by androidx.compose.animation.core.animateFloatAsState(if (state.canScrollForward) 1f else 0f, tween(Motion.FADE), label = "bottom")
     return feather({ top }, { bottom }, topSize, bottomSize)
+}
+
+// a list's, a grid's or a column's feather comes with its scrollbar (every page's long lists at once)
+@Composable
+fun Modifier.feather(state: androidx.compose.foundation.lazy.LazyListState, topSize: Dp = 20.dp, bottomSize: Dp = 32.dp): Modifier =
+    scrollbar(androidx.compose.foundation.rememberScrollbarAdapter(state)).feather(state as androidx.compose.foundation.gestures.ScrollableState, topSize, bottomSize)
+
+@Composable
+fun Modifier.feather(state: androidx.compose.foundation.lazy.grid.LazyGridState, topSize: Dp = 20.dp, bottomSize: Dp = 32.dp): Modifier =
+    scrollbar(androidx.compose.foundation.rememberScrollbarAdapter(state)).feather(state as androidx.compose.foundation.gestures.ScrollableState, topSize, bottomSize)
+
+@Composable
+fun Modifier.feather(state: androidx.compose.foundation.ScrollState, topSize: Dp = 20.dp, bottomSize: Dp = 32.dp): Modifier =
+    scrollbar(androidx.compose.foundation.rememberScrollbarAdapter(state)).feather(state as androidx.compose.foundation.gestures.ScrollableState, topSize, bottomSize)
+
+/**
+ * A scrollbar at the right edge (2026-11-15, a tester: "scrolling relies entirely on the mouse wheel ... inconvenient
+ * with a large number of songs"): a 2 dp line, there only while there's more than fits; brighter under the mouse,
+ * ink while held. Drag it, or press anywhere along the edge to go there. Drawn over the feather, never faded by it.
+ */
+@Composable
+fun Modifier.scrollbar(adapter: androidx.compose.foundation.v2.ScrollbarAdapter): Modifier {
+    var over by remember { mutableStateOf(false) }
+    var held by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val edge = with(density) { 14.dp.toPx() }
+    val least = with(density) { 32.dp.toPx() }
+    // the thumb: where it starts and how tall, in pixels (null: all of it fits)
+    fun thumb(h: Float): Pair<Float, Float>? {
+        val content = adapter.contentSize; val view = adapter.viewportSize
+        if (content <= view + 1 || h <= 0f) return null
+        val len = (h * view / content).toFloat().coerceIn(least.coerceAtMost(h), h)
+        val at = (adapter.scrollOffset / (content - view)).toFloat().coerceIn(0f, 1f) * (h - len)
+        return at to len
+    }
+    return this
+        .pointerInput(adapter) {
+            awaitPointerEventScope {
+                while (true) {
+                    val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    val c = e.changes.first()
+                    val inEdge = c.position.x >= size.width - edge && thumb(size.height.toFloat()) != null
+                    if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Move || e.type == androidx.compose.ui.input.pointer.PointerEventType.Enter) over = inEdge
+                    if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Exit) over = false
+                    if (e.type != androidx.compose.ui.input.pointer.PointerEventType.Press || !inEdge || !e.buttons.isPrimaryPressed) continue
+                    // held: the thumb follows the pointer (pressed off the thumb, it centres there first)
+                    val h = size.height.toFloat()
+                    val (at, len) = thumb(h) ?: continue
+                    val grab = if (c.position.y in at..at + len) c.position.y - at else len / 2
+                    fun go(y: Float) {
+                        val room = h - len
+                        if (room <= 0f) return
+                        val f = ((y - grab) / room).coerceIn(0f, 1f)
+                        scope.launch { adapter.scrollTo(f * (adapter.contentSize - adapter.viewportSize)) }
+                    }
+                    held = true
+                    go(c.position.y)
+                    c.consume()
+                    while (true) {
+                        val m = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        val mc = m.changes.first()
+                        mc.consume()
+                        if (!mc.pressed) break
+                        go(mc.position.y)
+                    }
+                    held = false
+                }
+            }
+        }
+        .drawWithContent {
+            drawContent()
+            val (at, len) = thumb(size.height) ?: return@drawWithContent
+            val w = 2.dp.toPx()
+            drawRect(if (held) Ink.ink else if (over) Ink.mid else Ink.dim,
+                androidx.compose.ui.geometry.Offset(size.width - w - 4.dp.toPx(), at), androidx.compose.ui.geometry.Size(w, len))
+        }
 }

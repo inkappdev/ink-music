@@ -339,7 +339,10 @@ object Discover {
 /** Made for you: each list a square of four of its covers, its name, what it is and when it changes, play. Two to a row. */
 @Composable
 fun MadeForYou() {
-    val mixes by Discover.mixes.collectAsState()
+    val made by Discover.mixes.collectAsState()
+    // what's blocked left out of each (Blocked)
+    val blocked by Blocked.kept.collectAsState()
+    val mixes = remember(made, blocked) { made.map { m -> m.copy(songs = m.songs.filterNot { Blocked.hides(it) }) }.filter { it.songs.isNotEmpty() } }
     if (mixes.isEmpty()) return
     Column {
         Section("MADE FOR YOU", "from what you play, new each day or each monday")
@@ -388,7 +391,8 @@ private fun MixRow(m: Discover.Mix, modifier: Modifier) {
 @Composable
 fun BecauseYouLoved(open: (Page) -> Unit) {
     val b by Discover.because.collectAsState()
-    val (seed, songs) = b ?: return
+    val (seed, all) = b ?: return
+    val songs = shownSongs(all)
     Column {
         Section("BECAUSE YOU LOVED ${seed.title.uppercase()}", "${seed.artist.lowercase()} · songs from its radio you've never played") {
             Word("play all", pixel(14.sp), touch = 8.dp) { Player.play(songs) }
@@ -408,7 +412,7 @@ fun BecauseYouLoved(open: (Page) -> Unit) {
 /** New to you: artists close to what you play whom you've never played, each in the dither, via whom; a station of them. */
 @Composable
 fun NewToYou(open: (Page) -> Unit) {
-    val list by Discover.newToYou.collectAsState()
+    val list = Discover.newToYou.shown { "" to it.artist.name }
     if (list.isEmpty()) return
     Column {
         Section("NEW TO YOU", "close to what you play, and you haven't played them yet") {

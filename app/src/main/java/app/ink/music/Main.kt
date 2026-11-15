@@ -1139,6 +1139,12 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
             if (pages != null && s.tube && YouTubeMusic.available) Word("youtube version", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Version(s)) }
             if (pages != null && number == null && s.album.isNotEmpty() && !s.tube) Word("record", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Record(s.albumId)) }
             if (pages != null) Word("artist", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; pages.open(Page.Artist(s.albumArtist)) }
+            // never suggested again (Blocked; the computer's, 2026-11-15, a tester): a YouTube song's, last
+            if (s.tube && !s.station && !s.episode) {
+                val ctxB = LocalContext.current
+                if (s.artist.isNotBlank() && s.artist != "unknown") Word("block artist", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; Blocked.blockArtist(ctxB, s.artist) }
+                Word("block song", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; Blocked.blockSong(ctxB, s) }
+            }
         }
     }}
 }
@@ -2280,6 +2286,16 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         kotlinx.coroutines.delay(300)
         value = Stations.search(ctx, typed)
     }
+    // youtube.com's own videos (the full build): songs never put on YouTube Music, apart from its songs; none it already gave
+    val videosAll by androidx.compose.runtime.produceState(emptyList<Song>(), q) {
+        if (!YouTubeMusic.available || q.length < 2) { value = emptyList(); return@produceState }
+        kotlinx.coroutines.delay(300)
+        value = runCatching { YouTubeMusic.videos(typed) }.getOrDefault(emptyList())
+    }
+    val videos = remember(videosAll, tube) {
+        val have = tube.songs.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) }.toSet()
+        videosAll.filter { it.id !in have && Radio.key(it.title, it.artist) !in have }.take(12)
+    }
     val artists = remember(albums, songs) { artistsOf(albums, songs) }
     val foundArtists = remember(q, artists) { if (q.isEmpty()) emptyList() else artists.mapNotNull { a -> Search.rank(a.name, q)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(8) }
     val foundRecords = remember(q, albums) { if (q.isEmpty()) emptyList() else albums.mapNotNull { a -> Search.rank(q, a.title, a.artist)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(12) }
@@ -2327,7 +2343,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             Spacer(Modifier.height(18.dp))
             // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
             if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() &&
-                foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty())
+                foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && videos.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty())
                 BasicText("nothing called that", style = pixel(12.sp, Ink.mid), modifier = row)
             // what you looked for lately, a tap to look again
             if (q.isEmpty() && recent.isNotEmpty()) FlowRow(row, horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2399,6 +2415,10 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                 items(tube.lists, key = { "tp" + it.url }) { a -> TubeTile(a, Modifier.width(130.dp)) { pages.open(Page.Tube(a)) } }
             }
             Spacer(Modifier.height(10.dp))
+        }
+        if (videos.isNotEmpty()) item { Label("from youtube videos") }
+        itemsIndexed(videos, key = { _, s -> "v" + s.id }) { i, s ->
+            Box(row) { SongRow(s, pages = pages) { Playback.play(videos, i) } }
         }
         if (rest.isNotEmpty()) {
             item { Label("more of your songs") }

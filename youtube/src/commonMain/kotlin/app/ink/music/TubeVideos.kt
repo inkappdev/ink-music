@@ -59,6 +59,32 @@ object TubeVideos {
         return out.values.toList()
     }
 
+    /** A video found by a search on youtube.com: its id, title as written, the channel that put it up, its length (0: not said). */
+    data class Found(val id: String, val title: String, val channel: String, val seconds: Int)
+
+    /**
+     * Videos on youtube.com by these words, as its own search finds them (videos only, no channels or lists): songs that
+     * were never put on YouTube Music, only up as a video (2026-11-15, a tester: "IDK もでお feat. 可不", first here).
+     */
+    fun search(q: String, max: Int = 20): List<Found> = runCatching {
+        val web = JSONObject().put("client", JSONObject().put("clientName", "WEB").put("clientVersion", WEB_VERSION).put("hl", "en").put("gl", "US"))
+        val page = post(WEB, "search", web, JSONObject().put("query", q).put("params", VIDEOS_ONLY))
+        val old = InnerTube.all(page, "videoRenderer").mapNotNull { v ->
+            val id = v.optString("videoId").ifEmpty { return@mapNotNull null }
+            Found(id, InnerTube.text(v.optJSONObject("title")),
+                InnerTube.text(v.optJSONObject("ownerText") ?: v.optJSONObject("longBylineText")), seconds(InnerTube.text(v.optJSONObject("lengthText"))))
+        }
+        // the newer row, where an answer has it: its id and title (its channel the first line under it)
+        val new = InnerTube.all(page, "lockupViewModel").mapNotNull { l ->
+            val id = l.optString("contentId").ifEmpty { return@mapNotNull null }
+            val meta = InnerTube.all(l, "lockupMetadataViewModel").firstOrNull() ?: return@mapNotNull null
+            val channel = InnerTube.all(meta, "text").firstNotNullOfOrNull { it.optString("content").ifEmpty { null } }.orEmpty()
+            val length = InnerTube.all(l, "thumbnailBadgeViewModel").firstNotNullOfOrNull { b -> b.optString("text").takeIf { TIME.matches(it) } }.orEmpty()
+            Found(id, meta.optJSONObject("title")?.optString("content").orEmpty(), channel, seconds(length))
+        }
+        (old + new).distinctBy { it.id }.filter { it.title.isNotBlank() }.take(max)
+    }.getOrDefault(emptyList())
+
     /** One page of a Videos tab's uploads (the first, or one asked for more). */
     private fun read(tab: JSONObject): List<Upload> = runCatching {
         // the old row (videoRenderer) or the new one (a lockup), whichever this answer has
@@ -117,6 +143,8 @@ object TubeVideos {
     private const val WEB_VERSION = "2.20251020.01.00"
     // the channel page's Videos tab, as youtube.com asks for it
     private const val VIDEOS_TAB = "EgZ2aWRlb3PyBgQKAjoA"
+    // a search's "videos" filter, as youtube.com asks for it
+    private const val VIDEOS_ONLY = "EgIQAQ=="
     private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
     private val TIME = Regex("""^\d{1,2}(:\d{2}){1,2}$""")
     private val AGO = Regex("""\d+ (second|minute|hour|day|week|month|year)s? ago""")

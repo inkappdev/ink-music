@@ -21,8 +21,8 @@ object Radio {
     /** Heard this recently: not again yet. */
     private const val RECENT = 6 * 60 * 60_000L
 
-    /** A song to find more like. */
-    data class Seed(val id: String, val title: String, val artist: String)
+    /** A song to find more like; [ms] its length where known (its match on YouTube Music held to it). */
+    data class Seed(val id: String, val title: String, val artist: String, val ms: Long = 0)
 
     /** A sped-up, slowed, nightcore or karaoke version (radio's and the mixes' own sifting). */
     fun odd(title: String) = versions.containsMatchIn(title)
@@ -32,8 +32,35 @@ object Radio {
      * Songs to follow the seeds (blocking; the last song first): none already queued (`queued`: ids, and
      * title/artist keys, so the same song from another source counts too).
      */
-    fun after(c: Context, seeds: List<Seed>, queued: Set<String>, tempo: Double? = null, fromSimilar: Set<String> = emptySet()): List<Song> {
+    fun after(c: Context, seeds: List<Seed>, queued: Set<String>, tempo: Double? = null, fromSimilar: Set<String> = emptySet()): List<Song> =
+        found(c, seeds, queued, tempo, fromSimilar).also { suggested(c, it) }
+
+    /**
+     * What similar has suggested these three weeks (2026-11-15, the computer's, after Metrolist 14's, which remembers its
+     * last 500): those put back behind the rest, so the same few don't come round each time; never left out, so it never
+     * runs dry. files/similar-suggested.json, the newest 600 (the player's process alone writes it).
+     */
+    private const val SUGGESTED_FOR = 21L * 86_400_000
+    private var said: MutableMap<String, Long>? = null
+    @Synchronized private fun said(c: Context): MutableMap<String, Long> = said ?: HashMap<String, Long>().also { m ->
+        runCatching { org.json.JSONObject(java.io.File(c.filesDir, "similar-suggested.json").readText()).let { o -> o.keys().forEach { k -> m[k] = o.getLong(k) } } }
+        said = m
+    }
+    @Synchronized private fun suggested(c: Context, songs: List<Song>) {
+        if (songs.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val m = said(c)
+        songs.forEach { m[key(it.title, it.artist)] = now }
+        val kept = m.entries.filter { now - it.value < SUGGESTED_FOR }.sortedByDescending { it.value }.take(600)
+        m.keys.retainAll(kept.map { it.key }.toSet())
+        runCatching { Keep.write(java.io.File(c.filesDir, "similar-suggested.json"), org.json.JSONObject(kept.associate { it.key to it.value }).toString()) }
+    }
+
+    private fun found(c: Context, seeds: List<Seed>, queued: Set<String>, tempo: Double?, fromSimilar: Set<String>): List<Song> {
         if (seeds.isEmpty()) return emptyList()
+        // blocked from a held song (Blocked): read again if the screens blocked something since
+        Blocked.load(c)
+        val lately = said(c).let { m -> val now = System.currentTimeMillis(); m.filterValues { now - it < SUGGESTED_FOR }.keys }
         val lists = seeds.take(WEIGHT.size).map { related(c, it) }
         val since = System.currentTimeMillis() - RECENT
         val recent = History.read(c).filter { it.at >= since }
@@ -43,7 +70,7 @@ object Radio {
         val skips = History.skips(c).filter { it.at >= since && it.id in fromSimilar }.groupingBy { who(it.artist) }.eachCount()
         val refused = Fresh.turnedDownNames(c).map(::who).toSet()
         val lifted = lift(c)
-        val ranked = { batch: Int -> rank(seeds, lists, queued, heard, batch, skips, refused, lifted) }
+        val ranked = { batch: Int -> rank(seeds, lists, queued, heard, batch, skips, refused, lifted, lately) }
         if (tempo == null) return ranked(BATCH)
         return atTempo(c, ranked(30), tempo)
     }
@@ -93,7 +120,8 @@ object Radio {
 
     /** The seeds' lists (in the seeds' order) made one: scored, sifted, no artist twice running. */
     fun rank(seeds: List<Seed>, lists: List<List<Song>>, queued: Set<String>, heard: Set<String>, batch: Int = BATCH,
-             skips: Map<String, Int> = emptyMap(), refused: Set<String> = emptySet(), lifted: (String) -> Float = { 0f }): List<Song> {
+             skips: Map<String, Int> = emptyMap(), refused: Set<String> = emptySet(), lifted: (String) -> Float = { 0f },
+             lately: Set<String> = emptySet()): List<Song> {
         // a seed's own kind of version is fine (a slowed song's radio may be slowed songs)
         val seedVersions = seeds.any { versions.containsMatchIn(it.title) }
         val seedKeys = seeds.map { key(it.title, it.artist) }.toHashSet()
@@ -109,13 +137,14 @@ object Radio {
         }
         // skipped once this session, lower; twice, or said not for you, out
         // and lifted for an artist you're near (your taste, as the screens last worked it out)
-        found.values.forEach { f -> f.score += lifted(f.song.artist) - .5f * (skips[who(f.song.artist)] ?: 0) }
+        found.forEach { (k, f) -> f.score += lifted(f.song.artist) - .5f * (skips[who(f.song.artist)] ?: 0) - (if (k in lately) .8f else 0f) }
         val by = HashMap<String, Int>()
         val picked = found.entries.filter { (_, f) -> who(f.song.artist).let { it !in refused && (skips[it] ?: 0) < 2 } }
             .sortedByDescending { it.value.score }.filter { (k, f) ->
             val s = f.song
             val who = s.artist.lowercase().substringBefore(",").trim()
             if (s.id in queued || k in queued || k in seedKeys || s.id in heard || k in heard) return@filter false
+            if (Blocked.hides(s)) return@filter false
             if (!seedVersions && versions.containsMatchIn(s.title)) return@filter false
             if ((by[who] ?: 0) >= SAME_ARTIST) return@filter false
             by[who] = (by[who] ?: 0) + 1
@@ -133,7 +162,8 @@ object Radio {
         if (!s.id.startsWith("y")) Server.similar(c, s.id, s.title, s.artist).takeIf { it.isNotEmpty() }?.let { return it }
         runCatching { blended(s) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return it }
         return if (s.id.startsWith("y")) YouTubeMusic.related(s.id)
-            else YouTubeMusic.find(s.title, s.artist)?.let { YouTubeMusic.related(it.id) }.orEmpty()
+            else YouTubeMusic.find(s.title, s.artist)?.takeIf { s.ms <= 0 || it.duration <= 0 || kotlin.math.abs(it.duration - s.ms) <= maxOf(20_000L, s.ms * 12 / 100) }
+                ?.let { YouTubeMusic.related(it.id) }.orEmpty()
     }
 
     /**
@@ -146,7 +176,10 @@ object Radio {
         if (LastFm.key.isBlank()) LastFm.key = BuildConfig.LASTFM_KEY
         val artist = s.artist.substringBefore(", ").trim()
         if (artist.isBlank() || artist == "unknown") return emptyList()
-        val tube = if (s.id.startsWith("y")) s.id else YouTubeMusic.find(s.title, artist)?.id
+        // the seed on YouTube Music held to its length too (the computer's, 2026-11-15: a song of that name but another
+        // length is another song, and its radio wanders off)
+        fun fits(x: Song) = s.ms <= 0 || x.duration <= 0 || kotlin.math.abs(x.duration - s.ms) <= maxOf(20_000L, s.ms * 12 / 100)
+        val tube = if (s.id.startsWith("y")) s.id else YouTubeMusic.find(s.title, artist)?.takeIf(::fits)?.id
         val pool = java.util.concurrent.Executors.newFixedThreadPool(3)
         val fromTube = pool.submit<List<Song>> { tube?.let { YouTubeMusic.related(it) }.orEmpty() }
         val fromDeezer = pool.submit<List<Similar.Track>> { Similar.deezerRadio(artist) }

@@ -402,14 +402,35 @@ object Player {
         )
     }
 
-    /** The app's volume (0 to 100), kept; on a speaker, the speaker's. */
-    fun volume(v: Int) {
+    /**
+     * The app's volume (0 to 100), kept; on a speaker, the speaker's. [keep] false: while the line's dragged, heard at
+     * once and written down when it's let go (2026-11-15, a tester: it waited for the release, then "a noticeable sudden
+     * drop or increase in decibels"). Each change glides there over ~100 ms, never a step.
+     */
+    fun volume(v: Int, keep: Boolean = true) {
         val to = v.coerceIn(0, 100)
-        if (casting) return Casting.setVolume(to / 100f)
+        if (casting) { if (keep) Casting.setVolume(to / 100f); return }
         volume.value = to
         if (muted.value && to > 0) mute(false)
-        if (!Crossfade.fading) mpv?.set("volume", to.toString())
-        scope.launch { runCatching { Home.write(File(Home.dir, "volume"), to.toString()) } }
+        glide(to)
+        if (keep) scope.launch { runCatching { Home.write(File(Home.dir, "volume"), to.toString()) } }
+    }
+
+    private var gliding: kotlinx.coroutines.Job? = null
+
+    /** The playing deck's volume moved to [to] in small steps (none while a crossfade holds the volume). */
+    private fun glide(to: Int) {
+        gliding?.cancel()
+        gliding = scope.launch {
+            val m = mpv ?: return@launch
+            val from = m.get("volume")?.toDoubleOrNull() ?: to.toDouble()
+            val steps = 6
+            for (i in 1..steps) {
+                if (Crossfade.fading) return@launch
+                m.set("volume", "%.2f".format(java.util.Locale.ROOT, from + (to - from) * i / steps))
+                kotlinx.coroutines.delay(16)
+            }
+        }
     }
 
     fun mute(on: Boolean = !muted.value) { muted.value = on; decks.forEach { it.set("mute", if (on) "yes" else "no") } }
@@ -441,6 +462,9 @@ object Player {
         }
         reorder(rest)
     }
+
+    /** Up next, after the one playing, these in this order (a mix laid out once it's read: TempoMixes' waves). */
+    internal fun upNext(rest: List<Song>) { if (!casting) reorder(rest) }
 
     /** The songs after the one playing replaced by these (mpv's playlist with them). */
     private fun reorder(rest: List<Song>) {

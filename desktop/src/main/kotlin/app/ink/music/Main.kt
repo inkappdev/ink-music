@@ -71,6 +71,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -662,6 +663,11 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             } else Spacer(Modifier.weight(1f))
             // everything shuffled, at once, and music added from a folder, here where the music is (2026-11-11, a tester:
             // "importing songs shouldn't require users to navigate through the settings"; "add your songs, hit shuffle")
+            // one folder chosen: that folder's songs shuffled beside it (2026-11-15, a tester: "more precise control")
+            val inFolder by SongsFrom.folder.collectAsState()
+            if (tab == "songs" && inFolder.isNotEmpty()) Word("SHUFFLE FOLDER", headline(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) {
+                pool.filter { it.path.isNotEmpty() && java.io.File(it.path).parent == inFolder }.shuffled().takeIf { it.isNotEmpty() }?.let { Player.play(it) }
+            }
             Word("SHUFFLE ALL", headline(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { pool.shuffled().takeIf { it.isNotEmpty() }?.let { Player.play(it) } }
             Word("ADD MUSIC", headline(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { chooseFolder { Library.add(it) } }
             // the songs as a list of words or a grid of covers (2026-11-10, Bronson: "a grid view, album blocks")
@@ -942,17 +948,44 @@ private fun SongGrid(songs: List<Song>) {
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
-            // a click picks it, a double click plays from it, a right click its options: as a song's row (2026-11-11)
+            // a click picks it, a double click plays from it, a right click its options: as a song's row (2026-11-11);
+            // ctrl and shift pick as the list does (2026-11-15, a tester: "all these selection options disappear")
             var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+            val pickedNow by Picking.picked.collectAsState()
+            val picking = pickedNow.isNotEmpty()
+            val picked = picking && pickedNow.any { it.id == s.id }
+            val song = rememberUpdatedState(s)
+            val inOrder = rememberUpdatedState(songs)
+            val handled = remember { longArrayOf(0L) }
             Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null,
-                onDoubleClick = felt { Selected.choose(s.id) { Player.play(songs, i) }; Player.play(songs, i) },
-                onClick = felt { Selected.choose(s.id) { Player.play(songs, i) } }).rightClick { menuAt = it }) {
+                onDoubleClick = felt { if (!picking) { Selected.choose(s.id) { Player.play(songs, i) }; Player.play(songs, i) } },
+                onClick = felt {
+                    if (System.currentTimeMillis() - handled[0] < 800) return@felt
+                    if (picking) Picking.clear(); Picking.from(s); Selected.choose(s.id) { Player.play(songs, i) }
+                }).rightClick { menuAt = it }
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val e = awaitPointerEvent()
+                            if (e.type != androidx.compose.ui.input.pointer.PointerEventType.Press || !e.buttons.isPrimaryPressed) continue
+                            val m = e.keyboardModifiers
+                            if (m.isCtrlPressed || m.isMetaPressed) Picking.ctrl(song.value)
+                            else if (m.isShiftPressed) Picking.shift(inOrder.value, song.value)
+                            else continue
+                            handled[0] = System.currentTimeMillis(); e.changes.forEach { it.consume() }
+                        }
+                    }
+                }) {
                 // the menu inside what was clicked, so it opens from there: beside it, it opened from the grid's corner
                 // (2026-11-12, the click's place being the tile's own)
                 menuAt?.let { SongMenu(s, null, null, it, playing = now?.song?.id == s.id) { menuAt = null } }
-                CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+                Box {
+                    CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+                    // picking: the list's square, on the cover's corner, filled once it's picked
+                    if (picking) Box(Modifier.padding(8.dp).size(14.dp).background(if (picked) Ink.ink else Ink.black.copy(alpha = .6f)).border(1.dp, if (picked) Ink.ink else Ink.mid))
+                }
                 Spacer(Modifier.height(8.dp))
-                BasicText(s.title.uppercase(), style = headline(14.sp, if (now?.song?.id == s.id || Selected.id == s.id) Ink.ink else Ink.ink.copy(alpha = .9f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                BasicText(s.title.uppercase(), style = headline(14.sp, if (now?.song?.id == s.id || Selected.id == s.id || picked) Ink.ink else Ink.ink.copy(alpha = .9f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 BasicText(s.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -990,13 +1023,19 @@ fun SongRow(
     // a click selects it (lit), a double-click plays it, as the computer's players do (Spotify's, Apple Music's): a stray
     // click had played a song (2026-11-10, a Reddit report); the ▶ on hover, or enter, plays the selected one at once
     val selected = Selected.id == s.id
+    val song = rememberUpdatedState(s)
+    val inOrder = rememberUpdatedState(order)
+    val handled = remember { longArrayOf(0L) }   // when a ctrl or shift click was last taken
     val color = (if (on || options || picked || selected) Ink.ink else if (dim) Ink.dim else Ink.mid).let { if (over) brighter(it) else it }
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().hoverable(src).combinedClickable(src, indication = null,
                 onDoubleClick = felt { options = false; if (!picking) { Selected.choose(s.id, onClick); onClick() } },
                 // a click selects this one alone (what was picked let go), as a file list does (2026-11-12, a tester)
-                onClick = felt { options = false; if (picking) Picking.clear(); Picking.anchor = s; Selected.choose(s.id, onClick) })
+                onClick = felt { options = false
+                    // a ctrl or shift click is the picking's below; its release isn't a plain click too
+                    if (System.currentTimeMillis() - handled[0] < 800) return@felt
+                    if (picking) Picking.clear(); Picking.from(s); Selected.choose(s.id, onClick) })
                 // a right click (the phone's hold): its options in a menu where it was clicked
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
@@ -1008,14 +1047,15 @@ fun SongRow(
                             }
                             // ctrl (cmd on a Mac) and a click: this one picked or let go; shift and a click: every song from the
                             // last clicked to this one picked (in this list's order), as a file list does
+                            // (read as they are now: this block is set up once, with the row's first song, list and picking;
+                            // the picking as first drawn, none, had a ctrl-click after a shift-click let the first song go)
                             else if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isPrimaryPressed &&
                                 (e.keyboardModifiers.isCtrlPressed || e.keyboardModifiers.isMetaPressed)) {
-                                if (!picking) Selected.id?.takeIf { it != s.id }?.let { id -> Picking.anchor?.takeIf { it.id == id }?.let { Picking.toggle(it) } }
-                                Picking.toggle(s); Picking.anchor = s; e.changes.forEach { it.consume() }
+                                Picking.ctrl(song.value); handled[0] = System.currentTimeMillis(); e.changes.forEach { it.consume() }
                             }
                             else if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && e.buttons.isPrimaryPressed &&
-                                e.keyboardModifiers.isShiftPressed && order != null) {
-                                Picking.range(order, Picking.anchor ?: s, s); e.changes.forEach { it.consume() }
+                                e.keyboardModifiers.isShiftPressed && inOrder.value != null) {
+                                Picking.shift(inOrder.value!!, song.value); handled[0] = System.currentTimeMillis(); e.changes.forEach { it.consume() }
                             }
                         }
                     }
@@ -1128,6 +1168,11 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
             file?.let { f -> (if (Home.mac) "show in finder" else "show in folder") to { SongLink.reveal(f) } },
             // its name to paste anywhere, a search or a message (2026-11-12, a tester)
             ("copy title" to { copyText(listOf(s.artist.substringBefore(", "), s.title).filter { it.isNotBlank() }.joinToString(" - ")) }).takeIf { s.title.isNotBlank() },
+        ),
+        // never suggested again (Blocked), last (2026-11-15, a tester: "block artist", "block track", at the menu's foot)
+        listOfNotNull(
+            ("block artist" to { Blocked.blockArtist(s.artist) }).takeIf { s.tube && !s.station && !s.episode && s.artist.isNotBlank() && s.artist != "unknown" },
+            ("block song" to { Blocked.blockSong(s) }).takeIf { s.tube && !s.station && !s.episode },
         ),
     ).filter { it.isNotEmpty() }
     // copy link, after the keeping kind (its own kind where that's empty): a song with a link (not a station's, an episode's)
@@ -2232,17 +2277,25 @@ class DropRow(val word: String, val count: Int?, val lit: Boolean, val beside: (
 @Composable
 fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, beside: (@Composable () -> Unit)? = null) = Box {
     var down by remember { mutableStateOf(false) }
+    // a click on the word or arrow while it's open: the popup's own outside click closes it first; not opened again
+    val shut = remember { longArrayOf(0L) }
+    val flip = { if (System.currentTimeMillis() - shut[0] > 250) down = !down }
     val open = remember { androidx.compose.animation.core.MutableTransitionState(false) }
     open.targetState = down
     val turn by androidx.compose.animation.core.animateFloatAsState(if (down) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "arrow")
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Word(label, pixel(13.sp, if (!lit && !down) Ink.dim else Ink.ink), touch = 8.dp) { down = !down }
+        Word(label, pixel(13.sp, if (!lit && !down) Ink.dim else Ink.ink), touch = 8.dp) { flip() }
         beside?.invoke()
-        Sprite(PLACES_DOWN, if (!lit && !down) Ink.dim else Ink.ink, 2.dp, Modifier.padding(start = 4.dp).graphicsLayer { rotationZ = turn })
+        // the arrow opens it too (2026-11-15, a tester: only the word did, "the v icon ... doesn't respond when clicked")
+        Box(Modifier.pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
+            .clickable(remember { MutableInteractionSource() }, indication = null) { flip() }
+            .padding(start = 4.dp, end = 6.dp, top = 8.dp, bottom = 8.dp)) {
+            Sprite(PLACES_DOWN, if (!lit && !down) Ink.dim else Ink.ink, 2.dp, Modifier.graphicsLayer { rotationZ = turn })
+        }
     }
     if (open.currentState || open.targetState) androidx.compose.ui.window.Popup(
         offset = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 30.dp.roundToPx()) },
-        onDismissRequest = { down = false },
+        onDismissRequest = { down = false; shut[0] = System.currentTimeMillis() },
         properties = androidx.compose.ui.window.PopupProperties(focusable = true),
     ) {
         androidx.compose.animation.AnimatedVisibility(
@@ -2272,19 +2325,34 @@ fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, beside: (@Composa
  * Songs picked to do one thing with all of them (2026-11-10, as the phone's): ctrl or cmd and a click, or a song's
  * menu's "pick more"; then each click picks a song or lets it go. Esc, done or an action lets them all go.
  */
+/**
+ * Songs picked, as a file list picks them (2026-11-15, a tester): a click selects one and sets where a shift-click
+ * runs from; ctrl (cmd) picks one or lets it go and runs from there next; shift picks from there to here, in place of
+ * the last shift's run (so it shrinks as well as grows), keeping what ctrl picked before it.
+ */
 object Picking {
     val picked = kotlinx.coroutines.flow.MutableStateFlow<List<Song>>(emptyList())
     /** The song last clicked: a shift-click picks from it. */
     @Volatile var anchor: Song? = null
+    /** What was picked when the anchor was set: a shift's run goes with these. */
+    @Volatile private var base: List<Song> = emptyList()
     fun toggle(s: Song) { picked.value = if (picked.value.any { it.id == s.id }) picked.value.filter { it.id != s.id } else picked.value + s }
-    /** Every song in `order` from `from` to `to` (either way), picked, with what was already. */
-    fun range(order: List<Song>, from: Song, to: Song) {
+    /** A plain click: runs from here, nothing kept beside. */
+    fun from(s: Song) { anchor = s; base = emptyList() }
+    /** Ctrl and a click: the song selected (not yet picked) picked first, then this one picked or let go. */
+    fun ctrl(s: Song) {
+        if (picked.value.isEmpty()) Selected.id?.takeIf { it != s.id }?.let { id -> anchor?.takeIf { it.id == id }?.let { toggle(it) } }
+        toggle(s); anchor = s; base = picked.value
+    }
+    /** Shift and a click: every song in `order` from the anchor to `to` (either way), with what ctrl had picked. */
+    fun shift(order: List<Song>, to: Song) {
+        val from = anchor ?: to.also { anchor = it; base = picked.value }
         val a = order.indexOfFirst { it.id == from.id }; val b = order.indexOfFirst { it.id == to.id }
         if (a < 0 || b < 0) { toggle(to); return }
         val run = order.subList(minOf(a, b), maxOf(a, b) + 1)
-        picked.value = (picked.value + run).distinctBy { it.id }
+        picked.value = (base + run).distinctBy { it.id }
     }
-    fun clear() { picked.value = emptyList() }
+    fun clear() { picked.value = emptyList(); base = emptyList() }
 }
 
 /** Along the foot while songs are picked: how many, and what to do with them all; done (or esc) lets them go. */

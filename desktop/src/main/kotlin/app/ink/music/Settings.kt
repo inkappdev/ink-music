@@ -132,6 +132,11 @@ fun SettingsPage(onClose: () -> Unit) {
                             SettingRow("EQUALIZER", if (eq.on) eq.label.lowercase() else "off", opened) { EqualizerSetting() }
                             val similar by Player.radioMode.collectAsState()
                             SettingRow("SIMILAR SONGS", if (Local.on) Radio.Mode.OFFLINE.word else similar.word, opened) { SimilarSetting() }
+                            val blocked by Blocked.kept.collectAsState()
+                            val n = blocked.artists.size + blocked.songs.size
+                            SettingRow("BLOCKED", if (n == 0) "none" else listOfNotNull(
+                                blocked.artists.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "artist" else "artists"}" },
+                                blocked.songs.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "song" else "songs"}" }).joinToString(" · "), opened) { BlockedSetting() }
                             RowsEnd()
                         }
                         // what's kept on this computer (2026-11-11: its own part, out of sound)
@@ -847,6 +852,29 @@ private fun SimilarSetting() {
     if (!Local.on) androidx.compose.foundation.layout.Row {
         listOf(Radio.Mode.ONLINE, Radio.Mode.OFFLINE, Radio.Mode.BOTH).forEach { m ->
             Word(m.word, pixel(14.sp, if (mode == m) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Player.radioMode(m) }
+        }
+    }
+}
+
+/** What's never suggested (Blocked): each artist and song, a word to let it back. */
+@Composable
+private fun BlockedSetting() {
+    val k by Blocked.kept.collectAsState()
+    SettingHead("BLOCKED")
+    BasicText("never in similar songs, listen's shelves or the picks. block an artist or a song from its menu (a right click); what you look for yourself still shows it",
+        style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    if (k.artists.isEmpty() && k.songs.isEmpty()) BasicText("nothing blocked", style = pixel(13.sp, Ink.dim))
+    k.artists.forEach { a ->
+        androidx.compose.foundation.layout.Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText(a.lowercase(), style = pixel(13.sp), modifier = Modifier.padding(end = 20.dp))
+            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockArtist(a) }
+        }
+    }
+    k.songs.forEach { s ->
+        androidx.compose.foundation.layout.Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText("${s.title.lowercase()} · ${s.artist.lowercase()}", style = pixel(13.sp), modifier = Modifier.padding(end = 20.dp))
+            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockSong(s.id) }
         }
     }
 }

@@ -91,8 +91,8 @@ fun ListenPage(open: (Page) -> Unit) {
     LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic(); Updates.check() }
     val update by Updates.offer.collectAsState()
     val shut by Server.shut.collectAsState()
-    val pickedRecords by Picks.records.collectAsState()
-    val pickedSongs by Picks.songs.collectAsState()
+    val pickedRecords = Picks.records.shown { it.pick.title to it.pick.artist }
+    val pickedSongs = Picks.songs.shown { it.pick.title to it.pick.artist }
     val friday by Picks.friday.collectAsState()
     val electronic by Picks.electronic.collectAsState()
     val brought by Fresh.brought.collectAsState()
@@ -110,7 +110,7 @@ fun ListenPage(open: (Page) -> Unit) {
     val firstHeard by EggsNow.first.collectAsState()
     val made by Discover.mixes.collectAsState()
     val because by Discover.because.collectAsState()
-    val newTo by Discover.newToYou.collectAsState()
+    val newTo = Discover.newToYou.shown { "" to it.artist.name }
     // the shows you follow: their newest episodes not yet heard (read again from their feeds each hour)
     val episodes by Pods.fresh.collectAsState()
     LaunchedEffect(Unit) { Pods.refresh() }

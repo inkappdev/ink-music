@@ -105,13 +105,15 @@ object TempoMixes {
      * A list mix's shape (2026-11-10, as the phone's): building up (slowest to fastest, as it always was), steady (round
      * the tempo most of them share) or winding down (fastest to slowest). The last one chosen kept.
      */
-    enum class Shape(val word: String) { BUILD("build up"), STEADY("steady"), WIND("wind down") }
+    enum class Shape(val word: String) { WAVES("waves"), BUILD("build up"), STEADY("steady"), WIND("wind down") }
     private val shapeFile = File(Home.dir, "mix-shape")
-    val shape = kotlinx.coroutines.flow.MutableStateFlow(runCatching { Shape.valueOf(shapeFile.readText().trim()) }.getOrDefault(Shape.BUILD))
+    // waves for whoever hasn't chosen (2026-11-15: a long build up was the same rhythm song after song)
+    val shape = kotlinx.coroutines.flow.MutableStateFlow(runCatching { Shape.valueOf(shapeFile.readText().trim()) }.getOrDefault(Shape.WAVES))
     fun shape(s: Shape) { shape.value = s; runCatching { shapeFile.writeText(s.name) } }
 
     /** The first ones read, in the shape's order: slowest first, fastest first, or nearest the middle first. */
     private fun opening(found: List<Pair<Song, Tempos.Read>>, s: Shape): List<Pair<Song, Tempos.Read>> = when (s) {
+        Shape.WAVES -> waves(found)
         Shape.BUILD -> found.sortedBy { fold(it.second.bpm) }
         Shape.WIND -> found.sortedByDescending { fold(it.second.bpm) }
         Shape.STEADY -> { val mid = found.map { fold(it.second.bpm) }.sorted().let { it[it.size / 2] }; found.sortedBy { kotlin.math.abs(fold(it.second.bpm) - mid) } }
@@ -151,7 +153,16 @@ object TempoMixes {
                     if (arc.isNotEmpty()) { if (Player.shuffle.value) Player.shuffle(); Player.play(arc) }
                 } else {
                     waiting.forEach { place(it, queued, shp) }
-                    unread.forEach { Player.add(it) }
+                    // waves: laid out once every song is read, the songs not yet played put in their order (the one playing
+                    // and those before it as they are)
+                    if (shp == Shape.WAVES) {
+                        val now = Player.index().coerceAtLeast(0)
+                        val playing = Player.queue.value.getOrNull(now)?.id
+                        val at = queued.indexOfFirst { it.first.id == playing }.let { if (it < 0) -1 else it }
+                        val rest = queued.drop(at + 1)
+                        if (rest.size > 2) Player.upNext(waves(rest, after = queued.getOrNull(at)).map { it.first } + unread)
+                        else unread.forEach { Player.add(it) }
+                    } else unread.forEach { Player.add(it) }
                 }
             }
             val found = queued.size + waiting.size
@@ -160,6 +171,8 @@ object TempoMixes {
     }
 
     private fun place(s: Pair<Song, Tempos.Read>, queued: ArrayList<Pair<Song, Tempos.Read>>, shape: Shape = Shape.BUILD) {
+        // waves: at the end for now, each in its place once all are read (list)
+        if (shape == Shape.WAVES) { queued.add(s); Player.add(s.first); return }
         val now = Player.index().coerceAtLeast(0)
         val from = (now + 2).coerceIn(1, queued.size)
         val r = s.second
@@ -194,6 +207,54 @@ object TempoMixes {
         }
         return out
     }
+
+    /**
+     * Waves (2026-11-15, after a tester's "Heartbeat Method": nearest tempo after nearest tempo, or one long build, was "groups
+     * of songs with overly similar rhythms ... sequences that feel too predictable"): the list in waves of about thirty,
+     * each a run of its fast songs, a drop to its slow ones and a stretch round the middle, in one of three orders (fast,
+     * slow, middle; slow, middle, fast; middle, fast, slow), the waves themselves in any order. Fast and slow are this
+     * list's own (its quickest 43%, its slowest 20%), dealt out across the waves at random. Within a wave each next song in
+     * a key that sits with the last where one can be (the same, a step round the wheel, its relative), the same key thrice
+     * running put off, the same artist twice running too; the fast run from its quickest down, the drop from its
+     * slowest up, the middle nearest the middle first. [after]: what plays before it, to follow on from.
+     */
+    private fun waves(found: List<Pair<Song, Tempos.Read>>, after: Pair<Song, Tempos.Read>? = null, random: java.util.Random = java.util.Random()): List<Pair<Song, Tempos.Read>> {
+        if (found.size < 4) return found.sortedBy { fold(it.second.bpm) }
+        val sorted = found.sortedBy { fold(it.second.bpm) }
+        val n = sorted.size
+        val slowN = (n * .20).toInt().coerceAtLeast(1); val fastN = (n * .43).toInt().coerceAtLeast(1)
+        val slow = sorted.take(slowN).shuffled(random); val fast = sorted.takeLast(fastN).shuffled(random)
+        val mid = sorted.subList(slowN, (n - fastN).coerceAtLeast(slowN)).shuffled(random)
+        val count = (n / 30).coerceAtLeast(1)
+        fun deal(pool: List<Pair<Song, Tempos.Read>>) = List(count) { w -> pool.filterIndexed { i, _ -> i % count == w }.toMutableList() }
+        val fasts = deal(fast); val slows = deal(slow); val mids = deal(mid)
+        val middle = fold(sorted[n / 2].second.bpm)
+        val out = ArrayList<Pair<Song, Tempos.Read>>()
+        val waves = (0 until count).map { w ->
+            val blocks = listOf(Phase.FAST to fasts[w], Phase.SLOW to slows[w], Phase.MID to mids[w])
+            val order = when (random.nextInt(3)) { 0 -> listOf(0, 1, 2); 1 -> listOf(1, 2, 0); else -> listOf(2, 0, 1) }
+            order.map { blocks[it] }
+        }.shuffled(random)
+        var last = after
+        var sameKey = 0
+        for (wave in waves) for ((phase, pool) in wave) while (pool.isNotEmpty()) {
+            val lastKey = last?.second?.outKey
+            val fits = pool.filter { lastKey == null || it.second.key == null || Key.distance(lastKey, it.second.key!!) <= 1 }.ifEmpty { pool }
+            val lastWho = last?.first?.artist?.lowercase()?.substringBefore(",")?.trim()
+            val pick = fits.minByOrNull { c ->
+                val b = fold(c.second.bpm)
+                var score = when (phase) { Phase.FAST -> -b; Phase.SLOW -> b; Phase.MID -> kotlin.math.abs(b - middle) * 2 }
+                if (sameKey >= 1 && lastKey != null && c.second.key != null && Key.distance(lastKey, c.second.key!!) == 0) score += 40
+                if (lastWho != null && c.first.artist.lowercase().substringBefore(",").trim() == lastWho) score += 60
+                score + random.nextDouble() * 3
+            }!!
+            pool.remove(pick)
+            sameKey = if (lastKey != null && pick.second.key != null && Key.distance(lastKey, pick.second.key!!) == 0) sameKey + 1 else 0
+            out += pick; last = pick
+        }
+        return out
+    }
+    private enum class Phase { FAST, SLOW, MID }
 
     private fun fold(bpm: Double): Double { var b = bpm; while (b < 85) b *= 2; while (b >= 170) b /= 2; return b }
 
