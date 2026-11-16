@@ -1,0 +1,4 @@
+- Automix on the computer keeps going down your list, no more jumping back to its first song
+- On the computer: each song in your history once, a click on transitions switches them, and on Linux without a tray closing the window quits
+- Automix has learned to count past three
+- Let someone go ahead of you in line today
