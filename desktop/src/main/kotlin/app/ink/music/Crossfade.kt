@@ -36,10 +36,11 @@ import kotlin.math.sqrt
 object Crossfade {
     const val OFF = "off"; const val CROSSFADE = "crossfade"; const val AUTOMIX = "automix"
     private val file = File(Home.dir, "crossfade")
-    // a new install (nothing heard yet) begins in automix, songs into each other on the beat (2026-11-11, a tester: "you
-    // simply add your songs, hit shuffle, and that's it", as QuietPlay); one who turned it off keeps it off
+    // a new install (nothing heard yet) begins in the crossfade (2026-11-15, Bronson; automix had been since 2026-11-11, a
+    // tester's "add your songs, hit shuffle", and surprised people: it lets long endings go early); automix a word away,
+    // beside the volume. One who turned it off keeps it off
     val mode = MutableStateFlow(runCatching { file.readText().trim() }.getOrNull()?.let { if (it == AUTOMIX) AUTOMIX else CROSSFADE }
-        ?: if (!File(Home.dir, "heard.jsonl").exists()) AUTOMIX.also { runCatching { file.writeText(it) } } else OFF)
+        ?: if (!File(Home.dir, "heard.jsonl").exists()) CROSSFADE.also { runCatching { file.writeText(it) } } else OFF)
 
     fun set(m: String) {
         val was = mode.value

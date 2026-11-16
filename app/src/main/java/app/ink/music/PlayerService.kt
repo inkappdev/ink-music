@@ -544,6 +544,8 @@ class PlayerService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        // a new install's transitions: the crossfade (Crossfade.firstRun)
+        Crossfade.firstRun(this)
         // a DJ set's tracks heard as it plays, here where the music is, the screen locked or not (SetListening)
         SetListening.start(this) {
             val latch = java.util.concurrent.CountDownLatch(1)

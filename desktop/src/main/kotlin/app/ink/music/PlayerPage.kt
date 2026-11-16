@@ -289,6 +289,8 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             if (n.song.episode) EpisodeControls(n, Modifier.width(320.dp)) else Controls(n, Modifier.width(320.dp))
                             Spacer(Modifier.width(32.dp))
                             Volume(line = 140.dp)
+                            // how one song turns into the next, beside the volume as in the bar (TransitionWord)
+                            TransitionWord(Modifier.padding(start = 20.dp))
                         }
                         // the rule under the controls the song's line too, its times at its ends (2026-11-12, Bronson: a
                         // second line "somewhere on the right", in place of a band along the cover's foot he didn't like);

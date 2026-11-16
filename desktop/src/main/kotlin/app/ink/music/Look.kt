@@ -58,8 +58,9 @@ object Moving {
 }
 
 /** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither, tiles or grain. */
+// tiles unless chosen otherwise (2026-11-15, Bronson: tiles the default)
 object CoverPrint {
-    private val _on = MutableStateFlow(Print.DITHER)
+    private val _on = MutableStateFlow(Print.TILES)
     val on: StateFlow<Print> = _on
     fun set(print: Print) { _on.value = print; LookFile.save() }
     internal fun put(print: Print) { _on.value = print }
@@ -101,7 +102,7 @@ internal object LookFile {
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true),
             o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true), o.optBoolean("artistGrain", false))
         Marquees.put(o.optBoolean("marquee", true))
-        CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") } ?: Print.DITHER)
+        CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") } ?: Print.TILES)
         ListCovers.put(o.optBoolean("listCovers", false))
         ListsGrid.put(o.optBoolean("listsGrid", false))
     }

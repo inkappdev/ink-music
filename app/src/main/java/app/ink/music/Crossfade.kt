@@ -147,6 +147,18 @@ class Crossfade(
         @Volatile private var isTvBox: Boolean? = null
         private fun tv(c: Context) = isTvBox ?: isTv(c).also { isTvBox = it }
         fun set(c: Context, mode: String) { runCatching { File(c.filesDir, "crossfade").let { if (mode == OFF) it.delete() else it.writeText(mode) } } }
+        /**
+         * A new install begins in the crossfade (2026-11-15, Bronson: crossfade the default, both apps; automix a word
+         * away, it surprised people): nothing heard, nothing chosen, asked once. Who's played and kept it off keeps it off.
+         */
+        fun firstRun(c: Context) {
+            val asked = File(c.filesDir, "crossfade-default")
+            if (asked.exists()) return
+            runCatching {
+                if (!File(c.filesDir, "crossfade").exists() && !File(c.filesDir, "heard.jsonl").exists()) set(c, CROSSFADE)
+                asked.createNewFile()
+            }
+        }
         /** How sure a beat must be to be matched (Beat's z-score). */
         const val SURE = Beat.SURE
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()

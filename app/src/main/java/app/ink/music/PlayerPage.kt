@@ -419,6 +419,16 @@ private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit
             var skip by remember { mutableStateOf(Podcasts.skipSilence) }
             Word("skip silence", pixel(style, if (skip) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp) { skip = !skip; Playback.skipSilence(skip) }
         }
+        // how one song turns into the next (2026-11-15, Bronson: easier from the player than settings): a tap the next of
+        // no fades, crossfade, automix (a TV, no automix); lit while on. What each does is in settings
+        if (!episode && n.song?.station != true) {
+            val ctx = LocalContext.current
+            var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
+            val ways = if (tv) listOf(Crossfade.OFF, Crossfade.CROSSFADE) else listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX)
+            Word(if (mode == Crossfade.OFF) "no fades" else mode, pixel(style, if (mode != Crossfade.OFF) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp) {
+                mode = ways[(ways.indexOf(mode) + 1) % ways.size]; Crossfade.set(ctx, mode)
+            }
+        }
         // stopped, the player goes too (the mini player's gone with it: nothing left to come back down to)
         Word("stop", pixel(style, if (n.playing) SAID else OFF), Modifier.tvLit(), touch = 10.dp) { Playback.stop(); onStop() }
     } }

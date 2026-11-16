@@ -158,11 +158,12 @@ internal fun boxBlur(px: IntArray, n: Int, r: Int, rows: Boolean) {
  * moving, or still where they are (settings, the look; 2026-10-30). Kept beside the look's own choice.
  */
 /** How mixes and lists are drawn from their covers (settings, the look, COVERS): the dither, tiles or grain. */
+// tiles unless chosen otherwise (2026-11-15, Bronson: tiles the default)
 object CoverPrint {
-    private val _on = MutableStateFlow(Print.DITHER)
+    private val _on = MutableStateFlow(Print.TILES)
     val on: StateFlow<Print> = _on
     private fun prefs(c: Context) = c.getSharedPreferences("look", Context.MODE_PRIVATE)
-    fun start(c: Context) { _on.value = Print.entries.firstOrNull { it.name == prefs(c).getString("print", null) } ?: Print.DITHER }
+    fun start(c: Context) { _on.value = Print.entries.firstOrNull { it.name == prefs(c).getString("print", null) } ?: Print.TILES }
     fun set(c: Context, print: Print) { _on.value = print; prefs(c).edit().putString("print", print.name).apply() }
 }
 
