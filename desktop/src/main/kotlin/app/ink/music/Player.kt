@@ -519,7 +519,11 @@ object Player {
     @Volatile private var timingLength = 0L
 
     /** The song before written down as heard (30 s or more), and the clock started for this one. */
-    private fun timeSong(s: Song?) {
+    // one at a time: tell() runs on each deck's listener and on automix's thread, and two seeing the song change at
+    // once each wrote the one before to History (2026-11-16: 28 lines in Bronson's heard.jsonl twice, at and ms alike)
+    private val timingLock = Any()
+    private fun timeSong(s: Song?) = synchronized(timingLock) { timeSongNow(s) }
+    private fun timeSongNow(s: Song?) {
         if (s?.id == timing?.id) return
         // an episode left (on to the next, or played out): where it got to kept
         timing?.takeIf { it.episode }?.let { Pods.keep(it, lastMs, timingLength) }
