@@ -170,6 +170,7 @@ class Main : ComponentActivity() {
         CoverPrint.start(this)
         ListCovers.start(this)
         ListsGrid.start(this)
+        ArtistsGrid.start(this)
         Loved.start(this)
         YouTubeMusic.attach(this)
         Server.start(this)
@@ -582,6 +583,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     val podcastGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val grid = rememberLazyGridState()
     val artistList = rememberLazyListState()
+    val artistGrid = rememberLazyGridState()
     val listsList = rememberLazyListState()
     val songList = rememberLazyListState()
     val seed by Order.seed.collectAsState()
@@ -742,8 +744,20 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                     Box(Modifier.alpha(0.5f)) { RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
                 }
             }
-            "artists" -> LazyColumn(state = artistList, contentPadding = pad) {
-                item(key = "sort") { SortRow("artists", Sorts.ARTISTS) }
+            // names in a list, or their faces in a grid (2026-11-16): the list/grid words over the orders, as lists' are
+            "artists" -> if (ArtistsGrid.on.collectAsState().value) {
+                val songs by Library.songs.collectAsState()
+                // a record of theirs for a face till their photo comes (or when none does)
+                val firsts = remember(songs) { songs.groupBy { it.albumArtist.ifBlank { it.artist } }.mapValues { (_, l) -> l.firstOrNull { it.albumId.isNotEmpty() } } }
+                LazyVerticalGrid(GridCells.Adaptive(150.dp), state = artistGrid, contentPadding = pad,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "sort") {
+                        Column { ArtistsView(); SortRow("artists", Sorts.ARTISTS) }
+                    }
+                    items(artists, key = { it.name }) { a -> ArtistTile(a, firsts[a.name]) { pages.open(Page.Artist(a.name)) } }
+                }
+            } else LazyColumn(state = artistList, contentPadding = pad) {
+                item(key = "sort") { Column { ArtistsView(); SortRow("artists", Sorts.ARTISTS) } }
                 items(artists, key = { it.name }) { a -> ArtistRow(a) { pages.open(Page.Artist(a.name)) } }
             }
             // lists: the songs you love, your year, then your playlists (and "new >" for one more)
@@ -3048,6 +3062,38 @@ private fun CoversWord(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val on by ListCovers.on.collectAsState()
     Word("covers", pixel(14.sp, if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { ListCovers.set(ctx, !on) }
+}
+
+/** Artists as a list or a grid: two words, the one chosen lit. */
+@Composable
+private fun ArtistsView() {
+    val ctx = LocalContext.current
+    val grid by ArtistsGrid.on.collectAsState()
+    Row(Modifier.padding(bottom = 6.dp)) {
+        Word("list", pixel(14.sp, if (!grid) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { ArtistsGrid.set(ctx, false) }
+        Word("grid", pixel(14.sp, if (grid) Ink.ink else Ink.dim), touch = 8.dp) { ArtistsGrid.set(ctx, true) }
+    }
+}
+
+/**
+ * An artist as a tile (as the computer's): their photo from YouTube Music (asked once it's been in sight half a second,
+ * so a fast scroll asks for none; kept after), a record of theirs till then or if none comes; their name, how much of
+ * theirs is here.
+ */
+@Composable
+private fun ArtistTile(a: ArtistEntry, record: Song?, onClick: () -> Unit) {
+    val photo by androidx.compose.runtime.produceState<String?>(null, a.name) {
+        kotlinx.coroutines.delay(500)
+        YouTubeAccount.artist(a.name).collect { i -> i?.photo?.let { value = it } }
+    }
+    val face = remember(photo, record) { photo?.let { faceSong(a.name, it, photo = true) } ?: record }
+    Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        CoverOf(face, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        Spacer(Modifier.height(8.dp))
+        UnderCover(a.name, if (a.records == 0 && a.songs == 0) "on youtube music"
+            else listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),
+            pixel(12.sp, Ink.mid), gap = 3.dp)
+    }
 }
 
 /** Lists as a list or a grid: two words, the one chosen lit. */

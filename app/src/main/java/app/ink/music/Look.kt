@@ -188,6 +188,15 @@ object ListsGrid {
     fun set(c: Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("lists-grid", on).apply() }
 }
 
+/** The artists tab as names in a list, or a grid of their faces (2026-11-16, Bronson: "on mobile in the artists tab can we have a grid view"). */
+object ArtistsGrid {
+    private val _on = MutableStateFlow(false)
+    val on: StateFlow<Boolean> = _on
+    private fun prefs(c: Context) = c.getSharedPreferences("look", Context.MODE_PRIVATE)
+    fun start(c: Context) { _on.value = prefs(c).getBoolean("artists-grid", false) }
+    fun set(c: Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("artists-grid", on).apply() }
+}
+
 object ListCovers {
     private val _on = MutableStateFlow(false)
     val on: StateFlow<Boolean> = _on
