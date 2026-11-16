@@ -152,8 +152,10 @@ fun QueuePage(onClose: () -> Unit) {
                                     options = null; lifted = i; drag = 0f
                                 },
                                 onDragEnd = {
-                                    val to = target
-                                    if (to != null && to != i) { Playback.move(i, to); Hints.did(Hints.QUEUE) }
+                                    // where it lands, from what's live now: the gesture keeps what it was given as it began,
+                                    // and `target` then was none (it went back where it was, 2026-11-16, as the computer's)
+                                    val to = (i + kotlin.math.round(drag / rowPx).toInt()).coerceIn(0, (queue.size - 1).coerceAtLeast(0))
+                                    if (to != i) { Playback.move(i, to); Hints.did(Hints.QUEUE) }
                                     else if (kotlin.math.abs(drag) < rowPx / 3) options = i   // held still: its options
                                     lifted = null; drag = 0f
                                 },

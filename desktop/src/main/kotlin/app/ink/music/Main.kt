@@ -1854,7 +1854,10 @@ fun QueueList(open: (Page) -> Unit, list: androidx.compose.foundation.lazy.LazyL
     // let go: it glides the rest of the way into its place, then the queue's moved (the rows then where they're drawn)
     fun drop() {
         val from = lifted ?: return
-        val to = target ?: from
+        // where it lands, from what's live now: the grip's gesture keeps the drop() of the moment it began, and a
+        // `target` read from there was that moment's (none: it went back where it was, 2026-11-16, Bronson: "dragging
+        // and reordering a track doesn't stick, the song snaps back to where it was")
+        val to = (from + kotlin.math.round(drag / rowPx).toInt()).coerceIn(0, (queue.size - 1).coerceAtLeast(0))
         if (settling) return
         settling = true
         scope.launch {
