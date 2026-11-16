@@ -3,6 +3,6 @@
 - Similar from your files stays near the song and repeats less
 - Mixes come in waves: fast, a drop, then back up, keys that fit
 - Crossfade keeps going after you turn shuffle off
-- On the computer: a scrollbar, shuffle a folder, ctrl and shift picking that works (in the grid too), volume as you drag, and no more crash at start
+- On the computer: transitions by the volume, a scrollbar, shuffle a folder, ctrl and shift picking (grid too), volume as you drag, no crash at start
 - Waves are also a nice thing to look at
 - Text someone back today

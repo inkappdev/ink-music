@@ -5,6 +5,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -47,15 +49,20 @@ fun TransitionsSetting() {
     val mode by Crossfade.mode.collectAsState()
     val sound by Player.sound.collectAsState()
     SettingHead("TRANSITIONS")
-    BasicText("each song runs into the next where it fades. automix matches their beats too", style = pixel(12.sp, Ink.mid))
+    // what each does, said here (2026-11-15, a tester: it "took me quite a while to realize that these settings actually
+    // affect the entire way INKmusic behaves"); chosen from the bar too, beside the volume
+    BasicText("how one song turns into the next, everywhere ink music plays: your songs, mixes, similar, radio's shows. also beside the volume in the bar",
+        style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
+    TRANSITIONS.forEach { (m, said) ->
+        Column(Modifier.padding(bottom = 10.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Crossfade.set(m) })) {
+            BasicText(m, style = pixel(14.sp, if (mode == m) Ink.ink else Ink.dim))
+            BasicText(said, style = pixel(12.sp, if (mode == m) Ink.mid else Ink.dim))
+        }
+    }
     if (mode != Crossfade.OFF && sound.exclusive) {
         BasicText("resting now: the output's had alone (sound, above)", style = pixel(12.sp, Ink.ink))
         Spacer(Modifier.height(8.dp))
-    }
-    Row {
-        for (m in listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX))
-            Word(m, pixel(14.sp, if (mode == m) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Crossfade.set(m) }
     }
 }
 

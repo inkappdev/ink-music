@@ -247,12 +247,19 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 // a song going into the next (Crossfade; automix's first half), and reading the mixes' tempos (Tempos)
                 var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
                 val cross = mode != Crossfade.OFF
-                SettingRow("TRANSITIONS", mode, opened, "each song into the next; automix on the beat") {
+                SettingRow("TRANSITIONS", mode, opened, "how one song turns into the next, everywhere ink music plays") {
                     // said plainly when it's on but resting (it couldn't be told it wasn't crossfading: exact was on)
                     if (cross && Exact.inUse(ctx)) { BasicText("resting while your usb dac is plugged in: exact is on", style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(8.dp)) }
                     Pick(listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX).map { it to (mode == it) }) { i ->
                         mode = listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX)[i]; Crossfade.set(ctx, mode)
                     }
+                    // what the one chosen does (the computer's, 2026-11-15, a tester: it "took me quite a while to realize
+                    // that these settings actually affect the entire way INKmusic behaves")
+                    BasicText(when (mode) {
+                        Crossfade.OFF -> "each song plays to its very end, then the next starts: records as they were made"
+                        Crossfade.CROSSFADE -> "the end of each song fades out under the start of the next, a few seconds of both"
+                        else -> "as a dj would: their beats lined up, keys minded, a long or quiet ending let go early"
+                    }, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp))
                     var wifi by remember { mutableStateOf(Tempos.wifiOnly(ctx)) }
                     PickLabel("reading tempos, half a megabyte a song")
                     Pick(listOf("on wifi only" to wifi, "anywhere" to !wifi)) { wifi = it == 0; Tempos.wifiOnly(ctx, wifi) }

@@ -302,6 +302,8 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
         // words below filled their row once sleep joined them and squeezed these two over each other (2026-11-10)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Volume(Modifier.weight(1f).offset(x = (-8).dp), line = 200.dp, shrinks = true)
+            // how one song turns into the next, beside the volume as in the bar (TransitionWord)
+            TransitionWord(Modifier.padding(horizontal = 10.dp), 13.sp)
             Row(Modifier.offset(x = 8.dp)) {
                 Pixel(SHRINK, "mini player", Ink.mid) { Mini.open() }
                 Pixel(FULL, "full screen", Ink.mid) { Win.full(true); open(Page.Playing) }

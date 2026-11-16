@@ -1236,6 +1236,58 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
  * rising out of the word, over it, the bar being at the window's foot. Away by a click anywhere else, esc, or a word
  * chosen. The last kind is dim (stop, as remove is in a song's).
  */
+/** What each transition does, said where it's chosen: the bar's menu and settings. */
+val TRANSITIONS = listOf(
+    Crossfade.OFF to "each song plays to its very end, then the next starts: records as they were made",
+    Crossfade.CROSSFADE to "the end of each song fades out under the start of the next, a few seconds of both",
+    Crossfade.AUTOMIX to "as a dj would: their beats lined up, keys minded, a long or quiet ending let go early",
+)
+
+/**
+ * The transition in use as a word in the bar ("no fades", "crossfade", "automix"), lit while it's other than off; a click
+ * opens the three over it, each with a line of what it does, the one in use lit (settings has them too).
+ */
+@Composable
+internal fun TransitionWord(modifier: Modifier = Modifier, size: androidx.compose.ui.unit.TextUnit = 14.sp) {
+    val mode by Crossfade.mode.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    val shut = remember { longArrayOf(0L) }
+    Box(modifier) {
+        Word(if (mode == Crossfade.OFF) "no fades" else mode, pixel(size, if (open || mode != Crossfade.OFF) Ink.ink else Ink.mid), touch = 10.dp) {
+            if (System.currentTimeMillis() - shut[0] > 250) open = !open
+        }
+        if (open) {
+            val gap = with(androidx.compose.ui.platform.LocalDensity.current) { 6.dp.roundToPx() }
+            androidx.compose.ui.window.Popup(
+                popupPositionProvider = object : androidx.compose.ui.window.PopupPositionProvider {
+                    override fun calculatePosition(anchorBounds: androidx.compose.ui.unit.IntRect, windowSize: androidx.compose.ui.unit.IntSize,
+                        layoutDirection: androidx.compose.ui.unit.LayoutDirection, popupContentSize: androidx.compose.ui.unit.IntSize): androidx.compose.ui.unit.IntOffset {
+                        // over the word, the bar being at the window's foot (kept inside the window)
+                        val x = anchorBounds.left.coerceIn(gap, (windowSize.width - popupContentSize.width - gap).coerceAtLeast(gap))
+                        val y = (anchorBounds.top - popupContentSize.height - gap).coerceAtLeast(gap)
+                        return androidx.compose.ui.unit.IntOffset(x, y)
+                    }
+                },
+                onDismissRequest = { open = false; shut[0] = System.currentTimeMillis() },
+                properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+                onKeyEvent = { k -> if (k.type == KeyEventType.KeyDown && k.key == Key.Escape) { open = false; true } else false },
+            ) {
+                Column(Modifier.width(300.dp).background(Ink.black).border(1.dp, Ink.line).padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    BasicText("how one song turns into the next, everywhere ink music plays", style = pixel(12.sp, Ink.dim))
+                    TRANSITIONS.forEach { (m, said) ->
+                        Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
+                            onClick = felt { Crossfade.set(m); open = false })) {
+                            BasicText(m, style = pixel(14.sp, if (m == mode) Ink.ink else Ink.mid))
+                            BasicText(said, style = pixel(12.sp, if (m == mode) Ink.mid else Ink.dim))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun BarMenu(groups: List<List<Pair<String, () -> Unit>>>, accent: Color, onClose: () -> Unit) {
     val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
@@ -1648,6 +1700,9 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
             // preview on: said, lit, a click turns it off
             val previewing by Preview.secs.collectAsState()
             if (previewing > 0) Word("preview $previewing s", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 10.dp) { Preview.set(0) }
+            // how one song turns into the next, beside the volume (2026-11-15, a tester: "switch more easily between
+            // different mixing modes"; it took them "quite a while" to find it changes how everything plays)
+            if (words) TransitionWord(Modifier.padding(start = 14.dp))
             if (volume) { Spacer(Modifier.width(12.dp)); Volume(line = 80.dp) }
             if (words) {
                 Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
