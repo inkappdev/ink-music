@@ -151,6 +151,8 @@ object Player {
     @Volatile private var index = -1
     /** Automix's handover putting the queue in around the song it readied: each move shifts mpv's playlist-pos (become). */
     @Volatile private var rebuilding = false
+    /** Held while the decks change places (become) and while a deck's move is written as the queue's place. */
+    private val swap = Any()
     @Volatile private var duration = 0L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -300,7 +302,13 @@ object Player {
                     }
                     // read live, not the event's value: a handover's moves (become) left a trail of passing positions,
                     // each told to ListenBrainz as the song playing (the one 1, 2, 3 places in)
-                    "playlist-pos" -> if (!rebuilding) { index = m.get("playlist-pos")?.toIntOrNull() ?: (e.value as? Long)?.toInt() ?: -1; heard.value = heard.value?.takeIf { it.id == _queue.value.getOrNull(index)?.id }; tell() }
+                    // only the deck playing, checked again under the handover's lock as it's written: the old deck's
+                    // playlist cleared as automix hands over moves it to 0, and that read, landing just after become,
+                    // put the queue back at its first song while the next one played (2026-11-16, Bronson, and a
+                    // listener on reddit: three songs mixed, then the list's first again)
+                    "playlist-pos" -> if (synchronized(swap) {
+                            (m === mpv && !rebuilding).also { if (it) index = m.get("playlist-pos")?.toIntOrNull() ?: (e.value as? Long)?.toInt() ?: -1 }
+                        }) { heard.value = heard.value?.takeIf { it.id == _queue.value.getOrNull(index)?.id }; tell() }
                     "duration" -> { duration = ((e.value as? Double) ?: 0.0).times(1000).toLong(); tell() }
                     "time-pos" -> if (!casting) {
                         val ms = ((e.value as? Double) ?: 0.0).times(1000).toLong()
@@ -819,15 +827,17 @@ object Player {
     internal fun become(b: Mpv, at: Int) {
         val a = mpv ?: return
         val q = _queue.value
-        rebuilding = true
-        mpv = b; spareDeck = a
-        index = at
-        duration = ((b.get("duration")?.toDoubleOrNull() ?: 0.0) * 1000).toLong()
-        paused = false
-        // the songs before it, each put in ahead of it; then the ones after
-        for (j in 0 until at) { b.command("loadfile", where(q[j]), "append"); b.command("playlist-move", (j + 1).toString(), j.toString()) }
-        for (j in at + 1 until q.size) b.command("loadfile", where(q[j]), "append")
-        rebuilding = false
+        synchronized(swap) {
+            rebuilding = true
+            mpv = b; spareDeck = a
+            index = at
+            duration = ((b.get("duration")?.toDoubleOrNull() ?: 0.0) * 1000).toLong()
+            paused = false
+            // the songs before it, each put in ahead of it; then the ones after
+            for (j in 0 until at) { b.command("loadfile", where(q[j]), "append"); b.command("playlist-move", (j + 1).toString(), j.toString()) }
+            for (j in at + 1 until q.size) b.command("loadfile", where(q[j]), "append")
+            rebuilding = false
+        }
         b.set("loop-playlist", if (repeat.value == 1) "inf" else "no")
         b.set("loop-file", if (repeat.value == 2) "inf" else "no")
         // the system's media keys follow the deck that plays (mpv's own, where they're mpv's)
