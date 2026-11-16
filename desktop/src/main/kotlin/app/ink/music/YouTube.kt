@@ -191,11 +191,50 @@ object YouTube {
     fun stream(id: String, forSpeaker: Boolean = false, small: Boolean = false): String? {
         val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.second > System.currentTimeMillis() }?.let { return it.first }
-        val info = Pipe.streamInfo(id.removePrefix("y")) ?: return null
-        val (url, _, _) = Pipe.audio(info, forSpeaker = forSpeaker, small = small)
-            ?: return null.also { Log.d("stream: $id read, but no audio to play in it") }
+        // a song whose link wouldn't play, asked the other way from the start
+        val url = (if (id in otherWay) null else newPipe(id, forSpeaker, small)) ?: other(id, forSpeaker) ?: return null
         streams[key] = url to System.currentTimeMillis() + 4 * 3_600_000L
         return url
+    }
+
+    private fun newPipe(id: String, forSpeaker: Boolean, small: Boolean): String? {
+        val info = Pipe.streamInfo(id.removePrefix("y")) ?: return null
+        return Pipe.audio(info, forSpeaker = forSpeaker, small = small)?.first
+            ?: null.also { Log.d("stream: $id read, but no audio to play in it") }
+    }
+
+    /**
+     * The other way to a song's audio (2026-11-16, a Windows tester's songs skipping): as YouTube's visionOS app asks
+     * (TubeStream, the iPhone's), its link tried at its start and middle before it's trusted. Asked when NewPipe has
+     * none, and for a song whose link wouldn't play ([playedBadly]). Not for a speaker (it wants the m4a NewPipe picks).
+     */
+    private fun other(id: String, forSpeaker: Boolean): String? {
+        if (forSpeaker) return null
+        // one at a time: two at once (the player's and automix's measuring, the same song) turned one away
+        val s = synchronized(tubeStream) { runCatching { tubeStream.stream(id.removePrefix("y")) }.getOrNull() }
+        Log.d(if (s != null) "stream: $id the other way (${s.how})" else "stream: $id none either way")
+        return s?.url
+    }
+
+    private val tubeStream by lazy {
+        // no JavaScript here: the visionOS way needs none, and the web player's way (challenges, tokens) steps aside
+        val none = object : TubeJs {
+            override fun solve(playerUrl: String, playerCode: String, sig: String?, n: String?): Pair<String?, String?>? = null
+            override fun poToken(id: String): String? = null
+        }
+        TubeStream(none, java.io.File(Home.cache, "tube-stream").apply { mkdirs() }).apply { log = { Log.d("tubestream: $it") } }
+    }
+
+    /** Songs whose link wouldn't play this run: asked the other way from now on. */
+    private val otherWay = ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * A YouTube song whose link mpv couldn't play: its link forgotten, asked the other way from now on. True the first
+     * time (worth trying it again), false if it was already the other way's.
+     */
+    fun playedBadly(id: String): Boolean {
+        streams.keys.removeIf { it == id || it.startsWith("$id:") }
+        return otherWay.add(id)
     }
 
     /** A song as YouTube Music's own pages list it; on a record's page, the record's words and cover. */

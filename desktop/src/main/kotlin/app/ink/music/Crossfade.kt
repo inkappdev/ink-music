@@ -118,6 +118,8 @@ object Crossfade {
     @Volatile private var plan: Plan? = null
     @Volatile private var readied: Mpv? = null
     @Volatile private var readyFor: String? = null
+    /** The song readied for the next transition, if one is. */
+    internal fun readied(): String? = readyFor
     @Volatile private var loaded = false
     @Volatile private var fadingOut: Mpv? = null
     @Volatile private var fadingIn: Mpv? = null

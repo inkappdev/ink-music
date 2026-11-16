@@ -151,6 +151,9 @@ object Player {
     @Volatile private var index = -1
     /** Automix's handover putting the queue in around the song it readied: each move shifts mpv's playlist-pos (become). */
     @Volatile private var rebuilding = false
+    /** When a song that wouldn't play was gone back to, and which (Mpv.Ended in listen). */
+    @Volatile private var wentBackAt = 0L
+    @Volatile private var wentBackTo: String? = null
     /** Held while the decks change places (become) and while a deck's move is written as the queue's place. */
     private val swap = Any()
     @Volatile private var duration = 0L
@@ -281,7 +284,15 @@ object Player {
                 is Mpv.Hook -> {}
                 is Mpv.Loaded -> { Crossfade.loaded(m); continue }
                 // the song readied for a transition wouldn't open: the transition can't be
-                is Mpv.Ended -> { if (e.reason == 4) Log.d("readied song couldn't play: ${m.errorText(e.error)}"); continue }
+                is Mpv.Ended -> {
+                    if (e.reason == 4) {
+                        val id = Crossfade.readied()
+                        Log.d("readied song couldn't play: ${id ?: "?"}: ${m.errorText(e.error)}")
+                        // its link the other way when it comes to play
+                        if (id != null && id.startsWith("y")) YouTube.playedBadly(id)
+                    }
+                    continue
+                }
                 is Mpv.Shutdown -> return
                 else -> continue
             }
@@ -350,8 +361,27 @@ object Player {
                     if (pendingSeek > 0) { val ms = pendingSeek; pendingSeek = 0; seek(ms) }
                     hear(m)
                 }
-                // a song that wouldn't play (mpv goes on to the next by itself): which, and why, kept in the log
-                is Mpv.Ended -> if (e.reason == 4) Log.d("couldn't play ${_queue.value.getOrNull(index)?.let { "${it.id} (${if (it.tube) "youtube" else if (it.server) "server" else "file"})" } ?: "a song"}: ${m.errorText(e.error)}")
+                // a song that wouldn't play (mpv goes on to the next by itself): which, and why, kept in the log. A
+                // YouTube song's link once more, the other way (YouTube.playedBadly), not skipped (2026-11-16, a
+                // Windows tester: songs skipping)
+                is Mpv.Ended -> if (e.reason == 4) {
+                    val s = _queue.value.getOrNull(index)
+                    val at = index
+                    // a song cut short as it opened by going back to the one before (below) says "loading failed" too:
+                    // not its link's fault, and not tried again (tried 2026-11-16: two songs went back and forth)
+                    val ours = System.currentTimeMillis() - wentBackAt < 4_000 && s?.id != wentBackTo
+                    Log.d("couldn't play ${s?.let { "${it.id} (${if (it.tube) "youtube" else if (it.server) "server" else "file"})" } ?: "a song"}: ${m.errorText(e.error)}" +
+                        if (ours) " (cut short going back)" else "")
+                    if (!ours && s != null && s.tube && !casting && YouTube.playedBadly(s.id)) scope.launch {
+                        // back to it once mpv's moved on (or stopped at the queue's end), if it's still the queue's
+                        kotlinx.coroutines.delay(300)
+                        if (_queue.value.getOrNull(at)?.id == s.id && mpv === m) {
+                            Log.d("again, the other way: ${s.id}")
+                            wentBackAt = System.currentTimeMillis(); wentBackTo = s.id
+                            jump(at)
+                        }
+                    }
+                }
                 is Mpv.Shutdown -> return
                 else -> {}
             }
