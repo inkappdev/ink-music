@@ -14,7 +14,7 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 
 /** One sung line: when it starts (ms into the song; -1 for words with no times) and its words. */
-data class Line(val at: Long, val words: String, val parts: List<Pair<Long, String>> = emptyList())
+data class Line(val at: Long, val words: String, val parts: List<Pair<Long, String>> = emptyList(), val translation: String = "", val roman: String = "")
 
 /**
  * Synced lyrics from lrclib, as ink has them (the phone's Lyrics.kt, its Android parts the desktop's way); a song
@@ -32,7 +32,19 @@ object Lyrics {
     private val off = File(Home.dir, "lyrics-off")
     private val retry = java.util.concurrent.ConcurrentHashMap<String, Long>()   // key -> when lrclib may be asked again
 
-    fun start() { _on.value = !off.exists() }
+    fun start() { _on.value = !off.exists(); under.value = runCatching { underFile.readText().trim() }.getOrNull()?.takeIf { it in UNDERS } ?: UNDER_NOTHING }
+
+    /**
+     * What's under each sung line (2026-11-16, after Mornye's lyrics, as the phone's): nothing, its English, or how it
+     * sounds in Latin letters, where Better Lyrics has them (a song in another language).
+     */
+    val under = MutableStateFlow(UNDER_NOTHING)
+    const val UNDER_NOTHING = "nothing"; const val UNDER_ENGLISH = "english"; const val UNDER_SOUND = "how it sounds"
+    val UNDERS = listOf(UNDER_NOTHING, UNDER_ENGLISH, UNDER_SOUND)
+    private val underFile = File(Home.dir, "lyrics-under")
+    fun under(what: String) { under.value = what; runCatching { underFile.writeText(what) } }
+    /** The words under a line, as chosen ("" for none). */
+    fun underOf(l: Line): String = when (under.value) { UNDER_ENGLISH -> l.translation; UNDER_SOUND -> l.roman; else -> "" }.let { if (it.equals(l.words, true)) "" else it }
 
     fun toggle() {
         _on.value = !_on.value
@@ -46,21 +58,30 @@ object Lyrics {
         val base = File(dir, sha1(key))
         val lrc = File("${base.path}.lrc")
         val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
-        val better = File("${base.path}.bl")  // Better Lyrics asked (word by word, when it has them)
-        // word by word first, where Better Lyrics has the song (asked once a song, words kept before it too)
-        if (!better.exists()) {
-            val timed = BetterLyrics.of(t.title, artist, t.duration / 1000, AGENT)
+        // Better Lyrics asked (word by word, when it has them); ".bl2" since it's read for each line's English and sound
+        // too, so a song asked before is asked once more for them
+        val better = File("${base.path}.bl2")
+        val underKept = File("${base.path}.under")   // each line's English and sound, by when it's sung
+        // word by word first, where Better Lyrics has the song (asked once a song, words kept before it too). Not
+        // without its length: Better Lyrics answers none without it, and that was kept as asked (as the phone's)
+        val seconds = t.duration / 1000
+        if (!better.exists() && seconds > 0) {
+            val timed = BetterLyrics.of(t.title, artist, seconds, AGENT)
             if (timed != null) runCatching { dir.mkdirs(); better.writeText("") }
             if (!timed.isNullOrEmpty()) {
-                val lines = timed.map { Line(it.at, it.words, it.parts) }
-                runCatching { lrc.writeText(lrcOf(lines)) }
+                val lines = timed.map { Line(it.at, it.words, it.parts, it.translation, it.roman) }
+                runCatching {
+                    lrc.writeText(lrcOf(lines))
+                    if (lines.any { it.translation.isNotEmpty() || it.roman.isNotEmpty() }) underKept.writeText(org.json.JSONArray(lines.map {
+                        org.json.JSONObject().put("at", it.at).put("en", it.translation).put("ro", it.roman) }).toString())
+                }
                 return@withContext lines
             }
         }
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
             if (text.isBlank() && !asked.exists()) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
-            return@withContext parse(text).ifEmpty { plain(File("${base.path}.txt")) }
+            return@withContext withUnder(parse(text), underKept).ifEmpty { plain(File("${base.path}.txt")) }
         }
         if ((retry[key] ?: 0L) > System.currentTimeMillis()) return@withContext null
         val got = ask(artist, t.title, t.album, t.duration / 1000)
@@ -82,6 +103,16 @@ object Lyrics {
     }
 
     /** Untimed words as lines (at -1), a verse's gap kept as a blank one (none shown till 2026-11-01: the words were there). */
+    /** Each line's English and sound put back from where they're kept, by when it's sung. */
+    private fun withUnder(lines: List<Line>, f: File): List<Line> {
+        if (!f.exists()) return lines
+        val by = runCatching { org.json.JSONArray(f.readText()).let { a -> (0 until a.length()).associate { i -> a.getJSONObject(i).let { it.getLong("at") to (it.optString("en") to it.optString("ro")) } } } }.getOrNull() ?: return lines
+        // within 10 ms: the lrc they're kept beside holds a line's time to the hundredth (17.105 s comes back 17.11)
+        val times = by.keys.sorted()
+        fun near(at: Long) = times.minByOrNull { kotlin.math.abs(it - at) }?.takeIf { kotlin.math.abs(it - at) <= 10 }
+        return lines.map { l -> near(l.at)?.let(by::get)?.let { (en, ro) -> l.copy(translation = en, roman = ro) } ?: l }
+    }
+
     private fun plain(text: String): List<Line> =
         text.lines().map { Line(-1, it.trim()) }.dropWhile { it.words.isEmpty() }.dropLastWhile { it.words.isEmpty() }
     private fun plain(f: File): List<Line> = runCatching { plain(f.readText()) }.getOrDefault(emptyList())

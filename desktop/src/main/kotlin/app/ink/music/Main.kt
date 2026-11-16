@@ -1961,6 +1961,8 @@ fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolea
     // when the wheel or a drag last moved them (0: following the song)
     var touched by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
     val untimed = lines.firstOrNull()?.let { it.at < 0 } == true
+    // what's under each line (Lyrics.underOf reads it): drawn again when it's chosen
+    Lyrics.under.collectAsState().value
     LaunchedEffect(touched) {
         if (touched == 0L) return@LaunchedEffect
         kotlinx.coroutines.delay(4_000)
@@ -2003,10 +2005,14 @@ fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolea
                         // untimed: a verse's gap kept
                         if (line.words.isBlank()) { if (untimed) Spacer(Modifier.height(12.dp * k)); return@forEachIndexed }
                         // the whole row and the gap under it a click's, not just the words
-                        BasicText(line.words.uppercase(), style = headline((if (untimed) 18.sp else 22.sp) * k, if (untimed || i == index) Ink.ink else Ink.dim),
-                            modifier = Modifier.fillMaxWidth().onPlaced { tops[i] = it.positionInParent().y.toInt() }.then(
+                        val under = Lyrics.underOf(line)
+                        Column(Modifier.fillMaxWidth().onPlaced { tops[i] = it.positionInParent().y.toInt() }.then(
                                 if (untimed || onSeek == null) Modifier else Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
-                                    onClick = felt { onSeek(line.at); touched = 0L })).padding(bottom = 12.dp * k))
+                                    onClick = felt { onSeek(line.at); touched = 0L })).padding(bottom = 12.dp * k)) {
+                            BasicText(line.words.uppercase(), style = headline((if (untimed) 18.sp else 22.sp) * k, if (untimed || i == index) Ink.ink else Ink.dim))
+                            // its english or its sound, small under it (as chosen: settings, the look)
+                            if (under.isNotEmpty()) BasicText(under.lowercase(), style = pixel(13.sp * k, Ink.mid), modifier = Modifier.padding(top = 4.dp * k))
+                        }
                     }
                 }
             } else AnimatedContent(
@@ -2040,6 +2046,8 @@ fun LyricsBlock(lines: List<Line>, index: Int, modifier: Modifier, small: Boolea
                             style = headline(size * k),
                         )
                         else FadeText(it.words.uppercase(), headline(size * k), from = Ink.dim)
+                        // its english or its sound, small under it (as chosen: settings, the look)
+                        Lyrics.underOf(it).takeIf { u -> u.isNotEmpty() }?.let { u -> BasicText(u.lowercase(), style = pixel(15.sp * k, Ink.mid), modifier = Modifier.padding(top = 8.dp * k)) }
                         Spacer(Modifier.height(18.dp * k))
                     }
                     after.forEach {

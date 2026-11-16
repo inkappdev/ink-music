@@ -226,7 +226,15 @@ object Playback {
      * A queue item's song; a YouTube one not seen this run (a queue kept from before) made again
      * from the item's own words and cover.
      */
-    private fun songOf(item: MediaItem): Song? = songOf(item.mediaId) ?: item.mediaId.takeIf { it.startsWith("y") }?.let { id ->
+    private fun songOf(item: MediaItem): Song? = songOrMade(item)?.let { s ->
+        // its length as listed, carried on the item (2026-11-16): the player's is cut short where a transition takes its
+        // end, and a song remembered without one (0) lost it. Better Lyrics finds a song by it: Spring Day's player
+        // length was 265 s for the record's 275, and no word-by-word lyrics came
+        val listed = item.mediaMetadata.durationMs ?: 0L
+        if (s.duration <= 0 && listed > 0) s.copy(duration = listed) else s
+    }
+
+    private fun songOrMade(item: MediaItem): Song? = songOf(item.mediaId) ?: item.mediaId.takeIf { it.startsWith("y") }?.let { id ->
         val md = item.mediaMetadata
         Song(id, android.net.Uri.parse("ytm://" + id.removePrefix("y")), md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(),
             md.albumTitle?.toString().orEmpty(), id, md.albumArtist?.toString().orEmpty(), 0, 1, 0, 0,
@@ -456,6 +464,8 @@ object Playback {
         .setMediaMetadata(
             MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
                 .setAlbumArtist(s.albumArtist).setTrackNumber(s.track).setIsPlayable(true).setExtras(Levelling.extras(s))
+                // its length as listed, for what needs the whole song's (the player's is cut where a transition starts)
+                .apply { if (s.duration > 0) setDurationMs(s.duration) }
                 // a cover for the notification, the lock screen and the car: YouTube's link, else ink music's own
                 .setArtworkUri(if (s.tube || s.episode) s.art?.let(android.net.Uri::parse) else CoverProvider.of(s.id)).build(),
         )

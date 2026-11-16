@@ -958,8 +958,11 @@ data class Lyric(val lines: List<Line>, val index: Int, val position: Long = 0L)
 /** The song's synced lines while lyrics are on: empty for a song lrclib has none for; null while looking, or off. */
 @Composable
 fun rememberLines(n: Now?, on: Boolean): List<Line>? {
-    val lines by produceState<List<Line>?>(null, n?.artist, n?.title, on) {
-        value = null
+    // asked again once the song's length is known: Better Lyrics answers only with it, and a stream's comes a moment
+    // after the song does (2026-11-16: what came first then was lrclib's, without word timing or English)
+    val known = (n?.duration ?: 0L) > 0
+    val lines by produceState<List<Line>?>(null, n?.artist, n?.title, on, known) {
+        if (!known) value = null
         // a station's song: live, its place unknown, so no lines to follow
         // nor a podcast's episode (its notes are where its lyrics would be)
         if (n == null || !on || n.song?.station == true || n.song?.episode == true) return@produceState
@@ -1004,6 +1007,8 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
     // when a finger last moved them (0: following the song)
     var touched by remember { mutableLongStateOf(0L) }
     val untimed = l.lines.firstOrNull()?.let { it.at < 0 } == true
+    // what's under each line (Lyrics.underOf reads it): drawn again when it's chosen
+    Lyrics.under.collectAsState().value
     LaunchedEffect(touched) {
         if (touched == 0L) return@LaunchedEffect
         delay(4_000)
@@ -1038,10 +1043,14 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
                         // untimed: a verse's gap kept
                         if (line.words.isBlank()) { if (untimed) Spacer(Modifier.height(12.dp * k)); return@forEachIndexed }
                         // the whole row and the gap under it a tap's, not just the words
-                        BasicText(line.words.uppercase(), style = headline((if (untimed) 20.sp else 24.sp) * k, if (untimed || i == l.index) Ink.ink else Ink.dim),
-                            modifier = Modifier.fillMaxWidth().onPlaced { tops[i] = it.positionInParent().y.toInt() }.then(
+                        val under = Lyrics.underOf(line)
+                        Column(Modifier.fillMaxWidth().onPlaced { tops[i] = it.positionInParent().y.toInt() }.then(
                                 if (untimed) Modifier else Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
-                                    onClick = felt { Playback.seek(line.at); touched = 0L })).padding(bottom = 12.dp * k))
+                                    onClick = felt { Playback.seek(line.at); touched = 0L })).padding(bottom = 12.dp * k)) {
+                            BasicText(line.words.uppercase(), style = headline((if (untimed) 20.sp else 24.sp) * k, if (untimed || i == l.index) Ink.ink else Ink.dim))
+                            // its english or its sound, small under it (as chosen: the look, under the lyrics)
+                            if (under.isNotEmpty()) BasicText(under.lowercase(), style = pixel(13.sp * k, Ink.mid), modifier = Modifier.padding(top = 4.dp * k))
+                        }
                     }
                 }
             } else AnimatedContent(
@@ -1075,6 +1084,8 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
                             style = headline(size * k),
                         )
                         else FadeText(it.words.uppercase(), headline(size * k), from = Ink.dim)
+                        // its english or its sound, small under it (as chosen: the look, under the lyrics)
+                        Lyrics.underOf(it).takeIf { u -> u.isNotEmpty() }?.let { u -> BasicText(u.lowercase(), style = pixel(15.sp * k, Ink.mid), modifier = Modifier.padding(top = 8.dp * k)) }
                         Spacer(Modifier.height(18.dp * k))
                     }
                     after.forEach {

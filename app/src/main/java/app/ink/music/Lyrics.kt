@@ -19,7 +19,7 @@ import java.security.MessageDigest
  * One sung line: when it starts (ms into the song; -1 for words with no times) and its words; [parts], where it's
  * timed word by word (Better Lyrics), each word with when it starts (its space kept in its text).
  */
-data class Line(val at: Long, val words: String, val parts: List<Pair<Long, String>> = emptyList())
+data class Line(val at: Long, val words: String, val parts: List<Pair<Long, String>> = emptyList(), val translation: String = "", val roman: String = "")
 
 /**
  * Synced lyrics from lrclib, as ink has them (copied from ink's Lyrics.kt); a song lrclib has only plain (untimed)
@@ -33,6 +33,16 @@ object Lyrics {
     private val _on = MutableStateFlow(true)
     val on: StateFlow<Boolean> = _on
 
+    /**
+     * What's under each sung line (2026-11-16, after Mornye's lyrics): nothing, its English, or how it sounds in Latin
+     * letters, where Better Lyrics has them (a song in another language: Japanese, Korean, Spanish...).
+     */
+    val under = MutableStateFlow(UNDER_NOTHING)
+    const val UNDER_NOTHING = "nothing"; const val UNDER_ENGLISH = "english"; const val UNDER_SOUND = "how it sounds"
+    fun under(c: Context, what: String) { under.value = what; c.getSharedPreferences("lyrics", Context.MODE_PRIVATE).edit().putString("under", what).apply() }
+    /** The words under a line, as chosen ("" for none). */
+    fun underOf(l: Line): String = when (under.value) { UNDER_ENGLISH -> l.translation; UNDER_SOUND -> l.roman; else -> "" }.let { if (it.equals(l.words, true)) "" else it }
+
     private lateinit var dir: File
     private lateinit var ctx: Context
     private val retry = mutableMapOf<String, Long>()   // key -> when lrclib may be asked again
@@ -41,6 +51,7 @@ object Lyrics {
         ctx = context.applicationContext
         dir = File(ctx.filesDir, "lyrics")
         _on.value = prefs().getBoolean("on", true)
+        under.value = prefs().getString("under", UNDER_NOTHING) ?: UNDER_NOTHING
     }
 
     private fun prefs() = ctx.getSharedPreferences("lyrics", Context.MODE_PRIVATE)
@@ -57,14 +68,32 @@ object Lyrics {
         val base = File(dir, sha1(key))
         val lrc = File("${base.path}.lrc")
         val asked = File("${base.path}.yt")   // YouTube Music asked too (when lrclib had none)
-        val better = File("${base.path}.bl")  // Better Lyrics asked (word by word, when it has them)
+        // Better Lyrics asked (word by word, when it has them); ".bl2" since it's read for each line's English and sound
+        // too, so a song asked before is asked once more for them
+        val better = File("${base.path}.bl2")
+        val underFile = File("${base.path}.under")   // each line's English and sound, by when it's sung
         // word by word first, where Better Lyrics has the song (asked once a song, words kept before it too)
-        if (!better.exists()) {
-            val timed = BetterLyrics.of(t.title, artist, t.duration / 1000, AGENT)
+        // its length, which Better Lyrics finds a song by: the song's own as listed first (the album's: a stream can be
+        // its video's, 10 s off: Spring Day's 265 s for the record's 275, and none came, 2026-11-16), then the player's.
+        // Neither known yet (a stream opening): asked later, not kept as asked: none came without it, and that had been
+        // kept as asked, every song heard as it began losing its word-by-word lyrics for good
+        val lengths = listOfNotNull(t.song?.duration, t.duration).map { it / 1000 }.filter { it > 0 }.distinct()
+        val seconds = lengths.firstOrNull() ?: 0L
+        if (!better.exists() && seconds > 0) {
+            var timed: List<BetterLyrics.Timed>? = null
+            for (s in lengths) {
+                timed = BetterLyrics.of(t.title, artist, s, AGENT)
+                android.util.Log.d("ink-lyrics", "better lyrics for $artist - ${t.title} (${s}s): ${timed?.size ?: "unreachable"}")
+                if (timed == null || timed.isNotEmpty()) break
+            }
             if (timed != null) runCatching { dir.mkdirs(); better.writeText("") }
             if (!timed.isNullOrEmpty()) {
-                val lines = timed.map { Line(it.at, it.words, it.parts) }
-                runCatching { lrc.writeText(lrcOf(lines)) }
+                val lines = timed.map { Line(it.at, it.words, it.parts, it.translation, it.roman) }
+                runCatching {
+                    lrc.writeText(lrcOf(lines))
+                    if (lines.any { it.translation.isNotEmpty() || it.roman.isNotEmpty() }) underFile.writeText(org.json.JSONArray(lines.map {
+                        org.json.JSONObject().put("at", it.at).put("en", it.translation).put("ro", it.roman) }).toString())
+                }
                 android.util.Log.d("ink-lyrics", "${t.artist} - ${t.title}: ${lines.size} lines from better lyrics, ${lines.count { it.parts.isNotEmpty() }} word by word")
                 return@withContext lines
             }
@@ -72,7 +101,7 @@ object Lyrics {
         if (lrc.exists()) runCatching { lrc.readText() }.getOrNull()?.let { text ->
             // lrclib had none, and YouTube wasn't asked then (kept before 2026-10-27): asked now, once
             if (text.isBlank() && !asked.exists() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
-            return@withContext parse(text).ifEmpty { plain(File("${base.path}.txt")) }
+            return@withContext withUnder(parse(text), underFile).ifEmpty { plain(File("${base.path}.txt")) }
         }
         if ((retry[key] ?: 0L) > SystemClock.elapsedRealtime()) return@withContext null
         val got = ask(artist, t.title, t.album, t.duration / 1000)
@@ -91,6 +120,16 @@ object Lyrics {
         // none synced on lrclib: YouTube Music's (the full build), timed by Musixmatch
         if (got.first.isBlank() && YouTubeMusic.available) tube(t, lrc, asked)?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
         parse(got.first).ifEmpty { plain(got.second) }
+    }
+
+    /** Each line's English and sound put back from where they're kept, by when it's sung. */
+    private fun withUnder(lines: List<Line>, f: File): List<Line> {
+        if (!f.exists()) return lines
+        val by = runCatching { org.json.JSONArray(f.readText()).let { a -> (0 until a.length()).associate { i -> a.getJSONObject(i).let { it.getLong("at") to (it.optString("en") to it.optString("ro")) } } } }.getOrNull() ?: return lines
+        // within 10 ms: the lrc they're kept beside holds a line's time to the hundredth (17.105 s comes back 17.11)
+        val times = by.keys.sorted()
+        fun near(at: Long) = times.minByOrNull { kotlin.math.abs(it - at) }?.takeIf { kotlin.math.abs(it - at) <= 10 }
+        return lines.map { l -> near(l.at)?.let(by::get)?.let { (en, ro) -> l.copy(translation = en, roman = ro) } ?: l }
     }
 
     /** Untimed words as lines (at -1), a verse's gap kept as a blank one. */

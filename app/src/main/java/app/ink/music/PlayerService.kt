@@ -1011,6 +1011,8 @@ class PlayerService : MediaLibraryService() {
             val uri = item.localConfiguration?.uri ?: item.requestMetadata.mediaUri ?: continue
             list.put(JSONObject().put("id", item.mediaId).put("uri", uri.toString())
                 .put("title", md.title?.toString().orEmpty()).put("artist", md.artist?.toString().orEmpty())
+                // its length as listed (the lyrics find a song by it: a queue brought back had lost it, 2026-11-16)
+                .put("listed", md.durationMs ?: 0L)
                 .put("album", md.albumTitle?.toString().orEmpty()).put("albumArtist", md.albumArtist?.toString().orEmpty())
                 .put("art", md.artworkUri?.toString().orEmpty())
                 .apply {
@@ -1043,7 +1045,8 @@ class PlayerService : MediaLibraryService() {
                         o.optDouble("albumGain").takeIf { !it.isNaN() }?.let { putFloat(Levelling.ALBUM_GAIN, it.toFloat()) }
                         putString(Levelling.RECORD, o.optString("record"))
                     })
-                    .apply { o.optString("art").takeIf { it.isNotEmpty() }?.let { setArtworkUri(Uri.parse(it)) } }.build())
+                    .apply { o.optString("art").takeIf { it.isNotEmpty() }?.let { setArtworkUri(Uri.parse(it)) } }
+                    .apply { o.optLong("listed").takeIf { it > 0 }?.let { setDurationMs(it) } }.build())
                 .build()
         }
         if (items.isEmpty()) null

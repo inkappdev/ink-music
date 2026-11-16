@@ -107,6 +107,12 @@ fun LookPage(pages: Pages) {
             if (Moving.available) SettingRow("MOVING", whenOn, opened, "moving covers and canvases, silent; they settle when you pause") {
                 Pick(listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF).map { it to (whenOn == it) }) { Moving.set(ctx, whenOn = listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF)[it]) }
             }
+            // under each sung line: its English, or how it sounds (Better Lyrics', for a song in another language)
+            val under by Lyrics.under.collectAsState()
+            SettingRow("UNDER THE LYRICS", under, opened, "for a song in another language: its english, or how it sounds, under each line") {
+                val all = listOf(Lyrics.UNDER_NOTHING, Lyrics.UNDER_ENGLISH, Lyrics.UNDER_SOUND)
+                Pick(all.map { it to (it == under) }) { Lyrics.under(ctx, all[it]) }
+            }
             // the hi-res moment: a lossless song's format typed across the cover as it starts (here since 2026-11-11, out of sound)
             val moment by Moments.on.collectAsState()
             SettingRow("HI-RES MOMENT", if (moment) "on" else "off", opened, "a lossless song says so across its cover as it starts") {

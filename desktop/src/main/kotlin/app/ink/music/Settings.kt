@@ -122,6 +122,11 @@ fun SettingsPage(onClose: () -> Unit) {
                                 Pick(PLACES.map { it to (it !in hidden) }) { i -> Places.show(PLACES[i], PLACES[i] in hidden) }
                             }
                             LookSetting(opened)
+                            // under each sung line: its English, or how it sounds (Better Lyrics', a song in another language)
+                            val under by Lyrics.under.collectAsState()
+                            SettingRow("UNDER THE LYRICS", under, opened, "for a song in another language: its english, or how it sounds, under each line") {
+                                Pick(Lyrics.UNDERS.map { it to (it == under) }) { Lyrics.under(Lyrics.UNDERS[it]) }
+                            }
                         }
                         "sound" -> {
                             val sound by Player.sound.collectAsState()
