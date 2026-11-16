@@ -1,0 +1,6 @@
+- On the computer: a YouTube song that won't play is tried another way, not skipped
+- YouTube Music lists on the computer show as they load, and at once the next time
+- On the computer: "copy a report" in settings, to send us when something's wrong; the scrollbar off the song lengths
+- On the phone: transitions' "copy what happened" is always there, to send us when automix isn't mixing
+- Fewer skips, more songs. That's the job
+- Tell someone their playlist is good today
