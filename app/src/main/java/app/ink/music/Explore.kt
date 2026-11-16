@@ -1335,15 +1335,14 @@ internal fun MixWord(title: String, songs: List<Song>?, modifier: Modifier = Mod
     val ctx = LocalContext.current
     val st by Mixes.state.collectAsState()
     val going = st?.let { it.title == title && it.bpm == 0 && !it.done } == true
-    // "mix" opens into its shapes, the last one chosen lit; one tapped starts it (2026-11-10, as Prism's DJ mode offers)
-    var choosing by remember { mutableStateOf(false) }
+    // "mix" drops its shapes down under it, the last one chosen lit; one tapped starts it, a tap anywhere else folds them
+    // (2026-11-16, Bronson, of the computer's, the same here: they took the word's place in the row, with no way back)
     LaunchedEffect(Unit) { Mixes.loadShape(ctx) }
-    if (going || !choosing) Word(if (going) "mixing" else "mix", pixel(14.sp, if (going) Ink.ink else Ink.mid), modifier, touch = 8.dp) { if (!going) choosing = true }
-    else Row(modifier) {
-        Mixes.Shape.entries.forEach { sh ->
-            Word(sh.word, pixel(14.sp, if (sh == Mixes.shape) Ink.ink else Ink.mid), Modifier.padding(end = 18.dp), touch = 8.dp) {
-                choosing = false; Mixes.shape(ctx, sh); Mixes.list(ctx, title, songs, sh)
-            }
+    if (going) { Word("mixing", pixel(14.sp, Ink.ink), modifier, touch = 8.dp) {}; return }
+    Box(modifier) {
+        val shapes = Mixes.Shape.entries
+        DropWord("mix", lit = false, rows = shapes.map { Triple(it.word, null, it == Mixes.shape) }) { i ->
+            Mixes.shape(ctx, shapes[i]); Mixes.list(ctx, title, songs, shapes[i])
         }
     }
 }

@@ -175,6 +175,7 @@ class Main : ComponentActivity() {
         Server.start(this)
         YouTubeAccount.start(this)
         HiddenLists.load(this)
+        FollowedLists.load(this)
         Moving.start(this)
         Receiver.log = { android.util.Log.d("ink-receiver", it) }
         ListenBrainz.start(this)
@@ -780,6 +781,13 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                             onClick = felt { pages.open(Page.Playlist(pl.id, pl.name)) }).padding(vertical = 9.dp)) {
                             BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                             BasicText("${pl.count} ${if (pl.count == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
+                        }
+                    }
+                    // YouTube Music playlists you follow (FollowedLists), but those already among yours there
+                    item {
+                        val followed by FollowedLists.lists.collectAsState()
+                        followed.filter { f -> tubeLists.none { it.id == FollowedLists.idOf(f) } }.forEach { t ->
+                            ListRow(t.title, "following   youtube music") { pages.open(Page.Tube(t)) }
                         }
                     }
                     // your youtube music: its playlists, liked music first as YouTube lists them (read only); the ones
@@ -2503,10 +2511,18 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
                 // a playlist or mix played as a DJ's arc, each into the next on the beat (a record keeps its own order)
                 if (a.playlist) MixWord(a.title, all, Modifier.padding(end = 26.dp))
-                // signed in: saved to your library there (lit), or not
+                // a playlist followed: on your lists, itself, fresh each time (2026-11-16, Bronson: "how do you add the
+                // entire thing to be saved and viewable on the lists grid"; save had put a playlist among your records,
+                // off the lists); not one of yours on YouTube Music, on your lists already
+                val tubeLists by YouTubeAccount.playlists.collectAsState()
+                val followed by FollowedLists.lists.collectAsState()
+                val on = followed.any { FollowedLists.idOf(it) == FollowedLists.idOf(a) }
+                if (a.playlist && !Curation.tubeBranded(a.url, a.artist) && (on || tubeLists.none { it.id == FollowedLists.idOf(a) }))
+                    Word(if (on) "following" else "follow", pixel(14.sp, if (on) Ink.ink else Ink.mid), touch = 8.dp) { FollowedLists.set(a, !on) }
+                // a record, signed in: saved to your library there (lit), or not
                 val who by YouTubeAccount.who.collectAsState()
                 val records by YouTubeAccount.records.collectAsState()
-                if (who != null) {
+                if (who != null && !a.playlist) {
                     val saved = remember(records, a.url) { YouTubeAccount.saved(a) }
                     val scope = rememberCoroutineScope()
                     Word(if (saved) "saved" else "save", pixel(14.sp, if (saved) Ink.ink else Ink.mid), touch = 8.dp) { scope.launch { YouTubeAccount.save(a, !saved) } }
@@ -3087,6 +3103,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
     val keptIds by Offline.kept.collectAsState()
     val lists by Server.playlists.collectAsState()
     val tubeLists by YouTubeAccount.playlists.collectAsState()
+    val followed by FollowedLists.lists.collectAsState()
     val hidden by HiddenLists.ids.collectAsState()
     val account by Server.account.collectAsState()
     val loved = remember(songs, lovedIds, lovedTube, liked) {
@@ -3124,6 +3141,15 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
                 // the server's own art for it (Navidrome's mosaic of its songs), by a song-shaped stand-in
                 val face = remember(pl.id, pl.art) { pl.art?.let { Song("npl" + pl.id, android.net.Uri.EMPTY, pl.name, "", pl.name, "npl" + pl.id, "", 0, 1, 0, 0, art = it) } }
                 if (face != null) CoverOf(face, pl.name, Modifier.fillMaxSize(), px = 480) else Lettered(pl.name)
+            }
+        }
+        // followed ones (FollowedLists), then yours on YouTube Music
+        items(followed.filter { f -> tubeLists.none { it.id == FollowedLists.idOf(f) } }, key = { "f" + it.url }) { t ->
+            ListTile(t.title, "following   youtube music", { pages.open(Page.Tube(t)) }) {
+                val face = remember(t.url) { tubeFace(t) }
+                if (t.art == null) Lettered(t.title)
+                else if (Curation.tubeBranded(t.url, t.artist)) Covered(face, Modifier.fillMaxSize(), px = 400)
+                else CoverOf(face, t.title, Modifier.fillMaxSize(), px = 480)
             }
         }
         items(tubeLists.filter { it.id !in hidden }, key = { "y" + it.id }) { pl ->
@@ -3278,7 +3304,7 @@ private fun SongFilters(counts: Map<String, Int>, genres: List<Pair<String, Int>
  * whole line to tap, its count beside it. Black, a hairline round it, scrolling past a screen's half.
  */
 @Composable
-private fun DropWord(word: String, lit: Boolean, rows: List<Triple<String, Int?, Boolean>>, onPick: (Int) -> Unit) {
+internal fun DropWord(word: String, lit: Boolean, rows: List<Triple<String, Int?, Boolean>>, onPick: (Int) -> Unit) {
     var down by remember { mutableStateOf(false) }
     // the list there while it's down or still folding away (2026-11-10: it unfolds from under the word, its rows rising
     // in one after another as the places menu's do, and folds back up)

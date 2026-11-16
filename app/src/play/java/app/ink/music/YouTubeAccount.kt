@@ -19,6 +19,7 @@ object YouTubeAccount {
     val uploads = MutableStateFlow<List<Song>>(emptyList())
     fun saved(a: TubeAlbum) = false
     suspend fun save(a: TubeAlbum, on: Boolean) = false
+    suspend fun saveList(listId: String, on: Boolean) = false
     suspend fun follow(a: TubeArtist, on: Boolean) = false
     suspend fun addTo(list: TubeList, s: Song) = false
     suspend fun makePlaylist(name: String, s: Song?) = false

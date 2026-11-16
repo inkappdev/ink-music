@@ -235,6 +235,12 @@ object YouTubeAccount {
         t.save(list, on).also { if (!it) records.value = before }
     }
 
+    /** A playlist saved to your library there (followed), or not, by its id (no "VL"); false signed out or refused. */
+    suspend fun saveList(listId: String, on: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val t = tube ?: return@withContext false
+        t.save(listId, on)
+    }
+
     /** An artist followed there, or not. */
     suspend fun follow(a: TubeArtist, on: Boolean): Boolean = withContext(Dispatchers.IO) {
         val t = tube ?: return@withContext false
