@@ -334,7 +334,8 @@ class InnerTube(
     /** Reads a page, then its continuations, while [took] (how many so far) is under [max]. */
     private fun pages(browseId: String, max: Int, took: (JSONObject) -> Int) {
         var page = post("browse", JSONObject().put("browseId", browseId))
-        repeat(40) {
+        // pages enough for the most asked for (a page is about a hundred), 40 at the least
+        repeat(maxOf(40, max / 50)) {
             if (took(page) >= max) return
             val next = all(page, "continuationItemRenderer").firstNotNullOfOrNull {
                 it.optJSONObject("continuationEndpoint")?.optJSONObject("continuationCommand")?.optString("token")?.takeIf(String::isNotEmpty)
@@ -523,3 +524,9 @@ class InnerTube(
         }
     }
 }
+
+/**
+ * Your liked songs on YouTube Music, read whole up to this many (2026-11-15, a listener: 1,300 liked, the computer showed
+ * 1,000, its read capped there; the phone's at the default 2,000).
+ */
+const val LIKED_MOST = 10_000

@@ -53,7 +53,7 @@ object TubeAccount {
                     .filter { it.id != "VLLM" && it.id != "VLSE" }
                     .map { TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, it.subtitle.substringAfter(" • ", "").ifEmpty { it.subtitle }, it.art) }
             }.onFailure { Log.d("youtube lists: $it") }
-            runCatching { liked.value = t.tracks("VLLM", 1_000).map(YouTube::song); Loved.putTube(liked.value) }.onFailure { Log.d("youtube liked: $it") }
+            runCatching { liked.value = t.tracks("VLLM", LIKED_MOST).map(YouTube::song); Loved.putTube(liked.value) }.onFailure { Log.d("youtube liked: $it") }
             runCatching {
                 // your mixes: the home page's personal mixes ("RDTMAK" playlists; a shelf called a mix as well)
                 mixes.value = t.home(12).flatMap { s ->

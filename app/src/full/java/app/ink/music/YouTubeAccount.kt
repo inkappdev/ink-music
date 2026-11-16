@@ -184,7 +184,7 @@ object YouTubeAccount {
                     .onFailure { android.util.Log.d("ink-youtube", "uploads: $it") }
             }
             val likes = launch {
-                runCatching { t.tracks("VLLM") }.onSuccess { found -> liked.value = found.map(::song) }
+                runCatching { t.tracks("VLLM", LIKED_MOST) }.onSuccess { found -> liked.value = found.map(::song) }
                     .onFailure { android.util.Log.d("ink-youtube", "liked: $it") }
             }
             // the artists you follow, else the ones your library's songs are by
