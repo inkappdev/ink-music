@@ -354,31 +354,45 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                     style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(16.dp))
                 songs?.takeIf { it.isNotEmpty() && whole }?.let { s ->
-                    PlayShuffle(s)
-                    // the rest small under them, wrapping (2026-11-12, Bronson: "this could use some work": seven words
-                    // of three kinds in two rows, copy link cut short)
-                    HeadWords {
-                        // a playlist played as a DJ's arc, each into the next on the beat (a record keeps its own order)
-                        if (playlist) MixWord(a.title, s)
-                        // a playlist's songs are from many records: their covers, if wanted
-                        if (playlist) CoversWord()
+                    // a playlist's mix beside play and shuffle: a way to play it too
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PlayShuffle(s)
+                        if (playlist) MixWord(a.title, s, Modifier.padding(start = 24.dp), bold = true)
+                    }
+                    // the rest small under them, one row of four (2026-11-16, Bronson's screenshot: "the top controls of a
+                    // playlist need some work it gets a little messy": seven words of three kinds wrapped onto two rows).
+                    // Follow and keep offline, then more: the covers, a copy, its link. Closer than elsewhere, so the
+                    // three fit the cover's width (24 dp put more on a line of its own)
+                    HeadWords(gap = 16.dp) {
+                        // a playlist followed: on your lists, itself, fresh each time (not one of yours on YouTube Music:
+                        // those are on your lists already)
+                        val tubeLists by TubeAccount.playlists.collectAsState()
+                        val followed by FollowedLists.lists.collectAsState()
+                        val yoursThere = playlist && tubeLists.any { TubeAccount.listId(it) == TubeAccount.listId(a) } &&
+                            followed.none { TubeAccount.listId(it) == TubeAccount.listId(a) }
+                        if (playlist && !yoursThere) {
+                            val on = followed.any { TubeAccount.listId(it) == TubeAccount.listId(a) }
+                            Word(if (on) "following" else "follow", pixel(14.sp, if (on) Ink.ink else Ink.mid), touch = 8.dp) { FollowedLists.set(a, !on) }
+                        }
                         KeepOffline(s)
                         // a copy as a list of yours, every song, kept here even if whoever made it takes theirs down
-                        // (2026-11-12, a tester: a 300-song playlist found and lost when its owner deleted it)
+                        // (2026-11-12, a tester: a 300-song playlist found and lost when its owner deleted it); a playlist's
+                        // songs' covers, if wanted; its link on YouTube Music onto the clipboard (2026-11-10)
                         val here by HereLists.all.collectAsState()
                         val copy = here.firstOrNull { it.name == a.title && it.songs.size == s.size }
-                        Word(if (copy != null) "your list" else "keep as your list", pixel(14.sp, if (copy != null) Ink.ink else Ink.mid), touch = 8.dp) {
-                            if (copy != null) open(Page.List(copy.id, copy.name))
-                            else HereLists.make(a.title, s)
-                        }
-                        // its link on YouTube Music onto the clipboard, to share or hand on (2026-11-10: a playlist's
-                        // link was only to be had from YouTube's own app)
+                        val covers by ListCovers.on.collectAsState()
                         var copied by remember(a.url) { mutableStateOf(false) }
                         LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(2_000); copied = false } }
-                        Word(if (copied) "copied" else "copy link", pixel(14.sp, if (copied) Ink.ink else Ink.mid), touch = 8.dp) {
-                            java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(tubeLink(a.url)), null)
-                            copied = true
-                        }
+                        DropWord(if (copied) "link copied" else "more", lit = copied, size = 14.sp, rows = listOfNotNull(
+                            DropRow(if (covers) "covers beside songs: on" else "covers beside songs: off", null, covers) { ListCovers.set(!covers) }.takeIf { playlist },
+                            DropRow(if (copy != null) "open your copy" else "keep a copy as your list", null, copy != null) {
+                                if (copy != null) open(Page.List(copy.id, copy.name)) else HereLists.make(a.title, s)
+                            },
+                            DropRow("copy link", null, false) {
+                                java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(tubeLink(a.url)), null)
+                                copied = true
+                            },
+                        ))
                     }
                 }
                 // the mix as it's found: its tempo beating, the songs dropping in

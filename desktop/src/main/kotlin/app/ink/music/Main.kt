@@ -2113,8 +2113,8 @@ fun PlayShuffle(songs: List<Song>, modifier: Modifier = Modifier) = Row(modifier
 /** The small words under [PlayShuffle], wrapping onto another line rather than cut short ("copy l..."). */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun HeadWords(modifier: Modifier = Modifier, words: @Composable () -> Unit) =
-    androidx.compose.foundation.layout.FlowRow(modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(24.dp),
+fun HeadWords(modifier: Modifier = Modifier, gap: androidx.compose.ui.unit.Dp = 24.dp, words: @Composable () -> Unit) =
+    androidx.compose.foundation.layout.FlowRow(modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(gap),
         verticalArrangement = Arrangement.spacedBy(6.dp)) { words() }
 
 /** A list's word for covers beside its songs, lit when on (one choice for every list: [ListCovers]). */
@@ -2301,7 +2301,8 @@ class DropRow(val word: String, val count: Int?, val lit: Boolean, val beside: (
  * after the word (an order's way round).
  */
 @Composable
-fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, beside: (@Composable () -> Unit)? = null) = Box {
+fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, size: androidx.compose.ui.unit.TextUnit = 13.sp, bold: Boolean = false,
+             beside: (@Composable () -> Unit)? = null) = Box {
     var down by remember { mutableStateOf(false) }
     // a click on the word or arrow while it's open: the popup's own outside click closes it first; not opened again
     val shut = remember { longArrayOf(0L) }
@@ -2310,7 +2311,8 @@ fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, beside: (@Composa
     open.targetState = down
     val turn by androidx.compose.animation.core.animateFloatAsState(if (down) 180f else 0f, tween(Motion.ENTER, easing = Motion.expo), label = "arrow")
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Word(label, pixel(13.sp, if (!lit && !down) Ink.dim else Ink.ink), touch = 8.dp) { flip() }
+        // bold: beside play and shuffle, as they are (a list's mix)
+        Word(label, if (bold) headline(size) else pixel(size, if (!lit && !down) Ink.dim else Ink.ink), touch = 8.dp) { flip() }
         beside?.invoke()
         // the arrow opens it too (2026-11-15, a tester: only the word did, "the v icon ... doesn't respond when clicked")
         Box(Modifier.pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)

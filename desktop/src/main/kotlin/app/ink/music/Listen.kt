@@ -405,6 +405,7 @@ fun ListsPage(open: (Page) -> Unit) {
     val loved = lovedSongs()
     val keptIds by Offline.kept.collectAsState()
     val tubeListsNow by TubeAccount.playlists.collectAsState()
+    val followedNow by FollowedLists.lists.collectAsState()
     val hereLists by HereLists.all.collectAsState()
     LaunchedEffect(account) { Server.readPlaylists() }
     val gridded by ListsGrid.on.collectAsState()
@@ -443,6 +444,17 @@ fun ListsPage(open: (Page) -> Unit) {
                 style = pixel(12.sp, Ink.mid))
         }
         items(lists, key = { it.id }) { p -> ListRow(p) { open(Page.List(p.id, p.name)) } }
+        // YouTube Music playlists you follow (FollowedLists), but those already among yours there
+        val following = followedNow.filter { f -> tubeListsNow.none { TubeAccount.listId(it) == TubeAccount.listId(f) } }
+        if (following.isNotEmpty()) {
+            item { Label("following") }
+            items(following, key = { "f" + it.url }) { t ->
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Tube(t)) }).padding(vertical = 8.dp)) {
+                    BasicText(t.title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BasicText(listOf("following", t.artist.lowercase()).filter { it.isNotEmpty() }.joinToString("  ·  "), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
         // yours on YouTube Music (signed in from the phone)
         val tubeLists = tubeListsNow
         if (tubeLists.isNotEmpty()) {
@@ -504,6 +516,7 @@ private fun ListsTiles(open: (Page) -> Unit) {
     val keptIds by Offline.kept.collectAsState()
     val kept by produceState(emptyList<Song>(), keptIds) { value = Offline.songs() }
     val tubeLists by TubeAccount.playlists.collectAsState()
+    val followed by FollowedLists.lists.collectAsState()
     val here by HereLists.all.collectAsState()
     val grid = pageGrid()
     androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
@@ -533,6 +546,14 @@ private fun ListsTiles(open: (Page) -> Unit) {
                 // the server's own art for it (Navidrome's mosaic of its songs), by a song-shaped stand-in
                 val face = remember(p.id, p.art) { p.art?.let { Song("npl" + p.id, "", p.name, "", p.name, "npl" + p.id, "", 0, 1, 0, 0, art = it) } }
                 if (face != null) CoverOf(face, p.name, Modifier.fillMaxSize(), px = 480) else Lettered(p.name)
+            }
+        }
+        // followed ones (FollowedLists), then yours on YouTube Music
+        gridItems(followed.filter { f -> tubeLists.none { TubeAccount.listId(it) == TubeAccount.listId(f) } }, key = { "f" + it.url }) { t ->
+            ListTile(t.title, listOf("following", t.artist.lowercase()).filter { it.isNotEmpty() }.joinToString("  ·  "), { open(Page.Tube(t)) }) {
+                if (t.art == null) Lettered(t.title)
+                else if (t.branded) Covered(face(t), Modifier.fillMaxSize(), px = 400)
+                else CoverOf(face(t), t.title, Modifier.fillMaxSize(), px = 480)
             }
         }
         gridItems(tubeLists, key = { it.url }) { t ->

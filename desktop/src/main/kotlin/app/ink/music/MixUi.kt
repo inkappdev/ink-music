@@ -98,20 +98,19 @@ fun MixAt(title: String, heading: String, line: String, start: (Int) -> Unit) {
 
 /** "mix" beside play and shuffle (a list): played as a DJ's arc by tempo and key (TempoMixes.list). */
 @Composable
-fun MixWord(title: String, songs: List<Song>?, modifier: Modifier = Modifier) {
+fun MixWord(title: String, songs: List<Song>?, modifier: Modifier = Modifier, bold: Boolean = false) {
     if (songs.isNullOrEmpty() || songs.size < 3) return
     val st by TempoMixes.state.collectAsState()
     val going = st?.let { it.title == title && it.bpm == 0 && !it.done } == true
-    // "mix" opens into its shapes, the last one chosen lit; one clicked starts it (2026-11-10, as the phone's)
-    var choosing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // "mix" drops its shapes down under it, the last one chosen lit; one clicked starts it. A click anywhere else or esc
+    // folds them away (2026-11-16, Bronson: "when you click mix and all the options open up theres no way to get rid of
+    // them": they took the word's place in the row, with nothing to put it back)
     val shape by TempoMixes.shape.collectAsState()
-    if (going || !choosing) Word(if (going) "mixing" else "mix", pixel(14.sp, if (going) Ink.ink else Ink.mid), modifier, touch = 8.dp) { if (!going) choosing = true }
-    else androidx.compose.foundation.layout.Row(modifier) {
-        TempoMixes.Shape.entries.forEach { sh ->
-            Word(sh.word, pixel(14.sp, if (sh == shape) Ink.ink else Ink.mid), Modifier.padding(end = 18.dp), touch = 8.dp) {
-                choosing = false; TempoMixes.shape(sh); TempoMixes.list(title, songs, sh)
-            }
-        }
+    if (going) { Word(if (bold) "MIXING" else "mixing", if (bold) headline(14.sp) else pixel(14.sp, Ink.ink), modifier, touch = 8.dp) {}; return }
+    Box(modifier) {
+        DropWord(if (bold) "MIX" else "mix", lit = false, size = 14.sp, bold = bold, rows = TempoMixes.Shape.entries.map { sh ->
+            DropRow(sh.word, null, sh == shape) { TempoMixes.shape(sh); TempoMixes.list(title, songs, sh) }
+        })
     }
 }
 
