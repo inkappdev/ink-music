@@ -185,8 +185,13 @@ fun Sized(content: @Composable () -> Unit) {
  */
 object Tucked {
     private val file = File(Home.dir, "close-to-tray")
+    /**
+     * Whether this desktop has a tray at all. Stock GNOME and niri (Wayland) have none Java can put an icon in: closing
+     * into it hid the window with no icon to bring it back or quit (2026-11-16, Bronson on niri). There it quits.
+     */
+    val trayable: Boolean by lazy { !Home.mac && runCatching { java.awt.SystemTray.isSupported() }.getOrDefault(false) }
     /** Whether closing the window leaves the music playing, ink music in the tray. */
-    val keep = MutableStateFlow(!Home.mac && file.exists())
+    val keep = MutableStateFlow(!Home.mac && file.exists() && trayable)
     /** The window closed into the tray. */
     val away = MutableStateFlow(false)
 

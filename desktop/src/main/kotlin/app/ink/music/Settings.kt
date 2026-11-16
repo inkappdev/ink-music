@@ -175,6 +175,8 @@ fun SettingsPage(onClose: () -> Unit) {
 private fun CloseSetting() {
     val keep by Tucked.keep.collectAsState()
     SettingHead("CLOSING THE WINDOW")
+    // no tray on this desktop: nothing to choose
+    if (!Tucked.trayable) { BasicText("ink music quits, and the music with it (this desktop has no tray to wait in)", style = pixel(12.sp, Ink.mid)); return }
     BasicText(if (keep) "the music plays on: ink music waits in the tray, by the clock" else "ink music quits, and the music with it", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
