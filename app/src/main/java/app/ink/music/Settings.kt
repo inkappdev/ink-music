@@ -265,15 +265,21 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     Pick(listOf("on wifi only" to wifi, "anywhere" to !wifi)) { wifi = it == 0; Tempos.wifiOnly(ctx, wifi) }
                     // what the player last did with it: a song mixed into the next, or why one wasn't (2026-11-08:
                     // a listener's "not working on any of my phones", and nothing on the phone to say why)
-                    if (cross) Crossfade.said(ctx)?.let { line ->
+                    // shown whenever it's on, nothing tried yet said so (2026-11-16: the same listener, "still" not on any
+                    // of his phones, and no paste: shown only once the player had said something, it never showed if
+                    // the player never tried, and there was nothing for him to send)
+                    if (cross) {
+                        val line = Crossfade.said(ctx)
                         Spacer(Modifier.height(10.dp))
-                        BasicText("last: $line", style = pixel(12.sp, Ink.mid))
-                        // the last dozen, and which phone, onto the clipboard: to send when it isn't mixing (2026-11-11)
+                        BasicText("last: ${line ?: "nothing yet. play a few songs, then look here again"}", style = pixel(12.sp, Ink.mid))
+                        // the last dozen, which phone, and its decoders onto the clipboard: to send when it isn't mixing
                         var copied by remember { mutableStateOf(false) }
                         Spacer(Modifier.height(6.dp))
                         Word(if (copied) "copied" else "copy what happened", pixel(14.sp, Ink.mid), touch = 8.dp) {
-                            val text = (listOf("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, android ${android.os.Build.VERSION.RELEASE}, ink music ${BuildConfig.VERSION_NAME}, $mode") +
-                                Crossfade.history(ctx)).joinToString("\n")
+                            val text = (listOf("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, android ${android.os.Build.VERSION.RELEASE}, ink music ${BuildConfig.VERSION_NAME}, $mode",
+                                "exact ${if (Exact.on(ctx)) "on" else "off"}${if (Exact.inUse(ctx)) ", a usb dac in (resting)" else ""}",
+                                "decoders: ${Crossfade.decoders()}") +
+                                (Crossfade.history(ctx).ifEmpty { listOf("nothing said: the player hasn't tried a transition") })).joinToString("\n")
                             ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("ink music transitions", text))
                             copied = true
                         }

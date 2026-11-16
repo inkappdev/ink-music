@@ -167,6 +167,17 @@ class Crossfade(
         const val SAID = "crossfade-said"
         /** The last song mixed into the next, or why the last one wasn't (for settings). */
         fun said(c: Context): String? = history(c).firstOrNull()
+
+        /**
+         * The phone's decoders for what's played (AAC, Opus, MP3, FLAC), its own (c2.android) apart from its maker's: a
+         * maker's decoder was the likely cause of no blends on a listener's Xiaomi and Realme phones (2026-11-11).
+         */
+        fun decoders(): String = runCatching {
+            val all = android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS).codecInfos.filter { !it.isEncoder }
+            listOf("audio/mp4a-latm" to "aac", "audio/opus" to "opus", "audio/mpeg" to "mp3", "audio/flac" to "flac").joinToString("; ") { (mime, name) ->
+                "$name " + all.filter { info -> info.supportedTypes.any { it.equals(mime, true) } }.joinToString(", ") { it.name }.ifEmpty { "none" }
+            }
+        }.getOrDefault("unknown")
         /** The last dozen, the newest first. */
         fun history(c: Context): List<String> = runCatching { File(c.filesDir, SAID).readLines() }.getOrDefault(emptyList()).map { it.trim() }.filter { it.isNotEmpty() }
 
