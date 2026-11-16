@@ -698,8 +698,63 @@ object SystemClock {
     fun sleep(ms: Long) = Thread.sleep(ms)
 }
 
-/** What casting says, on the error stream when asked (-Dink.log). */
+/**
+ * What the app says of itself: on the error stream when asked (-Dink.log), and always into ink.log beside your things
+ * (2026-11-16: a Windows tester's lists vanishing and songs skipping, and no way to know why: the log was only ever on
+ * when started by hand). Small (256 kB, then one before it), a line said again and again written once with its count,
+ * and scrubbed as it's written: no cookies, tokens, links' paths, emails, public addresses or your home folder's name.
+ * Never sent anywhere: settings' "copy a report" puts its end on the clipboard for you to paste ([Report]).
+ */
 object Log {
     val on = System.getProperty("ink.log") != null
-    fun d(text: String) { if (on) System.err.println("ink-cast: $text") }
+    fun d(text: String) {
+        if (on) System.err.println("ink-cast: $text")
+        keep(text)
+    }
+
+    private val file by lazy { java.io.File(Home.dir, "ink.log") }
+    private val before by lazy { java.io.File(Home.dir, "ink.log.1") }
+    private const val MOST = 256 * 1024L
+    private var last: String? = null
+    private var again = 0
+    private val stamp = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm:ss")
+
+    @Synchronized private fun keep(text: String) {
+        runCatching {
+            val line = scrub(text).replace('\n', ' ').take(400)
+            if (line == last) { again++; return }
+            if (again > 0) write("  (the line before, ${again} more times)")
+            last = line; again = 0
+            write(line)
+        }
+    }
+
+    private fun write(line: String) {
+        if (file.length() > MOST) { before.delete(); file.renameTo(before) }
+        file.appendText("${java.time.LocalDateTime.now().format(stamp)} $line\n")
+    }
+
+    private val home = System.getProperty("user.home").orEmpty()
+    private val private = listOf(
+        // a cookie's or a sign-in's values
+        Regex("""(?i)\b(SAPISID|__Secure-[\w-]+|SID|HSID|SSID|APISID|LOGIN_INFO|cookie|token|auth|sapisidhash|key|secret|pass(word)?)(["':= ]+)[^;,\s"']+""") to "$1$3…",
+        // a link: where, not what (a stream's link carries its signature and your address)
+        Regex("""(https?://[^/\s"']+)[^\s"']*""") to "$1/…",
+        Regex("""[\w.+-]+@[\w-]+\.[\w.-]+""") to "…@…",
+        // long runs of letters and numbers: tokens, signatures
+        Regex("""[A-Za-z0-9_\-]{40,}""") to "…",
+        // an internet address not on your own network
+        Regex("""\b(?!10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)\d{1,3}(\.\d{1,3}){3}\b""") to "x.x.x.x",
+    )
+
+    fun scrub(s: String): String {
+        var out = if (home.length > 2) s.replace(home, "~") else s
+        for ((r, to) in private) out = r.replace(out, to)
+        return out
+    }
+
+    /** The log's last lines, the one before first. */
+    @Synchronized fun tail(lines: Int): List<String> = runCatching {
+        ((if (before.exists()) before.readLines() else emptyList()) + (if (file.exists()) file.readLines() else emptyList())).takeLast(lines)
+    }.getOrDefault(emptyList())
 }

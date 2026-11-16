@@ -35,6 +35,8 @@ data class TubeFound(
  * code, shared (the youtube module). Not affiliated with YouTube or Google.
  */
 object YouTube {
+    // why a song's stream couldn't be read, into the log (a song skipped had said nothing)
+    init { Pipe.failed = { vid, e -> Log.d("stream: y$vid couldn't be read: ${e::class.simpleName}: ${e.message?.take(160)}") } }
     private val yt get() = ServiceList.YouTube
     private val known = ConcurrentHashMap<String, Song>()
     private val streams = ConcurrentHashMap<String, Pair<String, Long>>()   // id -> url, until
@@ -190,7 +192,8 @@ object YouTube {
         val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.second > System.currentTimeMillis() }?.let { return it.first }
         val info = Pipe.streamInfo(id.removePrefix("y")) ?: return null
-        val (url, _, _) = Pipe.audio(info, forSpeaker = forSpeaker, small = small) ?: return null
+        val (url, _, _) = Pipe.audio(info, forSpeaker = forSpeaker, small = small)
+            ?: return null.also { Log.d("stream: $id read, but no audio to play in it") }
         streams[key] = url to System.currentTimeMillis() + 4 * 3_600_000L
         return url
     }

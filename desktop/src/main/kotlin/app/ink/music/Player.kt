@@ -280,6 +280,8 @@ object Player {
             if (m !== mpv) when (e) {
                 is Mpv.Hook -> {}
                 is Mpv.Loaded -> { Crossfade.loaded(m); continue }
+                // the song readied for a transition wouldn't open: the transition can't be
+                is Mpv.Ended -> { if (e.reason == 4) Log.d("readied song couldn't play: ${m.errorText(e.error)}"); continue }
                 is Mpv.Shutdown -> return
                 else -> continue
             }
@@ -348,6 +350,8 @@ object Player {
                     if (pendingSeek > 0) { val ms = pendingSeek; pendingSeek = 0; seek(ms) }
                     hear(m)
                 }
+                // a song that wouldn't play (mpv goes on to the next by itself): which, and why, kept in the log
+                is Mpv.Ended -> if (e.reason == 4) Log.d("couldn't play ${_queue.value.getOrNull(index)?.let { "${it.id} (${if (it.tube) "youtube" else if (it.server) "server" else "file"})" } ?: "a song"}: ${m.errorText(e.error)}")
                 is Mpv.Shutdown -> return
                 else -> {}
             }

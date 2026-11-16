@@ -356,6 +356,12 @@ private fun AboutSetting() {
     }
     Spacer(Modifier.height(10.dp))
     Word("the code", pixel(14.sp, Ink.mid), touch = 8.dp) { browse("https://github.com/inkappdev/ink-music") }
+    // something wrong: what ink music noticed, copied to paste in a message (Report; nothing sent)
+    var copied by remember { mutableStateOf(false) }
+    Spacer(Modifier.height(14.dp))
+    BasicText("something not working? this copies what ink music noticed, to paste in a message to us. " +
+        "no passwords or sign-ins, and nothing is sent", style = pixel(12.sp, Ink.mid))
+    Word(if (copied) "copied" else "copy a report", pixel(14.sp), touch = 8.dp) { copyText(Report.text()); copied = true }
     // a coffee, offered once and quietly
     Spacer(Modifier.height(14.dp))
     BasicText("free, always. if ink music makes your day a little better:", style = pixel(12.sp, Ink.mid))

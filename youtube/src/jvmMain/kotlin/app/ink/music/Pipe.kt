@@ -29,11 +29,17 @@ object Pipe {
         synchronized(this) { if (!ready) { NewPipe.init(Fetch, Localization("en", "US")); ready = true } }
     }
 
+    /** Told why a song's stream couldn't be read (the computer's log): it had been dropped without a word. */
+    @Volatile var failed: ((vid: String, why: Throwable) -> Unit)? = null
+
     /** A song's stream, read without the videos YouTube sets beside it (a half-megabyte, two thirds of the wait). */
     fun streamInfo(vid: String): StreamInfo? {
         init()
         Fetch.lean.set(true)
-        return try { runCatching { StreamInfo.getInfo(org.schabi.newpipe.extractor.ServiceList.YouTube, "https://www.youtube.com/watch?v=$vid") }.getOrNull() }
+        return try {
+            runCatching { StreamInfo.getInfo(org.schabi.newpipe.extractor.ServiceList.YouTube, "https://www.youtube.com/watch?v=$vid") }
+                .onFailure { e -> runCatching { failed?.invoke(vid, e) } }.getOrNull()
+        }
         finally { Fetch.lean.set(false) }
     }
 

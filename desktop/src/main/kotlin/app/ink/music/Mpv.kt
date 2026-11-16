@@ -40,6 +40,8 @@ internal interface Libc : Library {
 
 class Mpv(options: Map<String, String>) {
     internal val api: MpvApi = load()
+    /** mpv's own words for one of its error codes. */
+    fun errorText(code: Int): String = runCatching { api.mpv_error_string(code) }.getOrDefault("error $code")
 
     init {
         // mpv won't start under a locale that writes 1,5 for 1.5 (the JVM takes the system's): numbers the C way
@@ -86,7 +88,8 @@ class Mpv(options: Map<String, String>) {
 
     sealed interface Event
     data class Changed(val name: String, val value: Any?) : Event
-    data class Ended(val reason: Int) : Event
+    /** A file done: why (0 its end, 2 stopped, 4 an error), and the error, if one (mpv's code). */
+    data class Ended(val reason: Int, val error: Int = 0) : Event
     data object Loaded : Event
     data class Hook(val name: String, val id: Long) : Event
     data object Shutdown : Event
@@ -101,7 +104,8 @@ class Mpv(options: Map<String, String>) {
         return when (e.getInt(0)) {
             SHUTDOWN -> Shutdown
             FILE_LOADED -> Loaded
-            END_FILE -> Ended(e.getPointer(16)?.getInt(0) ?: 0)
+            // mpv_event_end_file { int reason; int error; ... }
+            END_FILE -> e.getPointer(16).let { p -> Ended(p?.getInt(0) ?: 0, p?.getInt(4) ?: 0) }
             // mpv_event_hook { const char* name; uint64_t id }
             HOOK -> e.getPointer(16)?.let { p -> Hook(p.getPointer(0).getString(0, "UTF-8"), p.getLong(8)) }
             PROPERTY_CHANGE -> {
