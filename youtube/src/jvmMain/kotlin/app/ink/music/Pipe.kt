@@ -81,8 +81,22 @@ object Pipe {
         fun plain(s: String) = s.lowercase().replace(Regex("""\s*[(\[].*?[)\]]"""), "").filter { it.isLetterOrDigit() }
         val a = plain(artist.substringBefore(",")); val fa = plain(foundArtist.substringBefore(","))
         val t = plain(title); val ft = plain(foundTitle)
-        return a.isNotEmpty() && fa.isNotEmpty() && (fa.contains(a) || a.contains(fa)) && t.isNotEmpty() && (ft.contains(t) || t.contains(ft))
+        return a.isNotEmpty() && fa.isNotEmpty() && (fa.contains(a) || a.contains(fa)) && t.isNotEmpty() && (ft.contains(t) || t.contains(ft)) &&
+            !otherRecording(foundTitle, title)
     }
+
+    /**
+     * Another recording of the song under its name: a live take, a remix, an instrumental, a karaoke or tribute
+     * catalogue's copy, a clean edit, when the one asked for isn't one (or the other way round). The brackets stripped to
+     * compare titles took that with them: "Otherside" was "Otherside - Live" (2026-11-16, after Mornye-Python's
+     * recording guard, MIT, mornye/core/text_match.py: the words, and asking it before the titles are compared).
+     */
+    fun otherRecording(foundTitle: String, title: String): Boolean =
+        RECORDING.containsMatchIn(foundTitle) != RECORDING.containsMatchIn(title)
+
+    private val RECORDING = Regex("""\b(live|remix|mix|edit|instrumental|acoustic|demo|karaoke|a cappella|acapella|reprise|radio edit|extended|""" +
+        """backing track|sing[- ]?along|tribute|made famous by|originally performed by|in the style of|clean version|clean edit|censored|""" +
+        """sped ?up|slowed|nightcore)\b""", RegexOption.IGNORE_CASE)
 
     /**
      * A song's words as a person would say them. A song's own upload ("X - Topic") is already
