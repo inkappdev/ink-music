@@ -1,0 +1,4 @@
+- The player's cover fills the screen on wider phones (it sat to one side)
+- On a tablet, the cover sits in the middle
+- The cover finally found the middle. It's been a journey
+- Call someone you miss today
