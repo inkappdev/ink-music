@@ -79,8 +79,29 @@ object YouTube {
      * A record's songs, in order: YouTube Music's own page for it (a record from a search comes as its playlist,
      * "OLAK5uy_...", read as one), kept for the run.
      */
-    suspend fun album(record: TubeAlbum): List<Song> = withContext(Dispatchers.IO) {
-        albums[record.url]?.let { return@withContext it }
+    suspend fun album(record: TubeAlbum): List<Song> = albums[record.url] ?: kept(record) ?: read(record)
+
+    /**
+     * A list as last read whole, from the cache (2026-11-16, Bronson: "the speed of loading youtube music playlists": a
+     * list read whole each time it was opened, ~0.4 s a hundred songs, 3.7 s for 871, and again each start). Null if
+     * it was never read here.
+     */
+    fun kept(record: TubeAlbum): List<Song>? {
+        albums[record.url]?.let { return it }
+        val f = keptFile(record)
+        if (!f.exists()) return null
+        return runCatching { org.json.JSONArray(f.readText()).let { a -> (0 until a.length()).map { songOf(a.getJSONObject(it)) } } }
+            .getOrNull()?.takeIf { it.isNotEmpty() }?.also { songs -> songs.forEach(::remember) }
+    }
+
+    private val listsDir by lazy { java.io.File(Home.cache, "youtube-lists").apply { mkdirs() } }
+    private fun keptFile(record: TubeAlbum) = java.io.File(listsDir, Integer.toHexString(record.url.hashCode()) + ".json")
+
+    /**
+     * A record's or list's songs read from YouTube Music now, [each] told the songs so far as each page comes (the first
+     * hundred in ~0.3 s): kept for the run and in the cache once read whole.
+     */
+    suspend fun read(record: TubeAlbum, each: ((List<Song>) -> Unit)? = null): List<Song> = withContext(Dispatchers.IO) {
         if (Local.on) return@withContext emptyList()
         // as you when signed in (your own playlists are private)
         val tube = TubeAccount.tube() ?: InnerTube()
@@ -88,15 +109,25 @@ object YouTube {
         // a mix ("RD...") goes on for ever, page after page of more like it: its first 50, as the phone reads it, its
         // queue where it has no page (2026-11-10: Discover Mix was read to the 40-page stop, 1,200 songs in 15 s)
         val mix = list?.startsWith("RD") == true
-        val (own, tracks) = runCatching {
-            if ("/browse/" in record.url) tube.album(record.url.substringAfterLast('/'))
-            else list to tube.tracks("VL$list", max = if (mix) 50 else 2_000).ifEmpty { if (mix) tube.queue(list!!) else emptyList() }
-        }.getOrNull() ?: return@withContext emptyList()
-        val id = own ?: list ?: record.url.hashCode().toString()
-        val songs = if (id.startsWith("OLAK5uy_") || "/browse/" in record.url) tracks.mapIndexed { i, t ->
+        fun songs(id: String, tracks: List<InnerTube.Track>) = if (id.startsWith("OLAK5uy_") || "/browse/" in record.url) tracks.mapIndexed { i, t ->
             trackSong(t, album = record.title, albumId = "ya$id", albumArtist = record.artist, number = i + 1, art = record.art)
         } else tracks.map { trackSong(it) }
-        songs.also { if (it.isNotEmpty()) albums[record.url] = it }
+        // the songs so far, page by page, while a list is read (a record comes in one)
+        val so = each?.let { tell -> { t: List<InnerTube.Track> -> tell(songs(list ?: "", t)) } }
+        val (own, tracks) = runCatching {
+            if ("/browse/" in record.url) tube.album(record.url.substringAfterLast('/'))
+            else list to tube.tracks("VL$list", max = if (mix) 50 else 2_000, each = so).ifEmpty { if (mix) tube.queue(list!!) else emptyList() }
+        }.getOrNull() ?: return@withContext emptyList()
+        val id = own ?: list ?: record.url.hashCode().toString()
+        songs(id, tracks).also {
+            if (it.isEmpty()) return@also
+            albums[record.url] = it
+            runCatching {
+                Home.write(keptFile(record), org.json.JSONArray(it.map { s -> s.json() }).toString())
+                // the 150 read last kept (~400 kB for 900 songs): the rest let go
+                listsDir.listFiles()?.sortedByDescending { f -> f.lastModified() }?.drop(150)?.forEach { f -> f.delete() }
+            }
+        }
     }
 
     /**

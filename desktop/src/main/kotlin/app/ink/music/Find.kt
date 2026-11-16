@@ -318,7 +318,16 @@ fun face(a: TubeAlbum) = Song(id = "yface", path = "", title = a.title, artist =
 fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
     val playlist = a.playlist
     val covers by ListCovers.on.collectAsState()
-    val songs by androidx.compose.runtime.produceState<List<Song>?>(null, a.url) { value = YouTube.album(a) }
+    // as last read, at once, if it was ever read here; else the songs as each page comes. Read fresh every time, and
+    // the fresh list put in once whole (a list grown or changed since). Its play words wait for it whole
+    var whole by remember(a.url) { mutableStateOf(false) }
+    val songs by androidx.compose.runtime.produceState<List<Song>?>(null, a.url) {
+        val kept = YouTube.kept(a)
+        if (kept != null) { value = kept; whole = true }
+        val fresh = YouTube.read(a) { so -> if (kept == null && so.isNotEmpty()) value = so }
+        value = fresh.ifEmpty { kept ?: emptyList() }
+        whole = true
+    }
     androidx.compose.foundation.layout.Column(Modifier.fillMaxSize()) {
         Close(onClose)
         Row(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 16.dp)) {
@@ -341,10 +350,10 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                BasicText(songs?.let { s -> listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration })).joinToString("  ·  ") } ?: "reading",
+                BasicText(songs?.let { s -> if (!whole) "${s.size} songs, reading" else listOf("${s.size} ${if (s.size == 1) "song" else "songs"}", clock(s.sumOf { it.duration })).joinToString("  ·  ") } ?: "reading",
                     style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(16.dp))
-                songs?.takeIf { it.isNotEmpty() }?.let { s ->
+                songs?.takeIf { it.isNotEmpty() && whole }?.let { s ->
                     PlayShuffle(s)
                     // the rest small under them, wrapping (2026-11-12, Bronson: "this could use some work": seven words
                     // of three kinds in two rows, copy link cut short)
