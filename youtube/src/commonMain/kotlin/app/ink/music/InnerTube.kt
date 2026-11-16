@@ -350,11 +350,42 @@ class InnerTube(
     }
 
     private fun post(endpoint: String, body: JSONObject, query: String = ""): JSONObject = try {
-        request(endpoint, body, query, onBehalf)
+        once(endpoint, body, query, onBehalf)
+    } catch (e: SignedOut) {
+        throw e
     } catch (e: IOException) {
         if (!onBehalf) throw e
         onBehalf = false
-        request(endpoint, body, query, false)
+        once(endpoint, body, query, false)
+    }
+
+    /** A request, asked again once at once if the network failed (a page of a long list lost the whole list). */
+    private fun once(endpoint: String, body: JSONObject, query: String, asBrand: Boolean): JSONObject = try {
+        request(endpoint, body, query, asBrand)
+    } catch (e: SignedOut) {
+        throw e
+    } catch (e: IOException) {
+        request(endpoint, body, query, asBrand)
+    }
+
+    /**
+     * YouTube Music answering as to no one though a sign-in was sent: its cookies gone stale. It says so in every answer
+     * (responseContext's tracking, logged_in "0"), and its library pages then hold a "Sign in" message and nothing else,
+     * which had been read as no playlists and no liked songs (2026-11-16, a tester on Windows: liked songs and lists gone
+     * nine times in ten). Thrown, so what's kept stays.
+     */
+    class SignedOut : IOException("youtube music: signed out")
+
+    private fun loggedOut(o: JSONObject): Boolean {
+        val tracking = o.optJSONObject("responseContext")?.optJSONArray("serviceTrackingParams") ?: return false
+        for (i in 0 until tracking.length()) {
+            val params = tracking.optJSONObject(i)?.optJSONArray("params") ?: continue
+            for (j in 0 until params.length()) {
+                val p = params.optJSONObject(j) ?: continue
+                if (p.optString("key") == "logged_in" && p.optString("value") == "0") return true
+            }
+        }
+        return false
     }
 
     private fun request(endpoint: String, body: JSONObject, query: String, asBrand: Boolean): JSONObject {
@@ -368,7 +399,10 @@ class InnerTube(
             body.toString().encodeToByteArray(), 15_000, 20_000)
         val text = r.text
         if (r.code >= 400) throw IOException("youtube music answered ${r.code}: ${text.take(200)}")
-        return JSONObject(text).also { trace?.invoke("$endpoint ${nowMs() - t0} ms, ${text.length / 1024} kB") }
+        val o = JSONObject(text).also { trace?.invoke("$endpoint ${nowMs() - t0} ms, ${text.length / 1024} kB") }
+        // signed in, your library or account asked for, answered as no one's
+        if (sapisid != null && (endpoint == "browse" || endpoint.startsWith("account/")) && loggedOut(o)) throw SignedOut()
+        return o
     }
 
     /** As the web page asks: its client, your visitor id, and signed in, your cookies and the request signed. */

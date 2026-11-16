@@ -105,7 +105,8 @@ fun SettingsPage(onClose: () -> Unit) {
                             val who by TubeAccount.who.collectAsState()
                             val local = Library.songs.collectAsState().value.count { !it.server }
                             SettingRow("YOUR SERVER", a?.name?.lowercase() ?: "sign in", opened) { ServerSetting() }
-                            SettingRow("YOUTUBE MUSIC", who?.name?.lowercase() ?: "sign in", opened) { YouTubeSetting() }
+                            val stale by TubeAccount.stale.collectAsState()
+                            SettingRow("YOUTUBE MUSIC", if (stale) "signed out" else who?.name?.lowercase() ?: "sign in", opened) { YouTubeSetting() }
                             SettingRow("YOUR FILES", "$local ${if (local == 1) "song" else "songs"}", opened) { FilesSetting() }
                             RowsEnd()
                         }
@@ -682,9 +683,16 @@ private fun YouTubeSetting() {
         else -> {
             BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
             BasicText("${lists.size} ${if (lists.size == 1) "playlist" else "playlists"}   ${liked.size} liked songs", style = pixel(12.sp, Ink.mid))
+            // the sign-in from the phone gone stale here: what was read last is kept, and how to have it back
+            val problem by TubeAccount.problem.collectAsState()
+            if (TubeAccount.stale.collectAsState().value) BasicText("youtube music answered this computer as signed out. your lists and " +
+                "likes are as last read, and it tries again on its own. if it keeps on, sign out of youtube music on your phone, " +
+                "sign in again there, and pair again", style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 6.dp))
+            // why the last read failed, as it said: a listener can tell us
+            problem?.let { BasicText("last read: $it".lowercase(), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp)) }
             BasicText("youtube songs you play here go in your history there, as in its own app", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(10.dp))
-            Word("read again", pixel(14.sp), touch = 8.dp) { TubeAccount.sync() }
+            Word("read again", pixel(14.sp), touch = 8.dp) { TubeAccount.sync(fresh = true) }
             Word("sign out", pixel(14.sp, Ink.mid), touch = 8.dp) { TubeAccount.signOut() }
         }
     }

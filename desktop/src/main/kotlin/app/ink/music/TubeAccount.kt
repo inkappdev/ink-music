@@ -25,8 +25,22 @@ object TubeAccount {
     val playlists = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val liked = MutableStateFlow<List<Song>>(emptyList())
     val mixes = MutableStateFlow<List<TubeAlbum>>(emptyList())
+    /**
+     * YouTube Music answered as to no one, though the phone's sign-in was sent (why, not yet known: the phone's own reads
+     * with the same cookies work). Said in settings; the lists and likes last read are kept meanwhile.
+     */
+    val stale = MutableStateFlow(false)
+    /** Why the last read failed, in a few words, while it's failing (settings shows it: a listener can tell us). */
+    val problem = MutableStateFlow<String?>(null)
 
     private val file = File(Home.dir, "youtube.json")
+    /**
+     * Your playlists, liked songs and mixes as last read whole (2026-11-16): shown from the start, and kept when a read
+     * fails. Before, each start began with none, and one read gone wrong left them empty till the next start (a tester
+     * on Windows: liked songs and lists gone nine times in ten).
+     */
+    private val library = File(Home.dir, "youtube-library.json")
+    @Volatile private var syncing: kotlinx.coroutines.Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var auth: JSONObject? = null
 
@@ -40,27 +54,76 @@ object TubeAccount {
         val o = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
         auth = o
         who.value = Who(o.optString("name"), o.optString("handle"))
+        restore()
         sync()
+        // read again now and then while open: what you liked on the phone comes over, and a read that failed is tried
+        scope.launch { while (true) { kotlinx.coroutines.delay(30 * 60_000L); if (auth != null) sync() } }
     }
 
-    /** Your playlists, liked songs and mixes, read again. */
-    fun sync() {
-        val t = tube() ?: return
-        scope.launch {
+    private fun restore() = runCatching {
+        val o = JSONObject(library.readText())
+        fun albums(a: JSONArray?) = (0 until (a?.length() ?: 0)).map { a!!.getJSONObject(it) }
+            .map { TubeAlbum(it.getString("url"), it.getString("title"), it.optString("artist"), it.optString("art").ifEmpty { null }) }
+        playlists.value = albums(o.optJSONArray("playlists"))
+        mixes.value = albums(o.optJSONArray("mixes"))
+        val a = o.optJSONArray("liked")
+        liked.value = (0 until (a?.length() ?: 0)).mapNotNull { runCatching { songOf(a!!.getJSONObject(it)) }.getOrNull() }
+        if (liked.value.isNotEmpty()) Loved.putTube(liked.value)
+    }.onFailure { if (library.exists()) Log.d("youtube library: $it") }
+
+    private fun keepLibrary() = runCatching {
+        fun albums(l: List<TubeAlbum>) = JSONArray(l.map { JSONObject().put("url", it.url).put("title", it.title).put("artist", it.artist).put("art", it.art ?: "") })
+        Home.write(library, JSONObject().put("playlists", albums(playlists.value)).put("mixes", albums(mixes.value))
+            .put("liked", JSONArray(liked.value.map { it.json() })).toString())
+    }
+
+    /**
+     * Your playlists, liked songs and mixes, read again; each kept as it was if its read fails (signed out, the network),
+     * and tried again a minute on, then five, then fifteen.
+     */
+    fun sync(fresh: Boolean = false) {
+        if (tube() == null) return
+        // a sign-in just handed over starts again with it; otherwise one at a time
+        if (fresh) syncing?.cancel() else if (syncing?.isActive == true) return
+        syncing = scope.launch {
+            for (wait in listOf(0L, 60_000L, 5 * 60_000L, 15 * 60_000L)) {
+                if (wait > 0) kotlinx.coroutines.delay(wait)
+                // the sign-in as it is now (the phone may have handed a fresh one meanwhile)
+                val t = tube() ?: return@launch
+                if (read(t)) return@launch
+            }
+        }
+    }
+
+    /** One read of the three; whether each was read whole. */
+    private fun read(t: InnerTube): Boolean {
+        var whole = true
+        var out = false
+        val why = ArrayList<String>()
+        fun failed(what: String, e: Throwable) {
+            whole = false; if (e is InnerTube.SignedOut) out = true; Log.d("youtube $what: $e")
+            why += "$what: " + (if (e is InnerTube.SignedOut) "signed out" else (e.message ?: e::class.simpleName ?: "failed").take(90))
+        }
+        run {
             runCatching {
                 playlists.value = t.items("FEmusic_liked_playlists", 200).filter { it.kind == InnerTube.Kind.PLAYLIST }
                     // liked music is the loved list here; "episodes for later" isn't music
                     .filter { it.id != "VLLM" && it.id != "VLSE" }
                     .map { TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, it.subtitle.substringAfter(" • ", "").ifEmpty { it.subtitle }, it.art) }
-            }.onFailure { Log.d("youtube lists: $it") }
-            runCatching { liked.value = t.tracks("VLLM", LIKED_MOST).map(YouTube::song); Loved.putTube(liked.value) }.onFailure { Log.d("youtube liked: $it") }
+            }.onFailure { failed("lists", it) }
+            runCatching { liked.value = t.tracks("VLLM", LIKED_MOST).map(YouTube::song); Loved.putTube(liked.value) }.onFailure { failed("liked", it) }
             runCatching {
                 // your mixes: the home page's personal mixes ("RDTMAK" playlists; a shelf called a mix as well)
                 mixes.value = t.home(12).flatMap { s ->
                     s.items.filter { it.kind == InnerTube.Kind.PLAYLIST && (it.id.startsWith("VLRDTMAK") || it.id.startsWith("RDTMAK") || "mix" in s.title.lowercase()) }
                 }.distinctBy { it.id }.map { TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, it.subtitle, it.art) }
-            }.onFailure { Log.d("youtube mixes: $it") }
+            }.onFailure { failed("mixes", it) }
         }
+        // what was read is kept (what wasn't stays as it was), whole or not
+        keepLibrary()
+        if (out) stale.value = true else if (whole) stale.value = false
+        problem.value = why.takeIf { it.isNotEmpty() }?.joinToString("; ")
+        return whole
     }
 
     /**
@@ -110,6 +173,7 @@ object TubeAccount {
 
     fun signOut() {
         file.delete(); auth = null
+        library.delete(); stale.value = false; problem.value = null; syncing?.cancel()
         who.value = null; playlists.value = emptyList(); liked.value = emptyList(); mixes.value = emptyList()
         Loved.putTube(emptyList())
     }
@@ -135,8 +199,8 @@ object TubeAccount {
             // only you can read it
             file.setReadable(false, false); file.setReadable(true, true); file.setWritable(false, false); file.setWritable(true, true)
         }
-        auth = kept; who.value = w
-        sync()
+        auth = kept; who.value = w; stale.value = false
+        sync(fresh = true)
         return w
     }
 
