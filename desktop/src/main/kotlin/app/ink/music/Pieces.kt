@@ -265,6 +265,8 @@ fun Modifier.feather(state: androidx.compose.foundation.ScrollState, topSize: Dp
  * A scrollbar at the right edge (2026-11-15, a tester: "scrolling relies entirely on the mouse wheel ... inconvenient
  * with a large number of songs"): a 2 dp line, there only while there's more than fits; brighter under the mouse,
  * ink while held. Drag it, or press anywhere along the edge to go there. Drawn over the feather, never faded by it.
+ * In a gutter of its own at the right (2026-11-16, Bronson's screenshot: drawn over the list, it ran through the songs'
+ * lengths): what's listed stops 10 dp short of the edge, the line in that.
  */
 @Composable
 fun Modifier.scrollbar(adapter: androidx.compose.foundation.v2.ScrollbarAdapter): Modifier {
@@ -323,4 +325,8 @@ fun Modifier.scrollbar(adapter: androidx.compose.foundation.v2.ScrollbarAdapter)
             drawRect(if (held) Ink.ink else if (over) Ink.mid else Ink.dim,
                 androidx.compose.ui.geometry.Offset(size.width - w - 4.dp.toPx(), at), androidx.compose.ui.geometry.Size(w, len))
         }
+        .padding(end = SCROLLBAR_GUTTER)
 }
+
+/** The room kept at a scrolling list's right for its scrollbar. */
+val SCROLLBAR_GUTTER = 10.dp
