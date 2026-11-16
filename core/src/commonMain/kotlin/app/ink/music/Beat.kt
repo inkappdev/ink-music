@@ -26,7 +26,13 @@ object Beat {
      * Its period (ms), one beat's time (ms into the song), how sure (z-score: [SURE] and up is matched); where a bar
      * begins (ms: a downbeat, bar one), and each whole bar in the stretch, from there, with its loudness (0 to 1).
      */
-    data class Found(val period: Double, val first: Double, val sure: Double, val downbeat: Double = first, val bars: List<Bar> = emptyList()) {
+    data class Found(val period: Double, val first: Double, val sure: Double, val downbeat: Double = first, val bars: List<Bar> = emptyList(),
+                     /**
+                      * How many of the grid's beats land on a rise (0 to 1): a strong peak in the autocorrelation can come
+                      * from a stretch whose beats are only some of the time where the grid says (after Mornye's AutoMix,
+                      * LGPL-3.0, github.com/mornyeapp/Mornye: its confidence the lesser of the two).
+                      */
+                     val coverage: Double = 1.0) {
         val bpm get() = 60_000 / period
         /** The bar start (downbeat) nearest `t`, the bars' grid laid on. */
         fun barNear(t: Double) = downbeat + kotlin.math.round((t - downbeat) / (4 * period)).toLong() * 4 * period
@@ -46,8 +52,31 @@ object Beat {
     private const val WINDOW = 512
     private const val HALVE_ABOVE_BPM = 152.0
 
-    /** The beat of `mono` (samples at `rate`), which begins `startMs` into the song; null under 10 s or silent. */
+    /**
+     * The beat of `mono` (samples at `rate`), which begins `startMs` into the song; null under 10 s or silent. How sure
+     * is the reading's own, then weighed as Mornye's AutoMix weighs it (LGPL-3.0, github.com/mornyeapp/Mornye; 2026-11-16):
+     * a grid whose beats mostly don't land on a rise (coverage under [COVERED]) isn't one to mix by, however strong its
+     * peak; and a middling one ([AGREED] to [SURE]) is, where the stretch's two halves read the same tempo on their own
+     * (within 2%), its beats landing. On the 50 test songs (librosa's tempo the reference, as 2026-11-08): sure 70 to 75,
+     * right 60 to 64; pairs to mix 274 to 312, both right 198 to 227, as often right as before (72% to 73%).
+     */
     fun find(mono: FloatArray, rate: Int, startMs: Long): Found? {
+        val r = read(mono, rate, startMs) ?: return null
+        if (r.coverage < COVERED) return r.copy(sure = min(r.sure, AGREED - .1))
+        if (r.sure >= SURE || r.sure < AGREED) return r
+        val half = mono.size / 2
+        val a = read(mono.copyOfRange(0, half), rate, startMs) ?: return r
+        val b = read(mono.copyOfRange(half, mono.size), rate, startMs + (half * 1000L / rate)) ?: return r
+        fun near(x: Found) = kotlin.math.abs(x.bpm / r.bpm - 1) <= .02
+        return if (near(a) && near(b)) r.copy(sure = SURE) else r
+    }
+
+    /** Under this share of its beats landing, a grid isn't mixed by. */
+    const val COVERED = 0.6
+    /** From here to [SURE], mixed by where its two halves agree. */
+    const val AGREED = 2.5
+
+    private fun read(mono: FloatArray, rate: Int, startMs: Long): Found? {
         // about 11 kHz is plenty for onsets (and a 512 window then 46 ms, its bins 21 Hz: the low bands apart)
         val k = max(1, (rate / 11_025.0).roundToInt())
         val sr = rate / k
@@ -125,6 +154,19 @@ object Beat {
         // a frame's energy is its window's: its time the window's middle
         val offset = WINDOW / 2 * 1000.0 / sr
         val beat = phase(from, to, lag)
+        // the grid's beats that land on a rise: a beat (or a frame either side) at least 30% of the mean at the beats
+        val coverage = run {
+            var count = 0; var sum = 0.0; var t = beat
+            while (t < to - 1) { sum += at(od, t); count++; t += lag }
+            val mean = if (count > 0) sum / count else 0.0
+            var hits = 0; t = beat
+            while (t < to - 1) {
+                val i = t.roundToInt().coerceIn(1, frames - 2)
+                if (max(od[i].toDouble(), max(od[i - 1].toDouble(), od[i + 1].toDouble())) >= 0.3 * mean) hits++
+                t += lag
+            }
+            if (count > 0 && mean > 0) hits.toDouble() / count else 0.0
+        }
 
         // bar one (FireTheDJ's way, github.com/suryablaze02-byte/FireTheDJ, GPL-3.0): a song's sections start and stop
         // on bar starts, so of the four places a bar could begin, the one where the loudness changes most often
@@ -145,7 +187,7 @@ object Beat {
         val top = raw.maxOrNull()?.takeIf { it > 0 } ?: 1.0
         val toMs = 1000.0 / sr
         val bars = raw.indices.map { Bar(startMs + (downS + it * barS) * toMs + offset, (raw[it] / top).toFloat()) }
-        return Found(lag * frameMs, startMs + beat * frameMs + offset, sure, startMs + downS * toMs + offset, bars)
+        return Found(lag * frameMs, startMs + beat * frameMs + offset, sure, startMs + downS * toMs + offset, bars, coverage)
     }
 
     private fun hop(sr: Int) = (sr / 100).toDouble()
