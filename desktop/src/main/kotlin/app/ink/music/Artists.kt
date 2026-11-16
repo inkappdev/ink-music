@@ -72,7 +72,10 @@ object Artists {
 
     /** Their page from YouTube Music: by its id, else found by name first. */
     private fun fetch(name: String, id: String): ArtistInfo? = runCatching {
+        // by its id; else by their name (only one called just that); else through a record of theirs you have, where the
+        // name finds someone else or no one (2026-11-16: "Ace" found Yungeen Ace; "Five-a-Side" finds Ace)
         val page = id.ifEmpty { find(name)?.takeIf { it.name.equals(name, ignoreCase = true) }?.id.orEmpty() }
+            .ifEmpty { byRecord(name).orEmpty() }
         if (page.isEmpty()) return null
         val a = InnerTube().artist(page)
         val who = a.name.ifEmpty { name }
@@ -86,6 +89,11 @@ object Artists {
             a.like.map { TubeArtist(it.title, it.art, it.id) },
             a.featured.map { TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, "youtube music", it.art) })
     }.onFailure { Log.d("artist $name: $it") }.getOrNull()
+
+    /** Their page's id through one of their records here (the first two tried). */
+    private fun byRecord(name: String): String? = Library.albums.value.filter { it.artist.equals(name, ignoreCase = true) }.take(2)
+        .firstNotNullOfOrNull { InnerTube().artistByRecord(it.title, name) }
+        ?.also { Log.d("artist $name: found through a record of theirs") }
 
     /** An artist by name, with their photo and page id (a search). */
     private fun find(name: String): TubeArtist? = runCatching {

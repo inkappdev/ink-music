@@ -344,7 +344,13 @@ object YouTubeAccount {
     private fun readArtist(name: String, id: String): ArtistInfo? {
         val t0 = System.currentTimeMillis()
         val found = runCatching {
+            // by its id; else by their name (only one called just that); else through a record of theirs on the phone,
+            // where the name finds someone else or no one (2026-11-16: "Ace" found Yungeen Ace; "Five-a-Side" finds Ace)
             val page = id.ifEmpty { YouTubeMusic.artist(name)?.takeIf { it.name.equals(name, ignoreCase = true) }?.id.orEmpty() }
+                .ifEmpty {
+                    Library.albums.value.filter { it.artist.equals(name, ignoreCase = true) }.take(2)
+                        .firstNotNullOfOrNull { (tube ?: InnerTube()).artistByRecord(it.title, name) }.orEmpty()
+                }
             if (page.isEmpty()) return@runCatching null
             val a = (tube ?: InnerTube()).artist(page)
             val who = a.name.ifEmpty { name }

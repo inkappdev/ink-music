@@ -170,6 +170,19 @@ class InnerTube(
         return (first + more).distinctBy { it.videoId }
     }
 
+    /**
+     * An artist's page id found through a record of theirs (2026-11-16): where their name alone finds someone else
+     * ("Ace" found Yungeen Ace) or no one. The record searched for by its title and their name, taken only if its title
+     * is that one's and its line names them; its page's first artist is theirs. Null if it isn't on YouTube Music.
+     */
+    fun artistByRecord(title: String, artist: String): String? = runCatching {
+        fun plain(s: String) = s.lowercase().replace(Regex("""\(.*?\)|\[.*?\]"""), "").filter { it.isLetterOrDigit() }
+        val record = searchItems("$title $artist", Kind.RECORD, 6).firstOrNull {
+            plain(it.title) == plain(title) && plain(it.subtitle).contains(plain(artist))
+        } ?: return null
+        all(post("browse", JSONObject().put("browseId", record.id)), "browseEndpoint").map { it.optString("browseId") }.firstOrNull { it.startsWith("UC") }
+    }.getOrNull()
+
     /** An artist's page, one read: the header (photo, bio, monthly audience) and its shelves, told apart by their titles. */
     fun artist(browseId: String): Artist {
         val page = post("browse", JSONObject().put("browseId", browseId))
