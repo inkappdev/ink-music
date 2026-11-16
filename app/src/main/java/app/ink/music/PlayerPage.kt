@@ -342,25 +342,27 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                               // height than the width (a DJ set's line under it, a short phone) took the line's right end
                               // with it (2026-11-12, Bronson: "the album art is shorter on the right side")
                               BoxWithConstraints {
-                                Column(Modifier.width(minOf(maxWidth, 420.dp, room))) {
+                                Column(Modifier.width(minOf(maxWidth, coverCap(), room))) {
                                     Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
                                     Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster) { t -> Moment(t) { typing = it }; if (SetHeard.isSet(t)) SetSleeve(t.artist, t.title, onOpen) }
                                 }
                               }
                             }
                         }
+                        val cap = coverCap()
                         androidx.compose.ui.layout.SubcomposeLayout(Modifier.fillMaxSize()) { c ->
-                            val loose = c.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity)
+                            val loose = c.copy(minWidth = 0, minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity)
                             val whole = subcompose("whole") { body(androidx.compose.ui.unit.Dp.Infinity) }.map { it.measure(loose) }
                             val over = whole.sumOf { it.height } - c.maxHeight
                             val placed = if (over <= 0) whole else {
-                                val side = minOf(c.maxWidth.toDp(), 420.dp)
+                                val side = minOf(c.maxWidth.toDp(), cap)
                                 val room = (side - over.toDp() - 4.dp).coerceAtLeast(140.dp)
                                 subcompose("fit") { body(room) }.map { it.measure(loose) }
                             }
                             val h = placed.sumOf { it.height }
                             val top = ((c.maxHeight - h).coerceAtLeast(0) / 1.4f).toInt()
-                            layout(c.maxWidth, c.maxHeight) { var y = top; placed.forEach { it.place(0, y); y += it.height } }
+                            // a cover held narrower than the column (a tablet) sits in its middle, not at its left
+                            layout(c.maxWidth, c.maxHeight) { var y = top; placed.forEach { it.place((c.maxWidth - it.width) / 2, y); y += it.height } }
                         }
                     }
                 }
@@ -478,7 +480,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
             }
         } else Column {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val side = minOf(maxWidth, 420.dp, LocalCoverRoom.current)
+                val side = minOf(maxWidth, coverCap(), LocalCoverRoom.current)
                 Sleeve(t, side, Modifier.clickwheel({ live }, scrub))
                 Box(Modifier.size(side)) { over(t) }
             }
@@ -500,6 +502,14 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
         }
     }
 }
+
+/**
+ * How wide the player's cover may grow. A phone (under 600 dp across): the whole width, less the column's margins.
+ * 420 dp had been the cap everywhere, and a phone on a small display size is wider than that (2026-11-16, a OnePlus 13
+ * at ~584 dp: the cover and its words sat to the left, a band empty at the right). A tablet or TV keeps 420.
+ */
+@Composable
+private fun coverCap(): Dp = if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600) Dp.Infinity else 420.dp
 
 /**
  * The song's words under its cover: the title (a long one sliding along its line) and the heart, an easter egg's word,
