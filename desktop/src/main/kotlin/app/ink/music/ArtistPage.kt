@@ -265,12 +265,21 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                 }
                 item(key = "rule") { rule() }
                 // their records, yours first: a shelf as the rest are (2026-11-09: not big, gone through)
+                // yours and YouTube's as one, the latest first, each with its year (2026-11-16, Bronson: "years of release
+                // ... in albums singles and eps", "chronological order showing latest first"); the same year, yours
+                // first; no year known, at the end
                 if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) shelf("records", "records") {
-                    items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(176.dp)) { open(Page.Record(a.id)) } }
-                    items(tubeAlbums, key = { it.url }) { r -> TubeTile(r, Modifier.width(176.dp)) { open(Page.Tube(r)) } }
+                    val all: List<Any> = (records.map { it to it.year } + tubeAlbums.map { it to it.year })
+                        .sortedWith(compareByDescending<Pair<Any, Int>> { it.second > 0 }.thenByDescending { it.second }.thenBy { it.first !is Album })
+                        .map { it.first }
+                    items(all, key = { if (it is Album) it.id else (it as TubeAlbum).url }) { r ->
+                        if (r is Album) RecordTile(r, Modifier.width(176.dp), said = if (r.year > 0) "${r.year}" else "yours") { open(Page.Record(r.id)) }
+                        else (r as TubeAlbum).let { t -> TubeTile(t, Modifier.width(176.dp), said = t.dated.ifEmpty { "youtube music" }) { open(Page.Tube(t)) } }
+                    }
                 }
-                i?.singles?.takeIf { it.isNotEmpty() }?.let { singles ->
-                    shelf("singles", "singles and eps") { items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { open(Page.Tube(r)) } } }
+                i?.singles?.takeIf { it.isNotEmpty() }?.let { found ->
+                    val singles = found.sortedWith(compareByDescending<TubeAlbum> { it.year > 0 }.thenByDescending { it.year })
+                    shelf("singles", "singles and eps") { items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp), said = r.dated.ifEmpty { "single" }) { open(Page.Tube(r)) } } }
                 }
                 // their music videos (MusicVideos), newest first
                 if (i != null && i.id.startsWith("UC")) item(key = "videos") { ArtistVideos(name, i.id, open) }

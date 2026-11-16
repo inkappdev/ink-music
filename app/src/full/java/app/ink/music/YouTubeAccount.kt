@@ -342,7 +342,10 @@ object YouTubeAccount {
             if (page.isEmpty()) return@runCatching null
             val a = (tube ?: InnerTube()).artist(page)
             val who = a.name.ifEmpty { name }
-            fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art)
+            // its year and kind from the line under it ("2021", "Single • 2021", "EP • 2025")
+            fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art,
+                year = Regex("""\b(19|20)\d{2}\b""").findAll(it.subtitle).lastOrNull()?.value?.toInt() ?: 0,
+                kind = it.subtitle.substringBefore(" • ").trim().lowercase().takeIf { k -> k == "single" || k == "ep" }.orEmpty())
             // no bio of YouTube's own, or a scrap: one found (Wikipedia's, else Last.fm's), kept with the page
             val about = if (Bio.scant(a.about)) Bio.find(who, LastFm.key) ?: a.about else a.about
             ArtistInfo(page, who, a.photo, about, a.audience, a.top.map(::song), a.albums.map(::record), a.singles.map(::record),
@@ -450,7 +453,8 @@ object YouTubeAccount {
     private fun json(a: ArtistInfo): String = JSONObject().put("id", a.id).put("name", a.name).put("photo", a.photo.orEmpty())
         .put("about", a.about).put("audience", a.audience)
         .put("top", org.json.JSONArray(a.top.map { it.json() }))
-        .put("albums", org.json.JSONArray((a.albums + a.singles).map { r -> JSONObject().put("url", r.url).put("title", r.title).put("art", r.art.orEmpty()).put("single", r in a.singles) }))
+        .put("albums", org.json.JSONArray((a.albums + a.singles).map { r -> JSONObject().put("url", r.url).put("title", r.title).put("art", r.art.orEmpty()).put("single", r in a.singles)
+            .put("year", r.year).put("kind", r.kind) }))
         .put("like", org.json.JSONArray(a.like.map { JSONObject().put("name", it.name).put("face", it.face.orEmpty()).put("id", it.id) }))
         .put("featured", org.json.JSONArray(a.featured.map { JSONObject().put("id", it.id).put("name", it.name).put("said", it.said).put("art", it.art.orEmpty()) }))
         .toString()
@@ -458,7 +462,8 @@ object YouTubeAccount {
     private fun artistFrom(text: String): ArtistInfo? = runCatching {
         val o = JSONObject(text)
         fun list(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()
-        val records = list("albums").map { (TubeAlbum(it.getString("url"), it.getString("title"), o.getString("name"), it.optString("art").ifEmpty { null })) to it.optBoolean("single") }
+        val records = list("albums").map { (TubeAlbum(it.getString("url"), it.getString("title"), o.getString("name"), it.optString("art").ifEmpty { null },
+            it.optInt("year"), it.optString("kind"))) to it.optBoolean("single") }
         ArtistInfo(o.getString("id"), o.getString("name"), o.optString("photo").ifEmpty { null }, o.optString("about"), o.optString("audience"),
             list("top").map { songOf(it).also(YouTubeMusic::remember) }, records.filter { !it.second }.map { it.first }, records.filter { it.second }.map { it.first },
             list("like").map { TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) },

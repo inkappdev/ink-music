@@ -1377,7 +1377,7 @@ fun UnderCover(title: String, said: String) {
 }
 
 @Composable
-fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
+fun RecordTile(a: Album, modifier: Modifier, said: String = a.artist, onClick: () -> Unit) {
     // a click opens it, a double click plays it, a right click its options (2026-11-11, a tester: double click and right
     // click everywhere, not only in a tracklist)
     var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
@@ -1387,7 +1387,7 @@ fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
         menuAt?.let { RecordMenu(a, it) { menuAt = null } }
         CoverOf(a.songs.first(), a.title, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         Spacer(Modifier.height(8.dp))
-        UnderCover(a.title, a.artist)
+        UnderCover(a.title, said)
     }
 }
 

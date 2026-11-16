@@ -76,7 +76,10 @@ object Artists {
         if (page.isEmpty()) return null
         val a = InnerTube().artist(page)
         val who = a.name.ifEmpty { name }
-        fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art)
+        // its year and kind from the line under it ("2021", "Single • 2021", "EP • 2025")
+        fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art,
+            year = Regex("""\b(19|20)\d{2}\b""").findAll(it.subtitle).lastOrNull()?.value?.toInt() ?: 0,
+            kind = it.subtitle.substringBefore(" • ").trim().lowercase().takeIf { k -> k == "single" || k == "ep" }.orEmpty())
         // no bio of YouTube's own, or a scrap: one found (Wikipedia's, else Last.fm's), kept with the page
         val about = if (Bio.scant(a.about)) Bio.find(who, LastFm.key) ?: a.about else a.about
         ArtistInfo(page, who, a.photo, about, a.audience, a.top.map { YouTube.song(it) }, a.albums.map(::record), a.singles.map(::record),
@@ -97,7 +100,8 @@ object Artists {
     private fun kept(key: String): ArtistInfo? = runCatching {
         val o = JSONObject(File(dir, "$key.json").readText())
         fun albums(k: String) = o.getJSONArray(k).let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map {
-            TubeAlbum(it.getString("url"), it.getString("title"), it.getString("artist"), it.optString("art").ifEmpty { null }) } }
+            TubeAlbum(it.getString("url"), it.getString("title"), it.getString("artist"), it.optString("art").ifEmpty { null },
+                it.optInt("year"), it.optString("kind")) } }
         ArtistInfo(
             o.getString("id"), o.getString("name"), o.optString("photo").ifEmpty { null }, o.optString("about"), o.optString("audience"),
             o.getJSONArray("top").let { a -> (0 until a.length()).map { songOf(a.getJSONObject(it)).also(YouTube::remember) } },
@@ -109,7 +113,8 @@ object Artists {
     }.getOrNull()
 
     private fun keep(key: String, a: ArtistInfo) = runCatching {
-        fun albums(l: List<TubeAlbum>) = JSONArray(l.map { JSONObject().put("url", it.url).put("title", it.title).put("artist", it.artist).put("art", it.art ?: "") })
+        fun albums(l: List<TubeAlbum>) = JSONArray(l.map { JSONObject().put("url", it.url).put("title", it.title).put("artist", it.artist).put("art", it.art ?: "")
+            .put("year", it.year).put("kind", it.kind) })
         dir.mkdirs()
         Home.write(File(dir, "$key.json"), JSONObject().put("id", a.id).put("name", a.name).put("photo", a.photo ?: "").put("about", a.about)
             .put("audience", a.audience).put("top", JSONArray(a.top.map { it.json() })).put("albums", albums(a.albums)).put("singles", albums(a.singles))

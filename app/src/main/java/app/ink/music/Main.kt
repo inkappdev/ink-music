@@ -1026,11 +1026,11 @@ fun UnderCover(title: String, said: String, saidStyle: TextStyle, gap: Dp = 0.dp
 }
 
 @Composable
-fun RecordTile(a: Album, modifier: Modifier, onClick: () -> Unit) {
+fun RecordTile(a: Album, modifier: Modifier, said: String = a.artist, onClick: () -> Unit) {
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         CoverOf(a.songs.first(), a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
-        UnderCover(a.title, a.artist, pixel(12.sp, Ink.mid), gap = 3.dp)
+        UnderCover(a.title, said, pixel(12.sp, Ink.mid), gap = 3.dp)
     }
 }
 
@@ -1512,6 +1512,21 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
     LaunchedEffect(playable.firstOrNull()?.id) { Playback.warm(playable.firstOrNull()) }
     // their records: yours first, then YouTube's that you don't have
     val tubeAlbums = remember(i, records) { i?.albums.orEmpty().filter { t -> records.none { it.title.equals(t.title, ignoreCase = true) } } }
+    // yours and YouTube's records as one shelf, the latest first, each with its year (2026-11-16, Bronson: "years of
+    // release ... in albums singles and eps", "chronological order showing latest first"); the same year, yours first;
+    // no year known, at the end. Singles and EPs the same way
+    val shelf: List<Any> = remember(records, tubeAlbums) {
+        (records.map { it to it.year } + tubeAlbums.map { it to it.year })
+            .sortedWith(compareByDescending<Pair<Any, Int>> { it.second > 0 }.thenByDescending { it.second }.thenBy { it.first !is Album })
+            .map { it.first }
+    }
+    val singlesNewest = remember(i) { i?.singles.orEmpty().sortedWith(compareByDescending<TubeAlbum> { it.year > 0 }.thenByDescending { it.year }) }
+    @Composable fun ShelfTile(r: Any, width: androidx.compose.ui.unit.Dp) {
+        if (r is Album) RecordTile(r, Modifier.width(width), said = if (r.year > 0) "${r.year}" else "yours") {
+            pages.open(Page.Record(r.id, (i?.albums.orEmpty() + i?.singles.orEmpty()).firstOrNull { it.title.equals(r.title, ignoreCase = true) }))
+        } else (r as TubeAlbum).let { t -> TubeTile(t, Modifier.width(width), said = t.dated.ifEmpty { "youtube music" }) { pages.open(Page.Tube(t)) } }
+    }
+    fun shelfKey(r: Any) = if (r is Album) r.id else (r as TubeAlbum).url
     var aboutOpen by remember(name) { mutableStateOf(false) }
     val list = pageList()
     // opened the first time (nothing kept): the photo's room held and the rest kept back till YouTube Music answers, a
@@ -1540,16 +1555,13 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) item(key = "records") {
                     TvLabel("records")
                     LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(140.dp)) {
-                            pages.open(Page.Record(a.id, (i?.albums.orEmpty() + i?.singles.orEmpty()).firstOrNull { it.title.equals(a.title, ignoreCase = true) }))
-                        } }
-                        items(tubeAlbums, key = { it.url }) { r -> TubeTile(r, Modifier.width(140.dp)) { pages.open(Page.Tube(r)) } }
+                        items(shelf, key = ::shelfKey) { r -> ShelfTile(r, 140.dp) }
                     }
                 }
-                i?.singles?.takeIf { it.isNotEmpty() }?.let { singles -> item(key = "singles") {
+                singlesNewest.takeIf { it.isNotEmpty() }?.let { singles -> item(key = "singles") {
                     TvLabel("singles and eps")
                     LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(120.dp)) { pages.open(Page.Tube(r)) } }
+                        items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(120.dp), said = r.dated.ifEmpty { "single" }) { pages.open(Page.Tube(r)) } }
                     }
                 } }
                 i?.like?.takeIf { it.isNotEmpty() }?.let { like -> item(key = "like") {
@@ -1660,18 +1672,15 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
         if (records.isNotEmpty() || tubeAlbums.isNotEmpty()) item {
             Label("records")
             LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(records, key = { it.id }) { a -> RecordTile(a, Modifier.width(150.dp)) {
-                    pages.open(Page.Record(a.id, (i?.albums.orEmpty() + i?.singles.orEmpty()).firstOrNull { it.title.equals(a.title, ignoreCase = true) }))
-                } }
-                items(tubeAlbums, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { pages.open(Page.Tube(r)) } }
+                items(shelf, key = ::shelfKey) { r -> ShelfTile(r, 150.dp) }
             }
             Spacer(Modifier.height(18.dp))
         }
-        i?.singles?.takeIf { it.isNotEmpty() }?.let { singles ->
+        singlesNewest.takeIf { it.isNotEmpty() }?.let { singles ->
             item {
                 Label("singles and eps")
                 LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(130.dp)) { pages.open(Page.Tube(r)) } }
+                    items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(130.dp), said = r.dated.ifEmpty { "single" }) { pages.open(Page.Tube(r)) } }
                 }
                 Spacer(Modifier.height(18.dp))
             }
@@ -2441,14 +2450,14 @@ private fun FoundList(name: String, said: String, onClick: () -> Unit) {
 
 /** A YouTube Music record as a tile: its cover (from its link), name and artist. */
 @Composable
-fun TubeTile(a: TubeAlbum, modifier: Modifier, onClick: () -> Unit) {
+fun TubeTile(a: TubeAlbum, modifier: Modifier, said: String = a.artist, onClick: () -> Unit) {
     val face = remember(a.url) { tubeFace(a) }
     Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         // YouTube's own playlists (its mixes, charts, editors' lists) in the dither, its lettering made ink's
         if (Curation.tubeBranded(a.url, a.artist) && a.art != null) Covered(face, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
         else CoverOf(face, a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
-        UnderCover(a.title, a.artist, pixel(12.sp, Ink.mid), gap = 3.dp)
+        UnderCover(a.title, said, pixel(12.sp, Ink.mid), gap = 3.dp)
     }
 }
 

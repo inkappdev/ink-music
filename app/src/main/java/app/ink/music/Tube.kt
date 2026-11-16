@@ -1,7 +1,13 @@
 package app.ink.music
 
-/** A YouTube Music record found: its link, name, artist and cover (the full build's only). */
-data class TubeAlbum(val url: String, val title: String, val artist: String, val art: String?) {
+/**
+ * A YouTube Music record found: its link, name, artist and cover (the full build's only); on an artist's page, its year
+ * and whether it's a single or an EP (2026-11-16, Bronson: years on albums, singles and EPs, the latest first). 0 and
+ * "": not known.
+ */
+data class TubeAlbum(val url: String, val title: String, val artist: String, val art: String?, val year: Int = 0, val kind: String = "") {
+    /** What's said under its cover on an artist's page: "2021", "single · 2021", "ep · 2025". */
+    val dated: String get() = listOf(kind, if (year > 0) "$year" else "").filter { it.isNotEmpty() }.joinToString(" · ")
     /**
      * A playlist (a mix, a chart, someone's list), not a record: a record's link is a playlist's too ("list=OLAK5uy_...")
      * or its browse page (MPRE...). 2026-11-09: "list=" alone took DIIV's ZIRP! for a playlist (mix and covers on it,
