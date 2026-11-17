@@ -459,6 +459,11 @@ private fun App() {
                     }
                     if (done) return@onKeyEvent true
                 }
+                // 1 to 9 on listen: DIALED IN's (DialedInSheet)
+                val dial = listOf(Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine).indexOf(k.key)
+                if (dial >= 0 && !k.isCtrlPressed && !k.isMetaPressed && Nav.place == "listen" && Nav.pages.isEmpty()) {
+                    if (DialedPins.play?.invoke(dial + 1) == true) return@onKeyEvent true
+                }
                 when {
                     k.key == Key.Spacebar -> { Watching.toggle?.invoke() ?: Player.toggle(); true }
                     // the song selected in a list (one click), played (SongRow)

@@ -69,6 +69,53 @@ object Grain {
         val bytes = java.nio.ByteBuffer.allocate(px.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply { asIntBuffer().put(px) }.array()
         Image.makeRaster(ImageInfo(side, side, ColorType.BGRA_8888, ColorAlphaType.UNPREMUL), bytes, side * 4).toComposeImageBitmap()
     }
+
+    /** A heavier grain for a photo in black and white ([Mono]): it reads there as film's, where the blur's would be lost. */
+    val heavy: ImageBitmap by lazy {
+        val side = 256
+        val px = Prints.grainTile(side, seed = 11, strength = .13f)
+        val bytes = java.nio.ByteBuffer.allocate(px.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply { asIntBuffer().put(px) }.array()
+        Image.makeRaster(ImageInfo(side, side, ColorType.BGRA_8888, ColorAlphaType.UNPREMUL), bytes, side * 4).toComposeImageBitmap()
+    }
+
+    private const val MONO = 480
+
+    /**
+     * A photo in black and white ([Prints.mono]), square from its middle (a little above it: a face sits high in a wide
+     * photo), 480 px, kept, or null.
+     */
+    fun mono(key: String, art: ImageBitmap, words: Boolean): ImageBitmap? = runCatching {
+        val img = Image.makeFromBitmap(art.asSkiaBitmap())
+        val side = minOf(img.width, img.height).toFloat()
+        val left = (img.width - side) / 2; val top = ((img.height - side) / 2 - side * .06f).coerceAtLeast(0f)
+        val s = Surface.makeRaster(ImageInfo(MONO, MONO, ColorType.BGRA_8888, ColorAlphaType.OPAQUE))
+        s.canvas.drawImageRect(img, Rect.makeXYWH(left, top, side, side), Rect.makeWH(MONO.toFloat(), MONO.toFloat()),
+            SamplingMode.MITCHELL, org.jetbrains.skia.Paint(), true)
+        val px = Dither.pixels(s.makeImageSnapshot(), MONO)
+        Dither.image(Prints.mono(px, MONO, words), MONO).toComposeImageBitmap().also { made.put(key, it) }
+    }.getOrNull()
+}
+
+/**
+ * A photo in high-contrast black and white, ink's warm white for its white, film's grain over it (2026-11-17: YouTube's
+ * mixes and DIALED IN, where people's photos are big; dither stays ink's own: the artist pages, ink's mixes). [words]:
+ * dimmed evenly for words over it. Faded in as it's made.
+ */
+@Composable
+fun Mono(photo: Song, modifier: Modifier, words: Boolean = true) {
+    val cover = rememberCover(photo, 600)
+    val key = "mono|${photo.id}|${photo.albumId}|$words"
+    val had = remember(key) { Grain.kept(key) }
+    val pic by produceState(had, key, cover) {
+        val c = cover ?: return@produceState
+        if (value == null) value = withContext(Dispatchers.Default) { Grain.mono(key, c.image, words) }
+    }
+    val shown = remember(key) { Animatable(if (had != null) 1f else 0f) }
+    LaunchedEffect(pic) { if (pic != null && shown.value < 1f) shown.animateTo(1f, tween(600, easing = Motion.expo)) }
+    Box(modifier.background(Ink.black).clipToBounds()) {
+        pic?.let { Image(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop, filterQuality = FilterQuality.High) }
+        FilmGrain(Modifier.fillMaxSize(), tile = Grain.heavy)
+    }
 }
 
 /** A picture in the grain look: out of focus, faded in as it's made, film's grain over it (still). */
@@ -91,8 +138,8 @@ fun Grainy(photo: Song, modifier: Modifier, px: Int = 1080) {
 
 /** Film's grain over whatever is under it, a screen pixel a grain; `moving`, it dances as film's does (24 times a second). */
 @Composable
-fun FilmGrain(modifier: Modifier, moving: Boolean = false) {
-    val brush = remember { ShaderBrush(ImageShader(Grain.tile, TileMode.Repeated, TileMode.Repeated)) }
+fun FilmGrain(modifier: Modifier, moving: Boolean = false, tile: ImageBitmap = Grain.tile) {
+    val brush = remember(tile) { ShaderBrush(ImageShader(tile, TileMode.Repeated, TileMode.Repeated)) }
     var at by remember { mutableStateOf(Offset.Zero) }
     if (moving) LaunchedEffect(Unit) {
         val rnd = java.util.Random()

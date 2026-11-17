@@ -1,0 +1,184 @@
+package app.ink.music
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+
+/** DIALED IN's pins and the ones said "not here" ([DialedIn]), kept on the computer (dialed-in.json), as its menu sets them. */
+object DialedPins {
+    private val file = java.io.File(Home.dir, "dialed-in.json")
+    private val kept = DialedIn.read(runCatching { file.readText() }.getOrNull())
+    val pins = MutableStateFlow(kept.first)
+    val hidden = MutableStateFlow(kept.second)
+    private fun keep() = runCatching { Home.write(file, DialedIn.json(pins.value, hidden.value)) }
+
+    /** This one kept at its number, whatever the hour (one already there moves out). */
+    fun pin(s: DialedIn.Slot) {
+        pins.value = pins.value.filter { it.n != s.n && it.key != s.key } + DialedIn.Pin(s.n, s.key, s.kind, s.song, s.artist, s.record)
+        keep()
+    }
+    fun unpin(n: Int) { pins.value = pins.value.filter { it.n != n }; keep() }
+    /** Never here again (pinned, it's let go too). */
+    fun hide(s: DialedIn.Slot) { hidden.value = hidden.value + s.key; pins.value = pins.value.filter { it.key != s.key }; keep() }
+
+    /** The keys 1 to 9 on listen, set while DIALED IN is shown: plays that one; false if there's none. */
+    @Volatile var play: ((Int) -> Boolean)? = null
+}
+
+/**
+ * DIALED IN on listen (2026-11-17; the phone's, with room): the nine as a contact sheet, touching but for a hairline of
+ * black, a row of nine where the window is wide and three by three where it isn't; each picture in black and white with
+ * grain ([Mono]), its number big at its top left and its name along its foot, the one playing the only one in its colour.
+ * A click plays it, as do the keys 1 to 9; its menu (a right click) pins it, opens it, or says not here. Shown once
+ * there are six.
+ */
+@Composable
+fun DialedInSheet(open: (Page) -> Unit) {
+    val pins by DialedPins.pins.collectAsState()
+    val hidden by DialedPins.hidden.collectAsState()
+    val heard by Listened.now.collectAsState()
+    val liked by TubeAccount.liked.collectAsState()
+    val scope = rememberCoroutineScope()
+    val known = remember(liked) { liked.associateBy { it.id } }
+    fun songOf(id: String) = Library.song(id) ?: known[id] ?: YouTube.known(id)
+    val now = remember(heard) { System.currentTimeMillis() }
+    val minute = remember(now) { Listening.minuteOfWeek(now) }
+    // what's been heard, read off the window's thread each time it grows
+    val all by androidx.compose.runtime.produceState(emptyList<History.Heard>(), heard) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { History.read() }
+    }
+    // only what can be played again here (the library's, or a YouTube song this run knows)
+    val slots = remember(all, pins, hidden, known) {
+        val listens = all.filter { songOf(it.id) != null }.map { DialedIn.Listen(it.at, it.id, it.artist, it.record, Listening.minuteOfWeek(it.at)) }
+        DialedIn.pick(listens, minute, now, pins.filter { songOf(it.song) != null }, hidden)
+    }
+    DisposableEffect(slots) {
+        DialedPins.play = { n -> slots.firstOrNull { it.n == n }?.let { s -> songOf(s.song)?.let { play(s, it, scope); true } } ?: false }
+        onDispose { DialedPins.play = null }
+    }
+    if (slots.size < 6) return
+    val playing by Player.now.collectAsState()
+    Column {
+        Section("DIALED IN", DialedIn.said(minute) + ", 1 to 9 play them")
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // a row of nine where each can be 130 dp and more; else three by three, at most 600 wide
+            val nine = maxWidth >= 130.dp * 9
+            val cols = if (nine) 9 else 3
+            val side = if (nine) (maxWidth - 8.dp) / 9 else min((maxWidth - 2.dp) / 3, 200.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                slots.chunked(cols).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                        row.forEach { s ->
+                            val song = songOf(s.song)
+                            val lit = song != null && playing?.let { playingIs(s, it) } == true
+                            Box(Modifier.width(side)) { Slot(s, song, lit, side.value >= 170, scope, open) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Whether what's playing is this slot's: the song, a song off the record, a song of theirs. */
+private fun playingIs(s: DialedIn.Slot, n: Player.Now): Boolean = when (s.kind) {
+    DialedIn.Kind.SONG -> n.song.id == s.song
+    DialedIn.Kind.RECORD -> n.song.albumId == s.record
+    DialedIn.Kind.ARTIST -> n.song.artist.lowercase().startsWith(s.artist.lowercase())
+}
+
+private fun nameOf(s: DialedIn.Slot, song: Song?): String = when (s.kind) {
+    DialedIn.Kind.SONG -> song?.title ?: s.song
+    DialedIn.Kind.RECORD -> song?.album?.ifEmpty { null } ?: song?.title.orEmpty()
+    DialedIn.Kind.ARTIST -> s.artist
+}
+
+/** A YouTube record by its id ("ya" and its browse id, or its own playlist's). */
+private fun tubeRecord(record: String, song: Song?): TubeAlbum {
+    val id = record.removePrefix("ya")
+    val url = if (id.startsWith("OLAK5uy_")) "${InnerTube.BASE}/playlist?list=$id" else "${InnerTube.BASE}/browse/$id"
+    return TubeAlbum(url, song?.album.orEmpty(), song?.albumArtist?.ifEmpty { null } ?: song?.artist.orEmpty(), song?.art)
+}
+
+/** A slot played: the song (radio after it), the record from its start, the artist's mix from their most heard. */
+private fun play(s: DialedIn.Slot, song: Song, scope: kotlinx.coroutines.CoroutineScope) {
+    when (s.kind) {
+        DialedIn.Kind.SONG -> Player.play(listOf(song))
+        DialedIn.Kind.RECORD -> {
+            val album = Library.albums.value.firstOrNull { it.id == s.record }
+            if (album != null) Player.play(album.songs)
+            else if (s.record.startsWith("ya")) playTube(tubeRecord(s.record, song))
+            else Player.play(listOf(song))
+        }
+        DialedIn.Kind.ARTIST -> scope.launch { Mixes.play(Mixes.Mix(s.artist, song, song)) }
+    }
+}
+
+private fun openOf(s: DialedIn.Slot, song: Song?, open: (Page) -> Unit) = when (s.kind) {
+    DialedIn.Kind.ARTIST -> open(Page.Artist(s.artist))
+    DialedIn.Kind.RECORD -> if (Library.albums.value.any { it.id == s.record }) open(Page.Record(s.record)) else open(Page.Tube(tubeRecord(s.record, song)))
+    DialedIn.Kind.SONG -> Unit
+}
+
+/** One of the nine: its picture (an artist's photo, else the cover), its number, pinned or not, its name along its foot. */
+@Composable
+private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, big: Boolean, scope: kotlinx.coroutines.CoroutineScope, open: (Page) -> Unit) {
+    // an artist's photo from their page (kept), else the cover of their most heard song
+    val info by (if (s.kind == DialedIn.Kind.ARTIST) Artists.of(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
+    val face = info?.photo?.let { faceSong(s.artist, it, photo = true) } ?: song
+    WithMenu({
+        listOf(listOfNotNull(
+            "play" to { song?.let { play(s, it, scope) }; Unit },
+            (if (s.kind != DialedIn.Kind.SONG) "open" to { openOf(s, song, open); Unit } else null),
+        ), listOf(
+            (if (s.pinned) "unpin" else "pin to ${s.n}") to { if (s.pinned) DialedPins.unpin(s.n) else DialedPins.pin(s); Unit },
+            "not here" to { DialedPins.hide(s); Unit },
+        ))
+    }) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).clipToBounds().background(Ink.black)
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { song?.let { play(s, it, scope) } })) {
+            if (face != null) {
+                // the one playing in its colour, dimmed evenly for the words (as a name over a cover is)
+                if (lit) {
+                    rememberCover(face, 400)?.let { c ->
+                        val k = remember(c) { nameDim(c.image) }
+                        Image(c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = 1f - k)))
+                    }
+                } else Mono(face, Modifier.fillMaxSize())
+            }
+            BasicText("${s.n}", style = headline(if (big) 52.sp else 40.sp), modifier = Modifier.padding(start = 8.dp, top = 6.dp))
+            if (s.pinned) BasicText("pinned", style = pixel(12.sp), modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp))
+            BasicText(nameOf(s, song).uppercase(), style = headline(if (big) 15.sp else 13.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = 8.dp, bottom = 8.dp))
+        }
+    }
+}

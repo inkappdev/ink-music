@@ -162,6 +162,8 @@ fun ListenPage(open: (Page) -> Unit) {
         if (!Local.on && brought.isEmpty() && heard.plays.size < 40 && !knowMeShut) item(key = "know-me") { KnowMe { knowMeShut = true } }
         // since you were here: back after a while, what's new since then, four lines at most (Fresh.since)
         if (sinceAt != null && sinceLines.isNotEmpty()) item(key = "since") { SinceYouWereHere(sinceAt!!, sinceLines) }
+        // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
+        item(key = "dialedIn") { DialedInSheet(open) }
         // the shelves in the moment's order (Fresh.order: the time of day, the kind of day, what you open and what you
         // pass over; held for the visit), as the phone's listen (2026-11-11)
         val shelf = LinkedHashMap<String, () -> Unit>()
@@ -223,7 +225,7 @@ fun ListenPage(open: (Page) -> Unit) {
                 Column {
                 Section("YOUR MIXES", "youtube music's, made for you")
                 Shelf {
-                    items(tubeMixes, key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp)) { open(Page.Tube(a)) } }
+                    items(tubeMixes, key = { it.url }) { a -> MixTile(a) { open(Page.Tube(a)) } }
                 }
                 }
             }
@@ -285,6 +287,34 @@ fun ListenPage(open: (Page) -> Unit) {
         }
         for (k in order) shelf[k]?.invoke()
     }}
+}
+
+/**
+ * One of YouTube Music's mixes (2026-11-17, Bronson's pick of four mocked; the phone's): its lead artist's photo in black
+ * and white with grain ([Mono]), the mix's own mark big at its top left (its number as YouTube numbers it, SUPER,
+ * DISCOVER...: [TubeMixes.mark]) and its name along its foot, the artists under it. Your artists' mixes stay in the
+ * dither: dither says ink's, black and white says a photo.
+ */
+@Composable
+private fun MixTile(a: TubeAlbum, onClick: () -> Unit) {
+    val lead = remember(a) { TubeMixes.lead(a.artist) }
+    // their photo from their page (kept), else the mix's own picture
+    val info by (if (lead.isNotEmpty()) Artists.of(lead) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
+    val pic = info?.photo?.let { faceSong(lead, it, photo = true) } ?: face(a)
+    val mark = remember(a) { TubeMixes.mark(a.title, a.art) }
+    WithMenu({ listOf(listOf("open" to onClick, "play" to { playTube(a); Unit }, "shuffle" to { playTube(a, shuffle = true); Unit })) }) {
+        Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+            Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) {
+                Mono(pic, Modifier.fillMaxSize())
+                BasicText(mark, style = headline(when { mark.length <= 2 -> 68.sp; mark.length <= 5 -> 36.sp; mark.length <= 7 -> 26.sp; else -> 22.sp }),
+                    modifier = Modifier.padding(start = 10.dp, top = 8.dp))
+                BasicText(a.title.uppercase(), style = headline(16.sp), maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(10.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            BasicText(a.artist.ifEmpty { "mix" }.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
 }
 
 /** A line of what's new since you were here: what it is, a word on it, where it goes. */

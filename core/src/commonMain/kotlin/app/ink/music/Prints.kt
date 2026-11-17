@@ -22,6 +22,30 @@ enum class Print(val word: String) {
 object Prints {
     private const val BLACK = 0xFF000000.toInt()
 
+    /**
+     * A photo in black and white (2026-11-17, Bronson: "high contrast black and white with grain and then the nice text
+     * over it"; YouTube's mixes and DIALED IN): its light end to end (the darkest 2% black, the lightest 1% white), an
+     * S-curve that crushes the blacks and keeps the light, black to black and white to ink's warm white (F1F0EC), not
+     * paper's. With [words] over it, dimmed evenly as a name over a cover is (the brightest tenth of its lower half to
+     * .45; no gradient), so they read. The grain is drawn over it apart, a screen pixel a grain. `px` is `n` x `n` ARGB.
+     */
+    fun mono(px: IntArray, n: Int, words: Boolean): IntArray {
+        val lum = IntArray(px.size) { i -> val p = px[i]; ((p shr 16 and 255) * 299 + (p shr 8 and 255) * 587 + (p and 255) * 114) / 1000 }
+        val sorted = lum.sortedArray()
+        val lo = sorted[(sorted.size * .02).toInt()]; val hi = sorted[(sorted.size * .99).toInt().coerceAtMost(sorted.size - 1)]
+        val span = (hi - lo).coerceAtLeast(1)
+        // the S-curve, its ends pinned to 0 and 1
+        val a = 1 / (1 + kotlin.math.exp(4.5)); val b = 1 / (1 + kotlin.math.exp(-4.5))
+        val curve = FloatArray(256) { v -> val s = 1 / (1 + kotlin.math.exp(-9.0 * (v / 255.0 - .5))); ((s - a) / (b - a)).toFloat().coerceIn(0f, 1f) }
+        val out = FloatArray(px.size) { i -> curve[((lum[i] - lo) * 255 / span).coerceIn(0, 255)] }
+        if (words) {
+            val foot = out.copyOfRange(n * (n * 55 / 100), out.size).sortedArray()
+            val light = foot[(foot.size * 9 / 10).coerceAtMost(foot.size - 1)]
+            if (light > .45f) { val k = .45f / light; for (i in out.indices) out[i] *= k }
+        }
+        return IntArray(px.size) { i -> val v = out[i]; rgb((0xF1 * v).toInt(), (0xF0 * v).toInt(), (0xEC * v).toInt()) }
+    }
+
     /** Blocks [TILE] dots square, one dot of black between, each its square's average snapped to the cover's six colours; lit in a sweep from the top left. */
     fun tiles(px: IntArray, n: Int, frames: Int = 12): List<IntArray> {
         val cells = (n + TILE - 1) / TILE

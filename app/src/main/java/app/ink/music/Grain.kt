@@ -68,6 +68,50 @@ object Grain {
         val side = 256
         Bitmap.createBitmap(Prints.grainTile(side), side, side, Bitmap.Config.ARGB_8888).asImageBitmap()
     }
+
+    /** A heavier grain for a photo in black and white ([Mono]): it reads there as film's, where the blur's would be lost. */
+    val heavy: ImageBitmap by lazy {
+        val side = 256
+        Bitmap.createBitmap(Prints.grainTile(side, seed = 11, strength = .13f), side, side, Bitmap.Config.ARGB_8888).asImageBitmap()
+    }
+
+    private const val MONO = 420
+
+    /**
+     * A photo in black and white ([Prints.mono]), square from its middle (a little above it: a face sits high in a wide
+     * photo), 420 px, kept, or null.
+     */
+    fun mono(key: String, art: Bitmap, words: Boolean): ImageBitmap? = runCatching {
+        val src = if (art.config == Bitmap.Config.HARDWARE) art.copy(Bitmap.Config.ARGB_8888, false) else art
+        val side = minOf(src.width, src.height)
+        val top = ((src.height - side) / 2 - side * 6 / 100).coerceAtLeast(0)
+        val square = Bitmap.createBitmap(src, (src.width - side) / 2, top, side, side)
+        val px = IntArray(MONO * MONO)
+        Bitmap.createScaledBitmap(square, MONO, MONO, true).getPixels(px, 0, MONO, 0, 0, MONO, MONO)
+        Bitmap.createBitmap(Prints.mono(px, MONO, words), MONO, MONO, Bitmap.Config.ARGB_8888).asImageBitmap().also { made.put(key, it) }
+    }.getOrNull()
+}
+
+/**
+ * A photo in high-contrast black and white, ink's warm white for its white, film's grain over it (2026-11-17: YouTube's
+ * mixes and DIALED IN, where people's photos are big; dither stays ink's own: the artist pages, ink's mixes). [words]:
+ * dimmed evenly for words over it. Faded in as it's made.
+ */
+@Composable
+fun Mono(photo: Song, modifier: Modifier, words: Boolean = true) {
+    val cover = rememberCover(photo, 600)
+    val key = "mono|${photo.id}|${photo.albumId}|$words"
+    val had = remember(key) { Grain.kept(key) }
+    val pic by produceState(had, key, cover) {
+        val c = cover ?: return@produceState
+        if (value == null) value = withContext(Dispatchers.Default) { Grain.mono(key, c.image.asAndroidBitmap(), words) }
+    }
+    val shown = remember(key) { Animatable(if (had != null) 1f else 0f) }
+    LaunchedEffect(pic) { if (pic != null && shown.value < 1f) { if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, tween(600, easing = Motion.expo)) } }
+    Box(modifier.background(Color.Black).clipToBounds()) {
+        pic?.let { Image(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop, filterQuality = FilterQuality.High) }
+        FilmGrain(Modifier.fillMaxSize(), tile = Grain.heavy)
+    }
 }
 
 /** A picture in the grain look: out of focus, faded in as it's made, film's grain over it (still). */
@@ -93,8 +137,8 @@ fun Grainy(photo: Song, modifier: Modifier, px: Int = 1080) {
  * the tile 24 times a second; still when the phone moves less).
  */
 @Composable
-fun FilmGrain(modifier: Modifier, moving: Boolean = false) {
-    val brush = remember { ShaderBrush(ImageShader(Grain.tile, TileMode.Repeated, TileMode.Repeated)) }
+fun FilmGrain(modifier: Modifier, moving: Boolean = false, tile: ImageBitmap = Grain.tile) {
+    val brush = remember(tile) { ShaderBrush(ImageShader(tile, TileMode.Repeated, TileMode.Repeated)) }
     val less by Moves.less.collectAsState()
     var at by remember { mutableStateOf(Offset.Zero) }
     if (moving && !less) LaunchedEffect(Unit) {

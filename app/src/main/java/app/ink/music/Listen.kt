@@ -376,7 +376,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     // youtube music's own mixes for you (signed in): supermix, discover, new release, replay
     if (tubeMixes.isNotEmpty()) sections["tubeMixes"] = {
         Label("your mixes on youtube music")
-        Shelf(tubeMixes) { l -> Tile(null, l.name, l.said.ifEmpty { "mix" }.lowercase(), face = l.art, dither = true) { pages.open(Page.TubeList(l)) } }
+        Shelf(tubeMixes) { l -> MixTile(l) { pages.open(Page.TubeList(l)) } }
     }
     if (mixes.isNotEmpty()) sections["mixes"] = {
         Label("mixes for you")
@@ -458,6 +458,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (YouTubeMusic.available && LastFm.available && brought.isEmpty() && heard.size < 40 && !knowMeShut)
             item(key = "know-me") { Column(Modifier.cascade(1).padding(horizontal = 20.dp).padding(bottom = 14.dp)) { KnowMeCard { knowMeShut = true } } }
         if (sinceLines.isNotEmpty()) item(key = "since") { Column(Modifier.cascade(1).moving(this)) { SinceYouWereHere(since, sinceLines) } }
+        // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
+        if (!Device.tv) item(key = "dialedIn") { Column(Modifier.cascade(1).padding(bottom = 10.dp)) { DialedInSheet(heard, ::songOf, pages) } }
         // the shelves, in the moment's order (Fresh.order): each shown, and its taps counted, so the unopened sink
         order.forEachIndexed { i, k ->
             val body = sections[k] ?: return@forEachIndexed
@@ -617,6 +619,32 @@ private fun ContinueHere(o: SyncPhone.Offer) {
                 Word("not now", pixel(12.sp, Ink.mid), touch = 8.dp) { SyncPhone.dismissed.value = o.at }
             }
         }
+    }
+}
+
+/**
+ * One of YouTube Music's mixes (2026-11-17, Bronson's pick of four mocked): its lead artist's photo in black and white with
+ * grain ([Mono]), the mix's own mark big at its top left (its number as YouTube numbers it, SUPER, DISCOVER...:
+ * [TubeMixes.mark]) and its name along its foot, the artists under it. Ink's own mixes stay in the dither: dither says
+ * ink's, black and white says a photo.
+ */
+@Composable
+private fun MixTile(l: TubeList, onClick: () -> Unit) {
+    val lead = remember(l) { TubeMixes.lead(l.said) }
+    // their photo from their page (kept), else the mix's own picture
+    val info by (if (lead.isNotEmpty()) YouTubeAccount.artist(lead) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
+    val face = info?.photo?.let { photoSong(lead, it) } ?: l.art?.let { faceSong(l.name, it) }
+    val mark = remember(l) { TubeMixes.mark(l.name, l.art) }
+    Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).background(androidx.compose.ui.graphics.Color.Black)) {
+            face?.let { Mono(it, Modifier.fillMaxSize()) }
+            BasicText(mark, style = headline(when { mark.length <= 2 -> 56.sp; mark.length <= 5 -> 30.sp; mark.length <= 7 -> 22.sp; else -> 18.sp }),
+                modifier = Modifier.padding(start = 8.dp, top = 6.dp))
+            BasicText(l.name.uppercase(), style = headline(14.sp), maxLines = 3, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(8.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        BasicText(l.said.ifEmpty { "mix" }.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
