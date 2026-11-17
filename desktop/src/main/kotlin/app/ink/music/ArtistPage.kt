@@ -392,6 +392,8 @@ private fun BigName(name: String, room: androidx.compose.ui.unit.Dp) {
 fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER) {
     // the grain look is a picture, not dots: drawn apart
     if (print == Print.GRAIN) return Grainy(photo, modifier, px)
+    // clear: the cover as it is
+    if (print == Print.CLEAR) return AsItIs(photo, modifier, px)
     val cover = rememberCover(photo, px)
     val density = LocalDensity.current
     BoxWithConstraints(modifier.background(Ink.black)) {

@@ -13,6 +13,9 @@ enum class Print(val word: String) {
     // the cover out of focus as a lens has it, film's grain over it (Bronson's ask, 2026-11-11: "a soft bokeh with a nice film like grain")
     // called blur where it's chosen (Bronson: "just call grain blur"); GRAIN by name, as kept
     GRAIN("blur"),
+    // the cover as it is, no print, nothing developing (2026-11-17, a tester took tiles, the default, for covers gone
+    // pixelated and slow since 2.1.18)
+    CLEAR("clear"),
 }
 
 /** The looks' pixels, from a cover drawn `n` x `n` (ARGB, smoothly scaled), one dot a pixel; `frames` steps of it developing. */

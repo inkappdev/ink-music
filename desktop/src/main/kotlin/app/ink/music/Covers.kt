@@ -265,12 +265,18 @@ object Covers {
     private fun onDisk(art: String, px: Int) = diskFile(art, px).exists()
     // read, its date touched: what's still looked at is never what's cleaned away ([cleanUp])
     private fun fromDisk(art: String, px: Int): ByteArray? = diskFile(art, px).takeIf { it.exists() }?.also { it.setLastModified(System.currentTimeMillis()) }?.readBytes()
-    private fun toDisk(art: String, px: Int, bytes: ByteArray) = runCatching {
-        val f = diskFile(art, px)
-        f.parentFile.mkdirs()
-        val tmp = File(f.path + ".part")
-        tmp.writeBytes(smaller(bytes, px))
-        Keep.replace(tmp, f)
+    // made smaller and written behind, the cover shown meanwhile (2026-11-17: the WebP made first held each new cover back)
+    private val writing = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "covers-write").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
+    private fun toDisk(art: String, px: Int, bytes: ByteArray) {
+        writing.execute {
+            runCatching {
+                val f = diskFile(art, px)
+                f.parentFile.mkdirs()
+                val tmp = File(f.path + ".part")
+                tmp.writeBytes(smaller(bytes, px))
+                Keep.replace(tmp, f)
+            }
+        }
     }
 
     /**
