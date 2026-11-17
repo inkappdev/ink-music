@@ -653,6 +653,8 @@ object Player {
 
     /** These songs, from `start`: the queue they become. */
     fun play(songs: List<Song>, start: Int = 0) {
+        // something else played after a mix: the transition it lent given back (Crossfade.lend)
+        Crossfade.giveBack()
         // a speaker chosen: there
         Casting.on.value?.let { to -> return Casting.play(to, songs, start, 0L) }
         pendingSeek = 0

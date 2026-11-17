@@ -32,7 +32,11 @@ object TempoMixes {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
 
-    private fun automix() { if (Crossfade.mode.value != Crossfade.AUTOMIX) Crossfade.set(Crossfade.AUTOMIX) }
+    /** Automix while the mix plays: lent, your own transition given back when something else is played (Crossfade.lend). */
+    private fun automix() = Crossfade.lend()
+
+    /** Played as the mix: the player told it's the mix's (so the transition lent isn't given back by it). */
+    private fun playMix(songs: List<Song>) { Crossfade.inMix = true; try { Player.play(songs) } finally { Crossfade.inMix = false } }
 
     /** A genre at a tempo: its editors' list songs, found on YouTube Music. */
     fun genre(genre: String, bpm: Int) = tempo(genre, bpm) { Picks.genre(genre).map { s -> { YouTube.find(s.pick.title, s.pick.artist) } } }
@@ -76,7 +80,7 @@ object TempoMixes {
                     chosen += song to m
                     if (!begun && chosen.size >= 2) {
                         val ordered = dj(chosen)
-                        javax.swing.SwingUtilities.invokeAndWait { Player.play(ordered.map { it.first }) }
+                        javax.swing.SwingUtilities.invokeAndWait { playMix(ordered.map { it.first }) }
                         tell(bpm, ordered.first().first.id)
                         begun = true
                     } else if (begun) javax.swing.SwingUtilities.invokeAndWait { Player.add(song) }
@@ -86,7 +90,7 @@ object TempoMixes {
             }
             if (!begun && chosen.isNotEmpty()) {
                 val ordered = dj(chosen)
-                javax.swing.SwingUtilities.invokeAndWait { Player.play(ordered.map { it.first }) }
+                javax.swing.SwingUtilities.invokeAndWait { playMix(ordered.map { it.first }) }
                 tell(bpm, ordered.first().first.id)
             }
             _state.value = State(title, bpm, read, all.size, chosen.size, chosen.isNotEmpty(), true, chosen.map { it.first })
@@ -123,7 +127,10 @@ object TempoMixes {
         job?.cancel()
         automix()
         job = scope.launch {
-            val all = songs.distinctBy { it.id }.take(120)
+            // drawn afresh from the whole list each time (2026-11-17, a tester: a long list's first 120 every time, the same
+            // mix): shuffled, every song already read taken (no wait for those, 400 at most), and 120 still to read
+            var fresh = 0
+            val all = songs.distinctBy { it.id }.shuffled().filter { s -> Tempos.kept(s.id) != null || fresh++ < 120 }.take(400)
             _state.value = State(title, 0, 0, all.size, 0, false, false)
             val queued = ArrayList<Pair<Song, Tempos.Read>>()
             val unread = ArrayList<Song>()
@@ -137,7 +144,7 @@ object TempoMixes {
                     queued += opening(waiting, shp); waiting.clear()
                     javax.swing.SwingUtilities.invokeAndWait {
                         if (Player.shuffle.value) Player.shuffle()
-                        Player.play(queued.map { it.first })
+                        playMix(queued.map { it.first })
                     }
                 } else if (queued.isNotEmpty() && waiting.isNotEmpty()) {
                     javax.swing.SwingUtilities.invokeAndWait { waiting.forEach { place(it, queued, shp) } }
@@ -150,7 +157,7 @@ object TempoMixes {
             javax.swing.SwingUtilities.invokeAndWait {
                 if (queued.isEmpty()) {
                     val arc = opening(waiting, shp).map { it.first } + unread
-                    if (arc.isNotEmpty()) { if (Player.shuffle.value) Player.shuffle(); Player.play(arc) }
+                    if (arc.isNotEmpty()) { if (Player.shuffle.value) Player.shuffle(); playMix(arc) }
                 } else {
                     waiting.forEach { place(it, queued, shp) }
                     // waves: laid out once every song is read, the songs not yet played put in their order (the one playing

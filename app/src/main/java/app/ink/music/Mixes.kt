@@ -96,11 +96,14 @@ object Mixes {
         return out.values.toList()
     }
 
+    /** Played as the mix: the player told it's the mix's (so the transition lent isn't given back by it). */
+    private fun playMix(songs: List<Song>) { Crossfade.inMix = true; try { Playback.play(songs, 0) } finally { Crossfade.inMix = false } }
+
     /** A tempo mix: each candidate found and read, two at a time; within 4% of the tempo, sure of its beat, in. */
     private fun tempo(c: Context, title: String, bpm: Int, candidates: suspend (Context) -> List<() -> Song?>) {
         job?.cancel()
         val app = c.applicationContext
-        if (Crossfade.mode(app) != Crossfade.AUTOMIX) Crossfade.set(app, Crossfade.AUTOMIX)
+        Crossfade.lend(app)   // automix while it plays, yours given back after
         job = scope.launch {
             _state.value = State(title, bpm, 0, 0, 0, false, false)
             val all = candidates(app)
@@ -119,7 +122,7 @@ object Mixes {
                     // begun at two: the first plays while the rest are found (the second is its handover)
                     if (!begun && chosen.size >= 2) {
                         val ordered = dj(chosen)
-                        withContext(Dispatchers.Main) { Playback.play(ordered.map { it.first }, 0) }
+                        withContext(Dispatchers.Main) { playMix(ordered.map { it.first }) }
                         tell(app, bpm, ordered.first().first.id)
                         begun = true
                         android.util.Log.d("ink-picks", "mix $title at $bpm: begun after ${System.currentTimeMillis() - t0} ms, $read of ${all.size} read")
@@ -130,7 +133,7 @@ object Mixes {
             }
             if (!begun && chosen.isNotEmpty()) {
                 val ordered = dj(chosen)
-                withContext(Dispatchers.Main) { Playback.play(ordered.map { it.first }, 0) }
+                withContext(Dispatchers.Main) { playMix(ordered.map { it.first }) }
                 tell(app, bpm, ordered.first().first.id)
             }
             _state.value = State(title, bpm, read, all.size, chosen.size, chosen.isNotEmpty(), true, chosen.map { it.first })
@@ -168,9 +171,12 @@ object Mixes {
     fun list(c: Context, title: String, songs: List<Song>, shp: Shape = shape) {
         job?.cancel()
         val app = c.applicationContext
-        if (Crossfade.mode(app) != Crossfade.AUTOMIX) Crossfade.set(app, Crossfade.AUTOMIX)
+        Crossfade.lend(app)   // automix while it plays, yours given back after
         job = scope.launch {
-            val all = songs.distinctBy { it.id }.take(120)
+            // drawn afresh from the whole list each time (2026-11-17, a tester: a long list's first 120 every time, the same
+            // mix): shuffled, every song already read taken (no wait for those, 400 at most), and 120 still to read
+            var fresh = 0
+            val all = songs.distinctBy { it.id }.shuffled().filter { s -> Tempos.kept(app, s.id) != null || fresh++ < 120 }.take(400)
             _state.value = State(title, 0, 0, all.size, 0, false, false)
             // what's in the player, in its order, from the start: index for index (nothing else is put before them)
             val queued = ArrayList<Pair<Song, Tempos.Read>>()
@@ -187,7 +193,7 @@ object Mixes {
                     queued += opening(waiting, shp); waiting.clear()
                     withContext(Dispatchers.Main) {
                         if (Playback.now.value?.shuffle == true) Playback.shuffle()
-                        Playback.play(queued.map { it.first }, 0)
+                        playMix(queued.map { it.first })
                     }
                 } else if (queued.isNotEmpty() && waiting.isNotEmpty()) {
                     withContext(Dispatchers.Main) { waiting.forEach { place(it, queued, shp) } }
@@ -201,7 +207,7 @@ object Mixes {
                 // fewer than three read: what there is, slowest first, then the rest
                 if (queued.isEmpty()) {
                     val arc = opening(waiting, shp).map { it.first } + unread
-                    if (arc.isNotEmpty()) { if (Playback.now.value?.shuffle == true) Playback.shuffle(); Playback.play(arc, 0) }
+                    if (arc.isNotEmpty()) { if (Playback.now.value?.shuffle == true) Playback.shuffle(); playMix(arc) }
                 } else {
                     waiting.forEach { place(it, queued, shp) }
                     // waves: laid out once every song is read, those not yet played put in their order (the one playing

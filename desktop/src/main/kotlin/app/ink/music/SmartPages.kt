@@ -121,9 +121,12 @@ fun SmartPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
                     Spacer(Modifier.height(6.dp))
                     BasicText("smart · ${SmartLists.said(l)} · ${songs.size} ${if (songs.size == 1) "song" else "songs"}", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(14.dp))
-                    if (songs.isNotEmpty()) PlayShuffle(songs)
+                    // mix beside play and shuffle, as big (2026-11-17, a tester)
+                    if (songs.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                        PlayShuffle(songs)
+                        MixWord(l.name, songs, Modifier.padding(start = 24.dp), bold = true)
+                    }
                     HeadWords {
-                        if (songs.isNotEmpty()) MixWord(l.name, songs)
                         Word("change", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.SmartEdit(l.id)) }
                     }
                     if (songs.isEmpty()) BasicText("nothing meets all of these yet" + if (SmartLists.Kind.TEMPO in l.rules) ": a tempo is known once a song's been mixed" else "",

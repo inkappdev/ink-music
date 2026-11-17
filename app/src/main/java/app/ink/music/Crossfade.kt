@@ -146,7 +146,29 @@ class Crossfade(
         // down); the crossfade. Asked of the system, not Device: the player runs in its own process
         @Volatile private var isTvBox: Boolean? = null
         private fun tv(c: Context) = isTvBox ?: isTv(c).also { isTvBox = it }
-        fun set(c: Context, mode: String) { runCatching { File(c.filesDir, "crossfade").let { if (mode == OFF) it.delete() else it.writeText(mode) } } }
+        /** Chosen by you: kept (a mix's lend forgotten). */
+        fun set(c: Context, mode: String) { File(c.filesDir, LENT).delete(); use(c, mode) }
+        private fun use(c: Context, mode: String) { runCatching { File(c.filesDir, "crossfade").let { if (mode == OFF) it.delete() else it.writeText(mode) } } }
+
+        /**
+         * A mix's automix, lent (2026-11-17, a tester: a mix had turned theirs to automix for good, the computer's): what
+         * was chosen kept aside, given back when something else is played ([giveBack], the screens'), or chosen again.
+         */
+        private const val LENT = "crossfade-lent"
+        @Volatile var inMix = false
+        fun lend(c: Context) {
+            val was = mode(c)
+            if (was == AUTOMIX) return
+            runCatching { File(c.filesDir, LENT).writeText(was) }
+            use(c, AUTOMIX)
+        }
+        fun giveBack(c: Context) {
+            val f = File(c.filesDir, LENT)
+            if (inMix || !f.exists()) return
+            val was = runCatching { f.readText().trim() }.getOrNull()
+            f.delete()
+            if (was != null) use(c, was)
+        }
         /**
          * A new install begins in the crossfade (2026-11-15, Bronson: crossfade the default, both apps; automix a word
          * away, it surprised people): nothing heard, nothing chosen, asked once. Who's played and kept it off keeps it off.

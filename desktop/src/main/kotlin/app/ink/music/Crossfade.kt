@@ -42,7 +42,29 @@ object Crossfade {
     val mode = MutableStateFlow(runCatching { file.readText().trim() }.getOrNull()?.let { if (it == AUTOMIX) AUTOMIX else CROSSFADE }
         ?: if (!File(Home.dir, "heard.jsonl").exists()) CROSSFADE.also { runCatching { file.writeText(it) } } else OFF)
 
-    fun set(m: String) {
+    /** Chosen by you: kept (a mix's lend forgotten). */
+    fun set(m: String) { lent.delete(); use(m) }
+
+    /**
+     * A mix's automix, lent (2026-11-17, a tester: a mix had turned theirs to automix for good): what was chosen kept
+     * aside, and given back when something else is played ([giveBack]), or chosen again by hand. Kept as a file, so a
+     * mix the app was quit in still gives it back.
+     */
+    private val lent = File(Home.dir, "crossfade-lent")
+    @Volatile var inMix = false
+    fun lend() {
+        if (mode.value == AUTOMIX) return
+        runCatching { lent.writeText(mode.value) }
+        use(AUTOMIX)
+    }
+    fun giveBack() {
+        if (inMix || !lent.exists()) return
+        val was = runCatching { lent.readText().trim() }.getOrNull()
+        lent.delete()
+        if (was != null && was != mode.value) use(was)
+    }
+
+    private fun use(m: String) {
         val was = mode.value
         mode.value = m
         runCatching { if (m == OFF) file.delete() else file.writeText(m) }
@@ -186,6 +208,12 @@ object Crossfade {
     }
 
     private fun plan(s: Song, n: Song, es: Ends, en: Ends): Plan? {
+        // previewing (Preview): handed over at this taste's end, a short fade, the next from its own taste (2026-11-17, a
+        // tester: from one taste to the next was abrupt). Automix's filter fade, beats not matched mid-song
+        Preview.endOf(s, es.duration)?.let { end ->
+            val fade = 3_000L
+            return Plan(s.id, n.id, (end - fade / 2).coerceAtLeast(0), Preview.startOf(n.id, en.duration), fade, filter = mode.value == AUTOMIX)
+        }
         if (mode.value == AUTOMIX) matched(s, n, es, en)?.let { return it }
         val cut = es.handover
         // not beats matched, in automix: the filter fade, short when their keys clash (both sure)

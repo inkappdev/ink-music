@@ -1259,6 +1259,18 @@ internal fun TransitionWord(modifier: Modifier = Modifier, size: androidx.compos
     }
 }
 
+/**
+ * Preview as a word beside the transition (Preview): "preview off", or how long a taste of each song is, lit; a click the
+ * next (off, 10 s, 20 s, 30 s), as the transition's word goes.
+ */
+@Composable
+internal fun PreviewWord(modifier: Modifier = Modifier, size: androidx.compose.ui.unit.TextUnit = 14.sp) {
+    val n by Preview.secs.collectAsState()
+    Box(modifier) {
+        Word(if (n == 0) "preview off" else "preview $n s", pixel(size, if (n > 0) Ink.ink else Ink.mid), touch = 10.dp) { Preview.next() }
+    }
+}
+
 @Composable
 private fun BarMenu(groups: List<List<Pair<String, () -> Unit>>>, accent: Color, onClose: () -> Unit) {
     val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
@@ -1668,12 +1680,12 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
             // similar by the controls: lit, up next goes on with songs like these when it runs out; a click turns it on
             // or off (where they come from is settings', 2026-11-12, Bronson: one control, the same as up next's)
             if (words) SimilarWord(pixel(14.sp), Modifier.padding(start = 14.dp), "similar")
-            // preview on: said, lit, a click turns it off
-            val previewing by Preview.secs.collectAsState()
-            if (previewing > 0) Word("preview $previewing s", pixel(14.sp), Modifier.padding(start = 14.dp), touch = 10.dp) { Preview.set(0) }
             // how one song turns into the next, beside the volume (2026-11-15, a tester: "switch more easily between
-            // different mixing modes"; it took them "quite a while" to find it changes how everything plays)
+            // different mixing modes"; it took them "quite a while" to find it changes how everything plays); preview
+            // beside it, switched the same way (2026-11-17, the tester: it was hidden in more)
             if (words) TransitionWord(Modifier.padding(start = 14.dp))
+            if (words) PreviewWord(Modifier.padding(start = 14.dp))
+            else { val previewing by Preview.secs.collectAsState(); if (previewing > 0) PreviewWord(Modifier.padding(start = 14.dp)) }
             if (volume) { Spacer(Modifier.width(12.dp)); Volume(line = 80.dp) }
             if (words) {
                 Word("up next", pixel(14.sp, Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp, onClick = onQueue)
@@ -1696,9 +1708,6 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                             if (Sleep.at.value == 0L) Sleep.CHOICES.filter { it in setOf(15, 30, 60) }.map { m -> "sleep in $m min" to { Sleep.set(m) } } +
                                 listOf("sleep at the song's end" to { Sleep.set(0) })
                             else listOf("${Sleep.said()} · off" to { Sleep.set(null) }),
-                            // preview: a taste of each song, then the next (Preview)
-                            if (Preview.secs.value == 0) Preview.CHOICES.map { n -> "preview $n s of each" to { Preview.set(n) } }
-                            else listOf("preview · off" to { Preview.set(0) }),
                             // up next kept as a list of yours (saveUpNext)
                             listOfNotNull(("save up next as a list" to { saveUpNext() }).takeIf { Player.queue.value.size > 1 }),
                             // stop: the music over, the queue let go, this bar gone (the phone's, 2026-11-08)

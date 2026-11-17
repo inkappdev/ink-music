@@ -247,6 +247,8 @@ object Playback {
     /** Plays `songs` from `start` (at `at` ms), as a queue; on the speaker while one is chosen. */
     fun play(songs: List<Song>, start: Int, at: Long = 0L, go: Boolean = true) {
         if (songs.isEmpty()) return
+        // something else played after a mix: the transition it lent given back (Crossfade.lend)
+        app?.let { Crossfade.giveBack(it) }
         if (go) begun.value++
         val speaker = Casting.on.value
         if (speaker != null) { app?.let { Casting.play(it, speaker, songs, start, at) }; return }

@@ -1,11 +1,14 @@
 package app.ink.music
 
 import kotlinx.coroutines.flow.MutableStateFlow
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Preview (2026-11-12, a tester, after Chosic's preview and foobar2000's foo_preview): a taste of each song and on to the
- * next, to get through more of a library or a playlist in the time one song takes. Each song from about a third of the
- * way in (past the intro, where the hook usually is), [secs] of it, then the next. Off at the start of each run.
+ * next, to get through more of a library or a playlist in the time one song takes. Each song from somewhere between a
+ * fifth and seven tenths of the way in, chosen afresh for each (2026-11-17, the tester: always "about a minute in" was
+ * too foreseeable), [secs] of it, then the next: through the transition chosen (Crossfade, its handover at the taste's
+ * end, the next coming in at its own), else straight on. Off at the start of each run.
  */
 object Preview {
     /** How long each song plays; 0, preview off. */
@@ -13,19 +16,41 @@ object Preview {
     val CHOICES = listOf(10, 20, 30)
     @Volatile private var song: String? = null
     @Volatile private var from = 0L
+    /** Where each song's taste begins, chosen once a run (its handover and the player's seek agree on it). */
+    private val starts = ConcurrentHashMap<String, Long>()
 
-    fun set(n: Int) { secs.value = n; song = null }
+    fun set(n: Int) { secs.value = n; song = null; starts.clear() }
 
-    /** The player's position as it goes (its own thread): a new song sent to its middle, a song heard long enough left. */
+    /** Off, then each length in turn: the bar's word. */
+    fun next() = set(listOf(0, *CHOICES.toTypedArray()).let { l -> l[(l.indexOf(secs.value) + 1) % l.size] })
+
+    /** Where `id`'s taste begins (ms), for a song this long. */
+    fun startOf(id: String, duration: Long): Long = starts.getOrPut(id) {
+        val n = secs.value * 1000L
+        val at = (duration * (.2 + Math.random() * .5)).toLong()
+        at.coerceAtMost(duration - n - 3_000).coerceAtLeast(0)
+    }
+
+    /** The playing song's taste's end, where the transition hands over (null: preview off, or a station). */
+    fun endOf(s: Song, duration: Long): Long? {
+        val n = secs.value
+        if (n <= 0 || s.station || duration <= 0) return null
+        return startOf(s.id, duration) + n * 1000L
+    }
+
+    /** The player's position as it goes (its own thread): a new song sent to its taste, a song heard long enough left. */
     fun tick(s: Song, ms: Long, duration: Long, paused: Boolean) {
         val n = secs.value
         if (n <= 0 || s.station || duration <= 0) return
         if (song != s.id) {
             song = s.id
-            from = (duration * .35).toLong().coerceAtMost(duration - n * 1000L - 3_000).coerceAtLeast(0)
+            from = startOf(s.id, duration)
+            // come in by a transition, it's there already
             if (ms < from - 1_000) Player.seek(from)
             return
         }
-        if (!paused && ms - from >= n * 1000L) { song = "done:" + s.id; Player.next() }
+        // a transition hands over at the taste's end; a moment more given it before going on without one
+        val grace = if (Crossfade.mode.value != Crossfade.OFF) 2_500L else 0L
+        if (!paused && ms - from >= n * 1000L + grace) { song = "done:" + s.id; Player.next() }
     }
 }

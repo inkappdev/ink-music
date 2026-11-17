@@ -602,10 +602,13 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 BasicText(s?.let { "${it.size} ${if (it.size == 1) "song" else "songs"} · ${clock(it.sumOf { x -> x.duration })}$room" } ?: "reading", style = pixel(12.sp, Ink.mid))
                 Spacer(Modifier.height(14.dp))
                 if (!s.isNullOrEmpty()) {
-                    PlayShuffle(s)
+                    // mix beside play and shuffle, as big (2026-11-17, a tester: it was down among the small words)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PlayShuffle(s)
+                        MixWord(name, s, Modifier.padding(start = 24.dp), bold = true)
+                    }
                     var copied by remember { mutableStateOf(false) }
                     HeadWords {
-                        MixWord(name, s)
                         CoversWord()
                         KeepOffline(s)
                         // the list written out: as words, as a spreadsheet, as a page, a file to share (2026-11-11); one

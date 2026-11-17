@@ -711,8 +711,9 @@ private fun Scrubber(
         // the times at the ends, and dead centre between them what's heard; in a blend, the tempos and MIXING
         Box(Modifier.fillMaxWidth().padding(bottom = if (mix != null && (k != null || point != null)) 0.dp else 8.dp)) {
             if (k != null && mix != null) {
-                // beat-matched, the tempos; else said plainly it's the crossfade (the tempos sometimes didn't show)
-                BasicText(if (mix.bpmTo > 0) "${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM" else "CROSSFADE", style = pixel(SMALL, Ink.ink),
+                // beat-matched, the tempos; else said plainly it's a fade: automix's own where its beats weren't sure
+                // (2026-11-17, a tester took "CROSSFADE" in automix for the setting changing by itself)
+                BasicText(if (mix.bpmTo > 0) "${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM" else if (mix.auto) "AUTOMIX · FADE" else "CROSSFADE", style = pixel(SMALL, Ink.ink),
                     modifier = Modifier.align(androidx.compose.ui.Alignment.CenterStart))
                 BasicText("MIXING", style = pixel(SMALL, Ink.ink), modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd))
             } else {

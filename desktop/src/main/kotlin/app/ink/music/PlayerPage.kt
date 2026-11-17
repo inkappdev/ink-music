@@ -291,6 +291,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             Volume(line = 140.dp)
                             // how one song turns into the next, beside the volume as in the bar (TransitionWord)
                             TransitionWord(Modifier.padding(start = 20.dp))
+                            PreviewWord(Modifier.padding(start = 16.dp))
                         }
                         // the rule under the controls the song's line too, its times at its ends (2026-11-12, Bronson: a
                         // second line "somewhere on the right", in place of a band along the cover's foot he didn't like);
@@ -436,7 +437,9 @@ fun Scrubber(n: Player.Now, accent: Color, modifier: Modifier = Modifier, middle
     Column(modifier) {
         Box(Modifier.fillMaxWidth()) {
             if (k != null && mix != null) {
-                BasicText(if (mix.bpmTo > 0) "${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM" else "CROSSFADE", style = pixel(12.sp, Ink.ink),
+                // beat-matched, the tempos; else a fade: automix's own where its beats weren't sure (2026-11-17, a tester
+                // took "CROSSFADE" in automix for the setting changing by itself)
+                BasicText(if (mix.bpmTo > 0) "${Math.round(mix.bpmFrom)} → ${Math.round(mix.bpmTo)} BPM" else if (Crossfade.mode.value == Crossfade.AUTOMIX) "AUTOMIX · FADE" else "CROSSFADE", style = pixel(12.sp, Ink.ink),
                     modifier = Modifier.align(Alignment.CenterStart))
                 BasicText("MIXING", style = pixel(12.sp, Ink.ink), modifier = Modifier.align(Alignment.CenterEnd))
             } else {
