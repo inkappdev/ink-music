@@ -103,11 +103,11 @@ fun DialedInSheet(open: (Page) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 slots.chunked(cols).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                        row.forEach { s ->
+                        row.forEach { s -> androidx.compose.runtime.key(s.key) {
                             val song = songOf(s.song)
                             val lit = song != null && playing?.let { playingIs(s, it) } == true
                             Box(Modifier.width(side)) { Slot(s, song, lit, side.value >= 170, scope, open) }
-                        }
+                        }}
                     }
                 }
             }
@@ -177,7 +177,7 @@ private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, big: Boolean, scop
     val cover = if (s.kind != DialedIn.Kind.ARTIST && song != null) rememberCover(song, 400) else null
     val gaveUp by androidx.compose.runtime.produceState(false, song?.albumId) { kotlinx.coroutines.delay(3_000); value = true }
     // or one so dark it would show as black
-    val dark by androidx.compose.runtime.produceState(false, cover) { value = cover?.let { c -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { lightness(c.image) < .12f } } ?: false }
+    val dark by androidx.compose.runtime.produceState(false, cover) { value = cover?.let { c -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { lightness(c.image) < .22f } } ?: false }
     val wantFace = s.kind == DialedIn.Kind.ARTIST || (cover == null && gaveUp) || dark
     val info by (if (wantFace) Artists.of(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
     val face = (if (wantFace) info?.photo?.let { faceSong(s.artist, it, photo = true) } else null) ?: song

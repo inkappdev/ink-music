@@ -121,24 +121,6 @@ fun ChartFace(c: Charts.Chart, modifier: Modifier, k: Float) {
     }
 }
 
-/** Listen's charts: the place's, a shelf of them, and all of them a word away. Nothing while they're read. */
-@Composable
-fun ChartsShelf(open: (Page) -> Unit) {
-    val place by ChartsKept.place.collectAsState()
-    val charts by produceState<List<Charts.Chart>>(emptyList(), place) {
-        value = withContext(Dispatchers.IO) { runCatching { Charts.of(place) { InnerTube().chartLists(it) } }.getOrDefault(emptyList()) }
-    }
-    if (Local.on || charts.isEmpty()) return
-    Column {
-        Section("CHARTS", "what's played most in ${Charts.placeName(place)}, and what moved since you last looked") {
-            Word("all charts", pixel(14.sp), touch = 8.dp) { open(Page.ChartsAll) }
-        }
-        Shelf(count = charts.size, tile = 176.dp, most = 220.dp) { w ->
-            items(charts, key = { it.id }) { c -> ChartTile(c, Modifier.width(w)) { open(Page.Chart(c)) } }
-        }
-    }
-}
-
 /** All the charts: a place chosen (the world, then countries), its charts, its genres where it has them. */
 @Composable
 fun ChartsPage(open: (Page) -> Unit, onClose: () -> Unit) {
@@ -160,7 +142,10 @@ fun ChartsPage(open: (Page) -> Unit, onClose: () -> Unit) {
                     BasicText("CHARTS", style = headline(56.sp))
                     BasicText("what's played most, from youtube music's charts; each one says what moved since you last looked", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(14.dp))
-                    Shelf(gap = 18.dp) {
+                    // opened at the place chosen, so it's in sight, lit
+                    val row = androidx.compose.foundation.lazy.rememberLazyListState()
+                    androidx.compose.runtime.LaunchedEffect(place) { Charts.PLACES.indexOfFirst { it.first == place }.takeIf { it > 0 }?.let { row.scrollToItem((it - 1).coerceAtLeast(0)) } }
+                    Shelf(gap = 18.dp, state = row) {
                         Charts.PLACES.forEach { (code, name) ->
                             item { Word(name, pixel(13.sp, if (code == place) Ink.ink else Ink.dim), touch = 8.dp) { ChartsKept.place(code) } }
                         }

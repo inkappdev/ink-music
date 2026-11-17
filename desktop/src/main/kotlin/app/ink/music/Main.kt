@@ -275,6 +275,9 @@ sealed interface Page {
     /** The charts (ChartsPage), and one of them. */
     data object ChartsAll : Page
     data class Chart(val chart: Charts.Chart) : Page
+    /** New releases and moods & genres, from listen's three ways in (Doors). */
+    data object NewReleases : Page
+    data object AllMoods : Page
     data class Festival(val name: String) : Page
     data class Mood(val mood: InnerTube.Mood) : Page
     data object Queue : Page
@@ -552,6 +555,8 @@ private fun App() {
                         Page.Mapped -> MappedPage { Nav.close() }
                         Page.ChartsAll -> ChartsPage({ pages += it }) { Nav.close() }
                         is Page.Chart -> ChartPage(page.chart, { pages += it }) { Nav.close() }
+                        Page.NewReleases -> NewReleasesPage({ pages += it }) { Nav.close() }
+                        Page.AllMoods -> AllMoodsPage({ pages += it }) { Nav.close() }
                         is Page.Festival -> FestivalPage(page.name, { pages += it }) { Nav.close() }
                         is Page.Mood -> MoodPage(page.mood, { pages += it }) { Nav.close() }
                         Page.Queue -> QueuePage({ pages += it }) { Nav.close() }

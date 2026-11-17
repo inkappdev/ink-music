@@ -107,11 +107,13 @@ fun Mono(photo: Song, modifier: Modifier, words: Boolean = true) {
     val key = "mono|${photo.id}|${photo.albumId}|$words"
     val had = remember(key) { Grain.kept(key) }
     val pic by produceState(had, key, cover) {
-        val c = cover ?: return@produceState
-        if (value == null) value = withContext(Dispatchers.Default) { Grain.mono(key, c.image, words) }
+        val c = cover ?: run { value = had; return@produceState }
+        // made for this picture (the state outlives a change of picture: the old one's was kept, the new one never made,
+        // and its fade, begun again for the new one, never ran: DIALED IN's squares black, 2026-11-17)
+        value = Grain.kept(key) ?: withContext(Dispatchers.Default) { Grain.mono(key, c.image, words) }
     }
     val shown = remember(key) { Animatable(if (had != null) 1f else 0f) }
-    LaunchedEffect(pic) { if (pic != null && shown.value < 1f) shown.animateTo(1f, tween(600, easing = Motion.expo)) }
+    LaunchedEffect(key, pic) { if (pic != null && shown.value < 1f) shown.animateTo(1f, tween(600, easing = Motion.expo)) }
     Box(modifier.background(Ink.black).clipToBounds()) {
         pic?.let { Image(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop, filterQuality = FilterQuality.High) }
         FilmGrain(Modifier.fillMaxSize(), tile = Grain.heavy)
@@ -125,11 +127,13 @@ fun Grainy(photo: Song, modifier: Modifier, px: Int = 1080) {
     val key = "${photo.id}|${photo.albumId}"
     val had = remember(key) { Grain.kept(key) }
     val pic by produceState(had, key, cover) {
-        val c = cover ?: return@produceState
-        if (value == null) value = withContext(Dispatchers.Default) { Grain.bokeh(key, c.image) }
+        val c = cover ?: run { value = had; return@produceState }
+        // made for this picture (the state outlives a change of picture: the old one's was kept, the new one never made,
+        // and its fade, begun again for the new one, never ran: DIALED IN's squares black, 2026-11-17)
+        value = Grain.kept(key) ?: withContext(Dispatchers.Default) { Grain.bokeh(key, c.image) }
     }
     val shown = remember(key) { Animatable(if (had != null) 1f else 0f) }
-    LaunchedEffect(pic) { if (pic != null && shown.value < 1f) shown.animateTo(1f, tween(600, easing = Motion.expo)) }
+    LaunchedEffect(key, pic) { if (pic != null && shown.value < 1f) shown.animateTo(1f, tween(600, easing = Motion.expo)) }
     Box(modifier.background(Ink.black).clipToBounds()) {
         pic?.let { Image(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop, filterQuality = FilterQuality.High) }
         FilmGrain(Modifier.fillMaxSize())

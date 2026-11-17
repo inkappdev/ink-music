@@ -742,13 +742,13 @@ private fun MoodsAndGenres(all: List<TubeMood>, pages: Pages) {
  * larger text, "alternative" broke as "alternati / ve"): a Silkscreen letter is about 0.68 of its size wide, 0.72 to be safe.
  */
 @Composable
-private fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
+internal fun GenreTile(name: String, yours: Boolean, modifier: Modifier = Modifier.width(120.dp), onClick: () -> Unit) {
     val scale = LocalDensity.current.fontScale
     val size = remember(name, scale) {
         val longest = name.split(' ').maxOf { it.length }.coerceAtLeast(1)
         (96f / (longest * 0.72f) / scale).coerceIn(12f, 19f).sp
     }
-    Box(Modifier.width(120.dp).aspectRatio(1f).border(1.dp, if (yours) Ink.mid else Ink.line)
+    Box(modifier.aspectRatio(1f).border(1.dp, if (yours) Ink.mid else Ink.line)
         .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(12.dp)) {
         BasicText(name.lowercase(), style = pixel(size, if (yours) Ink.ink else Ink.mid), maxLines = 4, overflow = TextOverflow.Ellipsis)
     }

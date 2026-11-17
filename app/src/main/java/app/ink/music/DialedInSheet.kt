@@ -1,6 +1,6 @@
 package app.ink.music
 
-import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -91,13 +91,13 @@ fun DialedInSheet(heard: List<History.Heard>, songOf: (String) -> Song?, pages: 
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             slots.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                    row.forEach { s ->
+                    row.forEach { s -> androidx.compose.runtime.key(s.key) {
                         val song = songOf(s.song)
                         val lit = song != null && playing?.let { n -> playingIs(s, song, n) } == true
                         Box(Modifier.weight(1f).alpha(if (held == null || held == s.n) 1f else .35f)) {
                             Slot(s, song, lit, onClick = { held = null; play(s, song, scope) }, onHold = { held = s.n })
                         }
-                    }
+                    }}
                     repeat(3 - row.size) { Box(Modifier.weight(1f)) }
                 }
             }
@@ -188,7 +188,7 @@ private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, onClick: () -> Uni
     val cover = if (s.kind != DialedIn.Kind.ARTIST && song != null) rememberCover(song, 400) else null
     val gaveUp by androidx.compose.runtime.produceState(false, song?.albumId) { kotlinx.coroutines.delay(3_000); value = true }
     // or one so dark it would show as black
-    val dark by androidx.compose.runtime.produceState(false, cover) { value = cover?.let { c -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { lightness(c.image) < .12f } } ?: false }
+    val dark by androidx.compose.runtime.produceState(false, cover) { value = cover?.let { c -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { lightness(c.image) < .22f } } ?: false }
     val wantFace = s.kind == DialedIn.Kind.ARTIST || (cover == null && gaveUp) || dark
     val info by (if (wantFace) YouTubeAccount.artist(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
     val face = (if (wantFace) info?.photo?.let { photoSong(s.artist, it) } else null) ?: song
@@ -218,8 +218,10 @@ private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, onClick: () -> Uni
  * Noticed's slot on the S26 stayed black with its cover read) says nothing once it's in black and white.
  */
 private fun lightness(i: androidx.compose.ui.graphics.ImageBitmap): Float = runCatching {
-    val m = i.toPixelMap()
-    var sum = 0f; var n = 0
-    for (y in 0 until m.height step 8) for (x in 0 until m.width step 8) { val c = m[x, y]; sum += .3f * c.red + .59f * c.green + .11f * c.blue; n++ }
-    if (n == 0) 1f else sum / n
+    // a hardware bitmap (the phone's covers often are) copied first: its pixels can't be read as it is
+    val b = i.asAndroidBitmap().let { if (it.config == android.graphics.Bitmap.Config.HARDWARE) it.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else it }
+    val s = android.graphics.Bitmap.createScaledBitmap(b, 32, 32, true)
+    var sum = 0f
+    for (y in 0 until 32) for (x in 0 until 32) { val c = s.getPixel(x, y); sum += (.3f * (c shr 16 and 255) + .59f * (c shr 8 and 255) + .11f * (c and 255)) / 255f }
+    sum / (32 * 32)
 }.getOrDefault(1f)

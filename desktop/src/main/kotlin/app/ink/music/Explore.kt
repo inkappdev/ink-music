@@ -61,7 +61,7 @@ import kotlinx.coroutines.withContext
  * out they're mostly made by AI).
  */
 /** INK's sections as last read this run, so the page comes back as it was ([ExplorePage]). */
-private object ExploreKept {
+internal object ExploreKept {
     @Volatile var chart: List<IndieChart.Entry>? = null
     @Volatile var fresh: List<TubeAlbum>? = null
     @Volatile var shelves: List<Pair<String, List<TubeAlbum>>>? = null
@@ -535,7 +535,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit)
 }
 
 /** A record or playlist YouTube Music shows, as one to open: its page, its name, who (from what's said under it). */
-private fun tubeAlbum(it: InnerTube.Item): TubeAlbum? = when (it.kind) {
+internal fun tubeAlbum(it: InnerTube.Item): TubeAlbum? = when (it.kind) {
     InnerTube.Kind.RECORD -> TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who(it.subtitle), it.art)
     InnerTube.Kind.PLAYLIST -> TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, who(it.subtitle), it.art)
     else -> null
@@ -661,7 +661,7 @@ private val GENRE = 84.dp
 
 /** A genre as a tile: its name in a hairline frame (as the phone's), lit if it's yours, brighter under the mouse. */
 @Composable
-private fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
+internal fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
     WithMenu({ listOf(listOf("open" to onClick)) }) {
     val src = remember { MutableInteractionSource() }
     val over by src.collectIsHoveredAsState()

@@ -119,31 +119,6 @@ fun ChartFace(c: Charts.Chart, modifier: Modifier, k: Float = 1f) {
     }
 }
 
-/** Listen's charts: the place's, a row of them, all of them a word away. Nothing while they're read. */
-@Composable
-fun ChartsShelf(pages: Pages) {
-    val ctx = LocalContext.current
-    LaunchedEffect(Unit) { ChartsKept.load(ctx) }
-    val place by ChartsKept.place.collectAsState()
-    val charts by produceState<List<Charts.Chart>>(emptyList(), place) {
-        if (place.isEmpty() || !YouTubeMusic.available) return@produceState
-        value = withContext(Dispatchers.IO) { runCatching { Charts.of(place, YouTubeMusic::chartLists) }.getOrDefault(emptyList()) }
-    }
-    if (charts.isEmpty()) return
-    Column {
-        Heading("charts", "what's played most in ${Charts.placeName(place)}, and what moved") {
-            Word("all charts", pixel(13.sp), touch = 10.dp) { pages.open(Page.ChartsAll) }
-        }
-        LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(charts, key = { it.id }) { c ->
-                Box(Modifier.width(130.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Chart(c)) })) {
-                    ChartFace(c, Modifier.fillMaxWidth().aspectRatio(1f), .85f)
-                }
-            }
-        }
-    }
-}
-
 /** All the charts: a place chosen (the world, then countries), its charts, its genres where it has them. */
 @Composable
 fun ChartsPage(pages: Pages) {
@@ -167,7 +142,10 @@ fun ChartsPage(pages: Pages) {
                 BasicText("what's played most, from youtube music's charts; each says what moved since you last looked", style = pixel(12.sp, Ink.mid))
             }
             Spacer(Modifier.height(12.dp))
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            // opened at the place chosen, so it's in sight, lit (Turkey's charts showed, the row at the world)
+            val row = androidx.compose.foundation.lazy.rememberLazyListState()
+            LaunchedEffect(place) { Charts.PLACES.indexOfFirst { it.first == place }.takeIf { it > 0 }?.let { row.scrollToItem((it - 1).coerceAtLeast(0)) } }
+            LazyRow(state = row, contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 items(Charts.PLACES, key = { it.first }) { (code, name) ->
                     Word(name, pixel(13.sp, if (code == place) Ink.ink else Ink.dim), touch = 8.dp) { ChartsKept.place(ctx, code) }
                 }
