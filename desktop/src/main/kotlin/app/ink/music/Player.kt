@@ -814,7 +814,41 @@ object Player {
         else -> s.path
     }
 
-    fun toggle() { Crossfade.settle(); if (casting) return Casting.toggle(); mpv?.command("cycle", "pause") }
+    /**
+     * Pause and play, eased, as the phone's are (2026-11-17, a tester: a pause "far too abrupt"): the sound down to nothing
+     * over a quarter second before it stops, and up from nothing over a third as it goes again, on an equal-power curve.
+     * Asked again mid-fade, the newer wins (a pause on its way called off by play, the sound brought back from where it is).
+     */
+    fun toggle() {
+        Crossfade.settle()
+        if (casting) return Casting.toggle()
+        val m = mpv ?: return
+        val to = volume.value.toDouble()
+        val going = easing?.isActive == true && easeTo > 0
+        val pausing = if (easing?.isActive == true) going else !isPaused()
+        easing?.cancel(); gliding?.cancel()
+        easeTo = if (pausing) 0 else 1
+        easing = scope.launch {
+            val from = m.get("volume")?.toDoubleOrNull() ?: to
+            fun at(v: Double) = m.set("volume", "%.2f".format(java.util.Locale.ROOT, v))
+            val ms = if (pausing) 250L else 350L
+            val start = System.currentTimeMillis()
+            // played from a pause: up from nothing; from a pause's fade on its way: from where it's got to
+            val wasPaused = isPaused()
+            if (!pausing) { if (wasPaused) at(0.0); m.set("pause", "no") }
+            val begin = if (!pausing && (wasPaused || from > to)) 0.0 else from
+            while (true) {
+                val t = ((System.currentTimeMillis() - start) / ms.toDouble()).coerceIn(0.0, 1.0)
+                val k = kotlin.math.sin(t * Math.PI / 2)
+                at(if (pausing) begin * (1 - k) else begin + (to - begin) * k)
+                if (t >= 1.0) break
+                kotlinx.coroutines.delay(16)
+            }
+            if (pausing) { m.set("pause", "yes"); at(to) }
+        }
+    }
+    private var easing: kotlinx.coroutines.Job? = null
+    @Volatile private var easeTo = 0
 
     fun next() { Crossfade.settle(); if (casting) return Casting.next(); mpv?.command("playlist-next") }
 
