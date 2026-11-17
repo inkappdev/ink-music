@@ -2,7 +2,12 @@ package app.ink.music
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,8 +61,9 @@ object DialedPins {
 /**
  * DIALED IN on listen (2026-11-17; the phone's, with room): the nine as a contact sheet, touching but for a hairline of
  * black, a row of nine where the window is wide and three by three where it isn't; each picture in black and white with
- * grain ([Mono]), its number big at its top left and its name along its foot, the one playing the only one in its colour.
- * A click plays it, as do the keys 1 to 9; its menu (a right click) pins it, opens it, or says not here. Shown once
+ * grain ([Mono]), its number big at its top left and its name along its foot, the one playing in its colour, and the
+ * one under the pointer (Bronson, 2026-11-17: "on hover can the dials light up with their color?"). A click plays it, as
+ * do the keys 1 to 9; its menu (a right click) pins it, opens it, or says not here. Shown once
  * there are six.
  */
 @Composable
@@ -163,17 +169,23 @@ private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, big: Boolean, scop
             "not here" to { DialedPins.hide(s); Unit },
         ))
     }) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clipToBounds().background(Ink.black)
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { song?.let { play(s, it, scope) } })) {
+        val src = remember { MutableInteractionSource() }
+        val over by src.collectIsHoveredAsState()
+        // its colour comes up over the black and white while it plays or the pointer's on it (ink's curve, in and out)
+        val colour by animateFloatAsState(if (lit || over) 1f else 0f,
+            tween(if (lit || over) Motion.ENTER else Motion.EXIT, easing = Motion.expo), label = "dial colour")
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).clipToBounds().background(Ink.black).hoverable(src)
+            .clickable(src, indication = null, onClick = felt { song?.let { play(s, it, scope) } })) {
             if (face != null) {
-                // the one playing in its colour, dimmed evenly for the words (as a name over a cover is)
-                if (lit) {
-                    rememberCover(face, 400)?.let { c ->
-                        val k = remember(c) { nameDim(c.image) }
+                Mono(face, Modifier.fillMaxSize())
+                // in its colour, dimmed evenly for the words (as a name over a cover is)
+                if (colour > 0f) rememberCover(face, 400)?.let { c ->
+                    val k = remember(c) { nameDim(c.image) }
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = colour }) {
                         Image(c.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                         Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = 1f - k)))
                     }
-                } else Mono(face, Modifier.fillMaxSize())
+                }
             }
             BasicText("${s.n}", style = headline(if (big) 52.sp else 40.sp), modifier = Modifier.padding(start = 8.dp, top = 6.dp))
             if (s.pinned) BasicText("pinned", style = pixel(12.sp), modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp))

@@ -1640,13 +1640,15 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
             BarEdge(Modifier.align(Alignment.TopStart))
         }
         // a narrow window (an upright screen, or the rail beside the bar): the song keeps its room, and what the player
-        // has too goes as the bar narrows: the beat first, then the volume, the times, the words; the cover, the song,
-        // back / play / next and the heart always, as the phone's bar (2026-11-09: all of it was kept whatever the room,
-        // and under 700 across the cover and the song had none)
+        // has too goes as the bar narrows: the beat first, then similar, the transition and preview (into more), then the
+        // volume, then the words; the cover, the song, back / play / next and the heart always, as the phone's bar
+        // (2026-11-09: all of it was kept whatever the room, and under 700 across the cover and the song had none;
+        // 2026-11-17, Bronson: snapped to half the screen the cover was a sliver, those three words having come since)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
         beatOn = maxWidth >= BAR_BEAT
         val volume = maxWidth >= BAR_VOLUME
         val words = maxWidth >= BAR_WORDS
+        val modes = maxWidth >= BAR_MODES
         // nothing behind it: the artist's name big and faint, as the mini player has, made the small words and the
         // controls over it hard to read (tried and taken out the same day, 2026-11-09)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1691,12 +1693,13 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
             } else Heart(n.song, 3.dp, Modifier.padding(start = 12.dp))
             // similar by the controls: lit, up next goes on with songs like these when it runs out; a click turns it on
             // or off (where they come from is settings', 2026-11-12, Bronson: one control, the same as up next's)
-            if (words) SimilarWord(pixel(14.sp), Modifier.padding(start = 14.dp), "similar")
+            if (modes) SimilarWord(pixel(14.sp), Modifier.padding(start = 14.dp), "similar")
             // how one song turns into the next, beside the volume (2026-11-15, a tester: "switch more easily between
             // different mixing modes"; it took them "quite a while" to find it changes how everything plays); preview
             // beside it, switched the same way (2026-11-17, the tester: it was hidden in more)
-            if (words) TransitionWord(Modifier.padding(start = 14.dp))
-            if (words) PreviewWord(Modifier.padding(start = 14.dp))
+            if (modes) TransitionWord(Modifier.padding(start = 14.dp))
+            // preview on changes what's heard: said in the bar however narrow it is
+            if (modes) PreviewWord(Modifier.padding(start = 14.dp))
             else { val previewing by Preview.secs.collectAsState(); if (previewing > 0) PreviewWord(Modifier.padding(start = 14.dp)) }
             if (volume) { Spacer(Modifier.width(12.dp)); Volume(line = 80.dp) }
             if (words) {
@@ -1708,7 +1711,16 @@ private fun MiniPlayer(onUntuck: (() -> Unit)?, onQueue: () -> Unit, onPlayOn: (
                 Box {
                     Word("more", pixel(14.sp, if (on != null || more) Ink.ink else Ink.mid), Modifier.padding(start = 12.dp), touch = 10.dp) { more = !more }
                     if (more) BarMenu(
-                        listOf(
+                        listOfNotNull(
+                            // the bar too narrow for them: similar, the transition and preview here, each a click to the next
+                            if (modes) null else listOf(
+                                "similar: ${if (Player.radio.value) "on" else "off"}" to { Player.radio(!Player.radio.value) },
+                                "transition: ${Crossfade.mode.value.let { if (it == Crossfade.OFF) "no fades" else it }}" to {
+                                    val all = TRANSITIONS.map { it.first }
+                                    Crossfade.set(all[(all.indexOf(Crossfade.mode.value) + 1) % all.size])
+                                },
+                                "preview: ${Preview.secs.value.let { if (it == 0) "off" else "$it s" }}" to { Preview.next() },
+                            ),
                             listOf(
                                 // where it plays, the speaker's name while on one
                                 (on?.let { "play on ${it.name.lowercase()}" } ?: "play on") to onPlayOn,
@@ -1776,10 +1788,13 @@ private fun BarEdge(modifier: Modifier = Modifier) {
 
 /**
  * How wide the bar along the foot is before it shows each of these too (under [BAR_WORDS]: the cover, the song, back /
- * play / next; the times always, on the line). The beat is on the line, between the times.
+ * play / next; the times always, on the line). The beat is on the line, between the times. [BAR_MODES]: similar, the
+ * transition and preview as words beside the controls (narrower, they're in more). Raised 2026-11-17 (840 for the
+ * volume had been set before those three came, and they took the cover's room).
  */
 private val BAR_WORDS = 580.dp
-private val BAR_VOLUME = 840.dp
+private val BAR_VOLUME = 860.dp
+private val BAR_MODES = 1240.dp
 private val BAR_BEAT = 640.dp
 
 /** The line filling with the song in the cover's colour, to go anywhere in it ([SeekLine]). */
