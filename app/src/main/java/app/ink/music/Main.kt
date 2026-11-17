@@ -302,6 +302,9 @@ sealed interface Page {
     data object Loved : Page
     data object Year : Page
     data object Mapped : Page
+    /** The charts (ChartsPage), and one of them. */
+    data object ChartsAll : Page
+    data class Chart(val chart: Charts.Chart) : Page
     data object Pick : Page
     data object InkRadio : Page
     data class TubeList(val list: app.ink.music.TubeList) : Page
@@ -477,6 +480,8 @@ private fun App() {
                         Page.Loved -> LovedPage(pages)
                         Page.Year -> YearPage(pages)
                         Page.Mapped -> MappedPage(pages)
+                        Page.ChartsAll -> ChartsPage(pages)
+                        is Page.Chart -> ChartPage(p.chart, pages)
                         Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
                         Page.InkRadio -> InkRadioPage(pages)
                         is Page.TubeList -> TubeListPage(p.list, pages)

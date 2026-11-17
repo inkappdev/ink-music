@@ -272,6 +272,9 @@ sealed interface Page {
     data object Settings : Page
     data object Year : Page
     data object Mapped : Page
+    /** The charts (ChartsPage), and one of them. */
+    data object ChartsAll : Page
+    data class Chart(val chart: Charts.Chart) : Page
     data class Festival(val name: String) : Page
     data class Mood(val mood: InnerTube.Mood) : Page
     data object Queue : Page
@@ -547,6 +550,8 @@ private fun App() {
                         Page.Settings -> SettingsPage { Nav.close() }
                         Page.Year -> YearPage({ pages += it }) { Nav.close() }
                         Page.Mapped -> MappedPage { Nav.close() }
+                        Page.ChartsAll -> ChartsPage({ pages += it }) { Nav.close() }
+                        is Page.Chart -> ChartPage(page.chart, { pages += it }) { Nav.close() }
                         is Page.Festival -> FestivalPage(page.name, { pages += it }) { Nav.close() }
                         is Page.Mood -> MoodPage(page.mood, { pages += it }) { Nav.close() }
                         Page.Queue -> QueuePage({ pages += it }) { Nav.close() }
