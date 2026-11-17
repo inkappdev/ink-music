@@ -626,16 +626,19 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
         // beside the rail no name over the page: the rail's lit word says where you are (2026-10-29)
         if (words) Spacer(Modifier.height(14.dp))
         if (tab in setOf("albums", "artists", "songs")) NetworkShut(Modifier.padding(horizontal = SIDE).padding(bottom = 18.dp))
-        // the songs page's songs: the library's and every YouTube song you have (liked there, loved here, kept on the
-        // computer), each from where it comes (SongsFrom); and what's kept offline, from anywhere
+        // the songs page's songs: the library's and every YouTube song you have (your uploads, liked there, loved here, kept
+        // on the computer), each from where it comes (SongsFrom); and what's kept offline, from anywhere
         val liked by TubeAccount.liked.collectAsState()
+        val uploads by TubeAccount.uploads.collectAsState()
         val loved by Loved.tube.collectAsState()
         val kept by Offline.kept.collectAsState()
         val keptSongs = remember(kept, songs) { Offline.songs() }
-        val pool = remember(songs, liked, loved, keptSongs) {
+        val pool = remember(songs, uploads, liked, loved, keptSongs) {
             val have = songs.mapTo(HashSet()) { it.id }
-            (songs + (liked + loved + keptSongs.filter { it.tube }).filter { it.id !in have }.distinctBy { it.id }).sortedBy { Library.sortName(it.title) }
+            (songs + (uploads + liked + loved + keptSongs.filter { it.tube }).filter { it.id !in have }.distinctBy { it.id }).sortedBy { Library.sortName(it.title) }
         }
+        // the songs page with none of the library's: your uploads are your own music too, so it has songs (2026-11-17)
+        val none = if (tab == "songs") pool.isEmpty() else songs.isEmpty()
         val counts = remember(pool, kept) {
             pool.groupingBy(SongsFrom::of).eachCount() + (pool.count { it.id in kept }.takeIf { it > 0 }?.let { mapOf("kept" to it) } ?: emptyMap())
         }
@@ -655,7 +658,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
         }
         // one row (2026-11-12, it was two, the orders ten words across): the order in use, dropped down; the songs' sources
         // and genre after a hairline; then shuffle all, add music, and list or grid
-        if (songs.isNotEmpty() && tab in setOf("albums", "artists", "songs")) Row(Modifier.padding(horizontal = SIDE).padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!none && tab in setOf("albums", "artists", "songs")) Row(Modifier.padding(horizontal = SIDE).padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             SortRow(tab, when (tab) { "albums" -> Sorts.RECORDS; "artists" -> Sorts.ARTISTS; else -> Sorts.SONGS })
             if (tab == "songs" && (counts.size > 1 || genres.isNotEmpty() || folders.size > 1)) {
                 Box(Modifier.padding(horizontal = 20.dp).width(1.dp).height(14.dp).background(Ink.line))
@@ -684,7 +687,7 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             }
         }
         Spacer(Modifier.height(4.dp))
-        if (read && songs.isEmpty() && tab in setOf("albums", "artists", "songs")) {
+        if (read && none && tab in setOf("albums", "artists", "songs")) {
             Column(Modifier.padding(horizontal = SIDE)) {
                 val syncing by Server.syncing.collectAsState()
                 BasicText(if (syncing) "READING YOUR SERVER" else "NO MUSIC YET", style = headline(28.sp))
@@ -2251,8 +2254,10 @@ object SongsFrom {
     val genre = kotlinx.coroutines.flow.MutableStateFlow(runCatching { genreFile.readText().trim() }.getOrDefault(""))
     /** The one folder shown, its whole path ("" for all of them); not kept past a restart. */
     val folder = kotlinx.coroutines.flow.MutableStateFlow("")
-    // "kept": kept offline, from wherever it came (2026-11-10, Bronson: "a marked offline category, just youtube")
-    val WORDS = listOf("all" to "everything", "computer" to "this computer", "server" to "your server", "youtube" to "youtube", "kept" to "kept offline")
+    // "kept": kept offline, from wherever it came (2026-11-10, Bronson: "a marked offline category, just youtube"); "uploads":
+    // the songs you've uploaded to YouTube Music yourself, your own music on every device (2026-11-17)
+    val WORDS = listOf("all" to "everything", "computer" to "this computer", "server" to "your server", "uploads" to "your uploads",
+        "youtube" to "youtube", "kept" to "kept offline")
 
     fun choose(f: String) { chosen.value = f; runCatching { if (f == "all") file.delete() else file.writeText(f) } }
 
@@ -2265,7 +2270,7 @@ object SongsFrom {
         genre.value = g
         runCatching { if (g.isEmpty()) genreFile.delete() else genreFile.writeText(g) }
     }
-    fun of(s: Song) = when { s.tube -> "youtube"; s.server -> "server"; else -> "computer" }
+    fun of(s: Song) = when { s.tube -> if (TubeAccount.uploaded(s.id)) "uploads" else "youtube"; s.server -> "server"; else -> "computer" }
 }
 
 /**

@@ -51,8 +51,24 @@ object YouTubeAccount {
     /** Your artists' records from this year (and last, early in the year), newest first. */
     val fresh = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val reading = MutableStateFlow(false)
-    /** The songs you've uploaded to YouTube Music yourself (they play only signed in), newest first. */
+    /**
+     * The songs you've uploaded to YouTube Music yourself, newest first: a source of their own on the songs tab, beside the
+     * phone's files, your server and YouTube's likes. They play only signed in (an upload is private: YouTubeMusic finds
+     * its stream as you). Kept in files/youtube/uploads.json, apart from the library (a free account may upload 100,000).
+     */
     val uploads = MutableStateFlow<List<Song>>(emptyList())
+
+    // the uploads' ids, made again only when the list changes (asked for every song on the songs tab)
+    @Volatile private var uploadIds: Pair<List<Song>, Set<String>> = emptyList<Song>() to emptySet()
+
+    /** Whether a song is one of your uploads. */
+    fun uploaded(id: String): Boolean {
+        val now = uploads.value
+        val (was, ids) = uploadIds
+        if (was === now) return id in ids
+        return now.mapTo(HashSet()) { it.id }.also { uploadIds = now to it }.contains(id)
+    }
+
     /** The artists you follow there, by their page's id ("UC..."): an artist's page says so. */
     val followed = MutableStateFlow<Set<String>>(emptySet())
     private var tube: InnerTube? = null
@@ -103,6 +119,8 @@ object YouTubeAccount {
         _who.value = TubeWho(p.getString("name", "").orEmpty(), p.getString("handle", "").orEmpty())
         // your library as it was last read, at once (nothing then arrives later and pushes the page down); then read again
         keptRaw("library")?.let(::putLibrary)
+        // your uploads as last read (a big file, so off the main thread), before they're read again
+        scope.launch { keptRaw("uploads")?.let(::putUploads) }
         sync()
     }
 
@@ -153,8 +171,12 @@ object YouTubeAccount {
         CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush(); done() }
     }
 
-    /** Your library read again: playlists, records, history (each on its own; one failing leaves the others). */
-    fun sync() {
+    /**
+     * Your library read again: playlists, records, history (each on its own; one failing leaves the others). Your uploads
+     * too, read whole when [whole] (a sign-in, settings' tap) or when last read an hour ago or more: a big library of them
+     * is a thousand pages, and they change only when you upload.
+     */
+    fun sync(whole: Boolean = false) {
         val t = tube ?: return
         reading.value = true
         scope.launch {
@@ -180,8 +202,13 @@ object YouTubeAccount {
                     .onFailure { android.util.Log.d("ink-youtube", "history: $it") }
             }
             val mine = launch {
-                runCatching { t.tracks("FEmusic_library_privately_owned_tracks", max = 2_000) }.onSuccess { found -> uploads.value = found.map(::song) }
-                    .onFailure { android.util.Log.d("ink-youtube", "uploads: $it") }
+                val at = dir?.let { java.io.File(it, "uploads.json") }?.takeIf { it.exists() }?.lastModified()
+                if (!whole && at != null && System.currentTimeMillis() - at < 3_600_000L) return@launch
+                runCatching { t.uploads() }.onSuccess { found ->
+                    uploadsRead = true
+                    uploads.value = found.map(::song)
+                    keepRaw("uploads", org.json.JSONArray(uploads.value.map { it.json() }).toString())
+                }.onFailure { android.util.Log.d("ink-youtube", "uploads: $it") }
             }
             val likes = launch {
                 runCatching { t.tracks("VLLM", LIKED_MOST) }.onSuccess { found -> liked.value = found.map(::song) }
@@ -214,7 +241,7 @@ object YouTubeAccount {
             runCatching { fresh.value = freshFrom(t, artists.value) }.onFailure { android.util.Log.d("ink-youtube", "fresh: $it") }
             keepRaw("library", libraryJson())
             android.util.Log.d("ink-youtube", "read ${playlists.value.size} playlists, ${records.value.size} records, " +
-                "${history.value.size} heard, ${liked.value.size} liked, ${artists.value.size} artists")
+                "${history.value.size} heard, ${liked.value.size} liked, ${uploads.value.size} uploaded, ${artists.value.size} artists")
             reading.value = false
         }
     }
@@ -443,7 +470,7 @@ object YouTubeAccount {
         fun songs(l: List<Song>) = org.json.JSONArray(l.map { it.json() })
         return JSONObject().put("playlists", lists(playlists.value)).put("mixes", lists(mixes.value))
             .put("records", records(records.value)).put("fresh", records(fresh.value))
-            .put("history", songs(history.value)).put("liked", songs(liked.value)).put("uploads", songs(uploads.value))
+            .put("history", songs(history.value)).put("liked", songs(liked.value))
             .put("artists", org.json.JSONArray(artists.value.map { JSONObject().put("name", it.name).put("face", it.face.orEmpty()).put("id", it.id) }))
             .put("followed", org.json.JSONArray(followed.value.toList()))
             .toString()
@@ -457,10 +484,21 @@ object YouTubeAccount {
         fun songs(k: String) = each(k).map { songOf(it).also(YouTubeMusic::remember) }
         playlists.value = lists("playlists"); mixes.value = lists("mixes")
         records.value = records("records"); fresh.value = records("fresh")
-        history.value = songs("history"); liked.value = songs("liked"); uploads.value = songs("uploads")
+        history.value = songs("history"); liked.value = songs("liked")
+        // kept here till 2026-11-17 (now a file of their own): read once from an old library, till that's read
+        if (uploads.value.isEmpty()) uploads.value = songs("uploads")
         artists.value = each("artists").map { TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) }
         followed.value = o.optJSONArray("followed")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
     }.onFailure { android.util.Log.d("ink-youtube", "kept library: $it") }
+
+    // read from YouTube this run: what was kept doesn't then come in over it
+    @Volatile private var uploadsRead = false
+
+    private fun putUploads(text: String) = runCatching {
+        val a = org.json.JSONArray(text)
+        val kept = (0 until a.length()).map { songOf(a.getJSONObject(it)).also(YouTubeMusic::remember) }
+        if (!uploadsRead) uploads.value = kept
+    }.onFailure { android.util.Log.d("ink-youtube", "kept uploads: $it") }
 
     private fun json(a: ArtistInfo): String = JSONObject().put("id", a.id).put("name", a.name).put("photo", a.photo.orEmpty())
         .put("about", a.about).put("audience", a.audience)

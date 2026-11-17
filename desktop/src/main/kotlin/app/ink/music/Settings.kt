@@ -694,7 +694,16 @@ private fun YouTubeSetting() {
         }
         else -> {
             BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
-            BasicText("${lists.size} ${if (lists.size == 1) "playlist" else "playlists"}   ${liked.size} liked songs", style = pixel(12.sp, Ink.mid))
+            val uploads by TubeAccount.uploads.collectAsState()
+            BasicText("${lists.size} ${if (lists.size == 1) "playlist" else "playlists"}   ${liked.size} liked songs" +
+                (if (uploads.isEmpty()) "" else "   %,d ${if (uploads.size == 1) "upload" else "uploads"}".format(uploads.size)), style = pixel(12.sp, Ink.mid))
+            // your uploads play only signed in, their stream's challenges worked out by a javascript runtime on the computer
+            // (Solve): with none, said where you'd look
+            if (uploads.isNotEmpty()) {
+                val runs by androidx.compose.runtime.produceState<Boolean?>(null) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Solve.runtime != null } }
+                if (runs == false) BasicText("your uploads play here once deno or node is installed (they're private, so they're " +
+                    "played as you, and that takes one to work out)", style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 4.dp))
+            }
             // the sign-in from the phone gone stale here: what was read last is kept, and how to have it back
             val problem by TubeAccount.problem.collectAsState()
             if (TubeAccount.stale.collectAsState().value) BasicText("youtube music answered this computer as signed out. your lists and " +

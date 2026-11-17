@@ -71,6 +71,27 @@ class InnerTube(
         return out.distinctBy { it.id }.take(max)
     }
 
+    /**
+     * The songs you've uploaded to YouTube Music yourself (signed in; a free account may upload 100,000), as its library's
+     * uploads page lists them, every one up to [max]: "FEmusic_library_privately_owned_tracks", rows of songs as any list's
+     * (checked against a live answer 2026-11-17: with none uploaded, a message, "No songs uploaded yet", and no rows). Its
+     * first row is YouTube's "shuffle all", with no menu (ytmusicapi reads it so): not a song. An upload is private, its
+     * stream given only to its owner's web player, signed in. [each] told the songs so far after every page.
+     */
+    fun uploads(max: Int = UPLOADS_MOST, each: ((List<Track>) -> Unit)? = null): List<Track> {
+        val out = ArrayList<Track>()
+        pages("FEmusic_library_privately_owned_tracks", max) { page ->
+            all(page, "musicResponsiveListItemRenderer").filter { it.has("menu") }.mapNotNullTo(out, ::track)
+            each?.invoke(out.distinctBy { it.videoId }.take(max))
+            out.size
+        }
+        return out.distinctBy { it.videoId }.take(max)
+    }
+
+    /** Your uploads' records ("FEmusic_library_privately_owned_releases") and artists ("..._artists"), as their pages list them. */
+    fun uploadedRecords(): List<Item> = items("FEmusic_library_privately_owned_releases")
+    fun uploadedArtists(): List<Item> = items("FEmusic_library_privately_owned_artists")
+
     /** Your home on YouTube Music (signed in, it's yours): its shelves, a few pages of them. */
     fun home(max: Int = 30): List<Shelf> {
         val out = ArrayList<Shelf>()
@@ -525,6 +546,8 @@ class InnerTube(
             val videoId = r.optJSONObject("playlistItemData")?.optString("videoId")?.takeIf { it.isNotEmpty() }
                 ?: all(cols.firstOrNull(), "watchEndpoint").firstOrNull()?.optString("videoId")?.takeIf { it.isNotEmpty() }
                 ?: all(r.optJSONObject("overlay"), "watchEndpoint").firstOrNull()?.optString("videoId")?.takeIf { it.isNotEmpty() }
+                // an upload's id may be only in its menu ("add to queue"), where ytmusicapi reads it
+                ?: all(r.optJSONObject("menu"), "queueTarget").firstOrNull()?.optString("videoId")?.takeIf { it.isNotEmpty() }
                 ?: return null
             val title = text(cols.firstOrNull()).ifEmpty { return null }
             val rest = cols.drop(1).flatMap { runs(it) }
@@ -577,3 +600,6 @@ class InnerTube(
  * 1,000, its read capped there; the phone's at the default 2,000).
  */
 const val LIKED_MOST = 10_000
+
+/** Your uploads on YouTube Music, read whole up to this many: all a free account may upload (2026-11-17). */
+const val UPLOADS_MOST = 100_000

@@ -28,7 +28,8 @@ object YouTubeAccount {
     suspend fun makePlaylistOf(name: String, songs: List<Song>): Pair<TubeList, Int>? = null
     fun start(c: android.content.Context) {}
     fun signOut(c: android.content.Context) {}
-    fun sync() {}
+    fun sync(whole: Boolean = false) {}
+    fun uploaded(id: String) = false
     fun playlist(id: String): kotlinx.coroutines.flow.Flow<List<Song>> = kotlinx.coroutines.flow.emptyFlow()
     fun like(s: Song, on: Boolean) {}
     fun played(c: android.content.Context, songId: String) {}

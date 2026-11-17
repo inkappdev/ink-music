@@ -201,12 +201,17 @@ object YouTube {
                 .firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
     }.getOrNull()
 
-    /** A song's audio stream (blocking: the player's load hook, a speaker's ask): the best there is, or for a speaker the m4a. */
+    /**
+     * A song's audio stream (blocking: the player's load hook, a speaker's ask): the best there is, or for a speaker the m4a.
+     * One of your uploads signed in first (it's private: no other way has it); anything no other way has, signed in last.
+     */
     fun stream(id: String, forSpeaker: Boolean = false, small: Boolean = false): String? {
         val key = id + (if (forSpeaker) ":s" else "") + (if (small) ":small" else "")
         streams[key]?.takeIf { it.second > System.currentTimeMillis() }?.let { return it.first }
-        // a song whose link wouldn't play, asked the other way from the start
-        val url = (if (id in otherWay) null else newPipe(id, forSpeaker, small)) ?: other(id, forSpeaker) ?: return null
+        val url = (if (TubeAccount.uploaded(id)) signed(id) else null)
+            // a song whose link wouldn't play, asked the other way from the start
+            ?: (if (id in otherWay) null else newPipe(id, forSpeaker, small)) ?: other(id, forSpeaker)
+            ?: (if (TubeAccount.uploaded(id)) null else signed(id)) ?: return null
         streams[key] = url to System.currentTimeMillis() + 4 * 3_600_000L
         return url
     }
@@ -238,6 +243,28 @@ object YouTube {
         }
         TubeStream(none, java.io.File(Home.cache, "tube-stream").apply { mkdirs() }).apply { log = { Log.d("tubestream: $it") } }
     }
+
+    /**
+     * A song as YouTube Music's web player gets it signed in (2026-11-17, for your uploads, which no other way has): the
+     * shared TubeStream as you, its challenges worked out by a JavaScript runtime on the computer ([Solve]). Null signed
+     * out, or with no runtime to solve with. Its link is the best AAC (what a speaker plays too).
+     */
+    private fun signed(id: String): String? {
+        val t = TubeAccount.tube() ?: return null
+        if (Solve.runtime == null) return null.also { Log.d("stream: $id signed in needs deno, node or bun to solve with: none here") }
+        val cookie = TubeAccount.cookie()
+        val ts = synchronized(signedStreams) {
+            signedStreams.first.takeIf { signedStreams.second == cookie }
+                ?: TubeStream(Solve, java.io.File(Home.cache, "tube-stream-signed").apply { mkdirs() }, t).apply { log = { Log.d("tubestream signed: $it") } }
+                    .also { signedStreams = it to cookie }
+        }
+        // one at a time, as the other way's
+        val s = synchronized(ts) { runCatching { ts.stream(id.removePrefix("y")) }.getOrNull() }
+        Log.d(if (s != null) "stream: $id signed in (${s.how})" else "stream: $id none signed in")
+        return s?.url
+    }
+    // the signed-in finder and the sign-in it was made for (a new sign-in, a new one)
+    @Volatile private var signedStreams: Pair<TubeStream?, String?> = null to null
 
     /** Songs whose link wouldn't play this run: asked the other way from now on. */
     private val otherWay = ConcurrentHashMap.newKeySet<String>()

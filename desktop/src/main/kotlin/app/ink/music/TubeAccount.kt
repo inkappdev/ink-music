@@ -15,7 +15,8 @@ import java.net.Socket
 /**
  * Your YouTube Music on the computer, signed in from the phone ([Handover]: the phone hands its sign-in over the home
  * network, sealed): your playlists in lists, your liked songs as loves (the heart likes there), your mixes on listen,
- * radio made as you, and the YouTube songs you play told to your history there (as its own app does). The cookies are
+ * the songs you've uploaded there yourself as a source of their own on the songs page, radio made as you, and the
+ * YouTube songs you play told to your history there (as its own app does). The cookies are
  * kept in a file only you can read, and go only to music.youtube.com. Signing out forgets them.
  */
 object TubeAccount {
@@ -25,6 +26,11 @@ object TubeAccount {
     val playlists = MutableStateFlow<List<TubeAlbum>>(emptyList())
     val liked = MutableStateFlow<List<Song>>(emptyList())
     val mixes = MutableStateFlow<List<TubeAlbum>>(emptyList())
+    /**
+     * The songs you've uploaded to YouTube Music yourself, newest first (2026-11-17): your own music on every device, with
+     * no server to run (a free account may upload 100,000). Private, so they play only signed in ([YouTube.stream]).
+     */
+    val uploads = MutableStateFlow<List<Song>>(emptyList())
     /**
      * YouTube Music answered as to no one, though the phone's sign-in was sent (why, not yet known: the phone's own reads
      * with the same cookies work). Said in settings; the lists and likes last read are kept meanwhile.
@@ -40,6 +46,8 @@ object TubeAccount {
      * on Windows: liked songs and lists gone nine times in ten).
      */
     private val library = File(Home.dir, "youtube-library.json")
+    /** Your uploads as last read whole, apart from the rest (there may be a hundred thousand). */
+    private val uploadsFile = File(Home.dir, "youtube-uploads.json")
     @Volatile private var syncing: kotlinx.coroutines.Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var auth: JSONObject? = null
@@ -69,7 +77,22 @@ object TubeAccount {
         val a = o.optJSONArray("liked")
         liked.value = (0 until (a?.length() ?: 0)).mapNotNull { runCatching { songOf(a!!.getJSONObject(it)) }.getOrNull() }
         if (liked.value.isNotEmpty()) Loved.putTube(liked.value)
+        runCatching {
+            val u = JSONArray(uploadsFile.readText())
+            uploads.value = (0 until u.length()).mapNotNull { runCatching { songOf(u.getJSONObject(it)).also(YouTube::remember) }.getOrNull() }
+        }.onFailure { if (uploadsFile.exists()) Log.d("youtube uploads: $it") }
     }.onFailure { if (library.exists()) Log.d("youtube library: $it") }
+
+    // the uploads' ids, made again only when the list changes (asked for every song on the songs page)
+    @Volatile private var uploadIds: Pair<List<Song>, Set<String>> = emptyList<Song>() to emptySet()
+
+    /** Whether a song is one of your uploads. */
+    fun uploaded(id: String): Boolean {
+        val now = uploads.value
+        val (was, ids) = uploadIds
+        if (was === now) return id in ids
+        return now.mapTo(HashSet()) { it.id }.also { uploadIds = now to it }.contains(id)
+    }
 
     private fun keepLibrary() = runCatching {
         fun albums(l: List<TubeAlbum>) = JSONArray(l.map { JSONObject().put("url", it.url).put("title", it.title).put("artist", it.artist).put("art", it.art ?: "") })
@@ -90,13 +113,17 @@ object TubeAccount {
                 if (wait > 0) kotlinx.coroutines.delay(wait)
                 // the sign-in as it is now (the phone may have handed a fresh one meanwhile)
                 val t = tube() ?: return@launch
-                if (read(t)) return@launch
+                if (read(t, fresh && wait == 0L)) return@launch
             }
         }
     }
 
-    /** One read of the three; whether each was read whole. */
-    private fun read(t: InnerTube): Boolean {
+    /**
+     * One read of the three, and your uploads; whether each was read whole. The uploads whole when a sign-in's [fresh] or
+     * they were last read an hour ago or more: a big library of them is a thousand pages, and they change only when you
+     * upload (this reads again every half hour).
+     */
+    private fun read(t: InnerTube, fresh: Boolean): Boolean {
         var whole = true
         var out = false
         val why = ArrayList<String>()
@@ -118,6 +145,10 @@ object TubeAccount {
                     s.items.filter { it.kind == InnerTube.Kind.PLAYLIST && (it.id.startsWith("VLRDTMAK") || it.id.startsWith("RDTMAK") || "mix" in s.title.lowercase()) }
                 }.distinctBy { it.id }.map { TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, it.subtitle, it.art) }
             }.onFailure { failed("mixes", it) }
+            if (fresh || !uploadsFile.exists() || System.currentTimeMillis() - uploadsFile.lastModified() >= 3_600_000L) runCatching {
+                uploads.value = t.uploads().map(YouTube::song)
+                Home.write(uploadsFile, JSONArray(uploads.value.map { it.json() }).toString())
+            }.onFailure { failed("uploads", it) }
         }
         // what was read is kept (what wasn't stays as it was), whole or not
         keepLibrary()
@@ -174,7 +205,8 @@ object TubeAccount {
     fun signOut() {
         file.delete(); auth = null
         library.delete(); stale.value = false; problem.value = null; syncing?.cancel()
-        who.value = null; playlists.value = emptyList(); liked.value = emptyList(); mixes.value = emptyList()
+        uploadsFile.delete()
+        who.value = null; playlists.value = emptyList(); liked.value = emptyList(); mixes.value = emptyList(); uploads.value = emptyList()
         Loved.putTube(emptyList())
     }
 

@@ -19,7 +19,14 @@ kotlin { jvmToolchain(21) }
 
 // the two fonts and ink radio's stations, the app's own files (never a copy that could drift); and the keys the build was given
 val keys = layout.buildDirectory.dir("generated/keys")
-sourceSets.main { resources.srcDir("../app/src/main/res/font"); resources.srcDir("../app/src/main/assets"); resources.srcDir(keys) }
+// yt-dlp's solver, the phone's own copy (app/src/full/assets/ejs), as ejs/ beside them: what works out a signed-in stream
+// (your uploads to YouTube Music, Solve.kt)
+val ejs = layout.buildDirectory.dir("generated/ejs")
+val copyEjs by tasks.registering(Sync::class) {
+    from(rootProject.file("app/src/full/assets/ejs")) { include("*.js") }
+    into(ejs.map { it.dir("ejs") })
+}
+sourceSets.main { resources.srcDir("../app/src/main/res/font"); resources.srcDir("../app/src/main/assets"); resources.srcDir(keys); resources.srcDir(ejs) }
 
 // Last.fm's key and secret, from keystore.properties (here) or the environment (the GitHub Action's secrets),
 // written for the app to read; never in git
@@ -42,7 +49,7 @@ val writeKeys by tasks.registering {
         out.get().asFile.apply { parentFile.mkdirs() }.writeText("lastfmKey=$key\nlastfmSecret=$secret\nversion=$version\nbuild=$build\n")
     }
 }
-tasks.named("processResources") { dependsOn(writeKeys) }
+tasks.named("processResources") { dependsOn(writeKeys, copyEjs) }
 
 dependencies {
     // Compose's desktop bundle without Material (and its ripple): ink draws with foundation alone, and Material came

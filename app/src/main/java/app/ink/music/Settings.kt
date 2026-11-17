@@ -164,6 +164,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     val reading by YouTubeAccount.reading.collectAsState()
                     val tubeLists by YouTubeAccount.playlists.collectAsState()
                     val tubeRecords by YouTubeAccount.records.collectAsState()
+                    val tubeUploads by YouTubeAccount.uploads.collectAsState()
                     val w = who
                     SettingRow("YOUTUBE MUSIC", w?.name?.lowercase() ?: "sign in", opened, if (w == null) "your playlists, likes and records, from your own account" else null) {
                         if (w == null) {
@@ -174,11 +175,13 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         } else {
                             Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
                                 onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); YouTubeAccount.signOut(ctx) },
-                                onClick = { YouTubeAccount.sync() })) {
+                                onClick = { YouTubeAccount.sync(whole = true) })) {
                                 BasicText(listOf(w.name, w.handle).filter { it.isNotEmpty() }.joinToString("   ").lowercase(), style = pixel(13.sp))
                                 BasicText(
                                     if (reading) "reading your library" else "${tubeLists.size} ${if (tubeLists.size == 1) "playlist" else "playlists"}   " +
-                                        "${tubeRecords.size} ${if (tubeRecords.size == 1) "record" else "records"}",
+                                        "${tubeRecords.size} ${if (tubeRecords.size == 1) "record" else "records"}" +
+                                        // your uploads, once you have some
+                                        (if (tubeUploads.isEmpty()) "" else "   %,d ${if (tubeUploads.size == 1) "upload" else "uploads"}".format(tubeUploads.size)),
                                     style = pixel(12.sp, Ink.mid),
                                 )
                                 Spacer(Modifier.height(4.dp))

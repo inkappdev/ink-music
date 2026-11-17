@@ -549,9 +549,13 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     val songs by Library.songs.collectAsState()
     val read by Library.read.collectAsState()
     var tab by rememberSaveable { mutableStateOf("listen") }
-    // nothing on the phone or a server: no records, artists or songs to show
+    // nothing on the phone or a server: no records, artists or songs to show; but your uploads to YouTube Music are your
+    // own music too, so they have songs (2026-11-17)
     // INK: ink weekly, ink radio and everything people picked, one place (explore till 2026-10-29)
-    val tabs = if (songs.isEmpty()) listOf("listen", "ink", "radio", "podcasts", "lists") else listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
+    val uploaded by YouTubeAccount.uploads.collectAsState()
+    val tabs = if (songs.isNotEmpty()) listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
+        else if (uploaded.isNotEmpty()) listOf("listen", "ink", "songs", "radio", "podcasts", "lists")
+        else listOf("listen", "ink", "radio", "podcasts", "lists")
     val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
     // the places' menu, dropped down from the place's word
     var menu by remember { mutableStateOf(false) }
@@ -634,15 +638,16 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             }
         }
     }
-    // the songs tab's songs, as the computer's: the library's and every YouTube song you have (liked there, loved here,
-    // kept on the phone), each from where it comes (SongsFrom); and what's kept offline, from anywhere
+    // the songs tab's songs, as the computer's: the library's and every YouTube song you have (your uploads, liked there,
+    // loved here, kept on the phone), each from where it comes (SongsFrom); and what's kept offline, from anywhere
     val liked by YouTubeAccount.liked.collectAsState()
+    val uploads by YouTubeAccount.uploads.collectAsState()
     val lovedTube by Loved.tube.collectAsState()
     val keptIds by Offline.kept.collectAsState()
     val keptTube = remember(keptIds) { Offline.tubeSongs(ctx).filter { it.id in keptIds } }
-    val pool = remember(songs, liked, lovedTube, keptTube) {
+    val pool = remember(songs, uploads, liked, lovedTube, keptTube) {
         val have = songs.mapTo(HashSet()) { it.id }
-        (songs + (liked + lovedTube + keptTube).filter { it.id !in have }.distinctBy { it.id }).sortedBy { Library.sortName(it.title) }
+        (songs + (uploads + liked + lovedTube + keptTube).filter { it.id !in have }.distinctBy { it.id }).sortedBy { Library.sortName(it.title) }
     }
     val counts = remember(pool, keptIds) {
         pool.groupingBy(SongsFrom::of).eachCount() + (pool.count { it.id in keptIds }.takeIf { it > 0 }?.let { mapOf("kept" to it) } ?: emptyMap())
@@ -3408,7 +3413,9 @@ object SongsFrom {
     val chosen = kotlinx.coroutines.flow.MutableStateFlow("all")
     /** The genre shown, "" for every one. */
     val genre = kotlinx.coroutines.flow.MutableStateFlow("")
-    val WORDS = listOf("all" to "everything", "phone" to "this ${Device.word}", "server" to "your server", "youtube" to "youtube", "kept" to "kept offline")
+    // "uploads": the songs you've uploaded to YouTube Music yourself, your own music on every device (2026-11-17)
+    val WORDS = listOf("all" to "everything", "phone" to "this ${Device.word}", "server" to "your server", "uploads" to "your uploads",
+        "youtube" to "youtube", "kept" to "kept offline")
 
     fun start(c: android.content.Context) {
         val p = c.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).also { prefs = it }
@@ -3418,7 +3425,7 @@ object SongsFrom {
     fun choose(f: String) { chosen.value = f; prefs?.edit()?.putString("songs-from", f)?.apply() }
     /** A genre shown ("": every genre). */
     fun setGenre(g: String) { genre.value = g; prefs?.edit()?.putString("songs-genre", g)?.apply() }
-    fun of(s: Song) = when { s.tube -> "youtube"; s.server -> "server"; else -> "phone" }
+    fun of(s: Song) = when { s.tube -> if (YouTubeAccount.uploaded(s.id)) "uploads" else "youtube"; s.server -> "server"; else -> "phone" }
 }
 
 /**
@@ -3565,24 +3572,25 @@ object Smart {
         override fun added(s: Song) = s.added
         override fun bpm(s: Song) = Tempos.kept(c, s.id)?.bpm ?: 0.0
         override fun length(s: Song) = s.duration
-        override fun from(s: Song) = when (SongsFrom.of(s)) { "youtube" -> "youtube"; "server" -> "your server"; else -> "this phone" }
+        override fun from(s: Song) = when (SongsFrom.of(s)) { "youtube", "uploads" -> "youtube"; "server" -> "your server"; else -> "this phone" }
         override fun kept(s: Song) = s.id in kept
         override fun genre(s: Song, g: String) = Genres.fits(s.artist, g)
     }
 }
 
-/** The songs a smart playlist picks from: as the songs tab's (the library's, YouTube's liked and loved, the kept). */
+/** The songs a smart playlist picks from: as the songs tab's (the library's, your uploads, YouTube's liked and loved, the kept). */
 @Composable
 private fun smartPool(): List<Song> {
     val ctx = LocalContext.current
     val songs by Library.songs.collectAsState()
     val liked by YouTubeAccount.liked.collectAsState()
+    val uploads by YouTubeAccount.uploads.collectAsState()
     val lovedTube by Loved.tube.collectAsState()
     val keptIds by Offline.kept.collectAsState()
     val keptTube = remember(keptIds) { Offline.tubeSongs(ctx).filter { it.id in keptIds } }
-    return remember(songs, liked, lovedTube, keptTube) {
+    return remember(songs, uploads, liked, lovedTube, keptTube) {
         val have = songs.mapTo(HashSet()) { it.id }
-        songs + (liked + lovedTube + keptTube).filter { it.id !in have }.distinctBy { it.id }
+        songs + (uploads + liked + lovedTube + keptTube).filter { it.id !in have }.distinctBy { it.id }
     }
 }
 

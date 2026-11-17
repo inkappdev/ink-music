@@ -164,8 +164,10 @@ object YouTubeMusic {
     /**
      * A song's stream found. Signed in: the stream YouTube Music's web player gets as you (Premium: its 256k AAC; your
      * uploads); if it hasn't answered in 2 s, NewPipe's (signed out) asked alongside, and whichever answers first plays
-     * (2026-11-11: a slow moment for YouTube shouldn't be a silent one here); if it fails, NewPipe's. A speaker always
-     * gets NewPipe's (it fetches the link itself, from its own address).
+     * (2026-11-11: a slow moment for YouTube shouldn't be a silent one here); if it fails, NewPipe's. A speaker
+     * gets NewPipe's (it fetches the link itself, from its own address). Where NewPipe has none, signed in again, whatever
+     * was refused before and for a speaker too (its m4a): your uploads to YouTube Music are private, their stream given only
+     * to you (2026-11-17), so that's their one way (a speaker on your wifi shares your address).
      */
     private fun find(id: String, key: String, forSpeaker: Boolean, small: Boolean): Pair<String, String>? {
         init()
@@ -189,7 +191,9 @@ object YouTubeMusic {
             }
             first
         }
-        val (url, mime, kbps) = got ?: return null
+        val (url, mime, kbps) = got
+            ?: (if (SIGNED && (forSpeaker || !signedOk)) app?.let { YouTubeAccount.signed(it) }?.let { signedStream(it, id, small, aac = forSpeaker) } else null)
+            ?: return null
         // its bitrate, for the player to say
         rates[key] = kbps
         streams[key] = Triple(url, mime, System.currentTimeMillis() + 4 * 3_600_000L)
@@ -296,7 +300,7 @@ object YouTubeMusic {
      * speed-limit parameter worked out from YouTube's own player by yt-dlp's solver ([Solver]); the streaming
      * poToken on the end. Its link, type and kbps; null if anything's missing (then it's NewPipe's, signed out).
      */
-    private fun signedStream(t: InnerTube, id: String, small: Boolean): Triple<String, String, Int>? = runCatching {
+    private fun signedStream(t: InnerTube, id: String, small: Boolean, aac: Boolean = false): Triple<String, String, Int>? = runCatching {
         val c = app ?: return null
         val vid = id.removePrefix("y")
         val t0 = System.currentTimeMillis()
@@ -319,7 +323,8 @@ object YouTubeMusic {
             if (!lufs.isNaN()) loudness[id] = (-18 - lufs).toFloat()
         }
         val formats = answer.optJSONObject("streamingData")?.optJSONArray("adaptiveFormats") ?: return null
-        val audio = (0 until formats.length()).map { formats.getJSONObject(it) }.filter { it.optString("mimeType").startsWith("audio/") }
+        // for a speaker, its m4a (every speaker plays AAC)
+        val audio = (0 until formats.length()).map { formats.getJSONObject(it) }.filter { it.optString("mimeType").startsWith(if (aac) "audio/mp4" else "audio/") }
         val rate = { f: org.json.JSONObject -> f.optInt("averageBitrate").takeIf { it > 0 } ?: f.optInt("bitrate") }
         val pick = (if (small) audio.minByOrNull(rate) else audio.maxByOrNull(rate)) ?: return null
         // the link, its scrambled signature (if it came as a cipher) and its scrambled n

@@ -54,7 +54,7 @@ object Smart {
         override fun added(s: Song) = s.modified
         override fun bpm(s: Song) = Tempos.kept(s.id)?.bpm ?: 0.0
         override fun length(s: Song) = s.duration
-        override fun from(s: Song) = when (SongsFrom.of(s)) { "youtube" -> "youtube"; "server" -> "your server"; else -> "this computer" }
+        override fun from(s: Song) = when (SongsFrom.of(s)) { "youtube", "uploads" -> "youtube"; "server" -> "your server"; else -> "this computer" }
         override fun kept(s: Song) = s.id in kept
         override fun genre(s: Song, g: String) = Genres.fits(s.artist, g)
     }
