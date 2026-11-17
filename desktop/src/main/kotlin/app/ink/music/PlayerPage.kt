@@ -284,15 +284,21 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             }
                         }
                         Spacer(Modifier.height(22.dp))
-                        // the controls, the volume beside them
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // the controls, the volume beside them; where there isn't room (half the screen), the volume and its
+                        // words on a line of their own under them (2026-11-17, Bronson: squeezed, the volume's "100" stood as
+                        // 1, 0, 0, and shrunk to fit, the line went altogether)
+                        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp),
+                            itemVerticalAlignment = Alignment.CenterVertically,
+                        ) {
                             if (n.song.episode) EpisodeControls(n, Modifier.width(320.dp)) else Controls(n, Modifier.width(320.dp))
-                            Spacer(Modifier.width(32.dp))
-                            // the line gives way in a narrow window (half the screen), not its number or the words after it
-                            Volume(Modifier.weight(1f, fill = false), line = 140.dp, shrinks = true)
-                            // how one song turns into the next, beside the volume as in the bar (TransitionWord)
-                            TransitionWord(Modifier.padding(start = 20.dp))
-                            PreviewWord(Modifier.padding(start = 16.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Volume(line = 140.dp)
+                                // how one song turns into the next, beside the volume as in the bar (TransitionWord)
+                                TransitionWord(Modifier.padding(start = 20.dp))
+                                PreviewWord(Modifier.padding(start = 16.dp))
+                            }
                         }
                         // the rule under the controls the song's line too, its times at its ends (2026-11-12, Bronson: a
                         // second line "somewhere on the right", in place of a band along the cover's foot he didn't like);
