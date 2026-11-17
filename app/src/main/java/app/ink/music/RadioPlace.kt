@@ -81,16 +81,18 @@ fun RadioPlace(pages: Pages, pad: PaddingValues, grid: LazyGridState) {
         value = country?.let { c -> withContext(Dispatchers.IO) { RadioBrowser.states(c.code) } }.orEmpty()
     }
     val ask = RadioBrowser.Ask(tag = genre, code = country?.code, state = region, order = order)
+    var more by remember { mutableStateOf(false) }
     val browsed by produceState<List<Pair<Song, String>>?>(null, ask, pagesRead, browsing) {
         if (!browsing) { value = null; return@produceState }
-        if (pagesRead == 1) value = null
+        if (pagesRead == 1) { value = null; more = false }
         value = withContext(Dispatchers.IO) {
             val g = genre
             val mine = if (g != null && country == null) ours.filter { c -> g.variants.any { v -> v in c.genre.lowercase() } }.map { it.song to it.city } else emptyList()
-            mine + (0 until pagesRead).flatMap { p -> RadioBrowser.stations(ask, p, 40, Stations.ours(ctx)) }.distinctBy { it.id }.map { Stations.of(it) to it.said }
+            val b = RadioBrowser.browse(ask, pagesRead, 40, Stations.ours(ctx))
+            more = b.more
+            mine + b.stations.distinctBy { it.id }.map { Stations.of(it) to it.said }
         }
     }
-    val more = browsed?.let { it.size >= pagesRead * 40 - 8 } == true
     val found by produceState<Pair<List<Song>, RadioBrowser.Found>?>(null, typed, asked) {
         if (!searching || stream) { value = null; return@produceState }
         delay(300)

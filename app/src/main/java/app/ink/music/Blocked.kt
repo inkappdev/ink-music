@@ -71,11 +71,17 @@ object Blocked {
 
     fun blockArtist(c: Context, name: String) {
         val who = name.substringBefore(", ").trim().ifEmpty { return }
-        val k = load(c); set(c, k.copy(artists = (k.artists + who).distinctBy { it.lowercase() }))
+        val k = load(c); set(c, k.copy(artists = (k.artists + who).distinctBy { it.lowercase() })); counted(c)
     }
-    fun blockSong(c: Context, s: Song) { val k = load(c); set(c, k.copy(songs = (k.songs + Said(s.id, s.title, s.artist)).distinctBy { it.id })) }
-    fun unblockArtist(c: Context, name: String) { val k = load(c); set(c, k.copy(artists = k.artists.filterNot { it.equals(name, true) })) }
-    fun unblockSong(c: Context, id: String) { val k = load(c); set(c, k.copy(songs = k.songs.filterNot { it.id == id })) }
+    fun blockSong(c: Context, s: Song) { val k = load(c); set(c, k.copy(songs = (k.songs + Said(s.id, s.title, s.artist)).distinctBy { it.key })); counted(c) }
+    fun unblockArtist(c: Context, name: String) { val k = load(c); set(c, k.copy(artists = k.artists.filterNot { it.equals(name, true) })); counted(c) }
+    fun unblockSong(c: Context, s: Said) { val k = load(c); set(c, k.copy(songs = k.songs.filterNot { it.key == s.key })); counted(c) }
+
+    /** A song blocked, as told apart: its id, or (one without, from a station) its title and artist. */
+    private val Said.key get() = id.ifEmpty { Radio.key(title, artist) }
+
+    /** Blocked's listens count for nothing: what's counted from them made again at once, not at the next listen. */
+    private fun counted(c: Context) { Listened.read(c); Fresh.build(c) }
 
     @Synchronized private fun set(c: Context, k: Kept) {
         keys(k); _kept.value = k

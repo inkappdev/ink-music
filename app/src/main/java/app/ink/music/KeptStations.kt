@@ -44,5 +44,7 @@ object RadioAsk {
     val asked = MutableStateFlow(0)
     /** Each ask to go to radio (the library's pager goes there). */
     val go = MutableStateFlow(0)
+    /** The last ask gone to: a library page made again later (the app reopened) doesn't go to radio by an old one. */
+    var gone = 0
     fun look(q: String) { query.value = q; asked.value++; go.value++ }
 }

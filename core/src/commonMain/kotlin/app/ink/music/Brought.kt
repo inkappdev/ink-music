@@ -15,7 +15,7 @@ data class Brought(
 ) {
     /** Without the artists `out` says (blocked: 2026-11-17, Bronson: "I dont want BTS": blocked, an artist's listens count for nothing (tests had made them a top artist); unblocked, they count again). */
     fun without(out: (String) -> Boolean): Brought = copy(artists = artists.filterKeys { !out(it) },
-        songs = songs.filter { (a, b) -> !out(a) && !out(b) }, past = past.filter { !out(it) })
+        songs = songs.filter { (a, _) -> !out(a) }, past = past.filter { !out(it) })
 
     companion object {
         /**

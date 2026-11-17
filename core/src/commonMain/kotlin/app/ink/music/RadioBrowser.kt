@@ -43,7 +43,7 @@ object RadioBrowser {
     )
 
     private val guard = Guard()
-    private val pages = HashMap<String, List<Station>>()
+    private val pageRows = HashMap<String, List<JSONObject>>()
     private var countriesKept: List<Country>? = null
     private val statesKept = HashMap<String, List<State>>()
 
@@ -77,37 +77,54 @@ object RadioBrowser {
         runCatching { JSONArray(t).let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } } }.getOrNull()
     }.orEmpty()
 
+    /** What's browsed: the stations of the pages read, and whether radio-browser has more after them. */
+    data class Browsed(val stations: List<Station>, val more: Boolean)
+
     /**
-     * A page of stations for what's asked (`page` from 0, `size` each), the order chosen; `leaveOut`, names (lower case)
-     * to leave out (ink radio's own, found as themselves). One of each name. Kept for the run.
+     * The first `pages` pages (`size` each) of stations for what's asked, the order chosen, as one list; `leaveOut`, names
+     * (lower case) to leave out (ink radio's own, found as themselves). One of each name.
+     *
+     * A genre is asked by each of its spellings (exactly), each spelling paged by itself, and the lists merged in the
+     * order chosen, as far as every spelling with more has been read (2026-11-17, the review: each spelling's page cut to
+     * one page's worth after merging lost the rest for good, the next page asking each from further on). More is told by
+     * what radio-browser sent, a full page, not by what's left once the low bitrates and repeats are out: those had made
+     * "more" go after two or three pages of a country with thousands. Each page read kept for the run.
      */
-    fun stations(ask: Ask, page: Int = 0, size: Int = 40, leaveOut: Collection<String> = emptyList()): List<Station> {
-        val key = "$ask|$page|$size"
-        guard.run { pages[key] }?.let { return it }
-        // a genre asked by each of its spellings (exactly), together; else in one ask
-        val asks = ask.tag?.variants?.map { v -> listOf("tag" to v, "tagExact" to "true") } ?: listOf(emptyList())
-        val found = asks.flatMap { tagPart ->
-            val q = buildList {
-                addAll(tagPart)
-                ask.tagLike?.let { add("tag" to it) }
-                ask.name?.let { add("name" to it) }
-                ask.code?.let { add("countrycode" to it) }
-                ask.state?.let { add("state" to it); add("stateExact" to "true") }
-                add("order" to ask.order.key); add("reverse" to "true"); add("hidebroken" to "true"); add("hls" to "false")
-                // a page as the list counts it (a few of it left out once read: pages never overlap)
-                add("offset" to "${page * size}"); add("limit" to "$size")
+    fun browse(ask: Ask, pages: Int = 1, size: Int = 40, leaveOut: Collection<String> = emptyList()): Browsed {
+        val spellings = ask.tag?.variants?.map { v -> listOf("tag" to v, "tagExact" to "true") } ?: listOf(emptyList())
+        val read = spellings.map { tagPart ->
+            val rows = ArrayList<JSONObject>()
+            var full = true
+            for (page in 0 until pages) {
+                val q = buildList {
+                    addAll(tagPart)
+                    ask.tagLike?.let { add("tag" to it) }
+                    ask.name?.let { add("name" to it) }
+                    ask.code?.let { add("countrycode" to it) }
+                    ask.state?.let { add("state" to it); add("stateExact" to "true") }
+                    add("order" to ask.order.key); add("reverse" to "true"); add("hidebroken" to "true"); add("hls" to "false")
+                    add("offset" to "${page * size}"); add("limit" to "$size")
+                }
+                val url = "stations/search?" + q.joinToString("&") { (k, v) -> "$k=${urlEncode(v)}" }
+                val got = guard.run { pageRows[url] } ?: read(get(url)).also { if (it.isNotEmpty()) guard.run { pageRows[url] = it } }
+                rows += got
+                if (got.size < size) { full = false; break }
             }
-            read(get("stations/search?" + q.joinToString("&") { (k, v) -> "$k=${urlEncode(v)}" }))
+            rows to full
         }
         val sortKey = when (ask.order) { Order.PLAYED -> "clickcount"; Order.TRENDING -> "clicktrend"; Order.LIKED -> "votes" }
+        val merged = if (read.size == 1) read[0].first else {
+            // as far down as every spelling with more has been read: past that, one of them may have better still unread
+            val floor = read.filter { it.second && it.first.isNotEmpty() }.minOfOrNull { it.first.last().optInt(sortKey) }
+            read.flatMap { it.first }.sortedByDescending { it.optInt(sortKey) }.filter { floor == null || it.optInt(sortKey) >= floor }
+        }
         val seen = HashSet<String>()
-        val out = (if (asks.size > 1) found.sortedByDescending { it.optInt(sortKey) } else found).asSequence()
+        val out = merged.asSequence()
             .filter(::fits)
             .filter { o -> val n = o.optString("name").trim().lowercase(); leaveOut.none { it.length >= 4 && it in n } }
             .filter { seen.add(it.optString("name").trim().lowercase()) }
-            .map(::station).take(size).toList()
-        if (found.isNotEmpty()) guard.run { pages[key] = out }
-        return out
+            .map(::station).toList()
+        return Browsed(out, read.any { it.second })
     }
 
     /**
@@ -186,12 +203,12 @@ object RadioBrowser {
     fun search(q: String, each: Int = 12, leaveOut: Collection<String> = emptyList()): Found {
         val t = q.trim()
         if (t.isEmpty()) return Found(emptyList(), emptyList(), emptyList(), null)
-        val byName = stations(Ask(name = t), size = each, leaveOut = leaveOut)
+        val byName = browse(Ask(name = t), size = each, leaveOut = leaveOut).stations
         val seen = byName.map { it.id }.toMutableSet()
-        val tagged = stations(Ask(tagLike = t.lowercase()), size = each, leaveOut = leaveOut).filter { seen.add(it.id) }
+        val tagged = browse(Ask(tagLike = t.lowercase()), size = each, leaveOut = leaveOut).stations.filter { seen.add(it.id) }
         val country = countryNamed(t)
-        val placed = if (country != null) stations(Ask(code = country.code), size = each, leaveOut = leaveOut).filter { seen.add(it.id) }
-            else stations(Ask(state = t), size = each, leaveOut = leaveOut).filter { seen.add(it.id) }
+        val placed = if (country != null) browse(Ask(code = country.code), size = each, leaveOut = leaveOut).stations.filter { seen.add(it.id) }
+            else browse(Ask(state = t), size = each, leaveOut = leaveOut).stations.filter { seen.add(it.id) }
         return Found(byName, tagged, placed, country?.name ?: t.takeIf { placed.isNotEmpty() })
     }
 

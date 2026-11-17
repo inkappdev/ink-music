@@ -575,7 +575,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // find's "more stations": radio, its words looked for there
     val toRadio by RadioAsk.go.collectAsState()
     LaunchedEffect(toRadio) {
-        if (toRadio == 0) return@LaunchedEffect
+        if (toRadio == RadioAsk.gone) return@LaunchedEffect
+        RadioAsk.gone = toRadio
         val i = tabs.indexOf("radio").takeIf { it >= 0 } ?: return@LaunchedEffect
         tab = "radio"
         if (!Device.tv) pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo))

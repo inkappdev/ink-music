@@ -91,15 +91,17 @@ fun RadioTab() {
     }
     // a genre and a place, in the order chosen, page after page (ink radio's own of the genre first, anywhere)
     val ask = RadioBrowser.Ask(tag = genre, code = country?.code, state = region, order = order)
+    var more by remember { mutableStateOf(false) }
     val browsed by produceState<List<Shown>?>(null, ask, pages, browsing) {
         if (!browsing) { value = null; return@produceState }
-        if (pages == 1) value = null
+        if (pages == 1) { value = null; more = false }
         value = withContext(Dispatchers.IO) {
             val ours = if (genre != null && country == null) ink.filter { c -> genre!!.variants.any { v -> v in c.genre.lowercase() } }.map { Shown(it.song, "${it.city.lowercase()} · ink radio") } else emptyList()
-            ours + (0 until pages).flatMap { p -> RadioBrowser.stations(ask, p, 40, Stations.ours()) }.distinctBy { it.id }.map { it.shown() }
+            val b = RadioBrowser.browse(ask, pages, 40, Stations.ours())
+            more = b.more
+            ours + b.stations.distinctBy { it.id }.map { it.shown() }
         }
     }
-    val more = browsed?.let { it.size >= pages * 40 - 8 } == true
     // what's typed, every way (asked once the typing rests, or at once on enter)
     val found by produceState<Pair<List<Song>, RadioBrowser.Found>?>(null, typed, asked) {
         if (!searching || stream) { value = null; return@produceState }

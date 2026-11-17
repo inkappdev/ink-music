@@ -87,11 +87,12 @@ fun DialedInSheet(open: (Page) -> Unit) {
         val listens = all.filter { songOf(it.id) != null }.map { DialedIn.Listen(it.at, it.id, it.artist, it.record, Listening.minuteOfWeek(it.at)) }
         DialedIn.pick(listens, minute, now, pins.filter { songOf(it.song) != null }, hidden)
     }
+    // the keys only while it's shown: hidden (too few listens), 1 to 9 played what wasn't there
+    if (slots.size < 6) return
     DisposableEffect(slots) {
         DialedPins.play = { n -> slots.firstOrNull { it.n == n }?.let { s -> songOf(s.song)?.let { play(s, it, scope); true } } ?: false }
         onDispose { DialedPins.play = null }
     }
-    if (slots.size < 6) return
     val playing by Player.now.collectAsState()
     Column {
         Section("DIALED IN", DialedIn.said(minute) + ", 1 to 9 play them")

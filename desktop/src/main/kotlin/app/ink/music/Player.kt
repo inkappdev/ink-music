@@ -112,9 +112,14 @@ object Player {
         } else {
             Log.d("output: the sound output wouldn't open: stopped on the song, not skipped on")
             outputTrouble.value = "the sound output wouldn't open: stopped. choose an output, or play again"
-            javax.swing.SwingUtilities.invokeLater { jump(at); m.set("pause", "yes") }
+            // stopped, the queue kept, and not loaded again here: a load opens the output, and failing, came back here,
+            // every 300 ms for ever (the review, 2026-11-17). Play goes again from this song (toggle)
+            stoppedAt = at
+            javax.swing.SwingUtilities.invokeLater { m.command("stop", "keep-playlist") }
         }
     }
+    /** The song stopped on when the output wouldn't open, or -1: play starts it again. */
+    @Volatile private var stoppedAt = -1
 
     fun sound(to: Sound) {
         val was = sound.value
@@ -756,6 +761,7 @@ object Player {
         val m = mpv ?: return
         if (songs.isEmpty()) return
         Crossfade.settle()
+        stoppedAt = -1
         _queue.value = songs
         m.command("stop")
         m.command("playlist-clear")
@@ -803,6 +809,7 @@ object Player {
         if (casting) return Casting.jump(i)
         val m = mpv ?: return
         if (i !in _queue.value.indices) return
+        stoppedAt = -1
         Crossfade.settle()
         m.set("playlist-pos", i.toString())
         m.set("pause", "no")
@@ -855,6 +862,8 @@ object Player {
         Crossfade.settle()
         if (casting) return Casting.toggle()
         val m = mpv ?: return
+        // stopped as the output wouldn't open: tried again from that song
+        stoppedAt.takeIf { it >= 0 }?.let { return jump(it) }
         val to = volume.value.toDouble()
         val going = easing?.isActive == true && easeTo > 0
         val pausing = if (easing?.isActive == true) going else !isPaused()
@@ -908,6 +917,7 @@ object Player {
 
     fun stop() {
         Crossfade.settle()
+        stoppedAt = -1
         mpv?.command("stop")
         _queue.value = emptyList()
         heard.value = null

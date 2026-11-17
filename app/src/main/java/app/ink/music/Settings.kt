@@ -380,8 +380,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     "never in similar songs or listen's shelves. hold a youtube song to block it or its artist") {
                     // an artist by name (2026-11-17, Bronson: "I dont want BTS": blocked, an artist's listens count for nothing (tests had made them a top artist); unblocked, they count again)
                     var who by remember { mutableStateOf("") }
-                    fun counted() { Listened.read(ctx); Fresh.build(ctx) }
-                    fun block() { if (who.isNotBlank()) { Blocked.blockArtist(ctx, who.trim()); who = ""; counted() } }
+                    fun block() { if (who.isNotBlank()) { Blocked.blockArtist(ctx, who.trim()); who = "" } }
                     Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         BasicText("block an artist > ", style = pixel(13.sp, Ink.mid))
                         androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
@@ -398,13 +397,13 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     blocked.artists.forEach { a ->
                         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             BasicText(a.lowercase(), style = pixel(13.sp), modifier = Modifier.weight(1f, fill = false).padding(end = 20.dp))
-                            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockArtist(ctx, a); Listened.read(ctx); Fresh.build(ctx) }
+                            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockArtist(ctx, a) }
                         }
                     }
                     blocked.songs.forEach { b ->
                         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             BasicText("${b.title.lowercase()} · ${b.artist.lowercase()}", style = pixel(13.sp), modifier = Modifier.weight(1f, fill = false).padding(end = 20.dp))
-                            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockSong(ctx, b.id) }
+                            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockSong(ctx, b) }
                         }
                     }
                 }

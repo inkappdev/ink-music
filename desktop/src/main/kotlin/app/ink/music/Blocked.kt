@@ -49,10 +49,13 @@ object Blocked {
     }
 
     fun blockSong(s: app.ink.music.Song) =
-        set(_kept.value.copy(songs = (_kept.value.songs + Song(s.id, s.title, s.artist)).distinctBy { it.id }))
+        set(_kept.value.copy(songs = (_kept.value.songs + Song(s.id, s.title, s.artist)).distinctBy { it.key }))
 
     fun unblockArtist(name: String) = set(_kept.value.copy(artists = _kept.value.artists.filterNot { it.equals(name, true) }))
-    fun unblockSong(id: String) = set(_kept.value.copy(songs = _kept.value.songs.filterNot { it.id == id }))
+    fun unblockSong(s: Song) = set(_kept.value.copy(songs = _kept.value.songs.filterNot { it.key == s.key }))
+
+    /** A song blocked, as told apart: its id, or (one typed in, or from a station) its title and artist. */
+    private val Song.key get() = id.ifEmpty { Radio.key(title, artist) }
 
     /**
      * What's blocked as plain text, a line each (2026-11-17, a tester: the list grew down the settings page, and was to
@@ -70,7 +73,7 @@ object Blocked {
         val had = _kept.value.songs.associateBy { "${it.artist} - ${it.title}".lowercase() }
         val songs = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { l ->
             had[l.lowercase()] ?: l.split(" - ", limit = 2).takeIf { it.size == 2 && it.all { p -> p.isNotBlank() } }?.let { Song("", it[1].trim(), it[0].trim()) }
-        }.distinctBy { it.id.ifEmpty { Radio.key(it.title, it.artist) } }
+        }.distinctBy { it.key }
         set(_kept.value.copy(songs = songs))
     }
 
@@ -81,6 +84,8 @@ object Blocked {
             Keep.write(file, JSONObject().put("artists", JSONArray(k.artists))
                 .put("songs", JSONArray(k.songs.map { JSONObject().put("id", it.id).put("title", it.title).put("artist", it.artist) })).toString())
         }
+        // blocked's listens count for nothing: what's counted from them made again at once, not at the next listen
+        Listened.read(); Fresh.build()
     }
 
     private fun read(): Kept = runCatching {

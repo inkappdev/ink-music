@@ -91,10 +91,12 @@ object YouTubeMusic {
 
     /**
      * A record's songs, in order: YouTube Music's own page for it, one read (a record from a search comes as its
-     * playlist, "OLAK5uy_...", read as one), kept for the run. A chart's playlist: each song its own cover.
+     * playlist, "OLAK5uy_...", read as one), kept for the run. A chart's playlist: each song its own cover, and read
+     * fresh each time, as the computer's is (it changes daily, and the run can last days: kept, what moved was never seen).
      */
     suspend fun album(record: TubeAlbum): List<Song> = withContext(Dispatchers.IO) {
-        albums[record.url]?.let { return@withContext it }
+        val chart = TubeAlbum.CHART in record.url
+        if (!chart) albums[record.url]?.let { return@withContext it }
         val t0 = System.currentTimeMillis()
         val tube = InnerTube()
         val list = Regex("[?&]list=([^&]+)").find(record.url)?.groupValues?.get(1)
@@ -107,7 +109,7 @@ object YouTubeMusic {
             trackSong(t, album = record.title, albumId = "ya$id", albumArtist = record.artist, number = i + 1, art = record.art)
         } else tracks.map { trackSong(it) }
         android.util.Log.d("ink-youtube", "album ${record.title}: ${songs.size} songs in ${System.currentTimeMillis() - t0} ms")
-        songs.also { if (it.isNotEmpty()) albums[record.url] = it }
+        songs.also { if (it.isNotEmpty() && !chart) albums[record.url] = it }
     }
 
     /** A song as YouTube Music's own pages list it; on a record's page, the record's words and cover. */

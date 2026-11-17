@@ -21,9 +21,7 @@ object Solve : TubeJs {
     val runtime: String? by lazy {
         listOf("deno", "node", "bun").firstOrNull { cmd ->
             runCatching {
-                val p = ProcessBuilder(cmd, "--version").redirectErrorStream(true).start()
-                p.inputStream.readAllBytes()
-                p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0
+                ran(listOf(cmd, "--version"), 10) != null
             }.getOrDefault(false)
         }.also { Log.d("solve: " + (it?.let { r -> "runs in $r" } ?: "no javascript runtime (deno, node, bun): uploads can't play here")) }
     }
@@ -48,9 +46,7 @@ object Solve : TubeJs {
         try {
             script.writeText("$code\nconsole.log(JSON.stringify(jsc({ type: 'player', player: $player, requests: $requests }).responses));\n")
             val args = if (run == "deno") listOf(run, "run", "--quiet", script.absolutePath) else listOf(run, script.absolutePath)
-            val p = ProcessBuilder(args).redirectErrorStream(true).start()
-            val text = p.inputStream.bufferedReader().readText()
-            if (!p.waitFor(30, TimeUnit.SECONDS)) { p.destroyForcibly(); return null }
+            val text = ran(args, 30) ?: return null
             val r = JSONArray(text.trim().lines().last())
             var i = 0
             val s = if (sig != null) r.getJSONObject(i++).optJSONObject("data")?.optString(sig)?.ifEmpty { null } else null
@@ -58,6 +54,21 @@ object Solve : TubeJs {
             s to nn
         } finally { script.delete() }
     }.onFailure { Log.d("solve: $it") }.getOrNull()
+
+    /**
+     * What a command printed, or null if it failed or ran past its seconds (then it's ended). Its output goes to a file,
+     * not a pipe read as it runs: reading a pipe to its end waits as long as the runtime does, so a hung one never timed out.
+     */
+    private fun ran(args: List<String>, seconds: Long): String? {
+        val out = File.createTempFile("ink-solve", ".out")
+        try {
+            val p = ProcessBuilder(args).redirectErrorStream(true).redirectOutput(out)
+                .redirectInput(ProcessBuilder.Redirect.from(File(if (System.getProperty("os.name").startsWith("Windows")) "NUL" else "/dev/null")))
+                .start()
+            if (!p.waitFor(seconds, TimeUnit.SECONDS)) { p.destroyForcibly(); Log.d("solve: ${args.first()} ran past ${seconds}s, ended"); return null }
+            return if (p.exitValue() == 0) out.readText() else null
+        } finally { out.delete() }
+    }
 
     /** Not here: BotGuard runs in a browser. YouTube Music's web player, signed in, asks none (measured 2026-11-17). */
     override fun poToken(id: String): String? = null
