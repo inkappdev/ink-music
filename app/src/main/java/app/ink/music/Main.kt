@@ -228,6 +228,7 @@ class Main : ComponentActivity() {
         // your listening read again for the orders (lately, most, this hour: what was played since counts)
         Listened.read(this)
         Colours.start(this)
+        Levelled.keep(this)
         Playback.connect(this)
         Order.opened()
         // a TV: the phones paired with it listened for (it's their "computer")

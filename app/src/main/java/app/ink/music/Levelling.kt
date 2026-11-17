@@ -249,3 +249,19 @@ object Mp4Gain {
         return String(b.array(), Charsets.UTF_8)
     }
 }
+
+/**
+ * Even volume's switch, kept in a file both processes read fresh (2026-11-17): it was the screens' prefs, told to the
+ * player by a command the player kept in its own; a switch made while the player wasn't running never reached it, and
+ * the player went on levelling with settings saying off (heard as exact over Bluetooth "sounding better": exact rested
+ * even volume, so the songs came back up). No file yet: the screens' setting as it was, written down the first time.
+ */
+object Levelled {
+    private fun file(c: android.content.Context) = java.io.File(c.filesDir, "levelling")
+    fun on(c: android.content.Context): Boolean = runCatching { file(c).readText().trim() != "off" }.getOrElse {
+        c.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).getBoolean("levelling", true)
+    }
+    fun set(c: android.content.Context, on: Boolean) { runCatching { file(c).writeText(if (on) "on" else "off") } }
+    /** The screens' setting written down where there's none yet (the player reads only the file's). */
+    fun keep(c: android.content.Context) { if (!file(c).exists()) set(c, on(c)) }
+}

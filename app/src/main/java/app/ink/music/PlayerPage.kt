@@ -1277,7 +1277,7 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
             steps += "decoded" to who + (h.outBits.takeIf { it > 0 }?.let { ", to ${if (it == 32) "32 bit float" else "$it bit"}" } ?: "")
         }
         steps += "even volume" to (if (exactOn) "resting: exact to a usb dac" else h.gain?.let { "%+.1f db".format(java.util.Locale.ROOT, it) + if (it == 0f) "" else ", so it sits with the rest" } ?: "off")
-        if (!exactOn) acts["even volume"] = (if (levelOn) "turn off" else "turn on") to { levelOn = !levelOn; Playback.level(levelOn) }
+        if (!(exactOn && Exact.inUse(ctx))) acts["even volume"] = (if (levelOn) "turn off" else "turn on") to { levelOn = !levelOn; Playback.level(levelOn) }
         // ink music's own way to the DAC carries the equalizer (in 64 bit, at the song's rate); Android's way rests it
         steps += "equalizer" to (if (h.slot > 0) h.eq.ifEmpty { "off" } + (if (h.eq.isNotEmpty()) "\nin 64 bit, at the song's own rate, on the way to the dac" else "")
             else if (exactOn) "resting: exact to a usb dac" else h.eq.ifEmpty { "off" })

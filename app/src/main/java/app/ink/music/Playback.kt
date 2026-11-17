@@ -408,14 +408,14 @@ object Playback {
 
     /** Volume levelling on or off: kept here (the setting), told to the player (which keeps its own). */
     fun level(on: Boolean) {
-        app?.getSharedPreferences("settings", Context.MODE_PRIVATE)?.edit()?.putBoolean("levelling", on)?.apply()
+        app?.let { Levelled.set(it, on) }
         controller?.sendCustomCommand(
             androidx.media3.session.SessionCommand(PlayerService.LEVEL, android.os.Bundle.EMPTY),
             android.os.Bundle().apply { putBoolean(PlayerService.LEVEL, on) },
         )
     }
 
-    fun levelling(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("levelling", true)
+    fun levelling(ctx: Context) = Levelled.on(ctx)
 
     /** The queue's `index`th song, from its start. */
     fun jump(index: Int) {

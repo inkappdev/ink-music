@@ -13,7 +13,7 @@ import java.io.File
  * past Android's mixer (which takes everything to 48 kHz and works the volume in), by Android's bit-perfect path
  * (AudioManager.setPreferredMixerAttributes, MIXER_BEHAVIOR_BIT_PERFECT). Asked, in the player's process, for the very
  * format the player sends (float, the song's whole depth, at its rate; 16 bit for a plain 16 bit wav), each time a
- * song's format is read; only where the DAC says it takes that format so. The equalizer and even volume rest while it's on (both change the bits). Whether the phone
+ * song's format is read; only where the DAC says it takes that format so. The equalizer and even volume rest while it's in effect (both change the bits). Whether the phone
  * honours it is the maker's: what Android granted is read back and said on the signal path, never assumed.
  * The switch is a file the screens write (each process reads it fresh), the player nudged with the equalizer's command.
  */
@@ -24,11 +24,13 @@ object Exact {
     // ink music's own way to a DAC (UsbDac) works on any Android; Android's own bit-perfect path is asked only on 14 and up
     fun on(c: Context) = file(c).exists()
     /**
-     * Exact in effect: on, and a USB DAC there to be exact to. Off the DAC (headphones over Bluetooth, the speaker) the
-     * phone plays as it would, transitions and all: exact left on once had silently stopped every crossfade (2026-11-07).
+     * Exact in effect: on, and a USB DAC there to be exact to (or a player's own headphone or line output, Exclusive's).
+     * Off it (headphones over Bluetooth, the speaker) the phone plays as it would, transitions, equalizer and even volume
+     * and all: exact left on once had silently stopped every crossfade (2026-11-07), and rested even volume over
+     * Bluetooth, where nothing's exact (2026-11-17).
      */
     fun inUse(c: Context) = on(c) && runCatching {
-        c.getSystemService(android.media.AudioManager::class.java).getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).any { it.type in USB }
+        c.getSystemService(android.media.AudioManager::class.java).getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).any { it.type in USB || it.type in OWN }
     }.getOrDefault(true)
 
     fun set(c: Context, on: Boolean) { runCatching { if (on) file(c).writeText("on") else file(c).delete() } }
@@ -37,6 +39,9 @@ object Exact {
         .setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build()
 
     private val USB = setOf(AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_ACCESSORY)
+    /** A player's own outputs, asked for exclusively (Exclusive). */
+    private val OWN = setOf(AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL, AudioDeviceInfo.TYPE_AUX_LINE)
 
     private var asked: AudioDeviceInfo? = null
 

@@ -225,8 +225,9 @@ class PlayerService : MediaLibraryService() {
             eqSession = id
         }
         // exact to a usb dac: even volume rests too (both change the bits)
-        val exact = Exact.on(this)
-        levelling?.let { l -> val want = prefs.getBoolean("levelling", true) && !exact; if (l.on != want) { l.on = want; l.apply() } }
+        // exact only with the DAC there: off it (Bluetooth, the speaker) the phone plays as always, even volume and all
+        val exact = Exact.inUse(this)
+        levelling?.let { l -> val want = levelWanted(); if (l.on != want) { l.on = want; l.apply() } }
         // exact with ink music's own way to the DAC: the equalizer goes with the samples (UsbDac.eq), Android's rests
         Eq.read(this).let { st -> UsbDac.eq = if (exact && st.on && st.levels.any { it != 0 }) Eq.TEN.indices.map { st.levels.getOrElse(it) { 0 }.coerceIn(-Eq.RANGE, Eq.RANGE) / 100f }.toFloatArray() else null }
         val e = eq ?: return
@@ -311,7 +312,7 @@ class PlayerService : MediaLibraryService() {
             gain = levelling?.takeIf { it.on }?.db,
             decoder = decoder, outBits = dac?.second?.alt?.bits ?: outBits, outRate = dac?.second?.rate ?: outRate,
             device = dac?.first?.name?.lowercase() ?: out.first, kind = if (dac != null) "usb" else out.second, mixer = Exact.mixer(this),
-            eq = Eq.read(this).takeIf { it.on && (!Exact.on(this) || (dac != null && UsbDac.eq != null)) }?.label.orEmpty(),
+            eq = Eq.read(this).takeIf { it.on && (!Exact.inUse(this) || (dac != null && UsbDac.eq != null)) }?.label.orEmpty(),
             exact = exactSaid,
             slot = dac?.second?.alt?.bits ?: 0, clock = dac?.second?.clock() ?: 0.0,
             dropouts = dac?.second?.underruns() ?: Exclusive.underrunsNow.takeIf { Exclusive.rate > 0 } ?: 0, exclusive = Exclusive.rate,
@@ -346,8 +347,13 @@ class PlayerService : MediaLibraryService() {
             android.util.Log.i("ink-usb", "seen: ${i.action}")
             usbOutput?.changed()
             reroute()
+            // the DAC in or out: exact in effect or not, so the equalizer and even volume rest or come back
+            equalize()
         }
     }
+
+    /** Even volume as set, but resting while exact is in effect (a USB DAC there): it changes the bits. */
+    private fun levelWanted() = Levelled.on(this) && !Exact.inUse(this)
     /** Exact's word for a format: ink music's own way to the DAC where it holds one, else Android's bit-perfect path asked. */
     private fun exactFor(format: androidx.media3.common.Format): String {
         if (Exact.on(this) && UsbDac.hold(this)?.altFor(format.sampleRate, format.channelCount.coerceAtLeast(1)) != null)
@@ -615,6 +621,8 @@ class PlayerService : MediaLibraryService() {
         androidx.core.content.ContextCompat.registerReceiver(this, usbSeen, android.content.IntentFilter().apply {
             addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED); addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED)
             addAction(UsbDac.ALLOWED)
+            // wired headphones in or out: exact in effect or not there too (a player's own output, Exclusive)
+            addAction(Intent.ACTION_HEADSET_PLUG)
         }, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
             override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean) =
@@ -685,7 +693,7 @@ class PlayerService : MediaLibraryService() {
         kept()?.let { (items, index, at) -> player.setMediaItems(crossfade?.precut(items, index, at.coerceAtLeast(0)) ?: items, index, at); if (!prefs.getBoolean("stopped", false)) player.prepare() }
         player.shuffleModeEnabled = prefs.getBoolean("shuffle", false)
         player.repeatMode = prefs.getInt("repeat", Player.REPEAT_MODE_OFF)
-        levelling = Levelling(player, this, blend).also { it.measured = { id -> crossfade?.lufs(id) }; it.peakOf = { id -> crossfade?.peak(id) };  it.on = prefs.getBoolean("levelling", true) && !Exact.on(this); it.onApply = { tell() } }
+        levelling = Levelling(player, this, blend).also { it.measured = { id -> crossfade?.lufs(id) }; it.peakOf = { id -> crossfade?.peak(id) };  it.on = levelWanted(); it.onApply = { tell() } }
         // a song ending goes into the next (settings, sound: crossfade)
         // what reaches your ears (Heard): each song's format as the player reads it, by the song it's for
         player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
@@ -925,7 +933,7 @@ class PlayerService : MediaLibraryService() {
                         silence()
                         // exact switched: even volume rests or comes back (it stayed as it was till the player started
                         // again); the DAC held or let go, and Media3 asked again where each format goes
-                        levelling?.on = prefs.getBoolean("levelling", true) && !Exact.on(this@PlayerService)
+                        levelling?.on = levelWanted()
                         if (!Exact.on(this@PlayerService)) UsbDac.release(reset = true)
                         usbOutput?.changed()
                         reroute()
@@ -940,9 +948,8 @@ class PlayerService : MediaLibraryService() {
                         ahead.execute { if (warmWanted == id) YouTubeMusic.stream(id, false, small = Quality.now(this@PlayerService) == Quality.SAVER) }
                     }
                     if (customCommand.customAction == LEVEL) {
-                        val on = args.getBoolean(LEVEL, true)
-                        prefs.edit().putBoolean("levelling", on).apply()
-                        levelling?.on = on && !Exact.on(this@PlayerService)
+                        // the switch is the file's (Levelled), written by the screens before this
+                        levelling?.on = levelWanted()
                     }
                     if (customCommand.customAction == RADIO) {
                         radio = args.getBoolean(RADIO, true)
