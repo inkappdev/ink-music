@@ -76,7 +76,31 @@ fun FindTab(open: (Page) -> Unit) {
     val serverLists by Server.playlists.collectAsState()
     val tubeLists by TubeAccount.playlists.collectAsState()
     val asked by Finding.asked.collectAsState()
-    val typed = Finding.query.trim()
+    val raw = Finding.query.trim()
+    // a link from another service pasted (PastedLink: Spotify, Apple Music, Deezer, YouTube): read, then found here by its
+    // words, the song or record it was at the top (2026-11-16: Song.link's free API closed, so read here)
+    val pasted = PastedLink.isLink(raw)
+    val link by androidx.compose.runtime.produceState<PastedLink.Found?>(null, raw) {
+        value = null
+        if (!pasted) return@produceState
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            PastedLink.read(raw)?.let { f -> f.tubeId?.let { id -> YouTube.byId(id)?.let { s -> f.copy(title = s.title, artist = s.artist) } } ?: f }
+        }
+    }
+    // what it found: its song to play, its record to open; "reading" while it's read, "none" where YouTube Music hasn't it
+    val linked by androidx.compose.runtime.produceState<Any>("reading", link, pasted) {
+        val f = link ?: run { value = if (pasted) "reading" else "none"; return@produceState }
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val artist = f.artist.substringBefore(", ")
+            when {
+                f.tubeId != null -> f.tubeId?.let(YouTube::byId)
+                f.kind == PastedLink.Kind.SONG -> YouTube.find(f.title, artist)
+                else -> YouTube.search("$artist ${f.title}")?.albums?.firstOrNull { Pipe.same(it.title, it.artist, f.title, artist) }
+            } ?: "none"
+        }
+    }
+    // searched as its words once read (nothing while it's read: a link's letters find nothing)
+    val typed = when { link != null && link!!.title.isNotEmpty() -> "${link!!.artist.substringBefore(", ")} ${link!!.title}"; pasted -> ""; else -> raw }
     val q = Search.fold(typed)
     val artists = remember(albums, songs) { artistsOf(albums, songs) }
     val foundArtists = remember(q, artists) { if (q.isEmpty()) emptyList() else artists.mapNotNull { a -> Search.rank(a.name, q)?.let { it to a } }.sortedBy { it.first }.map { it.second }.take(8) }
@@ -122,7 +146,7 @@ fun FindTab(open: (Page) -> Unit) {
     val tubePlaylists = found.lists
     val focus = remember { FocusRequester() }
     // enter plays what's found: your songs, else YouTube Music's
-    val enter = foundSongs.ifEmpty { tubeSongs }
+    val enter = (linked as? Song)?.let { listOf(it) } ?: foundSongs.ifEmpty { tubeSongs }
     // what was looked for, kept as find closes
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Finding.keep(Finding.query) } }
     // what's typed, big, the cursor at the end of what's there (ready to type in: asked once it's laid out)
@@ -195,6 +219,21 @@ fun FindTab(open: (Page) -> Unit) {
         foundLists.forEach { l -> ListRow(l) { open(Page.List(l.id, l.name)) } }
         foundTubeLists.forEach { l -> ListRow(Server.Playlist(l.url, l.title, 0, true), said = "on youtube music") { open(Page.Tube(l)) } }
     }
+    // the pasted link's song or record, at the top
+    val fromLink = @Composable {
+        if (pasted) {
+            Label("from your ${link?.service ?: "link"}")
+            when (val x = linked) {
+                is Song -> SongRow(x, said = x.artist.lowercase(), open = open) { Player.play(listOf(x)) }
+                is TubeAlbum -> records(emptyList(), listOf(x))
+                else -> BasicText(when {
+                    x == "reading" -> "reading the link"
+                    link == null -> "couldn't read that link"
+                    else -> "${link!!.title.lowercase()} isn't on youtube music; what's like it, below"
+                }, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 10.dp))
+            }
+        }
+    }
     val radio = @Composable {
         stations.forEachIndexed { i, s -> SongRow(s, said = s.artist.lowercase()) { Player.play(stations.drop(i).take(1)) } }
     }
@@ -203,6 +242,7 @@ fun FindTab(open: (Page) -> Unit) {
         if (maxWidth >= 900.dp) androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 6.dp)) {
             field(true)
             Spacer(Modifier.height(10.dp))
+            fromLink()
             Row(Modifier.fillMaxSize()) {
                 val mine = rememberLazyListState()
                 LazyColumn(Modifier.weight(1f).fillMaxHeight().feather(mine), mine, contentPadding = PaddingValues(bottom = 32.dp)) {
@@ -240,6 +280,7 @@ fun FindTab(open: (Page) -> Unit) {
             val list = rememberLazyListState()
             LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 32.dp)) {
                 item { field(false) }
+                if (pasted) item { fromLink() }
                 if (foundArtists.isNotEmpty()) {
                     item { Label("artists") }
                     items(foundArtists, key = { "a" + it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }

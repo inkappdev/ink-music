@@ -184,6 +184,15 @@ object YouTube {
         }
     }
 
+    /** A YouTube video by its id, as a song (its title and artist read from its own): a link pasted into find (blocking). */
+    fun byId(vid: String): Song? = known["y$vid"] ?: runCatching {
+        val info = Pipe.streamInfo(vid) ?: return null
+        val (title, artist) = Pipe.tidy(info.name.orEmpty(), info.uploaderName.orEmpty())
+        Song(id = "y$vid", path = "", title = title.ifEmpty { info.name.orEmpty() }, artist = artist.ifEmpty { "unknown" }, album = "",
+            albumId = "y$vid", albumArtist = artist, duration = info.duration.coerceAtLeast(0) * 1000, disc = 1, track = 0, year = 0,
+            format = "youtube", art = Pipe.best(info.thumbnails)).also(::remember)
+    }.getOrNull()
+
     /** YouTube Music's song by these words, if it has one (blocking). */
     fun find(title: String, artist: String): Song? = if (Local.on) null else runCatching {
         Pipe.init()
