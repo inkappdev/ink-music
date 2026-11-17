@@ -91,8 +91,35 @@ object Player {
         return shown + all.filter { it.first == chosen && shown.none { s -> s.first == chosen } }
     }
 
+    /**
+     * The sound output wouldn't open (2026-11-17, Bronson: "the windows app is constantly changing songs": exact output on
+     * and refused, every song failed in turn, 240 in 48 minutes, each skipped as a song that wouldn't play). Not a song's
+     * fault, so none is skipped: with exact output on, the output shared for now (said in settings, sound) and the song
+     * tried again; that refused too, or not exact to begin with, it stops on the song, said so.
+     */
+    val outputTrouble = MutableStateFlow<String?>(null)
+    @Volatile private var shared = false
+
+    private suspend fun outputFailed(m: Mpv, at: Int) {
+        kotlinx.coroutines.delay(300)
+        if (mpv !== m) return
+        if (sound.value.exclusive && !shared) {
+            shared = true
+            Log.d("output: exact output refused (another app has the device alone?): shared for now")
+            outputTrouble.value = "exact output was refused (another app may have the device alone): shared for now"
+            decks.forEach { it.set("audio-exclusive", "no"); it.command("ao-reload") }
+            javax.swing.SwingUtilities.invokeLater { jump(at) }
+        } else {
+            Log.d("output: the sound output wouldn't open: stopped on the song, not skipped on")
+            outputTrouble.value = "the sound output wouldn't open: stopped. choose an output, or play again"
+            javax.swing.SwingUtilities.invokeLater { jump(at); m.set("pause", "yes") }
+        }
+    }
+
     fun sound(to: Sound) {
         val was = sound.value
+        // chosen again: tried as chosen
+        shared = false; outputTrouble.value = null
         sound.value = to
         // alone: one deck has the output, so no handover under way
         if (to.exclusive && !was.exclusive) Crossfade.settle()
@@ -364,7 +391,12 @@ object Player {
                 // a song that wouldn't play (mpv goes on to the next by itself): which, and why, kept in the log. A
                 // YouTube song's link once more, the other way (YouTube.playedBadly), not skipped (2026-11-16, a
                 // Windows tester: songs skipping)
-                is Mpv.Ended -> if (e.reason == 4) {
+                is Mpv.Ended -> if (e.reason == 4 && "audio output" in m.errorText(e.error).lowercase()) {
+                    // the sound output wouldn't open: not the song's (outputFailed)
+                    val at = index
+                    Log.d("couldn't play: ${m.errorText(e.error)}")
+                    scope.launch { outputFailed(m, at) }
+                } else if (e.reason == 4) {
                     val s = _queue.value.getOrNull(index)
                     val at = index
                     // a song cut short as it opened by going back to the one before (below) says "loading failed" too:

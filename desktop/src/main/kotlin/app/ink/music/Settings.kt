@@ -583,6 +583,9 @@ private fun SoundSetting() {
         else "mixed with everything else the ${if (Home.mac) "mac" else "computer"} plays, at its own sample rate",
         style = pixel(12.sp, Ink.mid),
     )
+    // the output refused this run (Player.outputFailed): said, lit
+    val trouble by Player.outputTrouble.collectAsState()
+    trouble?.let { BasicText(it, style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 6.dp)) }
     Spacer(Modifier.height(16.dp))
     androidx.compose.foundation.layout.Row {
         Word("even volume", pixel(14.sp, if (sound.even && !sound.measured) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
