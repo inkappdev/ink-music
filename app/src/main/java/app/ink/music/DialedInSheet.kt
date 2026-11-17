@@ -181,9 +181,14 @@ private fun open(s: DialedIn.Slot, song: Song?, pages: Pages) = when (s.kind) {
 @Composable
 private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, onClick: () -> Unit, onHold: () -> Unit) {
     val haptic = LocalHapticFeedback.current
-    // an artist's photo from their page (kept), else the cover of their most heard song
-    val info by (if (s.kind == DialedIn.Kind.ARTIST) YouTubeAccount.artist(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
-    val face = info?.photo?.let { photoSong(s.artist, it) } ?: song
+    // an artist's photo from their page (kept), else the cover of their most heard song; a song or record whose cover
+    // doesn't come (a server's song with none, missed by the catalogs too), their artist's photo in its place, not a
+    // black square (2026-11-17, Bronson: three of the nine without a picture)
+    val cover = if (s.kind != DialedIn.Kind.ARTIST && song != null) rememberCover(song, 400) else null
+    val gaveUp by androidx.compose.runtime.produceState(false, song?.albumId) { kotlinx.coroutines.delay(3_000); value = true }
+    val wantFace = s.kind == DialedIn.Kind.ARTIST || (cover == null && gaveUp)
+    val info by (if (wantFace) YouTubeAccount.artist(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
+    val face = (if (wantFace) info?.photo?.let { photoSong(s.artist, it) } else null) ?: song
     Box(Modifier.fillMaxWidth().aspectRatio(1f).clipToBounds().background(Color.Black)
         .combinedClickable(remember { MutableInteractionSource() }, indication = null,
             onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onHold() }, onClick = felt(then = onClick))) {

@@ -170,9 +170,14 @@ private fun openOf(s: DialedIn.Slot, song: Song?, open: (Page) -> Unit) = when (
 /** One of the nine: its picture (an artist's photo, else the cover), its number, pinned or not, its name along its foot. */
 @Composable
 private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, big: Boolean, scope: kotlinx.coroutines.CoroutineScope, open: (Page) -> Unit) {
-    // an artist's photo from their page (kept), else the cover of their most heard song
-    val info by (if (s.kind == DialedIn.Kind.ARTIST) Artists.of(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
-    val face = info?.photo?.let { faceSong(s.artist, it, photo = true) } ?: song
+    // an artist's photo from their page (kept), else the cover of their most heard song; a song or record whose cover
+    // doesn't come (a server's song with none, missed by the catalogs too), their artist's photo in its place, not a
+    // black square (2026-11-17, Bronson: three of the nine without a picture, on the phone)
+    val cover = if (s.kind != DialedIn.Kind.ARTIST && song != null) rememberCover(song, 400) else null
+    val gaveUp by androidx.compose.runtime.produceState(false, song?.albumId) { kotlinx.coroutines.delay(3_000); value = true }
+    val wantFace = s.kind == DialedIn.Kind.ARTIST || (cover == null && gaveUp)
+    val info by (if (wantFace) Artists.of(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
+    val face = (if (wantFace) info?.photo?.let { faceSong(s.artist, it, photo = true) } else null) ?: song
     WithMenu({
         listOf(listOfNotNull(
             "play" to { song?.let { play(s, it, scope) }; Unit },
