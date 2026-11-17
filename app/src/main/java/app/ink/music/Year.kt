@@ -262,7 +262,9 @@ private fun TopArtist(y: Year, shown: Boolean) {
 /** The song as it plays: the library's, else one YouTube's that this phone knows (heard there, liked). */
 @Composable
 private fun playable(): (History.Heard) -> Song? {
-    val history by YouTubeAccount.history.collectAsState()
+    val historyAll by YouTubeAccount.history.collectAsState()
+    val blockedNow by Blocked.kept.collectAsState()
+    val history = androidx.compose.runtime.remember(historyAll, blockedNow) { historyAll.filter { !Blocked.hides(it) } }
     val liked by YouTubeAccount.liked.collectAsState()
     val known = remember(history, liked) { (history + liked).associateBy { it.id } }
     return { h -> Library.song(h.id) ?: known[h.id] }

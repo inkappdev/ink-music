@@ -66,6 +66,9 @@ object Blocked {
 
     fun hides(s: Song) = hides(s.title, s.artist, s.id)
 
+    /** Whether any of these artists is blocked. */
+    fun artist(name: String) = artistKeys.isNotEmpty() && whoAll(name).any { it in artistKeys }
+
     fun blockArtist(c: Context, name: String) {
         val who = name.substringBefore(", ").trim().ifEmpty { return }
         val k = load(c); set(c, k.copy(artists = (k.artists + who).distinctBy { it.lowercase() }))

@@ -29,8 +29,13 @@ object History {
         }
     }
 
-    /** Everything heard, oldest first (a line that won't read is passed over). */
-    fun read(c: Context): List<Heard> = runCatching {
+    /**
+     * Everything heard, oldest first (a line that won't read is passed over); none by an artist or of a song blocked
+     * (2026-11-17, Bronson: "I dont want BTS": blocked, an artist's listens count for nothing (tests had made them a top artist); unblocked, they count again).
+     */
+    fun read(c: Context): List<Heard> = Blocked.load(c).let { readAll(c).filter { h -> !Blocked.hides(h.title, h.artist, h.id) } }
+
+    private fun readAll(c: Context): List<Heard> = runCatching {
         file(c).readLines().mapNotNull { line ->
             runCatching {
                 val o = JSONObject(line)

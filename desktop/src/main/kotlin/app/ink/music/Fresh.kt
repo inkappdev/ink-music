@@ -81,7 +81,8 @@ object Fresh {
             val library = Library.songs.value
             val loved = (library.filter { it.id in Loved.ids.value } + Loved.tube.value + TubeAccount.liked.value).map { it.artist }
             val kept = library.map { it.albumArtist.ifBlank { it.artist } }.distinct()
-            val brought = listOfNotNull(LastFm.brought(Home.dir), ListenBrainz.brought(Home.dir))
+            // without the artists blocked (their listens count for nothing)
+            val brought = listOfNotNull(LastFm.brought(Home.dir), ListenBrainz.brought(Home.dir)).map { it.without(Blocked::artist) }
             this@Fresh.brought.value = brought
             fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(), brought = brought)
             val first = of(emptyMap())

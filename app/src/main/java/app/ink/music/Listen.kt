@@ -204,7 +204,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     // what you played lately: a record each (newest first), as songs to play from; then, signed in
     // to youtube music, what you played there (the ones this phone hasn't just said)
     val recent = remember(heard) { heard.asReversed().distinctBy { it.album.ifEmpty { it.id } }.take(10) }
-    val tubeHeard by YouTubeAccount.history.collectAsState()
+    // youtube's history, none of the blocked (their listens count for nothing)
+    val tubeHeardAll by YouTubeAccount.history.collectAsState()
+    val blockedNow by Blocked.kept.collectAsState()
+    val tubeHeard = remember(tubeHeardAll, blockedNow) { tubeHeardAll.filter { !Blocked.hides(it) } }
     val tubeRecent = remember(tubeHeard, recent) {
         val said = recent.map { it.id }.toSet()
         tubeHeard.filter { it.id !in said }.distinctBy { it.album.ifEmpty { it.id } }.take((16 - recent.size).coerceAtLeast(6))
@@ -689,7 +692,10 @@ fun TvListenPage(pages: Pages, state: LazyListState) {
         value = withContext(Dispatchers.IO) { History.read(ctx) }
     }
     val recent = remember(heard) { heard.asReversed().distinctBy { it.album.ifEmpty { it.id } }.take(12).mapNotNull { Library.song(it.id) } }
-    val tubeHeard by YouTubeAccount.history.collectAsState()
+    // youtube's history, none of the blocked (their listens count for nothing)
+    val tubeHeardAll by YouTubeAccount.history.collectAsState()
+    val blockedNow by Blocked.kept.collectAsState()
+    val tubeHeard = remember(tubeHeardAll, blockedNow) { tubeHeardAll.filter { !Blocked.hides(it) } }
     val tubeRecent = remember(tubeHeard, recent) { val said = recent.map { it.id }.toSet(); tubeHeard.filter { it.id !in said }.distinctBy { it.album.ifEmpty { it.id } }.take(10) }
     val listened by Listened.now.collectAsState()
     val allSongs by Library.songs.collectAsState()

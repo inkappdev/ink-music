@@ -378,11 +378,27 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     blocked.artists.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "artist" else "artists"}" },
                     blocked.songs.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "song" else "songs"}" }).joinToString(" · "), opened,
                     "never in similar songs or listen's shelves. hold a youtube song to block it or its artist") {
+                    // an artist by name (2026-11-17, Bronson: "I dont want BTS": blocked, an artist's listens count for nothing (tests had made them a top artist); unblocked, they count again)
+                    var who by remember { mutableStateOf("") }
+                    fun counted() { Listened.read(ctx); Fresh.build(ctx) }
+                    fun block() { if (who.isNotBlank()) { Blocked.blockArtist(ctx, who.trim()); who = ""; counted() } }
+                    Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BasicText("block an artist > ", style = pixel(13.sp, Ink.mid))
+                        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                            if (who.isEmpty()) BasicText("their name", style = pixel(13.sp, Ink.dim))
+                            androidx.compose.foundation.text.BasicTextField(who, { who = it }, singleLine = true, textStyle = pixel(13.sp),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink.ink),
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { block() }), modifier = Modifier.fillMaxWidth())
+                        }
+                        if (who.isNotBlank()) Word("block", pixel(13.sp), touch = 8.dp) { block() }
+                    }
+                    BasicText("a blocked artist's listens count for nothing: not in your year, your most played or your taste", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(bottom = 8.dp))
                     if (nb == 0) BasicText("nothing blocked", style = pixel(13.sp, Ink.dim))
                     blocked.artists.forEach { a ->
                         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             BasicText(a.lowercase(), style = pixel(13.sp), modifier = Modifier.weight(1f, fill = false).padding(end = 20.dp))
-                            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockArtist(ctx, a) }
+                            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockArtist(ctx, a); Listened.read(ctx); Fresh.build(ctx) }
                         }
                     }
                     blocked.songs.forEach { b ->

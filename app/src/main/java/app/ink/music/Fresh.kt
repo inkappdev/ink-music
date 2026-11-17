@@ -107,7 +107,9 @@ object Fresh {
             val kept = library.map { it.albumArtist }.distinct()
             // first a taste without the fans' favorites (at once), then with them: each of your nearest's page as kept
             // your listening elsewhere, brought in (Last.fm): counted from the first day
-            val brought = listOfNotNull(LastFm.brought(app), ListenBrainz.brought(app))
+            // without the artists blocked (their listens count for nothing)
+            Blocked.load(app)
+            val brought = listOfNotNull(LastFm.brought(app), ListenBrainz.brought(app)).map { it.without(Blocked::artist) }
             this@Fresh.brought.value = brought
             // the artists you picked (the first open, settings): near from the day you picked them, said "from your picks"
             val picks = Seeds.artists.value.map { it.name }.takeIf { it.isNotEmpty() }

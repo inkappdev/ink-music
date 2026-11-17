@@ -13,6 +13,10 @@ data class Brought(
     /** Whom you used to play: high in your all-time list, nowhere in the last year's (listen's "you used to love"). */
     val past: List<String> = emptyList(),
 ) {
+    /** Without the artists `out` says (blocked: 2026-11-17, Bronson: "I dont want BTS": blocked, an artist's listens count for nothing (tests had made them a top artist); unblocked, they count again). */
+    fun without(out: (String) -> Boolean): Brought = copy(artists = artists.filterKeys { !out(it) },
+        songs = songs.filter { (a, b) -> !out(a) && !out(b) }, past = past.filter { !out(it) })
+
     companion object {
         /**
          * Each range's artists with their play counts, and the most that range may say (all time .85, the year .95, the
