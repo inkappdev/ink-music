@@ -558,6 +558,14 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // the tab row follows a swipe; a tab tapped goes there on ink's curve
     LaunchedEffect(pager, tabs) { snapshotFlow { pager.currentPage }.collect { tab = tabs.getOrElse(it) { "listen" } } }
     LaunchedEffect(tabs) { pager.scrollToPage(tabs.indexOf(tab).coerceAtLeast(0)) }
+    // find's "more stations": radio, its words looked for there
+    val toRadio by RadioAsk.go.collectAsState()
+    LaunchedEffect(toRadio) {
+        if (toRadio == 0) return@LaunchedEffect
+        val i = tabs.indexOf("radio").takeIf { it >= 0 } ?: return@LaunchedEffect
+        tab = "radio"
+        if (!Device.tv) pager.animateScrollToPage(i, animationSpec = tween(Motion.ENTER, easing = Motion.expo))
+    }
     val scope = rememberCoroutineScope()
     // back on another tab goes to listen, as a home; back on listen leaves (a tester's back left the app from albums)
     // a TV shows the place on its own, no pager: a remote doesn't swipe, and a pager's pages took no focus from the
@@ -2388,6 +2396,9 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         value = tubeId?.let { id -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { YouTubeMusic.byId(id) } }
     }
     val tube = tubeAll.copy(songs = tubeAll.songs.filter { it.id != byId?.id })
+    // a stream's own link pasted (not a service's): a station
+    val streamed = remember(raw) { if (!pasted && RadioBrowser.isStream(raw)) Stations.of(RadioBrowser.pasted(raw)) else null }
+    LaunchedEffect(Unit) { KeptStations.load(ctx) }
     val videos = remember(videosAll, tube, byId) {
         val have = (tube.songs.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) } + listOfNotNull(byId?.id)).toSet()
         videosAll.filter { it.id !in have && Radio.key(it.title, it.artist) !in have }.take(12)
@@ -2438,7 +2449,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             }
             Spacer(Modifier.height(18.dp))
             // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
-            if (ask != null && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() && byId == null &&
+            if (ask != null && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() && byId == null && streamed == null &&
                 foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && videos.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty())
                 BasicText("nothing called that", style = pixel(12.sp, Ink.mid), modifier = row)
             // what you looked for lately, a tap to look again
@@ -2448,6 +2459,14 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                 Word("clear", pixel(12.sp, Ink.dim), Modifier.padding(top = 2.dp), touch = 6.dp) { Searches.forget() }
             }
         }
+        // a stream's own link pasted: played as a station, kept in radio
+        streamed?.let { x -> item(key = "stream") {
+            Label("a stream's link")
+            Box(row) { SongRow(x, pages = pages) { Playback.play(listOf(x), 0) } }
+            val kept by KeptStations.all.collectAsState()
+            val has = kept.any { it.song.id == x.id }
+            Word(if (has) "kept in radio" else "keep it in radio", pixel(13.sp, if (has) Ink.ink else Ink.mid), row.padding(bottom = 10.dp), touch = 8.dp) { KeptStations.toggle(ctx, x, "your link") }
+        } }
         // a video's id typed: that video, first
         byId?.let { x -> item(key = "byid") { Label("youtube video $tubeId"); Box(row) { SongRow(x, pages = pages) { Playback.play(listOf(x), 0) } }; Spacer(Modifier.height(10.dp)) } }
         // the pasted link's song or record, at the top
@@ -2488,11 +2507,13 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                 Box(row) { SongRow(s, pages = pages) { Playback.play(foundSongs, i) } }
             }
         }
+        // the first few stations, then radio with these words looked for there, every way (2026-11-17, the computer's)
         if (stations.isNotEmpty()) item {
             Label("radio")
             LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(stations, key = { "r" + it.id }) { s -> StationTile(s, false, false, s.artist) { Playback.play(listOf(s), 0) } }
+                items(stations.take(6), key = { "r" + it.id }) { s -> StationTile(s, false, false, s.artist) { Playback.play(listOf(s), 0) } }
             }
+            Word("more stations", pixel(13.sp, Ink.mid), row.padding(top = 8.dp), touch = 8.dp) { RadioAsk.look(online); pages.close() }
             Spacer(Modifier.height(10.dp))
         }
         // what YouTube Music has: its artists, records, songs, then playlists

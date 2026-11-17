@@ -3,6 +3,9 @@ package app.ink.music
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -47,35 +50,170 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
- * Radio, a place of its own (the Mac's, here; 2026-10-29): the tower sending
- * across the top ([RadioTower], its rings in the colour of the station on), what's on and tune in anywhere; then ink
- * radio's stations, or a genre's, chosen in a row of words, each its sleeve in its own colour.
+ * Radio, a place of its own (the Mac's, here; 2026-10-29): the tower sending across the top ([RadioTower], its rings in
+ * the colour of the station on), what's on and tune in anywhere. Then (2026-11-17, a listener on Reddit: "thousands more
+ * from radio-browser.info, and yet I can't find a way to add any"; the computer's): a search for a station by its name,
+ * its genre or its place, or a stream's own link pasted; genres, places (near you first; a country, then its regions) and
+ * an order (most played, trending now, most liked); yours (kept, a long press) and ink radio's when none is chosen;
+ * forty at a time, more at the end.
  */
 @Composable
 fun RadioPlace(pages: Pages, pad: PaddingValues, grid: LazyGridState) {
     val ctx = LocalContext.current
     val ours = remember { Stations.curated(ctx).sortedByDescending { it.star } }
-    var genre by remember { mutableStateOf<String?>(null) }
-    val theirs by produceState<List<Song>?>(null, genre) {
-        value = null
-        genre?.let { g -> Stations.genres.firstOrNull { it.first == g }?.let { (_, tag) -> value = Stations.top(ctx, tag) } }
+    LaunchedEffect(Unit) { KeptStations.load(ctx) }
+    val kept by KeptStations.all.collectAsState()
+    val query by RadioAsk.query.collectAsState()
+    val asked by RadioAsk.asked.collectAsState()
+    var genre by remember { mutableStateOf<RadioBrowser.Tag?>(null) }
+    var country by remember { mutableStateOf<RadioBrowser.Country?>(null) }
+    var region by remember { mutableStateOf<String?>(null) }
+    var order by remember { mutableStateOf(RadioBrowser.Order.PLAYED) }
+    var pagesRead by remember(genre, country, region, order) { mutableIntStateOf(1) }
+    val typed = Search.online(query)
+    val searching = Search.enough(typed)
+    val stream = RadioBrowser.isStream(typed)
+    val browsing = !searching && (genre != null || country != null)
+    val countries by produceState(emptyList<RadioBrowser.Country>()) { value = withContext(Dispatchers.IO) { RadioBrowser.countries() } }
+    val home = remember(countries) { countries.firstOrNull { it.code.equals(java.util.Locale.getDefault().country, true) } }
+    val places = remember(countries, home) { listOfNotNull(home) + countries.filter { it != home }.take(40) }
+    val regions by produceState(emptyList<RadioBrowser.State>(), country) {
+        value = country?.let { c -> withContext(Dispatchers.IO) { RadioBrowser.states(c.code) } }.orEmpty()
     }
-    val shown = if (genre == null) ours.map { it.song to it.city } else theirs.orEmpty().map { it to it.artist }
+    val ask = RadioBrowser.Ask(tag = genre, code = country?.code, state = region, order = order)
+    val browsed by produceState<List<Pair<Song, String>>?>(null, ask, pagesRead, browsing) {
+        if (!browsing) { value = null; return@produceState }
+        if (pagesRead == 1) value = null
+        value = withContext(Dispatchers.IO) {
+            val g = genre
+            val mine = if (g != null && country == null) ours.filter { c -> g.variants.any { v -> v in c.genre.lowercase() } }.map { it.song to it.city } else emptyList()
+            mine + (0 until pagesRead).flatMap { p -> RadioBrowser.stations(ask, p, 40, Stations.ours(ctx)) }.distinctBy { it.id }.map { Stations.of(it) to it.said }
+        }
+    }
+    val more = browsed?.let { it.size >= pagesRead * 40 - 8 } == true
+    val found by produceState<Pair<List<Song>, RadioBrowser.Found>?>(null, typed, asked) {
+        if (!searching || stream) { value = null; return@produceState }
+        delay(300)
+        value = Stations.look(ctx, typed)
+    }
+    val pastedSong = remember(typed, stream) { if (stream) Stations.of(RadioBrowser.pasted(typed)) else null }
     val now by Playback.now.collectAsState()
     LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item(span = { GridItemSpan(maxLineSpan) }, key = "head") { RadioHead(ours) }
-        item(span = { GridItemSpan(maxLineSpan) }, key = "kinds") {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                item { Word("ink radio", pixel(13.sp, if (genre == null) Ink.ink else Ink.dim), touch = 8.dp) { genre = null } }
-                items(Stations.genres, key = { it.first }) { (word, _) -> Word(word, pixel(13.sp, if (genre == word) Ink.ink else Ink.dim), touch = 8.dp) { genre = word } }
+        item(span = { GridItemSpan(maxLineSpan) }, key = "find") { StationField(query) }
+        if (!searching) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "kinds") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    item { Word("ink radio", pixel(13.sp, if (genre == null && country == null) Ink.ink else Ink.dim), touch = 8.dp) { genre = null; country = null; region = null } }
+                    items(RadioBrowser.GENRES, key = { it.word }) { g -> Word(g.word, pixel(13.sp, if (genre == g) Ink.ink else Ink.dim), touch = 8.dp) { genre = if (genre == g) null else g } }
+                }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }, key = "places") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    item { BasicText("in", style = pixel(13.sp, Ink.mid)) }
+                    item { Word("anywhere", pixel(13.sp, if (country == null) Ink.ink else Ink.dim), touch = 8.dp) { country = null; region = null } }
+                    items(places, key = { it.code }) { c ->
+                        Word(if (c == home) "${c.short} (near you)" else c.short, pixel(13.sp, if (country == c) Ink.ink else Ink.dim), touch = 8.dp) { country = if (country == c) null else c; region = null }
+                    }
+                }
+            }
+            val inCountry = country
+            if (inCountry != null && regions.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "regions") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    item { Word("all of ${inCountry.short}", pixel(13.sp, if (region == null) Ink.ink else Ink.dim), touch = 8.dp) { region = null } }
+                    items(regions, key = { it.name }) { r -> Word(r.name.lowercase(), pixel(13.sp, if (region == r.name) Ink.ink else Ink.dim), touch = 8.dp) { region = if (region == r.name) null else r.name } }
+                }
+            }
+            if (browsing) item(span = { GridItemSpan(maxLineSpan) }, key = "order") {
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    RadioBrowser.Order.entries.forEach { o -> Word(o.word, pixel(13.sp, if (order == o) Ink.ink else Ink.dim), touch = 8.dp) { order = o } }
+                }
             }
         }
-        if (genre != null && theirs == null) item(span = { GridItemSpan(maxLineSpan) }) { BasicText("finding stations", style = pixel(12.sp, Ink.mid)) }
-        itemsIndexed(shown, key = { _, (s, _) -> s.id }) { i, (s, where) ->
+        fun label(key: String, text: String) = item(span = { GridItemSpan(maxLineSpan) }, key = key) { BasicText(text, style = pixel(12.sp, Ink.mid)) }
+        fun tiles(shown: List<Pair<Song, String>>, part: String) = itemsIndexed(shown, key = { _, (s, _) -> part + s.id }) { i, (s, where) ->
             val on = now?.song?.id == s.id
-            StationTile(s, on, now?.playing == true, said = if (on) "on now" else where) { Playback.play(shown.drop(i).map { it.first }, 0) }
+            val has = kept.any { it.song.id == s.id }
+            KeepableStation(s, on, now?.playing == true, if (on) "on now" else listOfNotNull(where.ifEmpty { null }, "kept".takeIf { has }).joinToString(" · "),
+                onKeep = { KeptStations.toggle(ctx, s, where) }) { Playback.play(shown.drop(i).map { it.first }, 0) }
         }
+        when {
+            stream && pastedSong != null -> {
+                label("l-link", "your link")
+                tiles(listOf(pastedSong to "your link"), "u")
+                item(span = { GridItemSpan(maxLineSpan) }, key = "linkwords") {
+                    val has = kept.any { it.song.id == pastedSong.id }
+                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Word("PLAY", headline(14.sp), touch = 8.dp) { Playback.play(listOf(pastedSong), 0) }
+                        Word(if (has) "KEPT" else "KEEP", headline(14.sp, if (has) Ink.ink else Ink.mid), touch = 8.dp) { KeptStations.toggle(ctx, pastedSong, "your link") }
+                    }
+                }
+            }
+            searching -> {
+                val f = found
+                if (f == null) label("finding", "finding stations")
+                else {
+                    val (mine, theirs) = f
+                    if (mine.isEmpty() && theirs.all.isEmpty()) label("none", "no stations called that, of that genre or there")
+                    if (mine.isNotEmpty()) { label("l-ink", "ink radio"); tiles(mine.map { s -> s to (ours.firstOrNull { it.song.id == s.id }?.city ?: "") }, "i") }
+                    if (theirs.byName.isNotEmpty()) { label("l-name", "by name"); tiles(theirs.byName.map { Stations.of(it) to it.said }, "n") }
+                    if (theirs.tagged.isNotEmpty()) { label("l-tag", "tagged ${typed.lowercase()}"); tiles(theirs.tagged.map { Stations.of(it) to it.said }, "t") }
+                    if (theirs.placed.isNotEmpty()) { label("l-place", "in ${theirs.place?.lowercase() ?: typed.lowercase()}"); tiles(theirs.placed.map { Stations.of(it) to it.said }, "p") }
+                }
+            }
+            browsing -> {
+                val b = browsed
+                if (b == null) label("finding", "finding stations")
+                else if (b.isEmpty()) label("none", "none here yet")
+                else {
+                    tiles(b, "b")
+                    if (more) item(span = { GridItemSpan(maxLineSpan) }, key = "more") { Word("more", pixel(14.sp, Ink.mid), touch = 10.dp) { pagesRead++ } }
+                }
+            }
+            else -> {
+                if (kept.isNotEmpty()) { label("l-yours", "yours · a long press lets one go"); tiles(kept.map { it.song to it.said }, "k") }
+                else label("l-hint", "a long press on any station keeps it here as yours")
+                label("l-ink", "ink radio")
+                tiles(ours.map { it.song to it.city }, "c")
+            }
+        }
+    }
+}
+
+/** A station's tile: a tap plays, a long press keeps it as yours or lets it go (felt). */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun KeepableStation(s: Song, on: Boolean, moving: Boolean, said: String, onKeep: () -> Unit, onClick: () -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Column(Modifier.combinedClickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
+        onLongClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onKeep() }, onClick = onClick)) {
+        StationCover(s, Modifier.fillMaxWidth().aspectRatio(1f), moving = on && moving)
+        Spacer(Modifier.height(8.dp))
+        BasicText(s.title.uppercase(), style = headline(15.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        BasicText(said.lowercase(), style = pixel(12.sp, if (on) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** "find a station >" and what's typed: a name, a genre, a place, or a stream's link; the keyboard's search looks again. */
+@Composable
+private fun StationField(query: String) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BasicText("find a station > ", style = pixel(14.sp, Ink.mid))
+            androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                if (query.isEmpty()) BasicText("name, genre, place, link", style = pixel(14.sp, Ink.dim), maxLines = 1)
+                androidx.compose.foundation.text.BasicTextField(
+                    query, { RadioAsk.query.value = it }, singleLine = true, textStyle = pixel(14.sp), cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink.ink),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { RadioAsk.asked.value++ }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (query.isNotEmpty()) Word("clear", pixel(12.sp, Ink.mid), touch = 10.dp) { RadioAsk.query.value = "" }
+        }
+        Spacer(Modifier.height(8.dp))
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
     }
 }
 

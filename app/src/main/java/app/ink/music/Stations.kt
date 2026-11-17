@@ -114,43 +114,29 @@ object Stations {
         (mine + more).also { if (it.isNotEmpty()) byTag[tag] = it }
     }
 
+    fun remember(s: Song) { known[s.id] = s }
+
+    /** A station from radio-browser as a song (the station is the song: "s<uuid>", its stream its address, its place its artist). */
+    fun of(st: RadioBrowser.Station): Song = known["s" + st.id] ?: Song(
+        id = "s" + st.id, uri = Uri.parse(st.url), title = st.name, artist = st.place.ifEmpty { "radio" }, album = "", albumId = "s" + st.id,
+        albumArtist = st.name, duration = 0, disc = 1, track = 0, year = 0, format = "radio",
+        mime = when (st.codec.uppercase()) { "AAC", "AAC+" -> "audio/aac"; "OGG" -> "audio/ogg"; else -> "audio/mpeg" },
+    ).also { known[it.id] = it }
+
+    /** ink radio's own names (lower case), so radio-browser's copies of them are left out. */
+    fun ours(c: android.content.Context): List<String> = curated(c).map { it.song.title.lowercase() }
+
     /**
-     * Stations by name, for find: ink radio's own whose name, city or genre answers it, then radio-browser's by
-     * name, played most first, tidied as a genre's are (and none ink radio has).
+     * Stations for what's typed, for find and radio's search (the computer's): ink radio's own whose name, city or genre
+     * answers it, then radio-browser's every way (RadioBrowser.search: by name, by genre tag, in a country or state).
      */
-    suspend fun search(c: android.content.Context, q: String): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun search(c: android.content.Context, q: String): List<Song> = look(c, q).let { (mine, f) -> mine + f.all.map(::of) }
+
+    /** ink radio's own for what's typed, and radio-browser's every way, apart. */
+    suspend fun look(c: android.content.Context, q: String, each: Int = 12): Pair<List<Song>, RadioBrowser.Found> = withContext(Dispatchers.IO) {
         val f = Search.fold(q)
-        if (f.length < 2) return@withContext emptyList()
-        val mine = curated(c).mapNotNull { s -> Search.rank(f, s.song.title, s.city, s.genre)?.let { r -> r to s } }
+        val mine = if (f.isEmpty()) emptyList() else curated(c).mapNotNull { s -> Search.rank(f, s.song.title, s.city, s.genre)?.let { r -> r to s } }
             .sortedWith(compareBy({ it.first }, { !it.second.star })).map { it.second.song }
-        val list = runCatching {
-            val h = URL("https://all.api.radio-browser.info/json/stations/search?name=" + URLEncoder.encode(q.trim(), "UTF-8") +
-                "&order=clickcount&reverse=true&hidebroken=true&hls=false&limit=40").openConnection() as HttpURLConnection
-            h.connectTimeout = 8_000; h.readTimeout = 10_000
-            h.setRequestProperty("User-Agent", "ink music/" + BuildConfig.VERSION_NAME)   // as the list asks
-            try { JSONArray(h.inputStream.bufferedReader().use { it.readText() }) } finally { h.disconnect() }
-        }.getOrNull()
-        val names = curated(c).map { it.song.title.lowercase() }.filter { it.length >= 4 }   // its copies of ours ("KEXP 90.3 Seattle") left out
-        val seen = HashSet<String>()
-        val theirs = (0 until (list?.length() ?: 0)).mapNotNull { list!!.optJSONObject(it) }.asSequence()
-            .filter { o ->
-                val stream = o.optString("url_resolved")
-                val name = o.optString("name").trim().lowercase()
-                o.optInt("bitrate").let { it == 0 || it >= 64 } && stream.startsWith("http") && o.optInt("hls") == 0 && ".m3u8" !in stream.lowercase() &&
-                    "somafm" !in name && "somafm" !in stream && o.optString("countrycode") != "KP" && names.none { it in name }
-            }
-            .filter { seen.add(it.optString("name").trim().lowercase()) }
-            .take(12)
-            .map { o ->
-                val id = "s" + o.optString("stationuuid")
-                known[id] ?: Song(
-                    id = id, uri = Uri.parse(o.optString("url_resolved")), title = o.optString("name").trim(),
-                    artist = listOf(o.optString("state"), o.optString("country")).firstOrNull { it.isNotBlank() }?.trim() ?: "radio",
-                    album = "", albumId = id, albumArtist = o.optString("name").trim(),
-                    duration = 0, disc = 1, track = 0, year = 0, format = "radio",
-                    mime = when (o.optString("codec").uppercase()) { "AAC", "AAC+" -> "audio/aac"; "OGG" -> "audio/ogg"; else -> "audio/mpeg" },
-                ).also { known[id] = it }
-            }.toList()
-        mine.take(6) + theirs
+        mine.take(6) to (if (Search.enough(q)) RadioBrowser.search(q, each, ours(c)) else RadioBrowser.Found(emptyList(), emptyList(), emptyList(), null))
     }
 }

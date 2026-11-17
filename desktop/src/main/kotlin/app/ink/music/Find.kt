@@ -139,6 +139,8 @@ fun FindTab(open: (Page) -> Unit) {
     val byId by androidx.compose.runtime.produceState<Song?>(null, tubeId) {
         value = tubeId?.let { id -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { YouTube.byId(id) } }
     }
+    // a stream's own link pasted: played as a station, kept as yours
+    val streamed = remember(raw) { if (!pasted && RadioBrowser.isStream(raw)) Stations.of(RadioBrowser.pasted(raw)) else null }
     val found = tube ?: TubeFound()
     val tubeSongs = found.songs.filter { it.id != byId?.id }
     val tubeVideos = remember(tubeVideosAll, tubeSongs, byId) {
@@ -190,7 +192,7 @@ fun FindTab(open: (Page) -> Unit) {
         }
         Spacer(Modifier.height(if (big) 8.dp else 18.dp))
         if (ask != null && tube == null) BasicText("couldn't reach youtube music; enter asks again", style = pixel(12.sp, Ink.mid))
-        else if (ask != null && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() && byId == null &&
+        else if (ask != null && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() && byId == null && streamed == null &&
             foundTubeLists.isEmpty() && stations.isEmpty() && tubeSongs.isEmpty() && tubeVideos.isEmpty() && tubeRecords.isEmpty() && tubeArtists.isEmpty() && tubePlaylists.isEmpty())
             BasicText("nothing called that", style = pixel(12.sp, Ink.mid))
         else if (big) BasicText(
@@ -238,6 +240,13 @@ fun FindTab(open: (Page) -> Unit) {
     }
     // the pasted link's song or record, at the top
     val fromLink = @Composable {
+        streamed?.let { x ->
+            Label("a stream's link")
+            SongRow(x, said = "play it as a station") { Player.play(listOf(x)) }
+            val kept by KeptStations.all.collectAsState()
+            val has = kept.any { it.song.id == x.id }
+            Word(if (has) "kept in radio" else "keep it in radio", pixel(13.sp, if (has) Ink.ink else Ink.mid), Modifier.padding(bottom = 6.dp), touch = 8.dp) { KeptStations.toggle(x, "your link") }
+        }
         // a video's id typed: that video, first
         byId?.let { x ->
             Label("youtube video $tubeId")
@@ -256,9 +265,12 @@ fun FindTab(open: (Page) -> Unit) {
             }
         }
     }
+    // the first three stations, then the radio tab with these words looked for there, every way (2026-11-17)
     val radio = @Composable {
-        stations.forEachIndexed { i, s -> SongRow(s, said = s.artist.lowercase()) { Player.play(stations.drop(i).take(1)) } }
+        stations.take(3).forEachIndexed { i, s -> SongRow(s, said = s.artist.lowercase()) { Player.play(stations.drop(i).take(1)) } }
+        Word("more stations", pixel(13.sp, Ink.mid), Modifier.padding(top = 6.dp, bottom = 4.dp), touch = 8.dp) { RadioAsk.look(online) }
     }
+
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
         // wide: yours in one column, YouTube Music's in the other, under the typing
         if (maxWidth >= 900.dp) androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().padding(start = SIDE, end = SIDE, top = 6.dp)) {
@@ -274,13 +286,13 @@ fun FindTab(open: (Page) -> Unit) {
                     }
                     if (foundRecords.isNotEmpty()) item { Label("records"); records(foundRecords, emptyList()) }
                     if (foundLists.isNotEmpty() || foundTubeLists.isNotEmpty()) item { Label("your playlists"); lists() }
+                    if (stations.isNotEmpty()) item { Label("radio"); radio() }
                     if (foundSongs.isNotEmpty()) {
                         item { Label("songs") }
                         itemsIndexed(foundSongs, key = { _, s -> "s" + s.id }) { i, s ->
                             SongRow(s, said = "${s.artist}  ·  ${s.album}".lowercase(), open = open) { Player.play(foundSongs, i) }
                         }
                     }
-                    if (stations.isNotEmpty()) item { Label("radio"); radio() }
                 }
                 Spacer(Modifier.width(40.dp))
                 val theirs = rememberLazyListState()
@@ -303,7 +315,7 @@ fun FindTab(open: (Page) -> Unit) {
             Box(Modifier.padding(start = SIDE, end = SIDE, top = 6.dp)) { field(false) }
             val list = rememberLazyListState()
             LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, bottom = 32.dp)) {
-                if (pasted || byId != null) item { fromLink() }
+                if (pasted || byId != null || streamed != null) item { fromLink() }
                 if (foundArtists.isNotEmpty()) {
                     item { Label("artists") }
                     items(foundArtists, key = { "a" + it.name }) { a -> ArtistRow(a) { open(Page.Artist(a.name)) } }

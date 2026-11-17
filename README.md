@@ -86,7 +86,7 @@ a Denon in Direct says so, and the page says **exact: yes**. On the computer, th
 | **Your own server** | Navidrome or any Subsonic server, streamed or **kept on the phone**. Loves are its stars, playlists its playlists. |
 | **YouTube Music** | Search and play without an account, through [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor). Signed in: your library both ways, uploads, and **Premium's 256 kbps**. `full` build only. |
 | **Spotify playlists** | Brought in from a file ([Exportify](https://exportify.app)), each song found in your music or on YouTube Music. |
-| **ink radio** | Sixty-two independent, listener-powered stations chosen by hand (KEXP, NTS, dublab, WFMU, Radio alHara...), each saying what it's playing. Thousands more from [radio-browser.info](https://www.radio-browser.info). |
+| **ink radio** | Sixty-two independent, listener-powered stations chosen by hand (KEXP, NTS, dublab, WFMU, Radio alHara...), each saying what it's playing. Thousands more from [radio-browser.info](https://www.radio-browser.info), in the radio tab: look one up by name, genre or place, browse by genre and country (most played, trending, most liked), keep any as yours, or paste a stream's own link. |
 | **Podcasts** | Any show from Apple's podcast directory, or any feed you paste. |
 
 Pick a few artists you love and **listen** fills with their mixes and records, what indie radio played most this
