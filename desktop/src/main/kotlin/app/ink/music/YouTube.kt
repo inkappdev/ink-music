@@ -23,7 +23,15 @@ data class TubeAlbum(val url: String, val title: String, val artist: String, val
      * or its browse page (MPRE...). 2026-11-09: "list=" alone took DIIV's ZIRP! for a playlist (mix and covers on it,
      * no critics' quote, no artist link).
      */
-    val playlist: Boolean get() = "list=" in url && "list=OLAK5uy_" !in url
+    val playlist: Boolean get() = "list=" in url && ("list=OLAK5uy_" !in url || CHART in url)
+
+    companion object {
+        /**
+         * On a chart's link: a playlist though its id is a record's (2026-11-17, Bronson: "a bunch of the same album art and
+         * songs are weird": YouTube's trending charts are "OLAK5uy_" lists, read as a record, every song its name and cover).
+         */
+        const val CHART = "&ink=chart"
+    }
 }
 
 /** What YouTube Music found for find: songs, records, artists, playlists. */
@@ -116,7 +124,7 @@ object YouTube {
         // a mix ("RD...") goes on for ever, page after page of more like it: its first 50, as the phone reads it, its
         // queue where it has no page (2026-11-10: Discover Mix was read to the 40-page stop, 1,200 songs in 15 s)
         val mix = list?.startsWith("RD") == true
-        fun songs(id: String, tracks: List<InnerTube.Track>) = if (id.startsWith("OLAK5uy_") || "/browse/" in record.url) tracks.mapIndexed { i, t ->
+        fun songs(id: String, tracks: List<InnerTube.Track>) = if ((id.startsWith("OLAK5uy_") && TubeAlbum.CHART !in record.url) || "/browse/" in record.url) tracks.mapIndexed { i, t ->
             trackSong(t, album = record.title, albumId = "ya$id", albumArtist = record.artist, number = i + 1, art = record.art)
         } else tracks.map { trackSong(it) }
         // the songs so far, page by page, while a list is read (a record comes in one)

@@ -103,7 +103,7 @@ object YouTubeMusic {
             else list to tube.tracks("VL$list")
         }.onFailure { android.util.Log.d("ink-youtube", "album ${record.url}: $it") }.getOrNull() ?: return@withContext emptyList()
         val id = own ?: list ?: record.url.hashCode().toString()
-        val songs = if (id.startsWith("OLAK5uy_") || "/browse/" in record.url) tracks.mapIndexed { i, t ->
+        val songs = if ((id.startsWith("OLAK5uy_") && TubeAlbum.CHART !in record.url) || "/browse/" in record.url) tracks.mapIndexed { i, t ->
             trackSong(t, album = record.title, albumId = "ya$id", albumArtist = record.artist, number = i + 1, art = record.art)
         } else tracks.map { trackSong(it) }
         android.util.Log.d("ink-youtube", "album ${record.title}: ${songs.size} songs in ${System.currentTimeMillis() - t0} ms")

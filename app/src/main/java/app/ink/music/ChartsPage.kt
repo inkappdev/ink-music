@@ -93,7 +93,7 @@ object ChartsKept {
 }
 
 /** A chart as YouTube Music's record-shaped list, to read its songs as any playlist's. */
-fun Charts.Chart.album() = TubeAlbum(url, "$name ${place.lowercase()}", "charts", null)
+fun Charts.Chart.album() = TubeAlbum(url + TubeAlbum.CHART, "$name ${place.lowercase()}", "charts", null)
 
 /**
  * A chart's face, ink's own (2026-11-17: YouTube's coloured squares said its name, not ours): on black in a hairline, what
@@ -183,7 +183,8 @@ fun ChartsPage(pages: Pages) {
 fun ChartPage(c: Charts.Chart, pages: Pages) {
     val ctx = LocalContext.current
     val a = remember(c.id) { c.album() }
-    val songs by produceState<List<Song>?>(null, c.id) { value = YouTubeMusic.album(a) }
+    // titled as songs, not as videos (Charts.tidy)
+    val songs by produceState<List<Song>?>(null, c.id) { value = YouTubeMusic.album(a).map { it.copy(title = Charts.tidy(it.title, it.artist)) } }
     val moves = remember(songs) { songs?.takeIf { it.isNotEmpty() }?.let { ChartsKept.moves(ctx, c.id, it) } }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(

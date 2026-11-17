@@ -13,7 +13,15 @@ data class TubeAlbum(val url: String, val title: String, val artist: String, val
      * or its browse page (MPRE...). 2026-11-09: "list=" alone took DIIV's ZIRP! for a playlist (mix and covers on it,
      * no critics' quote, no artist link).
      */
-    val playlist: Boolean get() = "list=" in url && "list=OLAK5uy_" !in url
+    val playlist: Boolean get() = "list=" in url && ("list=OLAK5uy_" !in url || CHART in url)
+
+    companion object {
+        /**
+         * On a chart's link: a playlist though its id is a record's (2026-11-17, Bronson: "a bunch of the same album art and
+         * songs are weird": YouTube's trending charts are "OLAK5uy_" lists, read as a record, every song its name and cover).
+         */
+        const val CHART = "&ink=chart"
+    }
 }
 
 /** A mood or genre on YouTube Music's own page of them (chill, focus...; african to soundtracks); its `params` open it. */

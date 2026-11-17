@@ -15,6 +15,13 @@ class ChartsTest {
         assertEquals(Charts.Kind.LIVE, Charts.parse("VLe", "Top 100 Live Performances - United States")!!.kind)
     }
 
+    @Test fun tidied() {
+        assertEquals("TU PIELE ALBA, EU MARO", Charts.tidy("JADOR - TU PIELE ALBA, EU MARO (OFFICIAL VIDEO)", "Jador"))
+        assertEquals("TAF - THE AURA FARMER ft. LARPER LARRY", Charts.tidy("TAF - THE AURA FARMER ft. LARPER LARRY (OFFICIAL MUSIC VIDEO)", "Horror Skunx"))
+        assertEquals("Hong Kong (feat. 王菲)", Charts.tidy("Hong Kong (feat. 王菲)", "The Weeknd"))
+        assertEquals("Golden", Charts.tidy("Golden [Official Lyric Video]", "HUNTR/X"))
+    }
+
     @Test fun moves() {
         assertEquals(listOf("+1", "-1", "new"), Charts.moves(listOf("b", "a", "z"), listOf("a", "b", "c")))
         val first = Charts.look(null, listOf("a", "b"), at = 0)

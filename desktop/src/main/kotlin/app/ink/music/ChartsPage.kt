@@ -86,7 +86,7 @@ object ChartsKept {
 }
 
 /** A chart as YouTube Music's record-shaped list, to read its songs as any playlist's. */
-fun Charts.Chart.album() = TubeAlbum(url, "$name ${Charts.placeName(place).ifEmpty { place }}", "charts", null)
+fun Charts.Chart.album() = TubeAlbum(url + TubeAlbum.CHART, "$name ${Charts.placeName(place).ifEmpty { place }}", "charts", null)
 
 /**
  * A chart's tile, ink's own (2026-11-17: YouTube's coloured squares said its name, not ours): on black in a hairline, what
@@ -176,9 +176,11 @@ fun ChartsPage(open: (Page) -> Unit, onClose: () -> Unit) {
 fun ChartPage(c: Charts.Chart, open: (Page) -> Unit, onClose: () -> Unit) {
     val a = remember(c.id) { c.album() }
     val songs by produceState<List<Song>?>(null, c.id) {
-        YouTube.kept(a)?.let { value = it }
+        // titled as songs, not as videos (Charts.tidy)
+        fun tidied(s: List<Song>) = s.map { it.copy(title = Charts.tidy(it.title, it.artist)) }
+        YouTube.kept(a)?.let { value = tidied(it) }
         val fresh = YouTube.read(a)
-        if (fresh.isNotEmpty()) value = fresh else if (value == null) value = emptyList()
+        if (fresh.isNotEmpty()) value = tidied(fresh) else if (value == null) value = emptyList()
     }
     val moves = remember(songs) { songs?.takeIf { it.isNotEmpty() }?.let { ChartsKept.moves(c.id, it) } }
     Column(Modifier.fillMaxSize()) {

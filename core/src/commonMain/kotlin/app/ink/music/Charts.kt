@@ -85,6 +85,22 @@ object Charts {
         }
     }
 
+    /**
+     * A chart's song's title as a song's (2026-11-17, Bronson: "songs are weird af": the charts are music videos', titled
+     * "JADOR - TU PIELE ALBA, EU MARO (OFFICIAL VIDEO)"): its video words in brackets gone, and its artist's name off its
+     * front where it's said again under it. Left as it was where nothing's left.
+     */
+    fun tidy(title: String, artist: String): String {
+        var t = title.replace(Regex("""\s*[(\[][^)\]]*\b(official|video|audio|lyrics?|visuali[sz]er|m/?v|4k|hd|live performance)\b[^)\]]*[)\]]""", RegexOption.IGNORE_CASE), "")
+        val who = artist.substringBefore(",").substringBefore(" & ").trim()
+        if (who.isNotEmpty()) {
+            val dash = Regex("""^\s*${Regex.escape(who)}\s*[-–—:|]\s*""", RegexOption.IGNORE_CASE)
+            t = t.replace(dash, "")
+        }
+        t = t.replace(Regex("""\s{2,}"""), " ").trim().trimEnd('-', '–', '|').trim()
+        return t.ifEmpty { title }
+    }
+
     /** A chart's looks as each app keeps them: the one before (compared with), and the latest (its ids and when). */
     data class Looks(val before: List<String>?, val at: Long, val ids: List<String>)
 
