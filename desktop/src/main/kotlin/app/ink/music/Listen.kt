@@ -300,14 +300,15 @@ fun ListenPage(open: (Page) -> Unit) {
 @Composable
 private fun MixTile(a: TubeAlbum, onClick: () -> Unit) {
     val lead = remember(a) { TubeMixes.lead(a.artist) }
-    // their photo from their page (kept), else the mix's own picture
+    // their photo from their page (kept); none (yet), black under the words: never the mix's own picture, YouTube's
+    // lettering on it (2026-11-17, Bronson: YouTube's own lettering showed through under ink's)
     val info by (if (lead.isNotEmpty()) Artists.of(lead) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
-    val pic = info?.photo?.let { faceSong(lead, it, photo = true) } ?: face(a)
+    val pic = info?.photo?.let { faceSong(lead, it, photo = true) }
     val mark = remember(a) { TubeMixes.mark(a.title, a.art) }
     WithMenu({ listOf(listOf("open" to onClick, "play" to { playTube(a); Unit }, "shuffle" to { playTube(a, shuffle = true); Unit })) }) {
         Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
             Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) {
-                Mono(pic, Modifier.fillMaxSize())
+                pic?.let { Mono(it, Modifier.fillMaxSize()) }
                 BasicText(mark, style = headline(when { mark.length <= 2 -> 68.sp; mark.length <= 5 -> 36.sp; mark.length <= 7 -> 26.sp; else -> 22.sp }),
                     modifier = Modifier.padding(start = 10.dp, top = 8.dp))
                 BasicText(a.title.uppercase(), style = headline(16.sp), maxLines = 3, overflow = TextOverflow.Ellipsis,

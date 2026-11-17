@@ -636,9 +636,10 @@ private fun ContinueHere(o: SyncPhone.Offer) {
 @Composable
 private fun MixTile(l: TubeList, onClick: () -> Unit) {
     val lead = remember(l) { TubeMixes.lead(l.said) }
-    // their photo from their page (kept), else the mix's own picture
+    // their photo from their page (kept); none (yet), black under the words: never the mix's own picture, YouTube's
+    // lettering on it (2026-11-17, Bronson: YouTube's own lettering showed through under ink's)
     val info by (if (lead.isNotEmpty()) YouTubeAccount.artist(lead) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
-    val face = info?.photo?.let { photoSong(lead, it) } ?: l.art?.let { faceSong(l.name, it) }
+    val face = info?.photo?.let { photoSong(lead, it) }
     val mark = remember(l) { TubeMixes.mark(l.name, l.art) }
     Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(androidx.compose.ui.graphics.Color.Black)) {
