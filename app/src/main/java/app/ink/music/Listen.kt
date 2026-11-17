@@ -460,6 +460,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (sinceLines.isNotEmpty()) item(key = "since") { Column(Modifier.cascade(1).moving(this)) { SinceYouWereHere(since, sinceLines) } }
         // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
         if (!Device.tv) item(key = "dialedIn") { Column(Modifier.cascade(1).padding(bottom = 10.dp)) { DialedInSheet(heard, ::songOf, pages) } }
+        // the charts, near you: what's played most, and what moved (2026-11-17, Bronson: YouTube Music's genre top 50s, ink's way)
+        if (!Device.tv) item(key = "charts") { Column(Modifier.cascade(1)) { ChartsShelf(pages) } }
         // the shelves, in the moment's order (Fresh.order): each shown, and its taps counted, so the unopened sink
         order.forEachIndexed { i, k ->
             val body = sections[k] ?: return@forEachIndexed

@@ -474,6 +474,9 @@ object YouTubeMusic {
         search("$artist $title").albums.firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
 
     /** A YouTube video by its id, as a song (its title and artist read from its own): a link pasted into find (blocking). */
+    /** The charts page's playlists for a place (Charts.of tells them apart). */
+    fun chartLists(country: String): List<Pair<String, String>> = InnerTube().chartLists(country)
+
     fun byId(vid: String): Song? = known["y$vid"] ?: runCatching {
         val info = Pipe.streamInfo(vid) ?: return null
         val (title, artist) = Pipe.tidy(info.name.orEmpty(), info.uploaderName.orEmpty())

@@ -164,6 +164,8 @@ fun ListenPage(open: (Page) -> Unit) {
         if (sinceAt != null && sinceLines.isNotEmpty()) item(key = "since") { SinceYouWereHere(sinceAt!!, sinceLines) }
         // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
         item(key = "dialedIn") { DialedInSheet(open) }
+        // the charts, near you: what's played most, and what moved (2026-11-17, Bronson: YouTube Music's genre top 50s, ink's way)
+        item(key = "charts") { ChartsShelf(open) }
         // the shelves in the moment's order (Fresh.order: the time of day, the kind of day, what you open and what you
         // pass over; held for the visit), as the phone's listen (2026-11-11)
         val shelf = LinkedHashMap<String, () -> Unit>()
