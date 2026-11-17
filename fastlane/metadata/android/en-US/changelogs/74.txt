@@ -1,0 +1,9 @@
+- Radio: find any station by name, genre or place, browse by country, keep your own, paste a stream's link
+- Find takes titles with any symbol, and YouTube video IDs; enter searches
+- Charts, new releases and moods, a tap from listen
+- DIALED IN never shows a black square
+- Mixes draw from the whole list; your transition comes back after
+- Covers: a clear option, no effect at all
+- Block an artist and their plays stop counting
+- Now with 240 fewer silent skips
+- Call someone you miss today
