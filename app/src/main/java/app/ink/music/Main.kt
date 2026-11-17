@@ -35,6 +35,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -2289,6 +2290,31 @@ private object Searches {
 }
 
 /**
+ * YouTube Music's answer to what's typed, and to its words alone where it has symbols (YouTube can answer a title's
+ * symbols with nothing: "ピーナツ ⧸ 可不"), together; best answers first (the computer's).
+ */
+private suspend fun tubeFound(text: String): TubeFound = kotlinx.coroutines.coroutineScope {
+    val plain = Search.plain(text).takeIf { it != text && Search.enough(it) }
+    val asked = async { YouTubeMusic.search(text, all = true) }
+    val also = plain?.let { async { YouTubeMusic.search(it, all = true) } }
+    val a = asked.await(); val b = also?.await() ?: TubeFound()
+    TubeFound(
+        Search.best(text, (a.songs + b.songs).distinctBy { it.id }, { it.title }, { it.artist }).take(20),
+        Search.best(text, (a.albums + b.albums).distinctBy { it.url }, { it.title }, { it.artist }).take(12),
+        (a.artists + b.artists).distinctBy { it.name.lowercase() }.take(8),
+        (a.lists + b.lists).distinctBy { it.url }.take(12),
+    )
+}
+
+/** youtube.com's videos for what's typed and its words alone, together, best answers first. */
+private suspend fun tubeVideos(text: String): List<Song> = kotlinx.coroutines.coroutineScope {
+    val plain = Search.plain(text).takeIf { it != text && Search.enough(it) }
+    val asked = async { runCatching { YouTubeMusic.videos(text) }.getOrDefault(emptyList()) }
+    val also = plain?.let { async { runCatching { YouTubeMusic.videos(it) }.getOrDefault(emptyList()) } }
+    Search.best(text, (asked.await() + also?.await().orEmpty()).distinctBy { it.id }, { it.title }, { it.artist })
+}
+
+/**
  * Find, as ink's run menu: "find >" and what's typed; your artists, records, playlists and songs, radio's stations, and
  * all YouTube Music has (its artists, records, songs and playlists). Forgiving ([Search]): accents, "&", words in any
  * order. Go plays the songs found (yours, else YouTube Music's).
@@ -2329,26 +2355,39 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     // searched as its words once read (nothing while it's read: a link's letters find nothing)
     val typed = when { link != null && link!!.title.isNotEmpty() -> "${link!!.artist.substringBefore(", ")} ${link!!.title}"; pasted -> ""; else -> raw }
     val q = Search.fold(typed)
-    // YouTube Music too (the full build), once the typing rests
-    val tube by androidx.compose.runtime.produceState(TubeFound(), q) {
-        if (!YouTubeMusic.available || q.length < 2) { value = TubeFound(); return@produceState }
-        kotlinx.coroutines.delay(300)
-        value = YouTubeMusic.search(typed, all = true)
+    // asked online as typed (Search.online: the folded words made two titles one, and "愛℃" too short to ask, 2026-11-17,
+    // the computer's), once the typing rests, or at once on the keyboard's search (asked again, the same words too)
+    var forced by remember { mutableStateOf(0) }
+    val online = Search.online(typed)
+    val seen = remember { intArrayOf(0) }
+    val ask by androidx.compose.runtime.produceState<Pair<String, Int>?>(null, online, forced) {
+        if (!Search.enough(online)) { value = null; return@produceState }
+        if (forced == seen[0]) kotlinx.coroutines.delay(300)
+        seen[0] = forced
+        value = online to forced
+    }
+    // YouTube Music too (the full build): what's typed and its words alone, best answers first
+    val tubeAll by androidx.compose.runtime.produceState(TubeFound(), ask) {
+        val text = ask?.first
+        value = if (!YouTubeMusic.available || text == null) TubeFound() else tubeFound(text)
     }
     // radio's stations by that name (ink radio's own first)
-    val stations by androidx.compose.runtime.produceState(emptyList<Song>(), q) {
-        if (q.length < 2) { value = emptyList(); return@produceState }
-        kotlinx.coroutines.delay(300)
-        value = Stations.search(ctx, typed)
+    val stations by androidx.compose.runtime.produceState(emptyList<Song>(), ask) {
+        value = ask?.let { Stations.search(ctx, it.first) }.orEmpty()
     }
     // youtube.com's own videos (the full build): songs never put on YouTube Music, apart from its songs; none it already gave
-    val videosAll by androidx.compose.runtime.produceState(emptyList<Song>(), q) {
-        if (!YouTubeMusic.available || q.length < 2) { value = emptyList(); return@produceState }
-        kotlinx.coroutines.delay(300)
-        value = runCatching { YouTubeMusic.videos(typed) }.getOrDefault(emptyList())
+    val videosAll by androidx.compose.runtime.produceState(emptyList<Song>(), ask) {
+        val text = ask?.first
+        value = if (!YouTubeMusic.available || text == null) emptyList() else tubeVideos(text)
     }
-    val videos = remember(videosAll, tube) {
-        val have = tube.songs.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) }.toSet()
+    // a YouTube video's id in what's typed ("[VDvX1hzGZN4]", as a file downloaded from YouTube is often named): that video
+    val tubeId = if (pasted || !YouTubeMusic.available) null else Search.tubeId(raw)
+    val byId by androidx.compose.runtime.produceState<Song?>(null, tubeId) {
+        value = tubeId?.let { id -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { YouTubeMusic.byId(id) } }
+    }
+    val tube = tubeAll.copy(songs = tubeAll.songs.filter { it.id != byId?.id })
+    val videos = remember(videosAll, tube, byId) {
+        val have = (tube.songs.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) } + listOfNotNull(byId?.id)).toSet()
         videosAll.filter { it.id !in have && Radio.key(it.title, it.artist) !in have }.take(12)
     }
     val artists = remember(albums, songs) { artistsOf(albums, songs) }
@@ -2367,8 +2406,6 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             .filter { a -> a.name.isNotEmpty() && Search.rank(a.name, q) != null && foundArtists.none { it.name.equals(a.name, true) } }
             .distinctBy { it.name.lowercase() }.take(8)
     }
-    // go plays what's found: your songs, else YouTube Music's
-    val go = (linked as? Song)?.let { listOf(it) } ?: foundSongs.ifEmpty { tube.songs }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val list = pageList()
@@ -2388,8 +2425,10 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                 BasicTextField(
                     field, { field = it; if (it.text != query) onQuery(it.text) }, singleLine = true,
                     textStyle = pixel(14.sp), cursorBrush = SolidColor(Ink.ink),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { if (go.isNotEmpty()) { Searches.keep(query); Playback.play(go, 0) } }),
+                    // the keyboard's search looks now (again, the same words too); a song found is played by a tap
+                    // (2026-11-17, a tester: the key to search played the first song instead)
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { Searches.keep(query); forced++ }),
                     modifier = Modifier.weight(1f).focusRequester(focus),
                 )
                 if (query.isNotEmpty()) Word("clear", pixel(12.sp, Ink.mid), Modifier.padding(end = 14.dp), touch = 10.dp) { onQuery("") }
@@ -2397,7 +2436,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             }
             Spacer(Modifier.height(18.dp))
             // nothing anywhere: here, nor on YouTube Music (once it's had its moment to answer)
-            if (q.isNotEmpty() && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() &&
+            if (ask != null && foundArtists.isEmpty() && foundRecords.isEmpty() && foundSongs.isEmpty() && foundLists.isEmpty() && byId == null &&
                 foundTubeLists.isEmpty() && stations.isEmpty() && tube.songs.isEmpty() && videos.isEmpty() && tube.albums.isEmpty() && tubeArtists.isEmpty() && tube.lists.isEmpty())
                 BasicText("nothing called that", style = pixel(12.sp, Ink.mid), modifier = row)
             // what you looked for lately, a tap to look again
@@ -2407,6 +2446,8 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                 Word("clear", pixel(12.sp, Ink.dim), Modifier.padding(top = 2.dp), touch = 6.dp) { Searches.forget() }
             }
         }
+        // a video's id typed: that video, first
+        byId?.let { x -> item(key = "byid") { Label("youtube video $tubeId"); Box(row) { SongRow(x, pages = pages) { Playback.play(listOf(x), 0) } }; Spacer(Modifier.height(10.dp)) } }
         // the pasted link's song or record, at the top
         if (pasted) item {
             Label("from your ${link?.service ?: "link"}")
