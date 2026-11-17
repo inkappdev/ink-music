@@ -120,24 +120,6 @@ class InnerTube(
             .mapNotNull(::row).filter { it.kind == kind }.distinctBy { it.id }.take(max)
     }.getOrDefault(emptyList())
 
-    /**
-     * YouTube Music's charts for a country ("US"; "ZZ", the world's), as its charts page has them (2026-11-17, Bronson's
-     * screenshot of its genres' top 50s): each shelf its title and its playlists, signed out the same.
-     */
-    fun charts(country: String = "ZZ"): List<Shelf> = runCatching {
-        val page = post("browse", JSONObject().put("browseId", "FEmusic_charts")
-            .put("formData", JSONObject().put("selectedValues", JSONArray().put(country))))
-        all(page, "musicCarouselShelfRenderer").mapNotNull { shelf ->
-            val head = all(shelf.optJSONObject("header"), "musicCarouselShelfBasicHeaderRenderer").firstOrNull()?.let { text(it.optJSONObject("title")) }.orEmpty()
-            val items = all(shelf, "musicTwoRowItemRenderer").mapNotNull(::tile)
-            if (items.isEmpty()) null else Shelf(head, items)
-        }
-    }.getOrDefault(emptyList())
-
-    /** The charts page's playlists for a place, each its id and title (Charts.of tells them apart). */
-    fun chartLists(country: String): List<Pair<String, String>> =
-        charts(country).flatMap { it.items }.filter { it.kind == Kind.PLAYLIST }.map { it.id to it.title }
-
     /** A mood or a genre on YouTube Music's own page of them (its `params` open it). */
     data class Mood(val title: String, val params: String, val genre: Boolean)
 
