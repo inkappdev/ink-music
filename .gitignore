@@ -7,3 +7,4 @@ keystore.properties
 .kotlin/
 CLAUDE.md
 app/.cxx/
+__pycache__/
