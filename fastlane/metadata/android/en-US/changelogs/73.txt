@@ -1,0 +1,9 @@
+- Paste a Spotify, Apple Music, Deezer or YouTube link into find to play it
+- Follow a YouTube playlist; it shows in your lists. Tidier playlist tops, and MIX closes
+- Records show their year, newest first
+- Up next: a dragged song stays where you put it
+- Lyrics can show their English or how they sound under each line
+- Automix lands on the beat more often
+- Phone: an artists grid
+- Now with 100% fewer songs snapping back
+- Send a friend a song today
