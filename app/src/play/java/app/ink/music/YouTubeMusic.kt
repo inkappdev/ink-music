@@ -21,6 +21,7 @@ object YouTubeMusic {
     fun mood(params: String): List<Pair<String, List<TubeList>>> = emptyList()
     fun moodStation(params: String): List<Song> = emptyList()
     suspend fun findRecord(title: String, artist: String): TubeAlbum? = null
+    fun byId(vid: String): Song? = null
     fun artist(name: String): TubeArtist? = null
     fun hit(name: String): Song? = null
     fun records(name: String): List<TubeAlbum> = emptyList()

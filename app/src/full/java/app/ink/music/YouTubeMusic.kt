@@ -468,6 +468,15 @@ object YouTubeMusic {
     suspend fun findRecord(title: String, artist: String): TubeAlbum? =
         search("$artist $title").albums.firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
 
+    /** A YouTube video by its id, as a song (its title and artist read from its own): a link pasted into find (blocking). */
+    fun byId(vid: String): Song? = known["y$vid"] ?: runCatching {
+        val info = Pipe.streamInfo(vid) ?: return null
+        val (title, artist) = Pipe.tidy(info.name.orEmpty(), info.uploaderName.orEmpty())
+        Song(id = "y$vid", uri = Uri.parse("ytm://$vid"), title = title.ifEmpty { info.name.orEmpty() }, artist = artist.ifEmpty { "unknown" },
+            album = "", albumId = "y$vid", albumArtist = artist, duration = info.duration.coerceAtLeast(0) * 1000, disc = 1, track = 0, year = 0,
+            art = Pipe.best(info.thumbnails), format = "youtube").also(::remember)
+    }.getOrNull()
+
     /** YouTube Music's song by these words, if it has one (blocking). */
     fun find(title: String, artist: String): Song? {
         // a version chosen by hand for these words (Versions): that one

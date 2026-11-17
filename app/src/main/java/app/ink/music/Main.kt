@@ -2303,7 +2303,31 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     LaunchedEffect(Unit) { Searches.load(ctx) }
     val recent by Searches.recent.collectAsState()
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { Searches.keep(pages.query) } }
-    val typed = query.trim()
+    val raw = query.trim()
+    // a link from another service pasted (PastedLink: Spotify, Apple Music, Deezer, YouTube; the full build): read, then
+    // found here by its words, the song or record it was at the top (2026-11-16, as the computer's)
+    val pasted = YouTubeMusic.available && PastedLink.isLink(raw)
+    val link by androidx.compose.runtime.produceState<PastedLink.Found?>(null, raw) {
+        value = null
+        if (!pasted) return@produceState
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            PastedLink.read(raw)?.let { f -> f.tubeId?.let { id -> YouTubeMusic.byId(id)?.let { s -> f.copy(title = s.title, artist = s.artist) } } ?: f }
+        }
+    }
+    // what it found: its song to play, its record to open; "reading" while it's read, "none" where YouTube Music hasn't it
+    val linked by androidx.compose.runtime.produceState<Any>("reading", link, pasted) {
+        val f = link ?: run { value = if (pasted) "reading" else "none"; return@produceState }
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val artist = f.artist.substringBefore(", ")
+            when {
+                f.tubeId != null -> f.tubeId?.let(YouTubeMusic::byId)
+                f.kind == PastedLink.Kind.SONG -> YouTubeMusic.find(f.title, artist)
+                else -> YouTubeMusic.findRecord(f.title, artist)
+            } ?: "none"
+        }
+    }
+    // searched as its words once read (nothing while it's read: a link's letters find nothing)
+    val typed = when { link != null && link!!.title.isNotEmpty() -> "${link!!.artist.substringBefore(", ")} ${link!!.title}"; pasted -> ""; else -> raw }
     val q = Search.fold(typed)
     // YouTube Music too (the full build), once the typing rests
     val tube by androidx.compose.runtime.produceState(TubeFound(), q) {
@@ -2344,7 +2368,7 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
             .distinctBy { it.name.lowercase() }.take(8)
     }
     // go plays what's found: your songs, else YouTube Music's
-    val go = foundSongs.ifEmpty { tube.songs }
+    val go = (linked as? Song)?.let { listOf(it) } ?: foundSongs.ifEmpty { tube.songs }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val list = pageList()
@@ -2382,6 +2406,20 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
                 recent.forEach { r -> Word(r.lowercase(), pixel(14.sp, Ink.mid), touch = 6.dp) { onQuery(r) } }
                 Word("clear", pixel(12.sp, Ink.dim), Modifier.padding(top = 2.dp), touch = 6.dp) { Searches.forget() }
             }
+        }
+        // the pasted link's song or record, at the top
+        if (pasted) item {
+            Label("from your ${link?.service ?: "link"}")
+            when (val x = linked) {
+                is Song -> Box(row) { SongRow(x, pages = pages) { Playback.play(listOf(x), 0) } }
+                is TubeAlbum -> LazyRow(contentPadding = PaddingValues(horizontal = 20.dp)) { item { TubeTile(x, Modifier.width(130.dp)) { pages.open(Page.Tube(x)) } } }
+                else -> BasicText(when {
+                    x == "reading" -> "reading the link"
+                    link == null -> "couldn't read that link"
+                    else -> "${link!!.title.lowercase()} isn't on youtube music; what's like it, below"
+                }, style = pixel(12.sp, Ink.mid), modifier = row.padding(bottom = 10.dp))
+            }
+            Spacer(Modifier.height(10.dp))
         }
         if (foundArtists.isNotEmpty()) {
             item { Label("artists") }
