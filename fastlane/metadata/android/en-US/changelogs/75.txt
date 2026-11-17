@@ -1,9 +1,9 @@
 - Even volume off really is off, so Bluetooth plays as loud as it should
-- The computer stops on a song when the sound can't open, instead of trying it again and again
-- YouTube uploads on the computer never get stuck waiting
+- The computer stops on a song when the sound can't open, not again and again
+- YouTube uploads on the computer never get stuck
 - Radio: every station in every genre, and "more" keeps going
 - Blocked songs stay blocked, and blocking counts at once
 - Charts on the phone are always today's
-- Smaller fixes: the jump to radio, number keys, songs named like a blocked artist
+- Smaller fixes: the jump to radio, number keys, blocked names
 - Jolene is safe now
 - Tell a friend their playlist is great today
