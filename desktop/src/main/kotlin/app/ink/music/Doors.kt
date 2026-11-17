@@ -49,9 +49,11 @@ private val WAVE = listOf("..##.....", ".#..#....", "#....#..#", "......##.")
 fun Doors(open: (Page) -> Unit) {
     if (Local.on) return
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Door("CHARTS", BARS, Modifier.weight(1f)) { open(Page.ChartsAll) }
-        Door("NEW RELEASES", SPARK, Modifier.weight(1f)) { open(Page.NewReleases) }
-        Door("MOODS & GENRES", WAVE, Modifier.weight(1f)) { open(Page.AllMoods) }
+        // side by side, each 260 dp at most; a narrow window shares the row between them (each given a third, they
+        // had stood a third apart, 2026-11-17)
+        Door("CHARTS", BARS, Modifier.weight(1f, fill = false)) { open(Page.ChartsAll) }
+        Door("NEW RELEASES", SPARK, Modifier.weight(1f, fill = false)) { open(Page.NewReleases) }
+        Door("MOODS & GENRES", WAVE, Modifier.weight(1f, fill = false)) { open(Page.AllMoods) }
     }
 }
 
@@ -59,7 +61,7 @@ fun Doors(open: (Page) -> Unit) {
 private fun Door(name: String, sprite: List<String>, modifier: Modifier, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val over by src.collectIsHoveredAsState()
-    Box(modifier.widthIn(max = 320.dp).height(76.dp).border(1.dp, if (over) Ink.mid else Ink.line).hoverable(src)
+    Box(modifier.widthIn(max = 260.dp).fillMaxWidth().height(76.dp).border(1.dp, if (over) Ink.mid else Ink.line).hoverable(src)
         .clickable(src, indication = null, onClick = felt(then = onClick)).padding(14.dp)) {
         Sprite(sprite, if (over) Ink.ink else Ink.mid, 3.dp, Modifier.align(Alignment.TopStart))
         BasicText(name, style = headline(15.sp, if (over) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis,

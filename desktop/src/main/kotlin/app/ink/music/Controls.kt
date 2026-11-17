@@ -218,7 +218,8 @@ fun Volume(modifier: Modifier = Modifier, line: Dp = 120.dp, shrinks: Boolean = 
             }
         }
         Spacer(Modifier.width(10.dp))
-        BasicText(if (quiet) "muted" else "$shown", style = pixel(12.sp, if (dragging != null) Ink.ink else Ink.mid))
+        // on one line whatever the room (2026-11-17, Bronson: at half the screen "100" stood as 1, 0, 0 down the knob)
+        BasicText(if (quiet) "muted" else "$shown", style = pixel(12.sp, if (dragging != null) Ink.ink else Ink.mid), maxLines = 1, softWrap = false)
     }
 }
 

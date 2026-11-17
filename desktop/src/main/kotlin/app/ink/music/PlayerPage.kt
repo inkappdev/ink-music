@@ -288,7 +288,8 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (n.song.episode) EpisodeControls(n, Modifier.width(320.dp)) else Controls(n, Modifier.width(320.dp))
                             Spacer(Modifier.width(32.dp))
-                            Volume(line = 140.dp)
+                            // the line gives way in a narrow window (half the screen), not its number or the words after it
+                            Volume(Modifier.weight(1f, fill = false), line = 140.dp, shrinks = true)
                             // how one song turns into the next, beside the volume as in the bar (TransitionWord)
                             TransitionWord(Modifier.padding(start = 20.dp))
                             PreviewWord(Modifier.padding(start = 16.dp))
