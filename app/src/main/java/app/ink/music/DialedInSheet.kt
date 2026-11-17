@@ -140,7 +140,11 @@ private fun tubeRecord(record: String, song: Song?): TubeAlbum {
     return TubeAlbum(url, song?.album.orEmpty(), song?.albumArtist?.ifEmpty { null } ?: song?.artist.orEmpty(), song?.art)
 }
 
-/** A slot played: the song (radio after it), the record from its start, the artist's mix from their most heard. */
+/**
+ * A slot played: the song (radio after it), the record from its start; an artist, your own songs by them shuffled (the
+ * phone's files, your server's), else YouTube Music's mix from their most heard: someone with only their own files gets
+ * them (2026-11-17, Bronson asked; the mix alone played one song and stopped, YouTube having none for a file).
+ */
 private fun play(s: DialedIn.Slot, song: Song?, scope: kotlinx.coroutines.CoroutineScope) {
     song ?: return
     when (s.kind) {
@@ -153,8 +157,17 @@ private fun play(s: DialedIn.Slot, song: Song?, scope: kotlinx.coroutines.Corout
                 if (all.isNotEmpty()) Playback.play(all, 0) else Playback.play(listOf(song), 0)
             } else Playback.play(listOf(song), 0)
         }
-        DialedIn.Kind.ARTIST -> scope.launch { Listen.mix(song) }
+        DialedIn.Kind.ARTIST -> {
+            val theirs = byArtist(s.artist)
+            if (theirs.size >= 3 || !song.tube) Playback.play(theirs.ifEmpty { listOf(song) }.shuffled(), 0)
+            else scope.launch { Listen.mix(song) }
+        }
     }
+}
+
+/** Your songs by them (as the album artist, or the first named): the library's, files and server alike. */
+private fun byArtist(name: String): List<Song> = Library.songs.value.filter { s ->
+    s.albumArtist.equals(name, true) || s.artist.substringBefore(", ").equals(name, true)
 }
 
 private fun open(s: DialedIn.Slot, song: Song?, pages: Pages) = when (s.kind) {
