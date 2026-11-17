@@ -1001,7 +1001,7 @@ private fun LookSetting(opened: Opened) {
     }
     // how mixes and lists are drawn from their covers
     val print by CoverPrint.on.collectAsState()
-    SettingRow("COVERS", print.word, opened, "how mixes and lists are drawn from their covers") {
+    SettingRow("COVERS", print.word, opened, if (print == Print.CLEAR) "clear: every cover and photo as it is, no dither, tiles or blur" else "how mixes, lists and photos are drawn from their covers; clear for none") {
         Pick(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(Print.entries[it]) }
     }
     val artistVideo by Moving.artistVideo.collectAsState()
@@ -1038,7 +1038,7 @@ private fun LookPreview() {
         val side = maxHeight * .58f
         val off = side * .05f
         Box(Modifier.padding(start = 28.dp, top = 28.dp)) {
-            if (behind == Look.PLAIN) Dithered(song, Modifier.offset(off, off).size(side), px = 800)
+            if (behind == Look.PLAIN && CoverPrint.on.collectAsState().value != Print.CLEAR) Dithered(song, Modifier.offset(off, off).size(side), px = 800)
             Box(Modifier.size(side)) {
                 CoverOf(song, song.album.ifEmpty { song.title }, Modifier.fillMaxSize().graphicsLayer {
                     renderEffect = look?.let { Effects.of(it, accent, density, 1f, size.width) }

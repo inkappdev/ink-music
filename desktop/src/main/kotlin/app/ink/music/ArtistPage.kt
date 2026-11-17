@@ -100,7 +100,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
             val still = remember(photo) { faceSong(name, photo, photo = true) }
             when {
                 grain -> Grainy(still, Modifier.fillMaxSize())
-                dithered -> Dithered(still, Modifier.fillMaxSize())
+                dithered -> Dithered(still, Modifier.fillMaxSize(), own = true)
                 else -> AsItIs(still, Modifier.fillMaxSize())
             }
             val c = rememberCover(still, 1080)
@@ -389,7 +389,11 @@ private fun BigName(name: String, room: androidx.compose.ui.unit.Dp) {
  * it's read: an artist's photo.
  */
 @Composable
-fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER) {
+fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER, own: Boolean = false) {
+    // covers set to clear (settings, the look; 2026-11-17, Bronson: for whoever wants no dither, tiles or blur at all):
+    // the picture as it is, wherever a print was only the look's; not where a setting of its own chose it (`own`: 1-bit
+    // mode, an artist page's dithered)
+    if (!own && CoverPrint.on.collectAsState().value == Print.CLEAR) return AsItIs(photo, modifier, px)
     // the grain look is a picture, not dots: drawn apart
     if (print == Print.GRAIN) return Grainy(photo, modifier, px)
     // clear: the cover as it is

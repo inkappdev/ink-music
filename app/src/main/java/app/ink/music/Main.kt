@@ -1634,7 +1634,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                     val still = remember(photo) { photoSong(name, photo) }
                     when {
                         grain -> Grainy(still, Modifier.fillMaxSize())
-                        dithered -> Dithered(still, Modifier.fillMaxSize())
+                        dithered -> Dithered(still, Modifier.fillMaxSize(), own = true)
                         else -> AsItIs(still, Modifier.fillMaxSize())
                     }
                     val c = rememberCover(still, 1080)
@@ -2222,7 +2222,11 @@ fun pullQuote(about: String): Pair<String?, String> = Bio.pullQuote(about)
  * in the look chosen for them ([Covered]).
  */
 @Composable
-fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER) {
+fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER, own: Boolean = false) {
+    // covers set to clear (settings, the look; 2026-11-17, Bronson: for whoever wants no dither, tiles or blur at all):
+    // the picture as it is, wherever a print was only the look's; not where a setting of its own chose it (`own`: 1-bit
+    // mode, an artist page's dithered)
+    if (!own && CoverPrint.on.collectAsState().value == Print.CLEAR) return AsItIs(photo, modifier, px)
     // the grain look is a picture, not dots: drawn apart
     if (print == Print.GRAIN) return Grainy(photo, modifier, px)
     // clear: the cover as it is
@@ -3076,7 +3080,7 @@ private val CLOSE_ROW = 40.dp
 fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640) {
     val cover = rememberCover(song, px)
     // 1-bit mode (the clickwheel three turns backwards): every cover in the dither, its own colour
-    if (OneBit.on.collectAsState().value && cover != null && song != null && !song.station) return Dithered(song, modifier, px = 600)
+    if (OneBit.on.collectAsState().value && cover != null && song != null && !song.station) return Dithered(song, modifier, px = 600, own = true)
     // a cover on its way: black a moment, the name cover only for a record with none (it flashed at each new song)
     val late by androidx.compose.runtime.produceState(false, song?.albumId) { kotlinx.coroutines.delay(1_500); value = true }
     // a cover come from the network or the disk develops in from black, as a print does (2026-11-08, Bronson: "loading

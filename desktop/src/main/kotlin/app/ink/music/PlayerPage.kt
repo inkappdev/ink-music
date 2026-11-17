@@ -220,7 +220,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         AnimatedContent(n.song, transitionSpec = { push(this, dir) }, contentKey = { it.id }, label = "push") { s ->
                             Box(Modifier.size(side + off)) {
                                 // its print beside it, while there's no background (the background takes its place)
-                                if (!s.station && behind == Look.PLAIN) Dithered(s, Modifier.offset(off, off).size(side), px = 1200)
+                                if (!s.station && behind == Look.PLAIN && CoverPrint.on.collectAsState().value != Print.CLEAR) Dithered(s, Modifier.offset(off, off).size(side), px = 1200)
                                 var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
                                 Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }
                                     .rightClick { menuAt = it }) {
@@ -823,7 +823,7 @@ fun RemotePlayerPage(o: Continue.Offer, open: (Page) -> Unit, onClose: () -> Uni
                             if (length > 0 && !o.song.station) Box(Modifier.fillMaxWidth((pos.toFloat() / length).coerceIn(0f, 1f)).height(1.dp).background(accent))
                         }
                         Box(Modifier.size(side + off)) {
-                            if (!o.song.station) Dithered(o.song, Modifier.offset(off, off).size(side), px = 1200)
+                            if (!o.song.station && CoverPrint.on.collectAsState().value != Print.CLEAR) Dithered(o.song, Modifier.offset(off, off).size(side), px = 1200)
                             CoverOf(o.song, o.song.album.ifEmpty { o.song.title }, Modifier.size(side), px = 1200, moving = o.playing)
                         }
                     }

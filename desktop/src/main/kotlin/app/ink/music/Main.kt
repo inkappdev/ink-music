@@ -1420,7 +1420,7 @@ fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, moving
     // a station: its own sleeve (its logo small and every shape; a word works)
     if (song?.station == true) return StationCover(song, modifier, moving)
     // 1-bit mode (the Konami code): every cover in the dither, its own colour
-    if (OneBit.on.collectAsState().value && song != null && rememberCover(song, px) != null) return Dithered(song, modifier, px)
+    if (OneBit.on.collectAsState().value && song != null && rememberCover(song, px) != null) return Dithered(song, modifier, px, own = true)
     val cover = rememberCover(song, px)
     // as the phone's (2026-11-10, Bronson: "albums and photos have a nice fade in animation when they load... match"): black
     // while it comes, then the cover develops in from black over 600 ms, as a print does; its name as a cover only after a

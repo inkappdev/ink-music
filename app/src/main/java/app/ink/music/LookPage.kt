@@ -88,7 +88,7 @@ fun LookPage(pages: Pages) {
             }
             // how mixes and lists are drawn from their covers
             val print by CoverPrint.on.collectAsState()
-            SettingRow("COVERS", print.word, opened, "how mixes and lists are drawn from their covers") {
+            SettingRow("COVERS", print.word, opened, if (print == Print.CLEAR) "clear: every cover and photo as it is, no dither, tiles or blur" else "how mixes, lists and photos are drawn from their covers; clear for none") {
                 Pick(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(ctx, Print.entries[it]) }
             }
             // an artist's page: their photo or their moving one (apple music's), dithered, blurred or clear (both alike)
