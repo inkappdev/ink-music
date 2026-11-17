@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -877,26 +878,41 @@ private fun SimilarSetting() {
     }
 }
 
-/** What's never suggested (Blocked): each artist and song, a word to let it back. */
+/**
+ * What's never suggested (Blocked), artists and songs apart, each a box of plain text a line each that scrolls on its own
+ * (2026-11-17, a tester: the list ran on down the page; and to copy it out to keep or pass on): typed in, pasted in or
+ * a line taken out, kept as you click away; copy all puts it on the clipboard.
+ */
 @Composable
 private fun BlockedSetting() {
     val k by Blocked.kept.collectAsState()
     SettingHead("BLOCKED")
-    BasicText("never in similar songs, listen's shelves or the picks. block an artist or a song from its menu (a right click); what you look for yourself still shows it",
+    BasicText("never in similar songs, listen's shelves or the picks. block an artist or a song from its menu (a right click), or type them here, a line each; what you look for yourself still shows it",
         style = pixel(12.sp, Ink.mid))
-    Spacer(Modifier.height(10.dp))
-    if (k.artists.isEmpty() && k.songs.isEmpty()) BasicText("nothing blocked", style = pixel(13.sp, Ink.dim))
-    k.artists.forEach { a ->
-        androidx.compose.foundation.layout.Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicText(a.lowercase(), style = pixel(13.sp), modifier = Modifier.padding(end = 20.dp))
-            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockArtist(a) }
-        }
+    Spacer(Modifier.height(14.dp))
+    BlockedBox("ARTISTS", k.artists.size, Blocked.artistsText(), "an artist a line") { Blocked.artistsFrom(it) }
+    Spacer(Modifier.height(18.dp))
+    BlockedBox("SONGS", k.songs.size, Blocked.songsText(), "artist - title, a line each") { Blocked.songsFrom(it) }
+}
+
+/** One of blocked's boxes: its name and count, the text in a hairline box 160 dp high, kept when the box is left. */
+@Composable
+private fun BlockedBox(name: String, count: Int, text: String, hint: String, keep: (String) -> Unit) {
+    var value by remember(text) { mutableStateOf(text) }
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(2_000); copied = false } }
+    androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+        BasicText("$name · $count", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(end = 20.dp))
+        Word(if (copied) "copied" else "copy all", pixel(12.sp, if (copied) Ink.ink else Ink.mid), touch = 8.dp) { copyText(value); copied = true }
+        if (value != text) Word("keep", pixel(12.sp), Modifier.padding(start = 20.dp), touch = 8.dp) { keep(value) }
     }
-    k.songs.forEach { s ->
-        androidx.compose.foundation.layout.Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicText("${s.title.lowercase()} · ${s.artist.lowercase()}", style = pixel(13.sp), modifier = Modifier.padding(end = 20.dp))
-            Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockSong(s.id) }
-        }
+    Spacer(Modifier.height(6.dp))
+    Box(Modifier.fillMaxWidth().height(160.dp).border(1.dp, Ink.line).padding(10.dp)) {
+        if (value.isEmpty()) BasicText(hint, style = pixel(13.sp, Ink.dim))
+        androidx.compose.foundation.text.BasicTextField(
+            value, { value = it }, textStyle = pixel(13.sp), cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink.ink),
+            modifier = Modifier.fillMaxSize().typing().onFocusChanged { f -> if (!f.isFocused && value != text) keep(value) },
+        )
     }
 }
 

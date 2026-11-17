@@ -665,8 +665,12 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             // "importing songs shouldn't require users to navigate through the settings"; "add your songs, hit shuffle")
             // one folder chosen: that folder's songs shuffled beside it (2026-11-15, a tester: "more precise control")
             val inFolder by SongsFrom.folder.collectAsState()
-            if (tab == "songs" && inFolder.isNotEmpty()) Word("SHUFFLE FOLDER", headline(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) {
-                pool.filter { it.path.isNotEmpty() && java.io.File(it.path).parent == inFolder }.shuffled().takeIf { it.isNotEmpty() }?.let { Player.play(it) }
+            // its room kept while no folder's chosen, so choosing one doesn't push the row about (2026-11-17, a tester: the
+            // whole row rearranged as it came)
+            if (tab == "songs") Box(Modifier.alpha(if (inFolder.isNotEmpty()) 1f else 0f)) {
+                Word("SHUFFLE FOLDER", headline(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) {
+                    if (inFolder.isNotEmpty()) pool.filter { it.path.isNotEmpty() && java.io.File(it.path).parent == inFolder }.shuffled().takeIf { it.isNotEmpty() }?.let { Player.play(it) }
+                }
             }
             Word("SHUFFLE ALL", headline(14.sp), Modifier.padding(end = 22.dp), touch = 8.dp) { pool.shuffled().takeIf { it.isNotEmpty() }?.let { Player.play(it) } }
             Word("ADD MUSIC", headline(14.sp), Modifier.padding(end = 26.dp), touch = 8.dp) { chooseFolder { Library.add(it) } }

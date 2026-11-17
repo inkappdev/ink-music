@@ -41,6 +41,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloat
@@ -386,14 +396,115 @@ private fun partOfDay(at: Long): String {
     return "$day $part".uppercase()
 }
 
-/** A list as words: its name, how many songs. */
-@Composable
-fun ListRow(p: Server.Playlist, said: String? = null, onClick: () -> Unit) {
-    WithMenu({ listOf(listOf("open" to onClick, "play" to { playList(p.id); Unit }, "shuffle" to { playList(p.id, shuffle = true); Unit }), if (p.id.startsWith(HereLists.PREFIX)) listOf("delete list" to { HereLists.delete(p.id) }) else emptyList()) }) {
-    Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 8.dp)) {
-        BasicText(p.name.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        BasicText(said ?: ("${p.count} ${if (p.count == 1) "song" else "songs"}" + if (p.mine) "" else "   shared with you"), style = pixel(12.sp, Ink.mid))
+/**
+ * Lists of yours picked with ctrl (cmd) or shift and a click, as songs are (2026-11-17, a tester: to save many at once and
+ * delete the ones piling up): saved or deleted together from the words over them.
+ */
+object ListPicking {
+    val picked = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
+    @Volatile var anchor: String? = null
+    fun ctrl(id: String) { picked.value = if (id in picked.value) picked.value - id else picked.value + id; anchor = id }
+    /** Every list in `order` from the last clicked to this one. */
+    fun shift(order: List<String>, id: String) {
+        val a = order.indexOf(anchor ?: id); val b = order.indexOf(id)
+        if (a < 0 || b < 0) return ctrl(id)
+        picked.value = picked.value + order.subList(minOf(a, b), maxOf(a, b) + 1)
     }
+    fun clear() { picked.value = emptySet() }
+}
+
+/** A list (yours, your server's) copied as a list of yours, kept here, just after it. */
+private fun duplicateAsYours(p: Server.Playlist) = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+    val songs = if (p.id.startsWith(HereLists.PREFIX)) HereLists.of(p.id)?.songs.orEmpty() else Server.playlist(p.id).orEmpty()
+    HereLists.duplicate(p.name, songs, p.id)
+}
+
+/**
+ * A list as words: its name, how many songs. Its right click its own (2026-11-17, a tester: the lists page's new list
+ * and the rest came up over it): open, play, shuffle; a list of yours renamed in place, duplicated, saved as a file,
+ * deleted; anyone's copied as yours. `order` given, ctrl or shift and a click picks it among them (ListPicking).
+ */
+@Composable
+fun ListRow(p: Server.Playlist, said: String? = null, order: List<String>? = null, onClick: () -> Unit) {
+    val here = p.id.startsWith(HereLists.PREFIX)
+    var renaming by remember(p.id) { mutableStateOf(false) }
+    val picked by ListPicking.picked.collectAsState()
+    val handled = remember { longArrayOf(0L) }
+    WithMenu({ listOf(
+        listOf("open" to onClick, "play" to { playList(p.id); Unit }, "shuffle" to { playList(p.id, shuffle = true); Unit }),
+        if (here) listOf(
+            "rename" to { renaming = true },
+            "duplicate" to { duplicateAsYours(p); Unit },
+            "save as .inkmusic" to { HereLists.of(p.id)?.let { ListOut.save(it.name, "inkmusic", ListOut.inkmusic(it.name, it.songs)) }; Unit },
+        ) else listOf("duplicate as your list" to { duplicateAsYours(p); Unit }),
+        if (here) listOf("delete list" to { HereLists.delete(p.id); ListPicking.picked.value -= p.id }) else emptyList(),
+    ) }) {
+    Column(Modifier.fillMaxWidth()
+        .then(if (here && order != null) Modifier.pointerInput(p.id, order) {
+            awaitPointerEventScope {
+                while (true) {
+                    val e = awaitPointerEvent()
+                    if (e.type != androidx.compose.ui.input.pointer.PointerEventType.Press || !e.buttons.isPrimaryPressed) continue
+                    val m = e.keyboardModifiers
+                    if (m.isCtrlPressed || m.isMetaPressed) ListPicking.ctrl(p.id)
+                    else if (m.isShiftPressed) ListPicking.shift(order, p.id)
+                    else { ListPicking.anchor = p.id; continue }
+                    handled[0] = System.currentTimeMillis(); e.changes.forEach { it.consume() }
+                }
+            }
+        } else Modifier)
+        .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt {
+            // a plain click opens it (any picking let go); one that picked doesn't
+            if (renaming || System.currentTimeMillis() - handled[0] < 400) return@felt
+            ListPicking.clear(); onClick()
+        }).padding(vertical = 8.dp)) {
+        if (renaming) RenameField(p.name, { HereLists.rename(p.id, it); renaming = false }) { renaming = false }
+        else BasicText(p.name.uppercase(), style = headline(20.sp, if (picked.isEmpty() || p.id in picked) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        BasicText(said ?: ("${p.count} ${if (p.count == 1) "song" else "songs"}" + (if (p.mine) "" else "   shared with you") + (if (p.id in picked) "   picked" else "")),
+            style = pixel(12.sp, Ink.mid))
+    }
+    }
+}
+
+/** A list's name typed over, in place: enter keeps it, esc (or nothing typed) leaves it as it was, a click away keeps it. */
+@Composable
+private fun RenameField(name: String, onDone: (String) -> Unit, onCancel: () -> Unit) {
+    var value by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(name, androidx.compose.ui.text.TextRange(0, name.length))) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var had by remember { mutableStateOf(false) }
+    var over by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    fun done() { if (over) return; over = true; val n = value.text.trim(); if (n.isEmpty() || n == name) onCancel() else onDone(n) }
+    fun cancel() { if (over) return; over = true; onCancel() }
+    androidx.compose.foundation.text.BasicTextField(
+        value, { value = it }, singleLine = true, textStyle = headline(20.sp), cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink.ink),
+        modifier = Modifier.fillMaxWidth().focusRequester(focus).typing()
+            .onFocusChanged { f -> if (f.isFocused) had = true else if (had) done() }
+            .onPreviewKeyEvent { k ->
+                if (k.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) false
+                else if (k.key == androidx.compose.ui.input.key.Key.Enter) { done(); true }
+                else if (k.key == androidx.compose.ui.input.key.Key.Escape) { cancel(); true }
+                else false
+            },
+    )
+}
+
+/** Over your lists while some are picked: how many, saved as files together, deleted together (a second click), done. */
+@Composable
+private fun PickedLists() {
+    val picked by ListPicking.picked.collectAsState()
+    val here by HereLists.all.collectAsState()
+    val lists = here.filter { it.id in picked }
+    if (lists.isEmpty()) return
+    var sure by remember(picked) { mutableStateOf(false) }
+    LaunchedEffect(sure) { if (sure) { kotlinx.coroutines.delay(3_000); sure = false } }
+    Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+        BasicText("${lists.size} ${if (lists.size == 1) "list" else "lists"} picked", style = pixel(14.sp))
+        Word("save as .inkmusic files", pixel(14.sp, Ink.mid), touch = 8.dp) { ListOut.saveAll(lists) }
+        Word(if (sure) "delete ${lists.size}: sure?" else "delete", pixel(14.sp, if (sure) Ink.ink else Ink.mid), touch = 8.dp) {
+            if (!sure) sure = true else { lists.forEach { HereLists.delete(it.id) }; ListPicking.clear() }
+        }
+        Word("done", pixel(14.sp, Ink.mid), touch = 8.dp) { ListPicking.clear() }
     }
 }
 
@@ -437,7 +548,9 @@ fun ListsPage(open: (Page) -> Unit) {
         item { SmartRows(open) }
         // lists kept here, on this computer (HereLists): no account needed
         item { Label("here, on this computer") }
-        items(hereLists, key = { it.id }) { m -> ListRow(Server.Playlist(m.id, m.name, m.songs.size, true)) { open(Page.List(m.id, m.name)) } }
+        item { PickedLists() }
+        val order = hereLists.map { it.id }
+        items(hereLists, key = { it.id }) { m -> ListRow(Server.Playlist(m.id, m.name, m.songs.size, true), order = order) { open(Page.List(m.id, m.name)) } }
         item { NewList { name -> val m = HereLists.make(name, emptyList()); open(Page.List(m.id, m.name)) } }
         if (lists.isEmpty()) item {
             BasicText(if (account == null) "your server's playlists show here once you're signed in to it" else "no playlists on your server yet",
@@ -482,8 +595,8 @@ private fun ListsView() {
 
 /** A list as a tile: its art square, its name and what it holds under it. */
 @Composable
-private fun ListTile(name: String, said: String, onClick: () -> Unit, art: @Composable () -> Unit) {
-    WithMenu({ listOf(listOf("open" to onClick)) }) {
+private fun ListTile(name: String, said: String, onClick: () -> Unit, more: List<List<Pair<String, () -> Unit>>> = emptyList(), art: @Composable () -> Unit) {
+    WithMenu({ listOf(listOf("open" to onClick)) + more }) {
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) { art() }
         Spacer(Modifier.height(8.dp))
@@ -537,7 +650,12 @@ private fun ListsTiles(open: (Page) -> Unit) {
         }
         // lists kept here, on this computer (HereLists; 2026-11-12, a tester: the grid left out the ones made since 2.1.16)
         gridItems(here, key = { it.id }) { m ->
-            ListTile(m.name, "${m.songs.size} ${if (m.songs.size == 1) "song" else "songs"}", { open(Page.List(m.id, m.name)) }) {
+            val p = Server.Playlist(m.id, m.name, m.songs.size, true)
+            ListTile(m.name, "${m.songs.size} ${if (m.songs.size == 1) "song" else "songs"}", { open(Page.List(m.id, m.name)) }, listOf(
+                listOf("play" to { playList(m.id); Unit }, "shuffle" to { playList(m.id, shuffle = true); Unit }),
+                listOf("duplicate" to { duplicateAsYours(p); Unit }, "save as .inkmusic" to { ListOut.save(m.name, "inkmusic", ListOut.inkmusic(m.name, m.songs)) }),
+                listOf("delete list" to { HereLists.delete(m.id) }),
+            )) {
                 if (m.songs.isEmpty()) Lettered(m.name) else Mosaic(m.songs, m.id)
             }
         }

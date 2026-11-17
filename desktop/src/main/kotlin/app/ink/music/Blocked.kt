@@ -54,6 +54,26 @@ object Blocked {
     fun unblockArtist(name: String) = set(_kept.value.copy(artists = _kept.value.artists.filterNot { it.equals(name, true) }))
     fun unblockSong(id: String) = set(_kept.value.copy(songs = _kept.value.songs.filterNot { it.id == id }))
 
+    /**
+     * What's blocked as plain text, a line each (2026-11-17, a tester: the list grew down the settings page, and was to
+     * be copied out to keep or pass on): artists as named, songs "artist - title".
+     */
+    fun artistsText() = _kept.value.artists.joinToString("\n")
+    fun songsText() = _kept.value.songs.joinToString("\n") { "${it.artist} - ${it.title}" }
+
+    /** Artists typed or pasted back, a line each: what's blocked now. */
+    fun artistsFrom(text: String) =
+        set(_kept.value.copy(artists = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }))
+
+    /** Songs typed or pasted back, "artist - title" a line: one blocked already keeps its id; a line without " - ", left out. */
+    fun songsFrom(text: String) {
+        val had = _kept.value.songs.associateBy { "${it.artist} - ${it.title}".lowercase() }
+        val songs = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { l ->
+            had[l.lowercase()] ?: l.split(" - ", limit = 2).takeIf { it.size == 2 && it.all { p -> p.isNotBlank() } }?.let { Song("", it[1].trim(), it[0].trim()) }
+        }.distinctBy { it.id.ifEmpty { Radio.key(it.title, it.artist) } }
+        set(_kept.value.copy(songs = songs))
+    }
+
     private fun set(k: Kept) {
         artistKeys = keysOf(k); songKeys = songKeysOf(k)
         _kept.value = k

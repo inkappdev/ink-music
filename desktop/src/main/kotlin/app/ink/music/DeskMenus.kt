@@ -44,7 +44,9 @@ fun Modifier.rightClick(onAt: (Offset) -> Unit): Modifier = pointerInput(Unit) {
     awaitPointerEventScope {
         while (true) {
             val e = awaitPointerEvent()
-            if (e.type == PointerEventType.Press && e.buttons.isSecondaryPressed) {
+            // not one a thing inside has had already (2026-11-17, a tester: a list's right click opened the lists page's
+            // own menu, new list and the rest, over the list's)
+            if (e.type == PointerEventType.Press && e.buttons.isSecondaryPressed && e.changes.none { it.isConsumed }) {
                 onAt(e.changes.first().position); e.changes.forEach { it.consume() }
             }
         }

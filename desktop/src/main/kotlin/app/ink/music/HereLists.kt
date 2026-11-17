@@ -64,6 +64,23 @@ object HereLists {
 
     fun delete(id: String) { all.value = all.value.filter { it.id != id }; save() }
 
+    /** A list's name changed (2026-11-17, a tester: lists couldn't be renamed). */
+    fun rename(id: String, name: String) {
+        val n = name.trim().ifEmpty { return }
+        all.value = all.value.map { m -> if (m.id != id) m else m.copy(name = n) }; save()
+    }
+
+    /** A copy of a list, its name "<name> copy" (a second "copy 2" and so on), put just after it. */
+    fun duplicate(name: String, songs: List<Song>, after: String? = null): Mine {
+        var n = "$name copy"; var k = 2
+        while (all.value.any { it.name == n }) n = "$name copy ${k++}"
+        val m = Mine(PREFIX + System.currentTimeMillis(), n, songs.filter(::fits).distinctBy { it.id })
+        val at = all.value.indexOfFirst { it.id == after }
+        all.value = if (at < 0) all.value + m else all.value.toMutableList().apply { add(at + 1, m) }
+        save()
+        return m
+    }
+
     // a station or an episode isn't a song to keep in a list
     private fun fits(s: Song) = !s.station && !s.episode
 }
@@ -84,6 +101,16 @@ object ListOut {
     }
 
     fun links(songs: List<Song>) = songs.mapNotNull { SongLink.long(it) }.joinToString("\n")
+
+    /** Several lists as .inkmusic files into a folder chosen once (a list's name its file's; one there already kept). */
+    fun saveAll(lists: List<HereLists.Mine>) = chooseFolder { dir ->
+        lists.forEach { m ->
+            val base = m.name.replace(Regex("[\\\\/:*?\"<>|]"), " ").trim().ifEmpty { "playlist" }
+            var f = File(dir, "$base.inkmusic"); var k = 2
+            while (f.exists()) f = File(dir, "$base ${k++}.inkmusic")
+            runCatching { f.writeText(inkmusic(m.name, m.songs)) }
+        }
+    }
 
     /** Written to a file chosen with the system's own save dialog (named for the list). */
     fun save(name: String, ext: String, body: String) {
