@@ -1,5 +1,6 @@
 package app.ink.music
 
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloatAsState
@@ -175,7 +176,9 @@ private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, big: Boolean, scop
     // black square (2026-11-17, Bronson: three of the nine without a picture, on the phone)
     val cover = if (s.kind != DialedIn.Kind.ARTIST && song != null) rememberCover(song, 400) else null
     val gaveUp by androidx.compose.runtime.produceState(false, song?.albumId) { kotlinx.coroutines.delay(3_000); value = true }
-    val wantFace = s.kind == DialedIn.Kind.ARTIST || (cover == null && gaveUp)
+    // or one so dark it would show as black
+    val dark by androidx.compose.runtime.produceState(false, cover) { value = cover?.let { c -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { lightness(c.image) < .12f } } ?: false }
+    val wantFace = s.kind == DialedIn.Kind.ARTIST || (cover == null && gaveUp) || dark
     val info by (if (wantFace) Artists.of(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
     val face = (if (wantFace) info?.photo?.let { faceSong(s.artist, it, photo = true) } else null) ?: song
     WithMenu({
@@ -212,3 +215,14 @@ private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, big: Boolean, scop
         }
     }
 }
+
+/**
+ * How light a picture is, 0 to 1, from a sample of its pixels: one nearly black (a dark video's frame, 2026-11-17: No One
+ * Noticed's slot on the S26 stayed black with its cover read) says nothing once it's in black and white.
+ */
+private fun lightness(i: androidx.compose.ui.graphics.ImageBitmap): Float = runCatching {
+    val m = i.toPixelMap()
+    var sum = 0f; var n = 0
+    for (y in 0 until m.height step 8) for (x in 0 until m.width step 8) { val c = m[x, y]; sum += .3f * c.red + .59f * c.green + .11f * c.blue; n++ }
+    if (n == 0) 1f else sum / n
+}.getOrDefault(1f)
