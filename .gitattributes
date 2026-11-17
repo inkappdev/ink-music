@@ -1,0 +1,6 @@
+# Text in LF everywhere, whatever the system that commits it (Windows commits after 2.1.22 wrote 23 files CRLF,
+# every line changed); Windows' own scripts keep CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
