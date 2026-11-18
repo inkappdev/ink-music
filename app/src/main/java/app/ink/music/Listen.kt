@@ -75,7 +75,7 @@ private fun Modifier.moving(scope: androidx.compose.foundation.lazy.LazyItemScop
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment). */
 // listen is you, INK is the world (2026-11-12, Bronson): live sets, ink radio, the indie chart and stations are INK's;
 // your mix (your own music at a tempo) is here
-val LISTEN_SHELVES = listOf("fromYours", "videos", "tuner", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "because", "newToYou",
+val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "videos", "tuner", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "because", "newToYou",
     "onRepeat", "fresh", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours")
 
 object Listen {
@@ -331,6 +331,10 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val videos = videosAll.unblocked { it.title to it.artist }
     LaunchedEffect(Unit) { MusicVideos.start(ctx) }
     if (videos.isNotEmpty()) sections["videos"] = { NewVideosShelf(videos, pages) }
+    // monday finds and friday drops: your two weekly lists from Spotify, in ink's words (Finds), each till the next
+    val finds by Finds.weeks.collectAsState()
+    finds[Finds.Kind.MONDAY]?.let { w -> sections["monday"] = { FindsShelf(Finds.Kind.MONDAY, w) } }
+    finds[Finds.Kind.FRIDAY]?.let { w -> sections["friday"] = { FindsShelf(Finds.Kind.FRIDAY, w) } }
     // what you liked on TUNER (2026-11-18), newest first: each its video's frame, a tap plays the song
     val tunedLikes = remember(Listen.visit) { Fresh.tuned?.liked().orEmpty().take(16) }
     if (tunedLikes.isNotEmpty()) sections["tuner"] = { FoundOnTuner(tunedLikes, pages) }
@@ -820,4 +824,13 @@ private fun KnowMeCard(shut: () -> Unit) {
         }
         Word("not now", pixel(13.sp, Ink.mid), touch = 8.dp) { runCatching { java.io.File(ctx.filesDir, "know-me-shut").writeText("") }; shut() }
     }
+}
+
+/** A week's monday finds or friday drops: its name, when it came out, play all, then its songs. */
+@Composable
+private fun FindsShelf(k: Finds.Kind, w: Finds.Week) {
+    Heading(k.title, "${k.line}. this one ${Finds.dated(k, w)}") {
+        Word("play all", pixel(13.sp), touch = 8.dp) { Playback.play(w.songs, 0) }
+    }
+    ShelfIndexed(w.songs) { i, s -> Tile(s, s.title, s.artist) { Playback.play(w.songs, i) } }
 }

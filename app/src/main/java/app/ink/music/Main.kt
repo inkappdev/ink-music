@@ -240,6 +240,8 @@ class Main : ComponentActivity() {
         SyncPhone.open()
         // what's new is new since you were last here; your taste made again
         Fresh.opened(this)
+        // this week's monday finds and friday drops (signed in to Spotify)
+        Finds.start(this)
     }
 
     override fun onStop() {
