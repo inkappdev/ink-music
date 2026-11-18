@@ -476,10 +476,11 @@ object YouTubeMusic {
         search("$artist $title").albums.firstOrNull { Pipe.same(it.title, it.artist, title, artist) }
 
     /** A YouTube video by its id, as a song (its title and artist read from its own): a link pasted into find (blocking). */
-    /** YouTube Music's new records (its new releases page), signed out the same. Blocking. */
+    /** YouTube Music's new records (its new releases page), signed out the same, without what AI made. Blocking. */
     fun newReleases(): List<TubeAlbum> = InnerTube().items("FEmusic_new_releases_albums", 80).filter { it.kind == InnerTube.Kind.RECORD }
         .filter { NewOut.kept(it.title, it.subtitle.substringBefore(" • ")) }
         .map { TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, it.subtitle.substringAfter(" • ").substringBefore(" • ").ifEmpty { it.subtitle }, it.art) }
+        .let { xs -> Fresh.ai?.without(xs, { it.artist }, InnerTube()::onWikipedia) ?: xs }
 
     /** The charts page's playlists for a place (Charts.of tells them apart). */
     fun chartLists(country: String): List<Pair<String, String>> = InnerTube().chartLists(country)

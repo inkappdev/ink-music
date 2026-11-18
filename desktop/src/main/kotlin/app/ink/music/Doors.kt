@@ -74,7 +74,7 @@ private fun Door(name: String, sprite: List<String>, modifier: Modifier, onClick
 /**
  * New releases, ink's (2026-11-18, Bronson: YouTube Music's list alone "has some shit in there"): new from your artists,
  * the critics' records, out this Friday, each a shelf; then the rest of what's out, YouTube Music's (yours signed in,
- * anyone's signed out), cleaned (NewOut: records and EPs only, no deluxe, live or holiday padding, nothing you said
+ * anyone's signed out), cleaned (NewOut: records and EPs only, no deluxe, live or holiday padding, nothing AI made (MadeByAi), nothing you said
  * isn't for you), your kind of artist first.
  */
 @Composable
@@ -86,7 +86,9 @@ fun NewReleasesPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 (TubeAccount.tube() ?: InnerTube()).items("FEmusic_new_releases_albums", 80)
                     .filter { NewOut.kept(it.title, it.subtitle.substringBefore(" • ")) }.mapNotNull(::tubeAlbum)
             }.getOrDefault(emptyList())
-        }.ifEmpty { ExploreKept.fresh.orEmpty().filter { NewOut.kept(it.title, it.kind.ifEmpty { "album" }) } }
+                .ifEmpty { ExploreKept.fresh.orEmpty().filter { NewOut.kept(it.title, it.kind.ifEmpty { "album" }) } }
+                .let { xs -> Fresh.ai.without(xs, { it.artist }, InnerTube()::onWikipedia) }
+        }
     }
     val critics = Picks.records.shown { it.pick.title to it.pick.artist }
     val songs = Picks.songs.shown { it.pick.title to it.pick.artist }

@@ -248,6 +248,15 @@ class InnerTube(
         )
     }
 
+    /**
+     * A real artist by this name, as far as YouTube Music says (MadeByAi asks it of names on the AI list): its page
+     * for the name carries a bio from Wikipedia. Two reads (blocking); false when it hasn't the name or can't be read.
+     */
+    fun onWikipedia(name: String): Boolean = runCatching {
+        val id = searchItems(name, Kind.ARTIST, 3).firstOrNull { Curation.folded(it.title) == Curation.folded(name) }?.id ?: return false
+        MadeByAi.wikipedia(artist(id).about)
+    }.getOrDefault(false)
+
     /** A song liked on YouTube Music, or not any more (signed in): did it take? */
     fun like(videoId: String, on: Boolean): Boolean = runCatching {
         post(if (on) "like/like" else "like/removelike", JSONObject().put("target", JSONObject().put("videoId", videoId)))

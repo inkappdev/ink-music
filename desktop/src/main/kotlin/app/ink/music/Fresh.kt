@@ -22,6 +22,8 @@ import java.io.File
  */
 object Fresh {
     val seen = Seen(File(Home.dir, "seen.json"))
+    /** Records made by AI, kept out of new releases. */
+    val ai = MadeByAi(File(Home.dir, "ai-artists.csv"))
     val taste = MutableStateFlow(Taste.of(emptyList()))
     /** Your listening brought in from Last.fm and ListenBrainz (listen's "new from your artists", your favorites mix). */
     val brought = MutableStateFlow<List<Brought>>(emptyList())

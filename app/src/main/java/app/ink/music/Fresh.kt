@@ -54,6 +54,10 @@ object Fresh {
     private var app: Context? = null
     private var builtAt = 0L
 
+    /** Records made by AI, kept out of new releases (Main starts it). */
+    var ai: MadeByAi? = null
+        private set
+
     /** The seen record read (Main starts it). */
     val ready: Boolean get() = ::seen.isInitialized
 
@@ -61,6 +65,7 @@ object Fresh {
         if (app != null) return
         app = c.applicationContext
         seen = Seen(File(c.filesDir, "seen.json"))
+        ai = MadeByAi(File(c.filesDir, "ai-artists.csv"))
     }
 
     /** ink music opened (Main.onStart): away long enough, what's new is since then; your taste made again. */

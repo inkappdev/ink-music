@@ -67,7 +67,8 @@ private fun Door(name: String, sprite: List<String>, modifier: Modifier, onClick
 /**
  * New releases, ink's (2026-11-18, Bronson: YouTube Music's list alone "has some shit in there"): new from your artists,
  * the critics' records, out this Friday, each a shelf; then the rest of what's out, YouTube Music's, cleaned (NewOut:
- * records and EPs only, no deluxe, live or holiday padding, nothing you said isn't for you), your kind of artist first.
+ * records and EPs only, no deluxe, live or holiday padding, nothing AI made (MadeByAi), nothing you said isn't for you),
+ * your kind of artist first.
  */
 @Composable
 fun NewReleasesPage(pages: Pages) {
