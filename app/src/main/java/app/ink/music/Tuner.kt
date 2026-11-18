@@ -370,27 +370,27 @@ fun TunerPage(pages: Pages) {
                             pages.open(Page.Artist(t.artist.substringBefore(" & ")))
                         }
                         if (here && said.isNotEmpty()) BasicText(said, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 10.dp))
-                        Row(Modifier.fillMaxWidth().padding(top = 26.dp), verticalAlignment = Alignment.CenterVertically) {
+                        // the thumb at the left, the heart at the right, play in the very middle (in a row, it sat
+                        // off centre by how much wider the thumb is than the heart, 2026-11-18)
+                        Box(Modifier.fillMaxWidth().padding(top = 26.dp)) {
                             // not for me: a pixel thumb down, pressed down as it goes on to the next
-                            ThumbDown(Modifier.padding(end = 8.dp)) {
+                            ThumbDown(Modifier.align(Alignment.CenterStart)) {
                                 Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.NOPE, t.from)
                                 mix.refused(t.artist)
                                 rechoose()
                                 Fresh.notForMe(ctx, t.artist.substringBefore(" & "), "tune:${t.id}")
                                 scope.launch { delay(260); next() }
                             }
-                            Spacer(Modifier.weight(1f))
-                            Word("play", pixel(14.sp), touch = 10.dp) {
+                            Word("play", pixel(14.sp), Modifier.align(Alignment.Center), touch = 10.dp) {
                                 player.pause()
                                 scope.launch {
                                     val song = t.song ?: withContext(Dispatchers.IO) { YouTubeMusic.byId(t.id) }
                                     song?.let { Playback.play(listOf(it), 0) }
                                 }
                             }
-                            Spacer(Modifier.weight(1f))
                             // like: a pixel heart, filling with red from its foot up
                             val on = liked[t.id] == true
-                            FillingHeart(on) {
+                            FillingHeart(on, Modifier.align(Alignment.CenterEnd)) {
                                 liked[t.id] = !on
                                 scope.launch {
                                     val song = t.song ?: withContext(Dispatchers.IO) { YouTubeMusic.byId(t.id) }
@@ -473,7 +473,7 @@ private fun outline(rows: List<String>): List<String> = rows.mapIndexed { r, row
  * little and settles. Unliked, it empties at once.
  */
 @Composable
-private fun FillingHeart(on: Boolean, onClick: () -> Unit) {
+private fun FillingHeart(on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val fill = remember { androidx.compose.animation.core.Animatable(if (on) 1f else 0f) }
     val swell = remember { androidx.compose.animation.core.Animatable(1f) }
     LaunchedEffect(on) {
@@ -485,7 +485,7 @@ private fun FillingHeart(on: Boolean, onClick: () -> Unit) {
     }
     val edge = remember { outline(HEART) }
     Box(
-        Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(10.dp)
+        modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(10.dp)
             .graphicsLayer { scaleX = swell.value; scaleY = swell.value },
     ) {
         androidx.compose.foundation.Canvas(Modifier.width(4.dp * 7).height(4.dp * 6)) {
