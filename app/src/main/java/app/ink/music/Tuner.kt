@@ -117,6 +117,8 @@ fun TunerPage(pages: Pages) {
     val shown = remember { androidx.compose.runtime.mutableStateListOf<Tune>() }
     val pool = remember { androidx.compose.runtime.mutableStateListOf<Tune>() }
     var loaded by remember { mutableStateOf(false) }
+    // the first time: how it learns, typed out, before the first clip plays (and again from "how it learns")
+    var intro by remember { mutableStateOf(TUNER_HINT !in Hints.done.value && !Device.tv) }
     val mix = remember { TunerMix(Fresh.tuned?.shares(TunerMix.START) ?: TunerMix.START) }
     val pager = rememberPagerState { shown.size }
     fun pick(t: Tune): TunerMix.Pick {
@@ -264,7 +266,7 @@ fun TunerPage(pages: Pages) {
         hook.join()
         waiting = true; givenId = t.id
         player.setMediaSource(media, starts[t.id] ?: 0L)
-        player.prepare(); player.playWhenReady = true
+        player.prepare(); player.playWhenReady = !intro
         // the music waits under it
         if (Playback.now.value?.playing == true) Playback.toggle()
         // no most replayed moment: the chorus by its lyrics, else a third in, once its length is known
@@ -324,8 +326,9 @@ fun TunerPage(pages: Pages) {
     }
 
     fun next() = scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
+    LaunchedEffect(intro) { if (!intro) player.play() else player.pause() }
 
-    FrostedPage(onClose = { pages.close() }) { _, top ->
+    FrostedPage(onClose = { pages.close() }) { _, top -> Box(Modifier.fillMaxSize()) {
         when {
             !loaded -> Box(Modifier.fillMaxSize(), Alignment.Center) { BasicText("tuning in", style = pixel(13.sp, Ink.mid)) }
             shown.isEmpty() -> Box(Modifier.fillMaxSize().padding(40.dp), Alignment.Center) {
@@ -415,7 +418,11 @@ fun TunerPage(pages: Pages) {
                 }
             }
         }
-    }
+        if (loaded && !intro) Word("how it learns", pixel(12.sp, Ink.mid), Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = top + 4.dp), touch = 10.dp) {
+            intro = true
+        }
+        if (intro) TunerIntro(top) { intro = false; Hints.did(TUNER_HINT) }
+    } }
 }
 
 /**
@@ -592,4 +599,42 @@ private suspend fun topArtists(c: android.content.Context, n: Int): List<String>
         .groupingBy { it.artist.substringBefore(", ").trim() }.eachCount()
         .filterKeys { it != "unknown" && !it.equals("various artists", true) }
         .entries.sortedByDescending { it.value }.take(n).map { it.key }
+}
+
+private const val TUNER_HINT = "tuner"
+
+/**
+ * How TUNER learns, the first time it's opened (2026-11-18, Bronson: "type out some tips and rules of how it learns"):
+ * its name, then a line at a time typed out as ink's hints are (the heart and the thumb beside theirs), and TUNE IN,
+ * which starts the first clip. Said once; "how it learns" at its top says it again.
+ */
+@Composable
+private fun TunerIntro(top: androidx.compose.ui.unit.Dp, onStart: () -> Unit) {
+    val lines = listOf(
+        null to "swipe up for the next one. each starts at its best part",
+        HEART to "love it, and more like it comes next",
+        THUMB_DOWN to "not for you. that artist won't come back",
+        null to "watch 20 seconds: a little more like it",
+        null to "swipe on within 5: a little less",
+        null to "anything in between: no harm done",
+        null to "play: the whole song, in your player",
+    )
+    Column(
+        Modifier.fillMaxSize().background(Ink.black)
+            .clickable(remember { MutableInteractionSource() }, indication = null) {}
+            .padding(start = 28.dp, end = 28.dp, top = top + 24.dp, bottom = LocalFoot.current + 24.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        BasicText("TUNER", style = headline(40.sp))
+        Typed("how it learns what you like", pixel(13.sp, Ink.mid), Modifier.padding(top = 6.dp), wait = 300, lines = 1)
+        lines.forEachIndexed { i, (sprite, text) ->
+            Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(40.dp)) {
+                    if (sprite === HEART) Sprite(HEART, HeartRed, 3.dp) else if (sprite != null) Sprite(sprite, Ink.mid, 3.dp)
+                }
+                Typed(text, pixel(13.sp), wait = 900L + i * 1_300L, lines = 2)
+            }
+        }
+        Word("TUNE IN", headline(28.sp), Modifier.padding(top = 40.dp), touch = 12.dp) { onStart() }
+    }
 }
