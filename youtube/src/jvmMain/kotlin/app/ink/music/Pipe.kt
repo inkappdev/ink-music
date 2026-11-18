@@ -59,12 +59,13 @@ object Pipe {
 
     /**
      * A music video to watch: the picture (H.264, every computer decodes it; the tallest up to [high]) and its sound
-     * apart, as YouTube keeps them past 360p; else the one stream with both (null sound).
+     * apart, as YouTube keeps them past 360p; else the one stream with both (null sound). `smallSound`: its smallest
+     * sound (TUNER's clips, which start sooner for it).
      */
-    fun video(info: StreamInfo, high: Int = 720): Pair<String, String?>? {
+    fun video(info: StreamInfo, high: Int = 720, smallSound: Boolean = false): Pair<String, String?>? {
         val direct = { s: org.schabi.newpipe.extractor.stream.Stream -> s.isUrl && s.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
         val pictures = info.videoOnlyStreams.filter { direct(it) && it.format == MediaFormat.MPEG_4 && it.height in 1..high }
-        val sound = audio(info, forSpeaker = true, small = false)?.first
+        val sound = audio(info, forSpeaker = true, small = smallSound)?.first
         pictures.maxByOrNull { it.height }?.let { if (sound != null) return it.content to sound }
         return info.videoStreams.filter { direct(it) }.maxByOrNull { it.height }?.let { it.content to null }
     }

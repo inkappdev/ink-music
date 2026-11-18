@@ -49,6 +49,18 @@ object EditorsNew {
         return Shelf(chosen.map { it.first }, close.sortedByDescending(::of) + rest)
     }
 
+    /**
+     * TUNER's new songs: the lists nearest your taste (`near`) as for the shelf, but every song of theirs, not only those
+     * on records; the lists in turn, nearest you first.
+     */
+    fun songs(read: List<Pair<String, List<InnerTube.Track>>>, near: (String) -> Double, lists: Int = 5): List<InnerTube.Track> {
+        fun of(t: InnerTube.Track) = t.artists.maxOfOrNull(near) ?: 0.0
+        val scored = read.filter { it.second.isNotEmpty() }.map { (name, songs) -> Triple(name, songs, songs.sumOf(::of)) }
+        val chosen = (scored.filter { it.third > 0 }.sortedByDescending { it.third } + UNKNOWN.mapNotNull { n -> scored.firstOrNull { it.first == n } })
+            .distinctBy { it.first }.take(lists).map { it.second }
+        return (0 until (chosen.maxOfOrNull { it.size } ?: 0)).flatMap { i -> chosen.mapNotNull { it.getOrNull(i) } }.distinctBy { it.videoId }
+    }
+
     /** A song from a record in its own right: an album or an EP, not the song's own single, nor a deluxe or a soundtrack. */
     private fun record(t: InnerTube.Track): Boolean {
         val album = t.album ?: return false

@@ -310,6 +310,8 @@ sealed interface Page {
     data class Chart(val chart: Charts.Chart) : Page
     /** New releases and moods & genres, from listen's three ways in (Doors). */
     data object NewReleases : Page
+    /** TUNER: new music as clips, swiped through ([TunerPage]). */
+    data object Tuner : Page
     data object AllMoods : Page
     data object Pick : Page
     data object InkRadio : Page
@@ -489,6 +491,7 @@ private fun App() {
                         Page.ChartsAll -> ChartsPage(pages)
                         is Page.Chart -> ChartPage(p.chart, pages)
                         Page.NewReleases -> NewReleasesPage(pages)
+                        Page.Tuner -> TunerPage(pages)
                         Page.AllMoods -> AllMoodsPage(pages)
                         Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
                         Page.InkRadio -> InkRadioPage(pages)

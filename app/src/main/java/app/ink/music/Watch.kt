@@ -97,6 +97,10 @@ private suspend fun frameOf(id: String): VideoFrame? = frames.get(id) ?: withCon
     VideoFrame(b.asImageBitmap(), Covers.accentOf(b)).also { frames.put(id, it) }
 }
 
+/** A video's frame if it's been read (TUNER's clips), and read. */
+internal fun frameKept(id: String): VideoFrame? = frames.get(id)
+internal suspend fun videoFrame(id: String): VideoFrame? = frameOf(id)
+
 // the black bars in a frame itself (a wide film's, a phone video's), cut off: the picture fills its tile
 private fun trim(b: Bitmap): Bitmap {
     fun dark(x: Int, y: Int) = b.getPixel(x, y).let { c -> ((c shr 16) and 255) + ((c shr 8) and 255) + (c and 255) < 60 }

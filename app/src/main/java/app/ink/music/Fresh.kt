@@ -54,6 +54,10 @@ object Fresh {
     private var app: Context? = null
     private var builtAt = 0L
 
+    /** What TUNER heard from you: its likes, its clips watched and swiped past (Main starts it). */
+    var tuned: Tuned? = null
+        private set
+
     /** Records made by AI, kept out of new releases (Main starts it). */
     var ai: MadeByAi? = null
         private set
@@ -66,6 +70,7 @@ object Fresh {
         app = c.applicationContext
         seen = Seen(File(c.filesDir, "seen.json"))
         ai = MadeByAi(File(c.filesDir, "ai-artists.csv"))
+        tuned = Tuned(File(c.filesDir, "tuned.json"))
     }
 
     /** ink music opened (Main.onStart): away long enough, what's new is since then; your taste made again. */
@@ -106,7 +111,7 @@ object Fresh {
         scope.launch {
             val heard = History.read(app)
             val plays = heard.map { Taste.Play(it.artist, it.at, it.ms) }
-            val skips = History.skips(app).map { Taste.Play(it.artist, it.at, it.ms) }
+            val skips = History.skips(app).map { Taste.Play(it.artist, it.at, it.ms) } + tuned?.skips().orEmpty()
             val library = Library.songs.value
             val loved = (library.filter { it.id in Loved.ids.value } + Loved.tube.value + YouTubeAccount.liked.value).map { it.artist }
             val kept = library.map { it.albumArtist }.distinct()
@@ -119,7 +124,7 @@ object Fresh {
             // the artists you picked (the first open, settings): near from the day you picked them, said "from your picks"
             val picks = Seeds.artists.value.map { it.name }.takeIf { it.isNotEmpty() }
                 ?.let { Brought("picks", "", builtAt, it.associateWith { .8 }, emptyList()) }
-            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app), brought = brought + listOfNotNull(picks))
+            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app), brought = brought + listOfNotNull(picks, tuned?.brought()))
             val first = of(emptyMap())
             taste.value = first
             val related = first.top(12).map { bareName ->

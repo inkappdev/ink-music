@@ -487,13 +487,19 @@ object YouTubeMusic {
      * taste (`near`) and their records, without what AI made. The lists read together, at most every six hours.
      */
     suspend fun editorsNew(near: (String) -> Double): Pair<List<String>, List<TubeAlbum>> = withContext(Dispatchers.IO) {
-        val read = editorsRead.takeIf { System.currentTimeMillis() - editorsAt < 6 * 3_600_000L }
-            ?: kotlinx.coroutines.coroutineScope { EditorsNew.LISTS.map { (name, id) -> async { name to EditorsNew.read(id) } }.map { it.await() } }
-                .also { r -> if (r.any { it.second.isNotEmpty() }) { editorsRead = r; editorsAt = System.currentTimeMillis() } }
-        val shelf = EditorsNew.shelf(read, near)
+        val shelf = EditorsNew.shelf(editorsLists(), near)
         val records = shelf.records.map { TubeAlbum("${InnerTube.BASE}/browse/${it.albumId}", it.album.orEmpty(), it.artists.joinToString(" & "), it.art) }
         shelf.lists to (Fresh.ai?.without(records, { it.artist }, InnerTube()::onWikipedia) ?: records)
     }
+    /** The editors' new-music lists, each read (name to songs): read together, kept six hours. */
+    suspend fun editorsLists(): List<Pair<String, List<InnerTube.Track>>> = withContext(Dispatchers.IO) {
+        editorsRead.takeIf { System.currentTimeMillis() - editorsAt < 6 * 3_600_000L }
+            ?: kotlinx.coroutines.coroutineScope { EditorsNew.LISTS.map { (name, id) -> async { name to EditorsNew.read(id) } }.map { it.await() } }
+                .also { r -> if (r.any { it.second.isNotEmpty() }) { editorsRead = r; editorsAt = System.currentTimeMillis() } }
+    }
+
+    /** A song of a list, as ink plays it. */
+    fun songOf(t: InnerTube.Track): Song = trackSong(t)
     @Volatile private var editorsRead: List<Pair<String, List<InnerTube.Track>>>? = null
     @Volatile private var editorsAt = 0L
 
