@@ -230,13 +230,19 @@ object Fresh {
     // ---- the day's: picked once an issue, kept (files/issue.json) ----
 
     /** The day's pick of a kind: kept for the issue once chosen (`choose` given what's there), so it holds all day. */
-    fun ofTheDay(c: Context, kind: String, choose: () -> String?): String? {
+    fun ofTheDay(c: Context, kind: String, choose: (past: List<String>) -> String?): String? {
         val f = File(c.filesDir, "issue.json")
         val issue = Moment.issue()
-        val o = runCatching { JSONObject(f.readText()) }.getOrNull()?.takeIf { it.optInt("issue") == issue } ?: JSONObject().put("issue", issue)
+        val read = runCatching { JSONObject(f.readText()) }.getOrNull()
+        // what each kind was on the days before, the newest first, a month of them: carried from issue to issue, so a
+        // day's choice can pass over the last ones (2026-11-18, Bronson: the same band's song there for a while)
+        val past = read?.optJSONObject("past") ?: JSONObject()
+        val o = read?.takeIf { it.optInt("issue") == issue } ?: JSONObject().put("issue", issue).put("past", past)
         o.optString(kind).takeIf { it.isNotEmpty() }?.let { return it }
-        val picked = choose() ?: return null
-        runCatching { f.writeText(o.put(kind, picked).toString()) }
+        val before = past.optJSONArray(kind)?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
+        val picked = choose(before) ?: return null
+        past.put(kind, JSONArray((listOf(picked) + before.filter { it != picked }).take(30)))
+        runCatching { f.writeText(o.put(kind, picked).put("past", past).toString()) }
         return picked
     }
 }

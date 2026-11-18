@@ -230,22 +230,32 @@ private fun OfTheDay(songs: List<Picks.Shown>, pages: Pages) {
     val taste by Fresh.taste.collectAsState()
     val library by Library.songs.collectAsState()
     val song = remember(songs, taste) {
-        val key = Fresh.ofTheDay(ctx, "song") { Fresh.rank(songs, taste).firstOrNull { !it.stretch }?.item?.let { Curation.key(it.pick) } }
+        // the nearest to you not shown in the last month, by no one shown in the last fortnight (the nearest alone was
+        // one band's for days on end while they stayed in the feeds); all shown, the nearest not yesterday's
+        val key = Fresh.ofTheDay(ctx, "song") { past ->
+            val near = Fresh.rank(songs, taste).filter { !it.stretch }.map { Curation.key(it.item.pick) }
+            val lately = past.take(14).map { it.substringBefore('/') }.toSet()
+            near.firstOrNull { it !in past && it.substringBefore('/') !in lately }
+                ?: near.firstOrNull { it !in past } ?: near.firstOrNull { it != past.firstOrNull() } ?: near.firstOrNull()
+        }
         songs.firstOrNull { Curation.key(it.pick) == key }
     }
     val station = remember {
         val all = Stations.curated(ctx)
-        val id = Fresh.ofTheDay(ctx, "station") {
+        val id = Fresh.ofTheDay(ctx, "station") { past ->
             val liked = Seeds.genres.value
             val pool = all.filter { st -> liked.any { st.genre.contains(it, ignoreCase = true) } }.ifEmpty { all }
-            pool.getOrNull(Moment.issue() % pool.size.coerceAtLeast(1))?.song?.id
+            // in turn from the day's place, passing over the last week's
+            val from = Moment.issue() % pool.size.coerceAtLeast(1)
+            val turned = pool.drop(from) + pool.take(from)
+            (turned.firstOrNull { it.song.id !in past.take(7) } ?: turned.firstOrNull())?.song?.id
         }
         all.firstOrNull { it.song.id == id }
     }
     val deep by androidx.compose.runtime.produceState<Song?>(null, library, taste) {
         if (library.isEmpty() || taste.empty) return@produceState
         value = withContext(Dispatchers.IO) {
-            val id = Fresh.ofTheDay(ctx, "deep") {
+            val id = Fresh.ofTheDay(ctx, "deep") { _ ->
                 val heard = History.read(ctx).map { it.id }.toHashSet()
                 library.filter { !it.tube && it.id !in heard && taste.of(it.albumArtist.ifBlank { it.artist }) >= .3 }
                     .shuffled(java.util.Random(Moment.issue().toLong())).firstOrNull()?.id
