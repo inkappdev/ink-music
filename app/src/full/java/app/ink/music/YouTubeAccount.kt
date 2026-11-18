@@ -376,9 +376,17 @@ object YouTubeAccount {
             // by its id; else by their name (only one called just that); else through a record of theirs on the phone,
             // where the name finds someone else or no one (2026-11-16: "Ace" found Yungeen Ace; "Five-a-Side" finds Ace)
             val page = id.ifEmpty { YouTubeMusic.artist(name)?.takeIf { it.name.equals(name, ignoreCase = true) }?.id.orEmpty() }
+                // the first found someone else: among the artists the name finds, the one called just that, its letters'
+                // case too (2026-11-18, Bronson: "mori" found Mori Calliope first, then Mori, then mori: no page at all)
                 .ifEmpty {
-                    Library.albums.value.filter { it.artist.equals(name, ignoreCase = true) }.take(2)
-                        .firstNotNullOfOrNull { (tube ?: InnerTube()).artistByRecord(it.title, name) }.orEmpty()
+                    val named = runCatching { (tube ?: InnerTube()).searchItems(name, InnerTube.Kind.ARTIST, 10) }.getOrDefault(emptyList())
+                    (named.filter { it.title == name }.singleOrNull() ?: named.filter { it.title.equals(name, ignoreCase = true) }.singleOrNull())?.id.orEmpty()
+                }
+                // else through a record of theirs: on the phone, or the one playing now (a YouTube song's own record)
+                .ifEmpty {
+                    val records = Library.albums.value.filter { it.artist.equals(name, ignoreCase = true) }.take(2).map { it.title } +
+                        listOfNotNull(Playback.now.value?.takeIf { it.artist.substringBefore(",").trim().equals(name, ignoreCase = true) }?.album?.takeIf { it.isNotBlank() })
+                    records.distinct().firstNotNullOfOrNull { (tube ?: InnerTube()).artistByRecord(it, name) }.orEmpty()
                 }
             if (page.isEmpty()) return@runCatching null
             val a = (tube ?: InnerTube()).artist(page)
