@@ -204,6 +204,27 @@ fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean,
 }
 
 /**
+ * TUNER's picture for a song YouTube has only as its cover (2026-11-18, Bronson: "if there isn't a video should we show
+ * artist canvas video or something with motion?"): its Spotify canvas, else its record's moving cover, else the
+ * artist's moving photo, filling its frame as it is; nothing (the cover shows) where it has none. `found` says whether
+ * one's coming.
+ */
+@Composable
+fun TunerMotion(title: String, artist: String, accent: Color, modifier: Modifier = Modifier, found: (Boolean) -> Unit = {}) {
+    if (Device.tv) return
+    val ctx = LocalContext.current
+    val url by produceState<String?>(null, title, artist) {
+        value = if (Moving.wanted(ctx)) withContext(Dispatchers.IO) {
+            Spotify.canvas(ctx, title, artist) ?: MotionCover.ofSong(artist, title) ?: MotionCover.ofArtist(artist)
+        } else null
+        android.util.Log.i("ink-moving", "tuner $artist / $title: ${if (value != null) "moving" else "none"}")
+        found(value != null)
+    }
+    val u = url ?: return
+    Loop(u, true, null, accent, 1f, crop = true, modifier)
+}
+
+/**
  * A silent looping clip in a TextureView, so a shader can draw over it (`shape`: a look, or null as it is). It comes
  * in as a print develops (dithered: the brightest dots first; else faded in, to `strength`), and settles with the
  * music: paused, it slows to a stop over a second and holds; played, it picks up again. `crop` fills its space as a

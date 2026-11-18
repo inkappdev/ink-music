@@ -72,6 +72,8 @@ data class Tune(
     val id: String, val title: String, val artist: String, val song: Song?, val seconds: Int = 0,
     /** Its source (TunerMix's: yours, fans, related, editors) and what it was found through (an artist, a list). */
     val from: String = "", val tag: String = "",
+    /** YouTube has it only as its cover (a "- Topic" art track): its real video looked for, else moving art shown. */
+    val still: Boolean = false,
 )
 
 /** How long a clip plays before it goes round again (a tap on PLAY plays the whole song). */
@@ -201,9 +203,18 @@ fun TunerPage(pages: Pages) {
         onDispose { life.lifecycle.removeObserver(o) }
     }
 
+    // a still clip's own music video, where its artist has one of that song (else its own id: the cover)
+    val videos = remember { mutableStateMapOf<String, String>() }
+    suspend fun videoOf(t: Tune): String {
+        videos[t.id]?.let { return it }
+        val v = if (t.still) withContext(Dispatchers.IO) { runCatching { TunerFeed.videoOf(t) }.getOrNull() } ?: t.id else t.id
+        videos[t.id] = v
+        return v
+    }
     suspend fun streamOf(t: Tune): Pair<String, String?>? {
         if (streams.containsKey(t.id)) return streams[t.id]
-        val s = withContext(Dispatchers.IO) { runCatching { TunerFeed.stream(t.id, Quality.metered(ctx)) }.getOrNull() }
+        val vid = videoOf(t)
+        val s = withContext(Dispatchers.IO) { runCatching { TunerFeed.stream(vid, Quality.metered(ctx)) }.getOrNull() }
         streams[t.id] = s
         return s
     }
@@ -211,7 +222,8 @@ fun TunerPage(pages: Pages) {
     // third in; a clip whose length isn't known finds its chorus once it plays
     suspend fun replayedOf(t: Tune) {
         if (starts.containsKey(t.id)) return
-        withContext(Dispatchers.IO) { TunerFeed.replayed(t.id) }?.let { starts[t.id] = it; return }
+        val vid = videoOf(t)
+        withContext(Dispatchers.IO) { TunerFeed.replayed(vid) }?.let { starts[t.id] = it; return }
         if (t.seconds <= 0) return
         val length = t.seconds * 1000L
         val chorus = withContext(Dispatchers.IO) {
@@ -230,6 +242,13 @@ fun TunerPage(pages: Pages) {
         drawn = false; waiting = false; givenId = ""; seen = 0f; said = ""; at = 0L; settledAt = android.os.SystemClock.elapsedRealtime()
         android.util.Log.d("ink-tuner", "now ${t.id}: ${t.artist} - ${t.title} (${t.from}, through ${t.tag})")
         player.stop(); player.clearMediaItems()
+        // the new page's picture handed to the player only now, the last clip let go (handed over as it was made, the
+        // player painted the old video into it: the flash, 2026-11-18)
+        launch {
+            var n = 0
+            while (texture?.tag != t.id && n++ < 60) delay(16)
+            texture?.takeIf { it.tag == t.id }?.let { player.setVideoTextureView(it) }
+        }
         launch { for (n in 1..2) tunes.getOrNull(pager.settledPage + n)?.let { launch { streamOf(it) }; launch { replayedOf(it) } } }
         val hook = launch { replayedOf(t) }
         val s = streamOf(t)
@@ -331,12 +350,17 @@ fun TunerPage(pages: Pages) {
                             .clickable(remember { MutableInteractionSource() }, indication = null) { if (player.playWhenReady) player.pause() else player.play() },
                     ) {
                         frame?.let { Image(it.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                        // only its cover on YouTube and no video of it found: moving art in its place, the cover's picture hidden
+                        var moving by remember(t.id) { mutableStateOf(false) }
+                        if (here && t.still && videos[t.id] == t.id) TunerMotion(t.title, t.artist.substringBefore(" & "), accent, Modifier.fillMaxSize()) { moving = it }
                         if (here) AndroidView(
-                            factory = { TextureView(it).apply { keepScreenOn = true; player.setVideoTextureView(this); texture = this } },
+                            factory = { TextureView(it).apply { keepScreenOn = true; tag = t.id; texture = this } },
+                            update = { v -> v.alpha = if (drawnId == t.id && !moving) 1f else 0f },
+                            onRelease = { v -> player.clearVideoTextureView(v) },
                             // its picture's own shape, measured from its frames (black bars in the video itself: a 4:3 film
                             // inside 16:9 showed bars at its sides; YouTube's still hadn't them)
                             modifier = Modifier.covering(shape, eased)
-                                .alpha(if (drawnId == t.id) 1f else 0f),
+                                .alpha(if (drawnId == t.id && !moving) 1f else 0f),
                         )
                         if (here && !playing) BasicText("paused", style = pixel(12.sp), modifier = Modifier.align(Alignment.Center))
                     }

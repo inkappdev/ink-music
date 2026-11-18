@@ -31,7 +31,7 @@ object TunerFeed {
         val taste = Fresh.taste.value
         val editors = EditorsNew.songs(YouTubeMusic.editorsLists(), taste::of).filter { fine(c, it.videoId, it.title, it.artists.joinToString(" & ")) }
             .map { t -> val who = t.artists.joinToString(" & ")
-                Tune(t.videoId, plain(t.title, t.artists), who, YouTubeMusic.songOf(t), t.seconds, "editors", "editors") }
+                Tune(t.videoId, plain(t.title, t.artists), who, YouTubeMusic.songOf(t), t.seconds, "editors", "editors", still = t.albumId != null) }
         val yours = MusicVideos.clips.value.filter { fine(c, it.id, it.title, it.artist) }.map { Tune(it.id, it.title, it.artist, null, 0, "yours", it.artist) }
         clean((editors + yours).distinctBy { it.id })
     }
@@ -57,8 +57,14 @@ object TunerFeed {
     /** YouTube's up next for a clip (its song's radio, as videos), found through its artist. */
     suspend fun related(c: Context, t: Tune): List<Tune> = withContext(Dispatchers.IO) {
         runCatching { InnerTube().queue("RDAMVM${t.id}", 16, t.id, audioOnly = false) }.getOrDefault(emptyList()).drop(1)
-            .map { r -> Tune(r.videoId, plain(r.title, r.artists), r.artists.joinToString(" & "), YouTubeMusic.songOf(r), r.seconds, "related", t.artist) }
+            .map { r -> Tune(r.videoId, plain(r.title, r.artists), r.artists.joinToString(" & "), YouTubeMusic.songOf(r), r.seconds, "related", t.artist, still = r.albumId != null) }
             .filter { fine(c, it.id, it.title, it.artist) }.let(::clean)
+    }
+
+    /** A song YouTube has only as its cover: its own music video, among its artist's (blocking; null: none of it). */
+    suspend fun videoOf(t: Tune): String? {
+        val who = t.artist.substringBefore(" & ")
+        return MusicVideos.of(who).firstOrNull { Pipe.same(it.title, who, t.title, who) }?.id
     }
 
     /**
