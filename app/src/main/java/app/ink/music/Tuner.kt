@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -462,9 +461,11 @@ fun TunerPage(pages: Pages) {
                             if (newToYou) BasicText("NEW TO YOU", style = pixel(11.sp, Ink.black), modifier = Modifier.background(Ink.ink).padding(horizontal = 5.dp, vertical = 1.dp))
                             if (year != null) BasicText("from $year", style = pixel(12.sp, Ink.mid))
                         }
-                        // the name as big as a poster's, running when it's longer than the screen
-                        BasicText(t.title.uppercase(), style = headline(44.sp), maxLines = 1, softWrap = false,
-                            modifier = Modifier.padding(top = 4.dp).basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_600, velocity = 40.dp).padding(horizontal = 20.dp))
+                        // the name as big as a poster's, on two lines at most and smaller when it's long (it ran as a
+                        // marquee first; still reads better, 2026-11-18, Bronson)
+                        val size = when { t.title.length > 34 -> 26.sp; t.title.length > 18 -> 34.sp; else -> 44.sp }
+                        BasicText(t.title.uppercase(), style = headline(size).copy(lineHeight = size * 0.95f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 4.dp).padding(horizontal = 20.dp))
                         Word(t.artist.lowercase(), pixel(14.sp, Ink.mid), Modifier.padding(start = 20.dp, top = 2.dp), touch = 6.dp) {
                             dug[t.id] = true
                             pages.open(Page.Artist(t.artist.substringBefore(" & ")))
