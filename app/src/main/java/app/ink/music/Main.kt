@@ -1691,6 +1691,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                     ).joinToString("   ").ifEmpty { if (info == null && YouTubeAccount.available) "reading it from youtube music" else "" },
                     style = pixel(12.sp, Ink.mid),
                 )
+                SupportLine(i?.name ?: name, i?.top.orEmpty().map { it.title }, Modifier.padding(top = 8.dp))
                 Spacer(Modifier.height(16.dp))
                 if (playable.isNotEmpty()) Row {
                     Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(playable, 0) }
@@ -1851,6 +1852,7 @@ private fun TvArtistSide(name: String, i: ArtistInfo?, room: Dp, records: Int, y
         yours.takeIf { it > 0 }?.let { "$it of yours" },
         foundOnTuner(name),
     ).joinToString("  ·  ").ifEmpty { if (reading && YouTubeAccount.available) "reading it from youtube music" else "" }, style = pixel(12.sp, Ink.mid))
+    SupportLine(i?.name ?: name, i?.top.orEmpty().map { it.title }, Modifier.padding(top = 8.dp))
     Spacer(Modifier.height(14.dp))
     if (playable.isNotEmpty()) Row {
         Word("play", pixel(15.sp), Modifier.padding(end = 24.dp).tvFirst(), touch = 8.dp) { Playback.play(playable, 0) }

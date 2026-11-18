@@ -960,3 +960,45 @@ object Tuning {
     /** The sitting over: closed, or TUNER opened anew. */
     fun end() { sitting?.end(); sitting = null }
 }
+
+// each artist's support links as found (MusicBrainz, a month), "" for none; kept in files/support.json
+private val supportKept = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Support.Links>>()
+@Volatile private var supportRead = false
+
+/**
+ * Where to support them, on an artist's page (2026-11-18, Bronson): "bandcamp" and "their site" as words, opened in the
+ * browser, plain links; nothing where MusicBrainz has neither.
+ */
+@Composable
+fun SupportLine(name: String, songs: List<String>, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val links by produceState<Support.Links?>(null, name) {
+        value = withContext(Dispatchers.IO) {
+            val file = java.io.File(ctx.filesDir, "support.json")
+            if (!supportRead) {
+                supportRead = true
+                runCatching {
+                    val o = org.json.JSONObject(file.readText())
+                    o.keys().forEach { k -> val e = o.getJSONObject(k)
+                        supportKept[k] = e.getLong("at") to Support.Links(e.optString("bandcamp").ifEmpty { null }, e.optString("site").ifEmpty { null }) }
+                }
+            }
+            val key = name.lowercase()
+            supportKept[key]?.takeIf { System.currentTimeMillis() - it.first < 30L * 86_400_000 }?.let { return@withContext it.second }
+            val found = runCatching { Support.of(name, songs) }.getOrNull() ?: Support.Links(null, null)
+            supportKept[key] = System.currentTimeMillis() to found
+            runCatching {
+                val o = org.json.JSONObject()
+                supportKept.forEach { (k, v) -> o.put(k, org.json.JSONObject().put("at", v.first).put("bandcamp", v.second.bandcamp ?: "").put("site", v.second.site ?: "")) }
+                file.writeText(o.toString())
+            }
+            found
+        }
+    }
+    val l = links?.takeIf { it.any } ?: return
+    fun open(url: String) = runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        l.bandcamp?.let { Word("bandcamp", pixel(13.sp), touch = 8.dp) { open(it) } }
+        l.site?.let { Word("their site", pixel(13.sp), touch = 8.dp) { open(it) } }
+    }
+}
