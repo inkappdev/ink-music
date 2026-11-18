@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -69,13 +71,39 @@ private fun Door(name: String, sprite: List<String>, modifier: Modifier, onClick
     }
 }
 
-/** New releases: YouTube Music's new records, as a grid (yours, signed in; anyone's, signed out). */
+/**
+ * New releases, ink's (2026-11-18, Bronson: YouTube Music's list alone "has some shit in there"): new from your artists,
+ * the critics' records, out this Friday, each a shelf; then the rest of what's out, YouTube Music's (yours signed in,
+ * anyone's signed out), cleaned (NewOut: records and EPs only, no deluxe, live or holiday padding, nothing you said
+ * isn't for you), your kind of artist first.
+ */
 @Composable
 fun NewReleasesPage(open: (Page) -> Unit, onClose: () -> Unit) {
-    val records by produceState<List<TubeAlbum>?>(ExploreKept.fresh) {
+    androidx.compose.runtime.LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic() }
+    val youtube by produceState<List<TubeAlbum>?>(null) {
         value = withContext(Dispatchers.IO) {
-            runCatching { (TubeAccount.tube() ?: InnerTube()).items("FEmusic_new_releases_albums", 60).mapNotNull(::tubeAlbum) }.getOrDefault(emptyList())
-        }.ifEmpty { value.orEmpty() }
+            runCatching {
+                (TubeAccount.tube() ?: InnerTube()).items("FEmusic_new_releases_albums", 80)
+                    .filter { NewOut.kept(it.title, it.subtitle.substringBefore(" • ")) }.mapNotNull(::tubeAlbum)
+            }.getOrDefault(emptyList())
+        }.ifEmpty { ExploreKept.fresh.orEmpty().filter { NewOut.kept(it.title, it.kind.ifEmpty { "album" }) } }
+    }
+    val critics = Picks.records.shown { it.pick.title to it.pick.artist }
+    val songs = Picks.songs.shown { it.pick.title to it.pick.artist }
+    val friday by Picks.friday.collectAsState()
+    val electronic by Picks.electronic.collectAsState()
+    val heard by Listened.now.collectAsState()
+    val library by Library.songs.collectAsState()
+    val brought by Fresh.brought.collectAsState()
+    val taste by Fresh.taste.collectAsState()
+    val blocked by Blocked.kept.collectAsState()
+    val yours = remember(critics, songs, friday, electronic, heard, library, brought, blocked) {
+        Picks.yours(heard, library, brought).filterNot { Blocked.hides(it.pick.title, it.pick.artist) }
+    }
+    val week = remember(friday, blocked) { friday?.releases.orEmpty().filterNot { Blocked.hides(it.title, it.artist) } }
+    val rest = remember(youtube, taste, blocked) {
+        val refused = Fresh.refused().map { Curation.folded(it) }.toSet()
+        youtube?.filterNot { Curation.folded(it.artist) in refused || Blocked.hides(it.title, it.artist) }?.let { NewOut.ordered(it, { a -> a.artist }, taste::of) }
     }
     Column(Modifier.fillMaxSize()) {
         Close(onClose)
@@ -88,10 +116,39 @@ fun NewReleasesPage(open: (Page) -> Unit, onClose: () -> Unit) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "head") {
                 Column {
                     BasicText("NEW RELEASES", style = headline(56.sp))
-                    BasicText("records out lately, from youtube music", style = pixel(12.sp, Ink.mid))
+                    BasicText("records out lately: yours, the critics', this friday's, then the rest", style = pixel(12.sp, Ink.mid))
                 }
             }
-            val r = records
+            fun shelf(key: String, title: String, line: String, list: List<Picks.Shown>) {
+                if (list.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = key) {
+                    Column(Modifier.padding(top = 12.dp)) {
+                        Section(title, line)
+                        Shelf {
+                            rowItems(list, key = { key + it.pick.from + it.pick.artist + it.pick.title }) { s ->
+                                val art by produceState(s.art, s) { value = Picks.artOf(s, s.pick.record) }
+                                Box(Modifier.width(176.dp)) { PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, open) }
+                            }
+                        }
+                    }
+                }
+            }
+            shelf("yours", "NEW FROM YOUR ARTISTS", "out this week or picked by critics, by artists you play", yours)
+            shelf("critics", "PICKED BY CRITICS", "the records the critics wrote up lately", critics.take(24))
+            if (week.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }, key = "friday") {
+                Column(Modifier.padding(top = 12.dp)) {
+                    Section("OUT THIS FRIDAY", "every record out this week, from r/indieheads")
+                    Shelf {
+                        rowItems(week, key = { "fri" + it.artist + it.title }) { r ->
+                            val art by produceState<String?>(null, r) { value = Picks.art(r) }
+                            Box(Modifier.width(176.dp)) { PickTile(remember(r, art) { Picks.shown(r, art) }, open) }
+                        }
+                    }
+                }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }, key = "rest") {
+                Box(Modifier.padding(top = 12.dp)) { Section("ALSO OUT", "youtube music's, the singles and reissues left out") }
+            }
+            val r = rest
             if (r == null) item(span = { GridItemSpan(maxLineSpan) }) { BasicText("reading", style = pixel(12.sp, Ink.mid)) }
             else items(r, key = { it.url }) { a -> TubeTile(a, Modifier.fillMaxWidth()) { open(Page.Tube(a)) } }
         }

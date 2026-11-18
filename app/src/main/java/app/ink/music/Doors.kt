@@ -64,25 +64,64 @@ private fun Door(name: String, sprite: List<String>, modifier: Modifier, onClick
     }
 }
 
-/** New releases: YouTube Music's new records, two across. */
+/**
+ * New releases, ink's (2026-11-18, Bronson: YouTube Music's list alone "has some shit in there"): new from your artists,
+ * the critics' records, out this Friday, each a shelf; then the rest of what's out, YouTube Music's, cleaned (NewOut:
+ * records and EPs only, no deluxe, live or holiday padding, nothing you said isn't for you), your kind of artist first.
+ */
 @Composable
 fun NewReleasesPage(pages: Pages) {
-    val records by produceState<List<TubeAlbum>?>(null) { value = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.newReleases() }.getOrDefault(emptyList()) } }
+    val ctx = LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday(); Picks.startElectronic() }
+    val youtube by produceState<List<TubeAlbum>?>(null) { value = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.newReleases() }.getOrDefault(emptyList()) } }
+    val critics = Picks.records.collectAsState().value.unblocked { it.pick.title to it.pick.artist }
+    val friday by Picks.friday.collectAsState()
+    val songs by Picks.songs.collectAsState()
+    val electronic by Picks.electronic.collectAsState()
+    val listened by Listened.now.collectAsState()
+    val library by Library.songs.collectAsState()
+    val brought by Fresh.brought.collectAsState()
+    val taste by Fresh.taste.collectAsState()
+    val yours = remember(critics, songs, friday, electronic, listened, library, brought) { Picks.yours(listened, library, brought) }
+        .unblocked { it.pick.title to it.pick.artist }
+    val week = remember(friday) { friday?.releases.orEmpty() }.unblocked { it.title to it.artist }
+    val refused = remember { Fresh.turnedDown(ctx) }
+    val rest = remember(youtube, taste) {
+        youtube?.filterNot { Curation.folded(it.artist) in refused }?.let { NewOut.ordered(it, { a -> a.artist }, taste::of) }
+    }?.unblocked { it.title to it.artist }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().hazeSource(frost).windowInsetsPadding(bars.only(WindowInsetsSides.Horizontal)),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
+        contentPadding = PaddingValues(top = top + 14.dp, bottom = LocalFoot.current + 24.dp),
     ) {
         item {
-            BasicText("NEW RELEASES", style = headline(40.sp))
-            BasicText("records out lately, from youtube music", style = pixel(12.sp, Ink.mid))
-            Spacer(Modifier.height(16.dp))
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                BasicText("NEW RELEASES", style = headline(40.sp))
+                BasicText("records out lately: yours, the critics', this friday's, then the rest", style = pixel(12.sp, Ink.mid))
+                Spacer(Modifier.height(8.dp))
+            }
         }
-        val r = records
-        if (r == null) item { BasicText("reading", style = pixel(12.sp, Ink.mid)) }
+        if (yours.isNotEmpty()) item(key = "yours") {
+            Heading("new from your artists")
+            Shelf(yours) { s -> PickTile(s, pages) }
+        }
+        if (critics.isNotEmpty()) item(key = "critics") {
+            Heading("picked by critics")
+            Shelf(critics.take(24)) { s -> PickTile(s, pages, near = taste.of(s.pick.artist) >= .3) }
+        }
+        if (week.isNotEmpty()) item(key = "friday") {
+            Heading("out this friday")
+            Shelf(week) { r ->
+                val art by produceState<String?>(null, r) { value = Picks.art(r) }
+                PickTile(remember(r, art) { Picks.shown(r, art) }, pages)
+            }
+        }
+        item(key = "rest") { Heading("also out", "youtube music's, the singles and reissues left out") }
+        val r = rest
+        if (r == null) item { BasicText("reading", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp)) }
         else items(r.chunked(2)) { row ->
-            Row(Modifier.padding(bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 row.forEach { a -> TubeTile(a, Modifier.weight(1f)) { pages.open(Page.Tube(a)) } }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
