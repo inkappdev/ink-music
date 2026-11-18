@@ -123,6 +123,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         // the rest of the day's: a song, a station, one of your own you've never played
         if (!tv) item(key = "ofTheDay") { OfTheDay(songs, pages) }
         if (!tv) item(key = "tuner") { TunerDoor(pages) }
+        if (!tv) item(key = "blend") { BlendDoor(pages) }
         if (air.isNotEmpty()) item(key = "air") {
             // who's on, said once: "kexp, kcrw and fip", "kexp, kcrw, fip and 3 more"
             val names = air.map { it.name }.distinct()
