@@ -117,6 +117,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clipToBounds
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.layout.layout
@@ -782,6 +783,11 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                         Column { ArtistsView(); SortRow("artists", Sorts.ARTISTS) }
                     }
                     items(artists, key = { it.name }) { a -> ArtistTile(a, firsts[a.name]) { pages.open(Page.Artist(a.name)) } }
+                }
+                // the next three rows' pictures read ahead as it scrolls (the first item is the orders)
+                LaunchedEffect(artistGrid, artists) {
+                    androidx.compose.runtime.snapshotFlow { artistGrid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+                        .collectLatest { last -> kotlinx.coroutines.delay(250); YouTubeAccount.warmFaces(artists.drop(last).take(12).map { it.name }) }
                 }
             } else LazyColumn(state = artistList, contentPadding = pad) {
                 item(key = "sort") { Column { ArtistsView(); SortRow("artists", Sorts.ARTISTS) } }
@@ -3138,7 +3144,7 @@ private val CLOSE_ROW = 40.dp
 
 /** A record's cover, or ink's own sleeve with its name when the files carry none (a station's, with its rings). */
 @Composable
-fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640) {
+fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, nameless: Boolean = false) {
     val cover = rememberCover(song, px)
     // 1-bit mode (the clickwheel three turns backwards): every cover in the dither, its own colour
     if (OneBit.on.collectAsState().value && cover != null && song != null && !song.station) return Dithered(song, modifier, px = 600, own = true)
@@ -3153,7 +3159,8 @@ fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640) {
     }
     BoxWithConstraints(modifier) {
         if (song?.station == true && cover == null) StationCover(song, Modifier.fillMaxSize())
-        else if ((cover == null || shown.value < 1f) && (late || song == null)) NameCover(name, maxWidth)
+        // (`nameless`: over something else, a picture that won't come leaves that showing, not its name)
+        else if ((cover == null || shown.value < 1f) && (late || song == null) && !nameless) NameCover(name, maxWidth)
         if (cover != null) Image(cover.image, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop)
     }
 }
@@ -3248,19 +3255,34 @@ private fun ArtistsView() {
 }
 
 /**
- * An artist as a tile (as the computer's): their photo from YouTube Music (asked once it's been in sight half a second,
- * so a fast scroll asks for none; kept after), a record of theirs till then or if none comes; their name, how much of
- * theirs is here.
+ * An artist as a tile (as the computer's): their square picture from YouTube Music (YouTubeAccount.face: kept, else
+ * asked once it's been in sight half a second, so a fast scroll asks for none; the next ones read ahead as the grid
+ * scrolls), developing in from black as covers do. A record of theirs only when no picture's drawn in a second and a
+ * half (none found, or one slow to come); one that comes after develops in over the record, never through black (2026-11-18, Bronson: the pictures
+ * loading in as you scroll, "how can we make that nicer?": a record had shown, gone black, then the photo come).
  */
 @Composable
 private fun ArtistTile(a: ArtistEntry, record: Song?, onClick: () -> Unit) {
-    val photo by androidx.compose.runtime.produceState<String?>(null, a.name) {
+    var photo by remember(a.name) { mutableStateOf(YouTubeAccount.faceKnown(a.name)) }
+    val pic = remember(photo) { photo?.let { faceSong(a.name, it, photo = true) } }
+    // drawn yet: its picture read, not only its link known (a picture can take seconds to come)
+    val drawn by androidx.compose.runtime.rememberUpdatedState(rememberCover(pic, 400) != null)
+    var stand by remember(a.name) { mutableStateOf(false) }
+    LaunchedEffect(a.name) { kotlinx.coroutines.delay(1_500); if (!drawn) stand = true }
+    LaunchedEffect(a.name) {
+        if (photo != null) return@LaunchedEffect
+        photo = YouTubeAccount.face(a.name, ask = false)
+        if (photo != null) return@LaunchedEffect
         kotlinx.coroutines.delay(500)
-        YouTubeAccount.artist(a.name).collect { i -> i?.photo?.let { value = it } }
+        photo = YouTubeAccount.face(a.name)
+        if (photo == null) stand = true
     }
-    val face = remember(photo, record) { photo?.let { faceSong(a.name, it, photo = true) } ?: record }
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
-        CoverOf(face, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            // the record under, once it's stood in; the picture over it, developing in
+            if (stand || (photo == null && record == null)) CoverOf(record, a.name, Modifier.fillMaxSize(), px = 400)
+            pic?.let { CoverOf(it, a.name, Modifier.fillMaxSize(), px = 400, nameless = true) }
+        }
         Spacer(Modifier.height(8.dp))
         UnderCover(a.name, if (a.records == 0 && a.songs == 0) "on youtube music"
             else listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" }, "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("   "),

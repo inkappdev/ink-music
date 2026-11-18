@@ -37,6 +37,9 @@ object YouTubeAccount {
     fun tell(c: android.content.Context, on: Boolean) {}
     fun artist(name: String, id: String = ""): kotlinx.coroutines.flow.Flow<ArtistInfo?> = kotlinx.coroutines.flow.flowOf(null)
     fun warm(ctx: android.content.Context, name: String, id: String = "") {}
+    fun faceKnown(name: String): String? = null
+    suspend fun face(name: String, ask: Boolean = true): String? = null
+    fun warmFaces(names: List<String>) {}
     fun warmLibrary(ctx: android.content.Context, names: List<String>) {}
     fun warmNow(ctx: android.content.Context, name: String) {}
     fun openSignIn(c: android.content.Context) {}

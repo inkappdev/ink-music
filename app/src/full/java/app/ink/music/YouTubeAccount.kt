@@ -408,6 +408,53 @@ object YouTubeAccount {
         if (due(name, id, 30 * 60_000L)) ahead.launch { warmOne(app, name, id, inMemory = true) }
     }
 
+    // ---- faces: an artist's square picture, for a tile ----
+
+    /**
+     * Their square picture (YouTube Music's profile one, as fans-also-like shows) by name, "" where it has none of
+     * theirs: kept in faces.json (2026-11-18, Bronson on the artists grid: "what artist image is it picking?" It was
+     * their page's wide header cut to a square from its middle, faces and lettering cut off).
+     */
+    private val faces = java.util.concurrent.ConcurrentHashMap<String, String>()
+    @Volatile private var facesRead = false
+    private val facesAsked = kotlinx.coroutines.sync.Semaphore(3)
+
+    private fun loadFaces() {
+        if (facesRead) return
+        synchronized(faces) {
+            if (facesRead) return
+            runCatching { JSONObject(java.io.File(dir ?: return, "faces.json").readText()).let { o -> o.keys().forEach { k -> faces[k] = o.getString(k) } } }
+            facesRead = true
+        }
+    }
+    private fun keepFaces() = runCatching { java.io.File(dir ?: return@runCatching, "faces.json").writeText(JSONObject(faces as Map<*, *>).toString()) }
+
+    /** Their square picture if it's known already (no reading, no asking): a tile's first look. */
+    fun faceKnown(name: String): String? = if (!facesRead) null else faces[name.lowercase()]?.ifEmpty { null }
+
+    /**
+     * Their picture for a tile: the square one, kept or (`ask`) looked for once; where YouTube Music has none of
+     * theirs, their page's wide photo if it's kept. Null: none yet.
+     */
+    suspend fun face(name: String, ask: Boolean = true): String? = withContext(Dispatchers.IO) {
+        loadFaces()
+        val k = name.lowercase()
+        val known = faces[k]
+        val square = known?.ifEmpty { null } ?: if (known != null || !ask) null else facesAsked.withPermitOrNull {
+            // only theirs (the name the same): a search that couldn't be made isn't kept, so it's asked again later
+            val found = runCatching { YouTubeMusic.artist(name) }.getOrNull()
+            val url = found?.takeIf { it.name.equals(name, ignoreCase = true) }?.face
+            if (found != null) { faces[k] = url.orEmpty(); keepFaces() }
+            url
+        }
+        square ?: keptRaw(artistKey(name, ""))?.let(::artistFrom)?.photo
+    }
+
+    private suspend fun <T> kotlinx.coroutines.sync.Semaphore.withPermitOrNull(block: suspend () -> T?): T? { acquire(); try { return block() } finally { release() } }
+
+    /** The next tiles' pictures read ahead as the grid scrolls, so they're there when they come into sight. */
+    fun warmFaces(names: List<String>) { ahead.launch { loadFaces(); names.forEach { if (faces[it.lowercase()] == null) face(it) } } }
+
     @Volatile private var libraryWarmed = false
 
     /**

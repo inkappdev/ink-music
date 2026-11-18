@@ -3,6 +3,7 @@ package app.ink.music
 import androidx.compose.ui.input.pointer.isCtrlPressed as pointerCtrl
 import androidx.compose.ui.input.pointer.isMetaPressed as pointerMeta
 import androidx.compose.ui.input.pointer.onPointerEvent
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
@@ -911,19 +912,37 @@ private fun Artists(artists: List<ArtistEntry>, open: (Page) -> Unit) {
     ) {
         items(artists, key = { it.name }) { a -> ArtistTile(a, covers[a.name].orEmpty()) { open(Page.Artist(a.name)) } }
     }
+    // the next three rows' pictures read ahead as it scrolls
+    androidx.compose.runtime.LaunchedEffect(grid, artists) {
+        androidx.compose.runtime.snapshotFlow { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+            .collectLatest { last -> kotlinx.coroutines.delay(250); Artists.warmFaces(artists.drop(last + 1).take(18).map { it.name }) }
+    }
 }
 
 /**
- * An artist as a tile: their photo from YouTube Music (asked once it's been in sight a moment, so a fast scroll asks for
- * none; kept after), their record's cover till then; their name, how much of theirs is here.
+ * An artist as a tile: their square picture from YouTube Music (Artists.face: kept, else asked once it's been in sight
+ * half a second, so a fast scroll asks for none; the next ones read ahead as the grid scrolls), developing in from
+ * black. Their record only when no picture's drawn in a second and a half (none found, or one slow to come); one that
+ * comes after develops in over the record, never through black (2026-11-18, as the phone's). Their name, how much of
+ * theirs is here.
  */
 @Composable
 private fun ArtistTile(a: ArtistEntry, records: List<Song>, onClick: () -> Unit) {
     // a click opens them, a double click shuffles their songs here, a right click their options
     var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
-    val photo by androidx.compose.runtime.produceState<String?>(null, a.name) {
+    var photo by remember(a.name) { mutableStateOf(Artists.faceKnown(a.name)) }
+    val pic = remember(photo) { photo?.let { faceSong(a.name, it, photo = true) } }
+    // drawn yet: its picture read, not only its link known (a picture can take seconds to come)
+    val drawn by androidx.compose.runtime.rememberUpdatedState(rememberCover(pic, 400) != null)
+    var stand by remember(a.name) { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(a.name) { kotlinx.coroutines.delay(1_500); if (!drawn) stand = true }
+    androidx.compose.runtime.LaunchedEffect(a.name) {
+        if (photo != null) return@LaunchedEffect
+        photo = Artists.face(a.name, ask = false)
+        if (photo != null) return@LaunchedEffect
         kotlinx.coroutines.delay(500)
-        Artists.of(a.name).collect { i -> i?.photo?.let { value = it } }
+        photo = Artists.face(a.name)
+        if (photo == null) stand = true
     }
     Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick),
         onDoubleClick = felt {
@@ -933,13 +952,15 @@ private fun ArtistTile(a: ArtistEntry, records: List<Song>, onClick: () -> Unit)
         }).rightClick { menuAt = it }) {
         // inside what was clicked, so the menu opens from the click (beside it, from the grid's corner)
         menuAt?.let { ArtistMenu(a.name, it) { menuAt = null } }
-        // their photo where it comes and draws, else the first of their records whose cover there is (the file's own art
-        // first, as every cover); none, their name on ink's sleeve
-        val tries = remember(photo, records) { listOfNotNull(photo?.let { faceSong(a.name, it, photo = true) }) + records }
-        val face by androidx.compose.runtime.produceState<Song?>(records.firstOrNull(), tries) {
-            for (t in tries) if (Covers.of(t, 400) != null) { value = t; return@produceState }
+        // under, the first of their records whose cover there is (the file's own art first, as every cover), once it's
+        // stood in; none, their name on ink's sleeve; over it, their picture developing in
+        val record by androidx.compose.runtime.produceState<Song?>(records.firstOrNull(), records) {
+            for (t in records) if (Covers.of(t, 400) != null) { value = t; return@produceState }
         }
-        CoverOf(face, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 400)
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            if (stand || (photo == null && record == null)) CoverOf(record, a.name, Modifier.fillMaxSize(), px = 400)
+            pic?.let { CoverOf(it, a.name, Modifier.fillMaxSize(), px = 400, nameless = true) }
+        }
         Spacer(Modifier.height(8.dp))
         UnderCover(a.name, listOfNotNull(a.records.takeIf { it > 0 }?.let { "$it ${if (it == 1) "record" else "records"}" },
             "${a.songs} ${if (a.songs == 1) "song" else "songs"}").joinToString("  ·  "))
@@ -1427,7 +1448,7 @@ fun RecordTile(a: Album, modifier: Modifier, said: String = a.artist, onClick: (
 }
 
 @Composable
-fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, moving: Boolean = false) {
+fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, moving: Boolean = false, nameless: Boolean = false) {
     // a station: its own sleeve (its logo small and every shape; a word works)
     if (song?.station == true) return StationCover(song, modifier, moving)
     // 1-bit mode (the Konami code): every cover in the dither, its own colour
@@ -1444,7 +1465,8 @@ fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, moving
         if (cover != null && shown.value < 1f) shown.animateTo(1f, androidx.compose.animation.core.tween(DEVELOP, easing = Motion.expo))
     }
     BoxWithConstraints(modifier) {
-        if (cover == null && (late || song == null)) NameCover(name, maxWidth)
+        // (`nameless`: over something else, a picture that won't come leaves that showing, not its name)
+        if (cover == null && (late || song == null) && !nameless) NameCover(name, maxWidth)
         if (cover != null) Image(cover.image, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop)
     }
 }
