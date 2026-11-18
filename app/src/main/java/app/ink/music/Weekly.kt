@@ -23,12 +23,21 @@ import java.io.File
  * phone's, your server's), else from YouTube Music (the full build; the play build keeps only yours).
  */
 object Weekly {
-    /** A week: its number, the day it came out, its name and a line about it, its songs as they'll play. */
-    data class Week(val week: Int, val date: String, val title: String, val note: String, val songs: List<Song>)
+    /**
+     * A week: its number, the day it came out, its name and a line about it, its songs as they'll play. A special one
+     * (2026-11-18, the GTA mix) may ask for its own `look` ("tape": its covers in the dither, its name on a band across
+     * them, `sides` under it) and a `label` in place of INK WEEKLY.
+     */
+    data class Week(val week: Int, val date: String, val title: String, val note: String, val songs: List<Song>,
+                    val look: String = "", val sides: List<String> = emptyList(), val label: String = "") {
+        val tape get() = look == "tape"
+        val heading get() = label.ifBlank { "ink weekly" }
+    }
 
     /** A song as the week lists it, before it's matched to one that plays. */
     private data class Pick(val title: String, val artist: String, val album: String, val seconds: Int, val video: String, val art: String?)
-    private data class Raw(val week: Int, val date: String, val title: String, val note: String, val picks: List<Pick>)
+    private data class Raw(val week: Int, val date: String, val title: String, val note: String, val picks: List<Pick>,
+                           val look: String = "", val sides: List<String> = emptyList(), val label: String = "")
 
     private val raw = MutableStateFlow<List<Raw>>(emptyList())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -36,7 +45,7 @@ object Weekly {
     /** Every week, newest first, each song matched to your own copy where there is one (again as the library's read). */
     val weeks: StateFlow<List<Week>> = combine(raw, Library.songs) { weeks, library ->
         val mine = library.associateBy { Radio.key(it.title, it.artist) }
-        weeks.map { w -> Week(w.week, w.date, w.title, w.note, w.picks.mapNotNull { p -> mine[Radio.key(p.title, p.artist)] ?: tube(p) }) }
+        weeks.map { w -> Week(w.week, w.date, w.title, w.note, w.picks.mapNotNull { p -> mine[Radio.key(p.title, p.artist)] ?: tube(p) }, w.look, w.sides, w.label) }
             .filter { it.songs.isNotEmpty() }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
@@ -65,7 +74,7 @@ object Weekly {
             val s = w.getJSONArray("songs")
             Raw(w.getInt("week"), w.optString("date"), w.optString("title"), w.optString("note"), (0 until s.length()).map { s.getJSONObject(it) }.map {
                 Pick(it.getString("title"), it.getString("artist"), it.optString("album"), it.optInt("seconds"), it.optString("video"), it.optString("art").ifEmpty { null })
-            })
+            }, w.optString("look"), w.optJSONArray("sides")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(), w.optString("label"))
         }.sortedByDescending { it.week }
     }
 

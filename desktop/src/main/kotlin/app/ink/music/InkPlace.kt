@@ -63,7 +63,7 @@ fun InkWeekly() {
         val wide = room >= 820.dp
         Column {
             Row(verticalAlignment = Alignment.Bottom) {
-                Box(Modifier.size(if (wide) side else room)) { Mosaic(w.songs, Modifier.fillMaxSize()) }
+                Box(Modifier.size(if (wide) side else room)) { WeekCover(w, Modifier.fillMaxSize()) }
                 if (wide) {
                     Spacer(Modifier.width(40.dp))
                     Column(Modifier.weight(1f)) { WeekWords(w, latest, big = true) { chosen = null } }
@@ -102,7 +102,7 @@ fun InkWeekly() {
                 Shelf(gap = 16.dp) {
                     items(before, key = { it.week }) { b ->
                         Column(Modifier.width(120.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { chosen = b.week })) {
-                            Mosaic(b.songs, Modifier.fillMaxWidth().aspectRatio(1f))
+                            WeekCover(b, Modifier.fillMaxWidth().aspectRatio(1f))
                             Spacer(Modifier.height(6.dp))
                             UnderCover(b.title, "vol ${b.week}")
                         }
@@ -117,7 +117,7 @@ fun InkWeekly() {
 @Composable
 private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        BasicText("INK WEEKLY", style = headline(18.sp))
+        BasicText(w.heading.uppercase(), style = headline(18.sp))
         Spacer(Modifier.width(14.dp))
         BasicText(listOf("vol ${w.week}", Weekly.day(w.date), if (latest) "this week" else "").filter { it.isNotEmpty() }.joinToString("  ·  "),
             style = pixel(12.sp, Ink.mid))
@@ -189,6 +189,39 @@ private fun StationTile(c: Stations.Curated, aired: Curation.Aired?, onClick: ()
         if (aired != null) BasicText("playing ${aired.title} by ${aired.artist}".lowercase(), style = pixel(12.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
         else BasicText(c.line.lowercase(), style = pixel(12.sp, Ink.dim), maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
+    }
+}
+
+/**
+ * A week's cover: the tape where it asks for one ([Tape]), else its four covers ([Mosaic]).
+ */
+@Composable
+fun WeekCover(w: Weekly.Week, modifier: Modifier) = if (w.tape) Tape(w, modifier) else Mosaic(w.songs, modifier)
+
+/**
+ * The tape (2026-11-18, the GTA mix, Bronson's pick of three): every one of a week's covers in the dither, each in its
+ * own record's colour, five across and five down (the first again where there are fewer, and under the band), and its name
+ * on a black band across the middle like a cassette's label, its `sides` small under it.
+ */
+@Composable
+fun Tape(w: Weekly.Week, modifier: Modifier) {
+    BoxWithConstraints(modifier.background(Ink.black)) {
+        val side = maxWidth
+        val cell = side / 5
+        val px = with(androidx.compose.ui.platform.LocalDensity.current) { cell.roundToPx() }
+        val all = remember(w.songs) { w.songs.distinctBy { it.art ?: it.albumId } }
+        if (all.isNotEmpty()) Column {
+            // the middle row is under the band: there the first five again, so twenty all show above and below it
+            for (r in 0 until 5) Row { for (c in 0 until 5) Dithered(all[(if (r == 2) c else (if (r < 2) r else r - 1) * 5 + c) % all.size], Modifier.size(cell), px = px, own = true) }
+        }
+        val k = with(androidx.compose.ui.platform.LocalDensity.current) { 1.dp.toSp().value }
+        val big = (side.value * .15f * k).sp
+        Column(Modifier.align(Alignment.Center).fillMaxWidth().background(Ink.black).padding(horizontal = side * .05f, vertical = side * .032f)) {
+            BasicText(w.title.uppercase(), style = headline(big).copy(lineHeight = big * .86f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (w.sides.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top = side * .024f), horizontalArrangement = Arrangement.SpaceBetween) {
+                w.sides.take(2).forEach { BasicText(it.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
     }
 }
 

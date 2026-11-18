@@ -451,7 +451,7 @@ private fun InkWeeklyCover(pages: Pages) {
     val less by Moves.less.collectAsState()
     Column(Modifier.padding(top = 6.dp, bottom = 24.dp)) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicText("INK WEEKLY", style = headline(16.sp))
+            BasicText(w.heading.uppercase(), style = headline(16.sp))
             Spacer(Modifier.width(12.dp))
             BasicText(listOf("vol ${w.week}", Weekly.day(w.date), "this week").filter { it.isNotEmpty() }.joinToString("  ·  "), style = pixel(12.sp, Ink.mid))
         }
@@ -461,9 +461,10 @@ private fun InkWeeklyCover(pages: Pages) {
         fun Covers(modifier: Modifier) = BoxWithConstraints(modifier
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Weekly(w.week)) }),
             contentAlignment = Alignment.BottomStart) {
-            Mosaic(w.songs, Modifier.size(headerSide(maxWidth)))
-            // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
-            BasicText(w.title.uppercase(), style = headline(52.sp).copy(lineHeight = 50.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+            WeekCover(w, Modifier.size(headerSide(maxWidth)))
+            // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it);
+            // the tape has its own band
+            if (!w.tape) BasicText(w.title.uppercase(), style = headline(52.sp).copy(lineHeight = 50.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.background(Ink.black).padding(start = 0.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
         }
         @Composable
@@ -484,8 +485,8 @@ private fun InkWeeklyCover(pages: Pages) {
                         // the covers and the songs beside them only to look at: play the week, shuffle and mix are the
                         // presses; down from them, the week's shelf (2026-11-10: picking a song here as well was twice over)
                         Box(Modifier.size(side), contentAlignment = Alignment.BottomStart) {
-                            Mosaic(w.songs, Modifier.size(side))
-                            BasicText(w.title.uppercase(), style = headline(52.sp).copy(lineHeight = 50.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            WeekCover(w, Modifier.size(side))
+                            if (!w.tape) BasicText(w.title.uppercase(), style = headline(52.sp).copy(lineHeight = 50.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.background(Ink.black).padding(start = 0.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
                         }
                         Spacer(Modifier.width(32.dp))

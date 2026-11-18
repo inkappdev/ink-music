@@ -1922,6 +1922,39 @@ private fun KeptPage(pages: Pages) {
     } }
 }
 
+/**
+ * A week's cover: the tape where it asks for one ([Tape]), else its four covers ([Mosaic]).
+ */
+@Composable
+fun WeekCover(w: Weekly.Week, modifier: Modifier) = if (w.tape) Tape(w, modifier) else Mosaic(w.songs, modifier)
+
+/**
+ * The tape (2026-11-18, the GTA mix, Bronson's pick of three): every one of a week's covers in the dither, each in its
+ * own record's colour, five across and five down (the first again where there are fewer, and under the band), and its name
+ * on a black band across the middle like a cassette's label, its `sides` small under it.
+ */
+@Composable
+fun Tape(w: Weekly.Week, modifier: Modifier) {
+    BoxWithConstraints(modifier.background(Ink.black)) {
+        val side = maxWidth
+        val cell = side / 5
+        val px = with(LocalDensity.current) { cell.roundToPx() }
+        val all = remember(w.songs) { w.songs.distinctBy { it.art ?: it.albumId } }
+        if (all.isNotEmpty()) Column {
+            // the middle row is under the band: there the first five again, so twenty all show above and below it
+            for (r in 0 until 5) Row { for (c in 0 until 5) Dithered(all[(if (r == 2) c else (if (r < 2) r else r - 1) * 5 + c) % all.size], Modifier.size(cell), px = px, own = true) }
+        }
+        val k = with(LocalDensity.current) { 1.dp.toSp().value }
+        val big = (side.value * .15f * k).sp
+        Column(Modifier.align(Alignment.Center).fillMaxWidth().background(Ink.black).padding(horizontal = side * .05f, vertical = side * .032f)) {
+            BasicText(w.title.uppercase(), style = headline(big).copy(lineHeight = big * .86f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (w.sides.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top = side * .024f), horizontalArrangement = Arrangement.SpaceBetween) {
+                w.sides.take(2).forEach { BasicText(it.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+    }
+}
+
 /** Four of a week's covers in the dither, two by two, edge to edge: ink weekly's own cover. */
 @Composable
 fun Mosaic(songs: List<Song>, modifier: Modifier) {
@@ -1993,13 +2026,13 @@ private fun WeeklyPage(number: Int, pages: Pages) {
         item { Column(Modifier.cascade(0)) {
             // its name on its covers, on a black tab in their corner (a sleeve's label: pale covers would swallow it)
             BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
-                Mosaic(w.songs, Modifier.size(headerSide(maxWidth)).align(Alignment.Center))
-                BasicText(w.title.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                WeekCover(w, Modifier.size(headerSide(maxWidth)).align(Alignment.Center))
+                if (!w.tape) BasicText(w.title.uppercase(), style = headline(56.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.background(Ink.black).padding(start = 20.dp, end = 14.dp, top = 8.dp, bottom = 0.dp))
             }
             Column(Modifier.padding(horizontal = 20.dp)) {
                 Spacer(Modifier.height(14.dp))
-                BasicText(listOf("ink weekly", Weekly.day(w.date)).filter { it.isNotEmpty() }.joinToString("   "), style = pixel(12.sp, Ink.mid))
+                BasicText(listOf(w.heading, Weekly.day(w.date)).filter { it.isNotEmpty() }.joinToString("   "), style = pixel(12.sp, Ink.mid))
                 if (w.note.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     BasicText(w.note, style = pixel(13.sp, Ink.ink.copy(alpha = .75f)).copy(lineHeight = 22.sp))

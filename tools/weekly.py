@@ -6,6 +6,12 @@ week to the top of weekly.json at the repo's root, which the apps read from inkh
 after) once it's a few hours old.
 
     python3 tools/weekly.py <playlist link or id> ["THE TITLE"] ["a line about it"] [--push]
+    python3 tools/weekly.py --songs songs.json "THE TITLE" ["a line"] [--look tape] [--side "a: ..."] [--side "b: ..."]
+                            [--label "ink presents"] [--push]
+
+A special issue (2026-11-18, the GTA mix): its songs from a file instead of a playlist (a list of objects as a week
+keeps them: title, artist, album, seconds, video, art), its own look ("tape": the covers in the dither with its name on
+a band across them, the sides under it) and a label in place of "ink weekly". Apps before 2.1.25 show it as any week.
 
 The title is the playlist's own name unless given ("INK WEEKLY · WEEK 2" says "WEEK 2": the app says
 ink weekly above it); the line is the standing one unless given.
@@ -121,10 +127,24 @@ def playlist(link):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if a != "--push"]
-    if len(args) < 1: sys.exit(__doc__)
-    link = args[0]
-    pid, name, songs = playlist(link)
+    raw, args, opts, sides = sys.argv[1:], [], {}, []
+    i = 0
+    while i < len(raw):
+        a = raw[i]
+        if a == "--push": pass
+        elif a in ("--songs", "--look", "--label"): opts[a[2:]] = raw[i + 1]; i += 1
+        elif a == "--side": sides.append(raw[i + 1]); i += 1
+        else: args.append(a)
+        i += 1
+    if "songs" in opts:
+        songs = [{k: s.get(k, "" if k != "seconds" else 0) for k in ("title", "artist", "album", "seconds", "video", "art")}
+                 for s in json.load(open(opts["songs"]))]
+        name = args[0] if args else ""
+        pid = "special-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        args = [pid] + args
+    else:
+        if len(args) < 1: sys.exit(__doc__)
+        pid, name, songs = playlist(args[0])
     # the playlist's name, less the "ink weekly" the app already says
     title = args[1] if len(args) > 1 else re.sub(r"^\s*ink\s+weekly\s*[·:|-]?\s*", "", name, flags=re.I) or name
     note = args[2] if len(args) > 2 else NOTE
@@ -134,6 +154,9 @@ def main():
     number = (max((w["week"] for w in weeks), default=0) + 1) if len(weeks) == len(data["weeks"]) else \
         next(w["week"] for w in data["weeks"] if w.get("playlist") == pid)
     week = {"week": number, "date": datetime.date.today().isoformat(), "title": title, "note": note, "playlist": pid, "songs": songs}
+    if opts.get("look"): week["look"] = opts["look"]
+    if sides: week["sides"] = sides
+    if opts.get("label"): week["label"] = opts["label"]
     data["weeks"] = sorted([week] + weeks, key=lambda w: -w["week"])
     with open(FILE, "w") as f: json.dump(data, f, indent=1, ensure_ascii=False); f.write("\n")
     print(f"week {number}: {title}, {len(songs)} songs")
