@@ -105,7 +105,7 @@ fun TunerDoor(pages: Pages) {
  * TUNER (2026-11-18): new music as clips, one to a screen, swiped up for the next. Each starts at its best part
  * (YouTube's most replayed moment; else the chorus by its lyrics; else a third of the way in) and goes round its 30
  * seconds till you move on. LIKE loves the song; NOT FOR ME, never its artist again; PLAY, the whole song in ink's
- * player. Just watching or swiping on says something too (Tuned): watched 20 s, a little nearer; gone within 3 s,
+ * player. Just watching or swiping on says something too (Tuned): watched 20 s, a little nearer; gone within 5 s,
  * a skip. The taste's made again as you leave a clip you said something about, so what's next follows you.
  */
 @OptIn(UnstableApi::class)
@@ -308,7 +308,7 @@ fun TunerPage(pages: Pages) {
                 val kind = when {
                     liked[t.id] == true -> null
                     watched >= 20_000 -> Tuned.Kind.KEPT
-                    watched < 3_000 -> Tuned.Kind.PASSED
+                    watched < 5_000 -> Tuned.Kind.PASSED   // 5 s (2026-11-18, Bronson: 3 was too quick to be fair)
                     else -> Tuned.Kind.SEEN
                 }
                 if (kind != null) Fresh.tuned?.heard(t.id, t.artist, kind, t.from)
