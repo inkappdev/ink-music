@@ -71,6 +71,12 @@ class Tuned(private val file: File) {
         }
     }
 
+    /** An artist liked here before. */
+    fun likedArtist(artist: String): Boolean = guard.run {
+        val k = Curation.folded(artist.substringBefore(" & "))
+        all.any { it.kind == Kind.LIKED && Curation.folded(it.artist.substringBefore(" & ")) == k }
+    }
+
     /** The clips swiped past at once, as skips. */
     fun skips(): List<Taste.Play> = guard.run { all.filter { it.kind == Kind.PASSED }.map { Taste.Play(it.artist, it.at, 2_000) } }
 

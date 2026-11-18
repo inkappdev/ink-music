@@ -23,7 +23,10 @@ class TunerMix(private val shares: Map<String, Double>, private val random: Rand
     private fun key(s: String) = Curation.folded(s.substringBefore(" & ")).trim()
 
     /** Liked: the artist, and whatever was found through them, nearer this sitting. */
-    fun liked(artist: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) + .6 }
+    fun liked(artist: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) + .6; likes += key(artist) }
+    private val likes = HashSet<String>()
+    /** Liked this sitting. */
+    fun isLiked(artist: String) = key(artist) in likes
     /** Watched a while: a little nearer. */
     fun kept(artist: String, tag: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) + .15; lean[key(tag)] = (lean[key(tag)] ?: 0.0) + .05 }
     /** Swiped past at once: a little further, and what it was found through a touch. */

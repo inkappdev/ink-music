@@ -120,6 +120,9 @@ fun TunerPage(pages: Pages) {
     // the first time: how it learns, typed out, before the first clip plays (and again from "how it learns")
     var intro by remember { mutableStateOf(TUNER_HINT !in Hints.done.value && !Device.tv) }
     val mix = remember { TunerMix(Fresh.tuned?.shares(TunerMix.START) ?: TunerMix.START) }
+    // a fan of them: liked here (now or before), or loved anywhere in ink
+    fun fanOf(artist: String): Boolean = mix.isLiked(artist) || Fresh.tuned?.likedArtist(artist) == true ||
+        Fresh.taste.value.why(artist) == Taste.Why.Loved
     val pager = rememberPagerState { shown.size }
     fun pick(t: Tune): TunerMix.Pick {
         val taste = Fresh.taste.value
@@ -310,6 +313,9 @@ fun TunerPage(pages: Pages) {
                 val kind = when {
                     liked[t.id] == true -> null
                     watched >= 20_000 -> Tuned.Kind.KEPT
+                    // swiped past at once by a fan (an artist you've liked here or love): "not this one", that song only
+                    // (2026-11-18, Bronson: a couple liked, then one swiped past, shouldn't count against them)
+                    watched < 5_000 && fanOf(t.artist) -> Tuned.Kind.SEEN
                     watched < 5_000 -> Tuned.Kind.PASSED   // 5 s (2026-11-18, Bronson: 3 was too quick to be fair)
                     else -> Tuned.Kind.SEEN
                 }
