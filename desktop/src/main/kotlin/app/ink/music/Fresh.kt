@@ -144,6 +144,27 @@ object Fresh {
 
     fun tapped(key: String) = seen.tapped(key)
 
+    /**
+     * One of the day's (the today row's song, station, never played): chosen once an issue and kept all day, as the
+     * phone's. What each kind was on the days before, the newest first, a month of them, is carried from issue to issue
+     * and handed to `choose`, so a day's choice can pass over the last ones (2026-11-18: the phone's song there was one
+     * band's for days on end).
+     */
+    @Synchronized
+    fun ofTheDay(kind: String, choose: (past: List<String>) -> String?): String? {
+        val f = File(Home.dir, "issue.json")
+        val issue = Moment.issue()
+        val read = runCatching { org.json.JSONObject(f.readText()) }.getOrNull()
+        val past = read?.optJSONObject("past") ?: org.json.JSONObject()
+        val o = read?.takeIf { it.optInt("issue") == issue } ?: org.json.JSONObject().put("issue", issue).put("past", past)
+        o.optString(kind).takeIf { it.isNotEmpty() }?.let { return it }
+        val before = past.optJSONArray(kind)?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
+        val picked = choose(before) ?: return null
+        past.put(kind, JSONArray((listOf(picked) + before.filter { it != picked }).take(30)))
+        runCatching { Home.write(f, o.put(kind, picked).put("past", past).toString()) }
+        return picked
+    }
+
     /** How many picked it, 0 to 1 (one critic .2, four and more 1). */
     private fun picked(s: Picks.Shown) = (s.by.size / 4.0).coerceIn(.2, 1.0)
     /** How new, 1 today to 0 a month old (a pick with no date: half). */

@@ -115,6 +115,8 @@ fun ExplorePage(open: (Page) -> Unit) {
             // ink weekly, the cover: ours, new each Friday
             item(key = "weekly") { InkWeekly() }
             today?.let { d -> item(key = "today") { RecordOfTheDay(d, open) } }
+            // the rest of the day's, under it (the phone's since 2026-11-07; here since 2026-11-18, Bronson asked)
+            item(key = "of-the-day") { OfTheDay(songs) }
             if (air.isNotEmpty()) item(key = "air") { OnTheAir(air) }
             // live DJ sets beside what's on the air: the live things together (from listen, 2026-11-12)
             item(key = "live-sets") { LiveSetsShelf(open) }
@@ -251,6 +253,75 @@ private fun RecordOfTheDay(d: Picks.Shown, open: (Page) -> Unit) {
                 }
                 said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
             }
+        }
+    }
+}
+
+/**
+ * The rest of the day's, under the record of the day, as the phone's: a song the critics picked (the nearest to you
+ * not shown in the last month, by no one shown in the last fortnight), a station of ink radio (in turn, not one of the
+ * last week's), and one of your own you've never played, by an artist near you. Each chosen once an issue and kept all
+ * day; a click plays.
+ */
+@Composable
+private fun OfTheDay(songs: List<Picks.Shown>) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val taste by Fresh.taste.collectAsState()
+    val library by Library.songs.collectAsState()
+    val song = remember(songs, taste) {
+        if (songs.isEmpty()) return@remember null
+        val key = Fresh.ofTheDay("song") { past ->
+            val near = Fresh.rank(songs, taste).filter { !it.stretch }.map { Curation.key(it.item.pick) }
+            val lately = past.take(14).map { it.substringBefore('/') }.toSet()
+            near.firstOrNull { it !in past && it.substringBefore('/') !in lately }
+                ?: near.firstOrNull { it !in past } ?: near.firstOrNull { it != past.firstOrNull() } ?: near.firstOrNull()
+        }
+        songs.firstOrNull { Curation.key(it.pick) == key }
+    }
+    val station = remember {
+        val all = Stations.curated()
+        val id = Fresh.ofTheDay("station") { past ->
+            val from = Moment.issue() % all.size.coerceAtLeast(1)
+            val turned = all.drop(from) + all.take(from)
+            (turned.firstOrNull { it.song.id !in past.take(7) } ?: turned.firstOrNull())?.song?.id
+        }
+        all.firstOrNull { it.song.id == id }
+    }
+    val deep by produceState<Song?>(null, library, taste) {
+        if (library.isEmpty() || taste.empty) return@produceState
+        value = withContext(Dispatchers.IO) {
+            val id = Fresh.ofTheDay("deep") { _ ->
+                val heard = History.read().map { it.id }.toHashSet()
+                library.filter { !it.tube && !it.station && it.id !in heard && taste.of(it.albumArtist.ifBlank { it.artist }) >= .3 }
+                    .shuffled(java.util.Random(Moment.issue().toLong())).firstOrNull()?.id
+            }
+            id?.let { Library.song(it) }
+        }
+    }
+    // the song's cover: the feed's, else looked for as a pick's is
+    val songArt by produceState(song?.art, song) { val s = song; if (value == null && s != null) value = Picks.art(s.pick.title, s.pick.artist, s.pick.link, false) }
+    if (song == null && station == null && deep == null) return
+    Column {
+        Section("TODAY", "a song the critics picked, a station, one of yours never played")
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            @Composable
+            fun Block(kind: String, title: String, said: String, art: @Composable (Modifier) -> Unit, go: () -> Unit) {
+                Column(Modifier.width(220.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = go))) {
+                    art(Modifier.fillMaxWidth().aspectRatio(1f))
+                    Spacer(Modifier.height(10.dp))
+                    BasicText(kind, style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BasicText(title.uppercase(), style = headline(16.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                    BasicText(said, style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            song?.let { s ->
+                val face = remember(s, songArt) { if (songArt == s.art) s.face else s.copy(art = songArt).face }
+                Block("song", s.pick.title, s.pick.artist.lowercase(), { m -> CoverOf(face, s.pick.title, m) }) {
+                    Fresh.tapped(Fresh.key(s.pick)); scope.launch { Picks.song(s.pick.title, s.pick.artist)?.let { Player.play(listOf(it)) } }
+                }
+            }
+            station?.let { st -> Block("station", st.song.title, st.city.lowercase(), { m -> StationCover(st.song, m) }) { Player.play(listOf(st.song)) } }
+            deep?.let { d -> Block("never played", d.title, d.artist.lowercase(), { m -> CoverOf(d, d.album.ifEmpty { d.title }, m) }) { Player.play(listOf(d)) } }
         }
     }
 }
