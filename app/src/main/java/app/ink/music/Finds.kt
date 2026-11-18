@@ -47,6 +47,8 @@ object Finds {
                 _weeks.value = Kind.entries.mapNotNull { k -> load(app, k)?.let { k to it } }.toMap()
             }
             refresh(app)
+            // a week read on a phone's data: kept once ink's opened on wifi
+            _weeks.value.forEach { (k, w) -> runCatching { keepOffline(app, k, null, w) } }
         }
     }
 
@@ -70,12 +72,32 @@ object Finds {
             android.util.Log.i("ink-finds", "${k.title}: ${said.size} songs, ${songs.size} found here")
             if (songs.isEmpty()) continue
             val week = Week(System.currentTimeMillis(), songs)
+            keepOffline(c, k, _weeks.value[k], week)
             _weeks.value = _weeks.value + (k to week)
             runCatching {
                 File(c.filesDir, k.file).writeText(JSONObject().put("at", week.at).put("songs", JSONArray(songs.map { it.json() })).toString())
             }
         }
     }
+
+    /**
+     * The week kept on the phone (2026-11-18, Bronson: discoveries offline): on wifi, as keep-what-you-love keeps on wifi
+     * (off there, none); last week's let go, those you've since loved or kept by hand aside (a love keeps its own).
+     */
+    private fun keepOffline(c: Context, k: Kind, last: Week?, week: Week) {
+        if (KeepLoved.mode.value == LoveKeeping.OFF) return
+        val gone = last?.songs.orEmpty().map { it.id }.filter { id -> id !in week.songs.map { it.id } && id !in Loved.ids.value && id in autoKept(c, k) }
+        if (gone.isNotEmpty()) Offline.remove(c, gone)
+        val keep = week.songs.filter(Offline::keepable).filter { it.id !in Offline.kept.value }
+        if (keep.isEmpty() || Quality.metered(c)) return
+        Offline.keep(c, keep, auto = true)
+        runCatching { File(c.filesDir, "finds-kept-${k.name.lowercase()}.json").writeText(JSONArray((autoKept(c, k) + keep.map { it.id }).toList()).toString()) }
+    }
+
+    /** The songs a week's list kept on the phone itself (only those are let go). */
+    private fun autoKept(c: Context, k: Kind): Set<String> = runCatching {
+        JSONArray(File(c.filesDir, "finds-kept-${k.name.lowercase()}.json").readText()).let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }
+    }.getOrDefault(emptySet())
 
     private fun load(c: Context, k: Kind): Week? = runCatching {
         val o = JSONObject(File(c.filesDir, k.file).readText())
