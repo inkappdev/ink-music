@@ -95,7 +95,7 @@ fun TunerDoor(pages: Pages) {
     if (!YouTubeMusic.available) return
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp).border(1.dp, Ink.line)
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Tuner) })
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Tuning.end(); pages.open(Page.Tuner) })
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -119,17 +119,20 @@ fun TunerDoor(pages: Pages) {
 fun TunerPage(pages: Pages) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    // this sitting, kept while you step into an artist's page and back (Tuning)
+    val sit = remember { Tuning.sitting ?: TunerSitting().also { Tuning.sitting = it } }
     // the clips chosen so far (the pager's), and the pool the next are chosen from as you go (TunerMix)
-    val shown = remember { androidx.compose.runtime.mutableStateListOf<Tune>() }
-    val pool = remember { androidx.compose.runtime.mutableStateListOf<Tune>() }
-    var loaded by remember { mutableStateOf(false) }
+    val shown = sit.shown
+    var watchedNow: () -> Long = { 0L }
+    val pool = sit.pool
+    var loaded by sit::loaded
     // the first time: how it learns, typed out, before the first clip plays (and again from "how it learns")
     var intro by remember { mutableStateOf(TUNER_HINT !in Hints.done.value && !Device.tv) }
-    val mix = remember { TunerMix(Fresh.tuned?.shares(TunerMix.START) ?: TunerMix.START) }
+    val mix = sit.mix
     // a fan of them: liked here (now or before), or loved anywhere in ink
     fun fanOf(artist: String): Boolean = mix.isLiked(artist) || Fresh.tuned?.likedArtist(artist) == true ||
         Fresh.taste.value.why(artist) == Taste.Why.Loved
-    val pager = rememberPagerState { shown.size }
+    val pager = rememberPagerState(initialPage = sit.page) { shown.size }
     fun pick(t: Tune): TunerMix.Pick {
         val taste = Fresh.taste.value
         return TunerMix.Pick(t.id, t.artist, t.from, t.tag, maxOf(taste.of(t.artist), .4 * taste.of(t.tag)))
@@ -155,6 +158,8 @@ fun TunerPage(pages: Pages) {
         android.util.Log.d("ink-tuner", "found ${more.size}: ${more.groupingBy { it.from }.eachCount()}, ${more.take(4).joinToString { it.artist }}")
     }
     LaunchedEffect(Unit) {
+        // back from an artist's page: the sitting as it was
+        if (sit.loaded) return@LaunchedEffect
         add(runCatching { TunerFeed.start(ctx) }.getOrDefault(emptyList()))
         fill(3); loaded = true
         // the fans of whom you play most, as they're found
@@ -167,15 +172,15 @@ fun TunerPage(pages: Pages) {
         add(runCatching { TunerFeed.far(ctx, top.take(3), have) }.getOrDefault(emptyList()))
     }
     // what's been found for each clip ahead of it: its streams, and where it starts
-    val streams = remember { mutableStateMapOf<String, Pair<String, String?>?>() }
-    val starts = remember { mutableStateMapOf<String, Long>() }
+    val streams = sit.streams
+    val starts = sit.starts
     // why it starts where it does, said over its line: "most replayed", "from the chorus", "a third in"
-    val startWhy = remember { mutableStateMapOf<String, String>() }
+    val startWhy = sit.startWhy
     // dug: played in full, or its artist's page opened (a strong yes, short of a like)
-    val dug = remember { mutableStateMapOf<String, Boolean>() }
+    val dug = sit.dug
     // what you liked this sitting, for rabbit holes
-    val likedNow = remember { mutableListOf<Tune>() }
-    val liked = remember { mutableStateMapOf<String, Boolean>() }
+    val likedNow = sit.likedNow
+    val liked = sit.liked
     val player = remember {
         val load = androidx.media3.exoplayer.DefaultLoadControl.Builder().setBufferDurationsMs(8_000, 40_000, 1_000, 2_000).build()
         ExoPlayer.Builder(ctx).setLoadControl(load).build().apply {
@@ -214,9 +219,9 @@ fun TunerPage(pages: Pages) {
         }
         player.addListener(listen)
         onDispose {
+            // where you were, to come back to (an artist's page opened, 2026-11-18, Bronson: "exactly where you were")
+            shown.getOrNull(pager.settledPage)?.let { sit.resume(it, player.currentPosition, watchedNow()) }
             player.removeListener(listen); player.release()
-            // the clip in view as it closed: shown, so not shown again
-            shown.getOrNull(pager.settledPage)?.let { Fresh.tuned?.heard(it.id, it.artist, Tuned.Kind.SEEN, it.from, it.title) }
         }
     }
     val life = LocalLifecycleOwner.current
@@ -227,7 +232,7 @@ fun TunerPage(pages: Pages) {
     }
 
     // a still clip's own music video, where its artist has one of that song (else its own id: the cover)
-    val videos = remember { mutableStateMapOf<String, String>() }
+    val videos = sit.videos
     suspend fun videoOf(t: Tune): String {
         videos[t.id]?.let { return it }
         val v = if (t.still) withContext(Dispatchers.IO) { runCatching { TunerFeed.videoOf(t) }.getOrNull() } ?: t.id else t.id
@@ -293,7 +298,8 @@ fun TunerPage(pages: Pages) {
             else MergingMediaSource(source.createMediaSource(MediaItem.fromUri(s.first)), source.createMediaSource(MediaItem.fromUri(s.second!!)))
         hook.join()
         waiting = true; givenId = t.id
-        player.setMediaSource(media, starts[t.id] ?: 0L)
+        // back from an artist's page: where it was, else where it starts
+        player.setMediaSource(media, sit.resumeAt(t.id) ?: starts[t.id] ?: 0L)
         player.prepare(); player.playWhenReady = !intro
         // the music waits under it
         if (Playback.now.value?.playing == true) Playback.toggle()
@@ -316,8 +322,10 @@ fun TunerPage(pages: Pages) {
     }
     // round its 30 seconds; how long it's been watched, for what it says as you leave it
     var watched by remember { mutableLongStateOf(0L) }
+    watchedNow = { watched }
     LaunchedEffect(pager.settledPage, loaded) {
-        watched = 0L
+        sit.page = pager.settledPage
+        watched = sit.watchedFor(shown.getOrNull(pager.settledPage)?.id)
         val t = shown.getOrNull(pager.settledPage) ?: return@LaunchedEffect
         while (isActive) {
             delay(250)
@@ -397,7 +405,7 @@ fun TunerPage(pages: Pages) {
     // the dial's station: each clip its own frequency on the FM band, the needle stepping to it as a clip settles
     val station = shown.getOrNull(pager.settledPage)?.let { frequency(it.id) } ?: 98.7f
 
-    FrostedPage(onClose = { pages.close() }) { _, top -> Box(Modifier.fillMaxSize()) {
+    FrostedPage(onClose = { Tuning.end(); pages.close() }) { _, top -> Box(Modifier.fillMaxSize()) {
         // the dial's height: its readout and its scale, held still at the top while the clips move under it
         val face = 96.dp
         when {
@@ -887,4 +895,43 @@ fun FoundOnTuner(likes: List<Tuned.Heard>, pages: Pages) {
             }
         }
     }
+}
+
+/**
+ * A sitting of TUNER (2026-11-18, Bronson: back from an artist's page, "exactly where you were in that video"): the
+ * clips chosen and the pool, what this sitting has learned, what's been found for each clip, which you were on and
+ * where in it. Kept in memory while you step away into the app; a new one from INK's door or when TUNER is closed.
+ */
+class TunerSitting {
+    val shown = androidx.compose.runtime.mutableStateListOf<Tune>()
+    val pool = androidx.compose.runtime.mutableStateListOf<Tune>()
+    var loaded by mutableStateOf(false)
+    val mix = TunerMix(Fresh.tuned?.shares(TunerMix.START) ?: TunerMix.START)
+    val streams = mutableStateMapOf<String, Pair<String, String?>?>()
+    val starts = mutableStateMapOf<String, Long>()
+    val startWhy = mutableStateMapOf<String, String>()
+    val dug = mutableStateMapOf<String, Boolean>()
+    val likedNow = mutableListOf<Tune>()
+    val liked = mutableStateMapOf<String, Boolean>()
+    val videos = mutableStateMapOf<String, String>()
+    var page = 0
+    private var left: Tune? = null
+    private var leftAt = 0L
+    private var leftWatched = 0L
+
+    /** Stepped away on `t`, at `at` ms, `watched` ms of it watched. */
+    fun resume(t: Tune, at: Long, watched: Long) { left = t; leftAt = at; leftWatched = watched }
+    /** Where `id` was when you stepped away (once), or null. */
+    fun resumeAt(id: String): Long? = if (left?.id == id && leftAt > 0) leftAt.also { leftAt = 0 } else null
+    /** How much of `id` you'd watched before you stepped away (0 for any other). */
+    fun watchedFor(id: String?): Long = if (id != null && left?.id == id) leftWatched else 0L
+    /** The clip in view when the sitting ends: shown, so not shown again for a month. */
+    fun end() { left?.let { Fresh.tuned?.heard(it.id, it.artist, Tuned.Kind.SEEN, it.from, it.title) } }
+}
+
+/** TUNER's sitting, kept across the app's pages while it lasts. */
+object Tuning {
+    var sitting: TunerSitting? = null
+    /** The sitting over: closed, or TUNER opened anew. */
+    fun end() { sitting?.end(); sitting = null }
 }
