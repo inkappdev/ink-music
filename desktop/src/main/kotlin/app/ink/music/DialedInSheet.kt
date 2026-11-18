@@ -180,7 +180,9 @@ private fun Slot(s: DialedIn.Slot, song: Song?, lit: Boolean, big: Boolean, scop
     // or one so dark it would show as black
     val dark by androidx.compose.runtime.produceState(false, cover) { value = cover?.let { c -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { lightness(c.image) < .22f } } ?: false }
     val wantFace = s.kind == DialedIn.Kind.ARTIST || (cover == null && gaveUp) || dark
-    val info by (if (wantFace) Artists.of(s.artist) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
+    // the flow made once per artist: made in the drawing, each redraw had begun a new read of their page (one artist
+    // read every second or so while listen was open, 2026-11-18)
+    val info by remember(wantFace, s.artist) { if (wantFace) Artists.of(s.artist) else kotlinx.coroutines.flow.flowOf(null) }.collectAsState(null)
     val face = (if (wantFace) info?.photo?.let { faceSong(s.artist, it, photo = true) } else null) ?: song
     WithMenu({
         listOf(listOfNotNull(

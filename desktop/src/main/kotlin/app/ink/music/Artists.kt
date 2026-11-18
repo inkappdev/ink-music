@@ -49,6 +49,8 @@ object Artists {
         val key = key(name, id)
         val was = kept(key)
         if (was != null) emit(was)
+        // read in the last half hour: as it is (however often it's asked; the one read then is fresh enough)
+        if (was != null && System.currentTimeMillis() - File(dir, "$key.json").lastModified() < 30 * 60_000L) return@flow
         val found = read(name, id.ifEmpty { was?.id.orEmpty() }, key)
         if (found != null) emit(found) else if (was == null) emit(null)
     }.flowOn(Dispatchers.IO)

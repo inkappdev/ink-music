@@ -638,7 +638,9 @@ private fun MixTile(l: TubeList, onClick: () -> Unit) {
     val lead = remember(l) { TubeMixes.lead(l.said) }
     // their photo from their page (kept); none (yet), black under the words: never the mix's own picture, YouTube's
     // lettering on it (2026-11-17, Bronson: YouTube's own lettering showed through under ink's)
-    val info by (if (lead.isNotEmpty()) YouTubeAccount.artist(lead) else kotlinx.coroutines.flow.flowOf(null)).collectAsState(null)
+    // the flow made once per artist: made in the drawing, each redraw had begun a new read of their page (one artist
+    // read every second or so while listen was open, 2026-11-18)
+    val info by remember(lead) { if (lead.isNotEmpty()) YouTubeAccount.artist(lead) else kotlinx.coroutines.flow.flowOf(null) }.collectAsState(null)
     val face = info?.photo?.let { photoSong(lead, it) }
     val mark = remember(l) { TubeMixes.mark(l.name, l.art) }
     Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {

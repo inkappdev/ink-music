@@ -342,6 +342,8 @@ object YouTubeAccount {
         val key = artistKey(name, id)
         val was = keptRaw(key)?.let(::artistFrom)
         if (was != null) emit(was)
+        // read in the last half hour: as it is (however often it's asked; the one read then is fresh enough)
+        if (was != null && System.currentTimeMillis() - (java.io.File(dir ?: return@flow, "$key.json").lastModified()) < 30 * 60_000L) return@flow
         val found = readShared(name, id)
         if (found != null) emit(found) else if (was == null) emit(null)
     }.flowOn(Dispatchers.IO)
