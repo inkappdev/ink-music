@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 
 /** Charts: three bars rising. */
@@ -71,6 +72,18 @@ private fun Door(name: String, sprite: List<String>, modifier: Modifier, onClick
     }
 }
 
+/** New releases' last shelf from YouTube Music's editors' new-music lists (EditorsNew), read together at most every six hours, without what AI made. Blocking. */
+private fun editorsNew(near: (String) -> Double): Pair<List<String>, List<TubeAlbum>> = runCatching {
+    val read = editorsRead.takeIf { System.currentTimeMillis() - editorsAt < 6 * 3_600_000L }
+        ?: kotlinx.coroutines.runBlocking(Dispatchers.IO) { EditorsNew.LISTS.map { (name, id) -> async { name to EditorsNew.read(id) } }.map { it.await() } }
+            .also { r -> if (r.any { it.second.isNotEmpty() }) { editorsRead = r; editorsAt = System.currentTimeMillis() } }
+    val shelf = EditorsNew.shelf(read, near)
+    val records = shelf.records.map { TubeAlbum("${InnerTube.BASE}/browse/${it.albumId}", it.album.orEmpty(), it.artists.joinToString(" & "), it.art) }
+    shelf.lists to Fresh.ai.without(records, { it.artist }, InnerTube()::onWikipedia)
+}.getOrDefault(emptyList<String>() to emptyList())
+@Volatile private var editorsRead: List<Pair<String, List<InnerTube.Track>>>? = null
+@Volatile private var editorsAt = 0L
+
 /**
  * New releases, ink's (2026-11-18, Bronson: YouTube Music's list alone "has some shit in there"): new from your artists,
  * the critics' records, out this Friday, each a shelf; then the rest of what's out, YouTube Music's (yours signed in,
@@ -80,16 +93,18 @@ private fun Door(name: String, sprite: List<String>, modifier: Modifier, onClick
 @Composable
 fun NewReleasesPage(open: (Page) -> Unit, onClose: () -> Unit) {
     androidx.compose.runtime.LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic() }
-    val youtube by produceState<List<TubeAlbum>?>(null) {
-        value = withContext(Dispatchers.IO) {
+    // the editors' lists' records (EditorsNew); YouTube Music's own new records feed only when those can't be read
+    val also by produceState<Pair<List<String>, List<TubeAlbum>>?>(null) {
+        value = withContext(Dispatchers.IO) { editorsNew(Fresh.taste.value::of) }.takeIf { it.second.isNotEmpty() } ?: (emptyList<String>() to withContext(Dispatchers.IO) {
             runCatching {
                 (TubeAccount.tube() ?: InnerTube()).items("FEmusic_new_releases_albums", 80)
                     .filter { NewOut.kept(it.title, it.subtitle.substringBefore(" • ")) }.mapNotNull(::tubeAlbum)
             }.getOrDefault(emptyList())
                 .ifEmpty { ExploreKept.fresh.orEmpty().filter { NewOut.kept(it.title, it.kind.ifEmpty { "album" }) } }
                 .let { xs -> Fresh.ai.without(xs, { it.artist }, InnerTube()::onWikipedia) }
-        }
+        })
     }
+    val youtube = also?.second
     val critics = Picks.records.shown { it.pick.title to it.pick.artist }
     val songs = Picks.songs.shown { it.pick.title to it.pick.artist }
     val friday by Picks.friday.collectAsState()
@@ -148,7 +163,7 @@ fun NewReleasesPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 }
             }
             item(span = { GridItemSpan(maxLineSpan) }, key = "rest") {
-                Box(Modifier.padding(top = 12.dp)) { Section("ALSO OUT", "youtube music's, the singles and reissues left out") }
+                Box(Modifier.padding(top = 12.dp)) { Section("ALSO OUT", also?.first?.takeIf { it.isNotEmpty() }?.let { "from youtube music's editors: ${it.take(3).joinToString(", ")}" } ?: "youtube music's, the singles and reissues left out") }
             }
             val r = rest
             if (r == null) item(span = { GridItemSpan(maxLineSpan) }) { BasicText("reading", style = pixel(12.sp, Ink.mid)) }

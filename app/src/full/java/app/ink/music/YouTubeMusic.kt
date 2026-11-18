@@ -482,6 +482,21 @@ object YouTubeMusic {
         .map { TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, it.subtitle.substringAfter(" • ").substringBefore(" • ").ifEmpty { it.subtitle }, it.art) }
         .let { xs -> Fresh.ai?.without(xs, { it.artist }, InnerTube()::onWikipedia) ?: xs }
 
+    /**
+     * New releases' last shelf, from YouTube Music's editors' new-music lists (EditorsNew): the lists chosen for your
+     * taste (`near`) and their records, without what AI made. The lists read together, at most every six hours.
+     */
+    suspend fun editorsNew(near: (String) -> Double): Pair<List<String>, List<TubeAlbum>> = withContext(Dispatchers.IO) {
+        val read = editorsRead.takeIf { System.currentTimeMillis() - editorsAt < 6 * 3_600_000L }
+            ?: kotlinx.coroutines.coroutineScope { EditorsNew.LISTS.map { (name, id) -> async { name to EditorsNew.read(id) } }.map { it.await() } }
+                .also { r -> if (r.any { it.second.isNotEmpty() }) { editorsRead = r; editorsAt = System.currentTimeMillis() } }
+        val shelf = EditorsNew.shelf(read, near)
+        val records = shelf.records.map { TubeAlbum("${InnerTube.BASE}/browse/${it.albumId}", it.album.orEmpty(), it.artists.joinToString(" & "), it.art) }
+        shelf.lists to (Fresh.ai?.without(records, { it.artist }, InnerTube()::onWikipedia) ?: records)
+    }
+    @Volatile private var editorsRead: List<Pair<String, List<InnerTube.Track>>>? = null
+    @Volatile private var editorsAt = 0L
+
     /** The charts page's playlists for a place (Charts.of tells them apart). */
     fun chartLists(country: String): List<Pair<String, String>> = InnerTube().chartLists(country)
 

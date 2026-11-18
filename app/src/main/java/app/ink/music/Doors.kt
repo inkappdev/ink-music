@@ -74,7 +74,14 @@ private fun Door(name: String, sprite: List<String>, modifier: Modifier, onClick
 fun NewReleasesPage(pages: Pages) {
     val ctx = LocalContext.current
     androidx.compose.runtime.LaunchedEffect(Unit) { Picks.start(ctx); Picks.startFriday(); Picks.startElectronic() }
-    val youtube by produceState<List<TubeAlbum>?>(null) { value = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.newReleases() }.getOrDefault(emptyList()) } }
+    // the editors' lists' records; YouTube Music's own new records feed only when those can't be read
+    val also by produceState<Pair<List<String>, List<TubeAlbum>>?>(null) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { YouTubeMusic.editorsNew(Fresh.taste.value::of) }.getOrNull()?.takeIf { it.second.isNotEmpty() }
+                ?: (emptyList<String>() to runCatching { YouTubeMusic.newReleases() }.getOrDefault(emptyList()))
+        }
+    }
+    val youtube = also?.second
     val critics = Picks.records.collectAsState().value.unblocked { it.pick.title to it.pick.artist }
     val friday by Picks.friday.collectAsState()
     val songs by Picks.songs.collectAsState()
@@ -118,7 +125,7 @@ fun NewReleasesPage(pages: Pages) {
                 PickTile(remember(r, art) { Picks.shown(r, art) }, pages)
             }
         }
-        item(key = "rest") { Heading("also out", "youtube music's, the singles and reissues left out") }
+        item(key = "rest") { Heading("also out", also?.first?.takeIf { it.isNotEmpty() }?.let { "from youtube music's editors: ${it.take(3).joinToString(", ")}" } ?: "youtube music's, the singles and reissues left out") }
         val r = rest
         if (r == null) item { BasicText("reading", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp)) }
         else items(r.chunked(2)) { row ->

@@ -23,6 +23,7 @@ object YouTubeMusic {
     suspend fun findRecord(title: String, artist: String): TubeAlbum? = null
     fun chartLists(country: String): List<Pair<String, String>> = emptyList()
     fun newReleases(): List<TubeAlbum> = emptyList()
+    suspend fun editorsNew(near: (String) -> Double): Pair<List<String>, List<TubeAlbum>> = emptyList<String>() to emptyList()
     fun byId(vid: String): Song? = null
     fun artist(name: String): TubeArtist? = null
     fun hit(name: String): Song? = null
