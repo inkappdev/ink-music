@@ -16,6 +16,13 @@ import kotlinx.coroutines.withTimeoutOrNull
  * nothing of an artist said not for you, blocked or on the AI list.
  */
 object TunerFeed {
+    /**
+     * The searches' own lane, six at a time (2026-11-18, Bronson: "videos aren't loading"): fans of fans and a rabbit
+     * hole's dozens of reads at once had filled the shared pool, and the clip in view waited behind them for its stream.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val LANE = Dispatchers.IO.limitedParallelism(6)
+
     // not a music video: lyric and visualiser uploads, reactions, covers, karaoke, sped up and slowed, hour-long loops
     private val NOT_A_VIDEO = Regex("""\b(lyrics?\s*video|lyric|reaction|reacts?|karaoke|cover\b|sped\s*up|slowed|nightcore|8d audio|1\s*hour|loop(ed)?\b|tutorial|instrumental)""", RegexOption.IGNORE_CASE)
 
@@ -31,7 +38,7 @@ object TunerFeed {
     }
 
     /** The first pool: the editors' lists' songs and your artists' new videos. */
-    suspend fun start(c: Context): List<Tune> = withContext(Dispatchers.IO) {
+    suspend fun start(c: Context): List<Tune> = withContext(LANE) {
         val taste = Fresh.taste.value
         val editors = EditorsNew.songs(YouTubeMusic.editorsLists(), taste::of).filter { (_, t) -> fine(c, t.videoId, t.title, t.artists.joinToString(" & ")) }
             .map { (list, t) -> val who = t.artists.joinToString(" & ")
@@ -44,7 +51,7 @@ object TunerFeed {
      * Artists whose fans also like those `of` (their YouTube Music pages), new to you (not near you yet), a video or
      * two each, their newest; found through `of`'s artist (the tag a like of them brings forward).
      */
-    suspend fun fans(c: Context, of: List<String>, have: Set<String>, each: Int = 4, from: String = "fans"): List<Tune> = withContext(Dispatchers.IO) {
+    suspend fun fans(c: Context, of: List<String>, have: Set<String>, each: Int = 4, from: String = "fans"): List<Tune> = withContext(LANE) {
         val taste = Fresh.taste.value
         coroutineScope {
             of.map { name ->
@@ -65,7 +72,7 @@ object TunerFeed {
      * Two steps out (2026-11-18, Bronson: "find old crazy music"): artists whose fans also like those that `of`'s fans
      * like, and not near you at all, a video each: further from the middle, where the odd ones are.
      */
-    suspend fun far(c: Context, of: List<String>, have: Set<String>, from: String = "far"): List<Tune> = withContext(Dispatchers.IO) {
+    suspend fun far(c: Context, of: List<String>, have: Set<String>, from: String = "far"): List<Tune> = withContext(LANE) {
         val taste = Fresh.taste.value
         coroutineScope {
             of.map { name ->
@@ -82,7 +89,7 @@ object TunerFeed {
     }
 
     /** Deep cuts: the older videos (a year and more) of artists `of`, a couple each, oldest first. */
-    suspend fun deep(c: Context, of: List<String>, each: Int = 2, from: String = "deep"): List<Tune> = withContext(Dispatchers.IO) {
+    suspend fun deep(c: Context, of: List<String>, each: Int = 2, from: String = "deep"): List<Tune> = withContext(LANE) {
         coroutineScope {
             of.map { name -> async { runCatching { MusicVideos.older(name) }.getOrDefault(emptyList()).take(each).map { Tune(it.id, it.title, it.artist, null, 0, from, name, at = it.at) } } }
                 .awaitAll().flatten()
@@ -93,7 +100,7 @@ object TunerFeed {
      * The decades: YouTube Music's decade lists (its moods & genres page, "Decades": the 60s to the 2000s, by genre),
      * six of them read, the two whose artists are nearest your taste kept.
      */
-    suspend fun decades(c: Context): List<Tune> = withContext(Dispatchers.IO) {
+    suspend fun decades(c: Context): List<Tune> = withContext(LANE) {
         val taste = Fresh.taste.value
         val tube = InnerTube()
         val mood = runCatching { tube.moods() }.getOrDefault(emptyList()).firstOrNull { it.title.equals("decades", true) } ?: return@withContext emptyList()
@@ -109,7 +116,7 @@ object TunerFeed {
      * A rabbit hole (2026-11-18): two likes close together (one found through the other, or the same artist): further in
      * round them, their fans' favorites, their fans' fans' and their deep cuts, all found through the hole's artist.
      */
-    suspend fun hole(c: Context, artist: String, have: Set<String>): List<Tune> = coroutineScope {
+    suspend fun hole(c: Context, artist: String, have: Set<String>): List<Tune> = withContext(LANE) {
         val a = async { fans(c, listOf(artist), have, each = 6, from = "hole") }
         val b = async { far(c, listOf(artist), have, from = "hole") }
         val d = async { deep(c, listOf(artist), each = 3, from = "hole") }
@@ -117,7 +124,7 @@ object TunerFeed {
     }
 
     /** YouTube's up next for a clip (its song's radio, as videos), found through its artist. */
-    suspend fun related(c: Context, t: Tune): List<Tune> = withContext(Dispatchers.IO) {
+    suspend fun related(c: Context, t: Tune): List<Tune> = withContext(LANE) {
         runCatching { InnerTube().queue("RDAMVM${t.id}", 16, t.id, audioOnly = false) }.getOrDefault(emptyList()).drop(1)
             .map { r -> Tune(r.videoId, plain(r.title, r.artists), r.artists.joinToString(" & "), YouTubeMusic.songOf(r), r.seconds, "related", t.artist, still = r.albumId != null) }
             .filter { fine(c, it.id, it.title, it.artist) }.let(::clean)

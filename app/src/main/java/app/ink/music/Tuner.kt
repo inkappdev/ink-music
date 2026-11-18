@@ -71,6 +71,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** One of TUNER's clips: its video, its song and artist, its length (s, 0 not known), the song to love or play (null: found when it's needed). */
 data class Tune(
@@ -287,8 +288,11 @@ fun TunerPage(pages: Pages) {
         }
         launch { for (n in 1..2) tunes.getOrNull(pager.settledPage + n)?.let { launch { streamOf(it) }; launch { replayedOf(it) } } }
         val hook = launch { replayedOf(t) }
-        val s = streamOf(t)
-        if (s == null) { said = "youtube wouldn't play this one. swipe on"; return@LaunchedEffect }
+        val s = withTimeoutOrNull(12_000) { streamOf(t) }
+        if (s == null) {
+            android.util.Log.d("ink-tuner", "no stream for ${t.id} in ${android.os.SystemClock.elapsedRealtime() - settledAt} ms")
+            said = "this one wouldn't load. swipe on"; return@LaunchedEffect
+        }
         val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
         val whole = androidx.media3.datasource.ResolvingDataSource.Factory(http) { spec ->
             val size = Regex("[?&]clen=(\\d+)").find(spec.uri.toString())?.groupValues?.get(1)?.toLongOrNull()
