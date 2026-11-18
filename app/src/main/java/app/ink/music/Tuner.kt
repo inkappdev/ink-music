@@ -167,6 +167,11 @@ fun TunerPage(pages: Pages) {
     var said by remember { mutableStateOf("") }
     var settledAt by remember { mutableLongStateOf(0L) }
     var waiting by remember { mutableStateOf(false) }
+    // whose first frame's been drawn, and which clip the player's been given: a picture shows only once its own clip has
+    // drawn (a flag alone was still set from the last clip as the next page's picture was made, and the player painted
+    // the old video's last frame into it, 2026-11-18, Bronson)
+    var drawnId by remember { mutableStateOf("") }
+    var givenId by remember { mutableStateOf("") }
     // the picture's own shape inside the video (black bars baked into it cut off), measured from its frames as it plays
     var seen by remember { mutableFloatStateOf(0f) }
     var texture by remember { mutableStateOf<TextureView?>(null) }
@@ -174,7 +179,7 @@ fun TunerPage(pages: Pages) {
         val listen = object : Player.Listener {
             // only the clip in view's own first frame: the last one's, drawn again into the new picture, showed the old
             // video while the new loaded (2026-11-18, Bronson)
-            override fun onRenderedFirstFrame() { if (!waiting) return; texture?.let { v -> barsOf(v, shape)?.let { seen = it } }; drawn = true; android.util.Log.d("ink-tuner", "drawn ${android.os.SystemClock.elapsedRealtime() - settledAt} ms after it settled") }
+            override fun onRenderedFirstFrame() { if (!waiting) return; texture?.let { v -> barsOf(v, shape)?.let { seen = it } }; drawn = true; drawnId = givenId; android.util.Log.d("ink-tuner", "drawn ${android.os.SystemClock.elapsedRealtime() - settledAt} ms after it settled") }
             override fun onVideoSizeChanged(v: VideoSize) { if (v.width > 0 && v.height > 0) shape = (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(1f, 2.4f) }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { playing = playWhenReady }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -222,7 +227,7 @@ fun TunerPage(pages: Pages) {
         fill(pager.settledPage + 3)
         val tunes = shown.toList()
         val t = tunes.getOrNull(pager.settledPage) ?: return@LaunchedEffect
-        drawn = false; waiting = false; seen = 0f; said = ""; at = 0L; settledAt = android.os.SystemClock.elapsedRealtime()
+        drawn = false; waiting = false; givenId = ""; seen = 0f; said = ""; at = 0L; settledAt = android.os.SystemClock.elapsedRealtime()
         android.util.Log.d("ink-tuner", "now ${t.id}: ${t.artist} - ${t.title} (${t.from}, through ${t.tag})")
         player.stop(); player.clearMediaItems()
         launch { for (n in 1..2) tunes.getOrNull(pager.settledPage + n)?.let { launch { streamOf(it) }; launch { replayedOf(it) } } }
@@ -238,7 +243,7 @@ fun TunerPage(pages: Pages) {
         val media = if (s.second == null) source.createMediaSource(MediaItem.fromUri(s.first))
             else MergingMediaSource(source.createMediaSource(MediaItem.fromUri(s.first)), source.createMediaSource(MediaItem.fromUri(s.second!!)))
         hook.join()
-        waiting = true
+        waiting = true; givenId = t.id
         player.setMediaSource(media, starts[t.id] ?: 0L)
         player.prepare(); player.playWhenReady = true
         // the music waits under it
@@ -331,7 +336,7 @@ fun TunerPage(pages: Pages) {
                             // its picture's own shape, measured from its frames (black bars in the video itself: a 4:3 film
                             // inside 16:9 showed bars at its sides; YouTube's still hadn't them)
                             modifier = Modifier.covering(shape, eased)
-                                .alpha(if (drawn) 1f else 0f),
+                                .alpha(if (drawnId == t.id) 1f else 0f),
                         )
                         if (here && !playing) BasicText("paused", style = pixel(12.sp), modifier = Modifier.align(Alignment.Center))
                     }
