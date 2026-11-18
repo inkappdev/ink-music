@@ -314,8 +314,6 @@ sealed interface Page {
     data object NewReleases : Page
     /** TUNER: new music as clips, swiped through ([TunerPage]). */
     data object Tuner : Page
-    /** A blend with a friend ([BlendPage]). */
-    data object FriendBlend : Page
     data object AllMoods : Page
     data object Pick : Page
     data object InkRadio : Page
@@ -496,7 +494,6 @@ private fun App() {
                         is Page.Chart -> ChartPage(p.chart, pages)
                         Page.NewReleases -> NewReleasesPage(pages)
                         Page.Tuner -> TunerPage(pages)
-                        Page.FriendBlend -> BlendPage(pages)
                         Page.AllMoods -> AllMoodsPage(pages)
                         Page.Pick -> ArtistPicker("YOUR ARTISTS", skip = false) { pages.back() }
                         Page.InkRadio -> InkRadioPage(pages)

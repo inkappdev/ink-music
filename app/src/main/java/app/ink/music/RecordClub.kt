@@ -68,7 +68,7 @@ object RecordClub {
     }
 }
 
-/** INK's record club card: the week's record, its cover, a critic's words, play from the start, how much you've heard. */
+/** INK's record club card (under TUNER): the week's record, its cover, a critic's words, play from the start, how much you've heard. */
 @Composable
 fun RecordClubCard(records: List<Picks.Shown>, today: Picks.Shown?, pages: Pages) {
     if (!YouTubeMusic.available) return
