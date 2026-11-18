@@ -5,6 +5,7 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.border
@@ -325,6 +326,7 @@ fun TunerPage(pages: Pages) {
     watchedNow = { watched }
     LaunchedEffect(pager.settledPage, loaded) {
         sit.page = pager.settledPage
+        sit.moved(shown.getOrNull(pager.settledPage)?.id)
         watched = sit.watchedFor(shown.getOrNull(pager.settledPage)?.id)
         val t = shown.getOrNull(pager.settledPage) ?: return@LaunchedEffect
         while (isActive) {
@@ -451,10 +453,13 @@ fun TunerPage(pages: Pages) {
                         // tuning in (2026-11-18, Bronson: the develop in, an x-ray or a static effect): till its picture
                         // comes, the clip's still in x-ray (its negative, in its own colour) under static, as between
                         // stations; its picture fades in over it as the static clears
+                        // back from an artist's page: it picks up, its last frame held till the video's there, no tuning in
+                        val held = sit.held(t.id)
                         val come by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f,
-                            androidx.compose.animation.core.tween(if (on) 420 else 0, easing = Motion.expo), label = "tune")
+                            androidx.compose.animation.core.tween(if (on && held == null) 420 else 0, easing = Motion.expo), label = "tune")
                         val xray = remember(accent) { xrayEffect(accent)?.asComposeRenderEffect() }
-                        frame?.let { Image(it.image, null, Modifier.fillMaxSize().graphicsLayer { renderEffect = xray }, contentScale = ContentScale.Crop) }
+                        if (held != null) Image(held, null, Modifier.covering(shape, eased), contentScale = ContentScale.FillBounds)
+                        else frame?.let { Image(it.image, null, Modifier.fillMaxSize().graphicsLayer { renderEffect = xray }, contentScale = ContentScale.Crop) }
                         // only its cover on YouTube and no video of it found: moving art in its place, the cover's picture hidden
                         var moving by remember(t.id) { mutableStateOf(false) }
                         if (here && t.still && videos[t.id] == t.id) TunerMotion(t.title, t.artist.substringBefore(" & "), accent, Modifier.fillMaxSize()) { moving = it }
@@ -481,7 +486,7 @@ fun TunerPage(pages: Pages) {
                             modifier = Modifier.covering(shape, eased)
                                 .alpha(if (drawnId == t.id && !moving) come else 0f),
                         )
-                        if (!moving) Static(1f - come, Modifier.fillMaxSize())
+                        if (!moving && held == null) Static(1f - come, Modifier.fillMaxSize())
                         if (here && !playing && on) BasicText("paused", style = pixel(12.sp), modifier = Modifier.align(Alignment.Center))
                         if (here && burstId == t.id) HeartBurst(burst, Modifier.align(Alignment.Center))
                     }
@@ -501,7 +506,16 @@ fun TunerPage(pages: Pages) {
                             modifier = Modifier.padding(top = 4.dp).padding(horizontal = 20.dp))
                         Word(t.artist.lowercase(), pixel(14.sp, Ink.mid), Modifier.padding(start = 20.dp, top = 2.dp), touch = 6.dp) {
                             dug[t.id] = true
-                            pages.open(Page.Artist(t.artist.substringBefore(" & ")))
+                            // the frame you were on, kept to show as you come back (no tuning in again: it picks up)
+                            val open = { pages.open(Page.Artist(t.artist.substringBefore(" & "))) }
+                            val v = texture
+                            if (v != null && drawnId == t.id && v.width > 0 && v.holder.surface.isValid) runCatching {
+                                val b = android.graphics.Bitmap.createBitmap(v.width / 2, v.height / 2, android.graphics.Bitmap.Config.ARGB_8888)
+                                android.view.PixelCopy.request(v, b, { r ->
+                                    if (r == android.view.PixelCopy.SUCCESS) sit.hold(t.id, b.asImageBitmap()) else b.recycle()
+                                    open()
+                                }, android.os.Handler(android.os.Looper.getMainLooper()))
+                            }.onFailure { open() } else open()
                         }
                         if (here && said.isNotEmpty()) BasicText(said, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp).padding(top = 10.dp))
                     }
@@ -915,6 +929,12 @@ class TunerSitting {
     val liked = mutableStateMapOf<String, Boolean>()
     val videos = mutableStateMapOf<String, String>()
     var page = 0
+    // the frame you were on as you stepped away (for its clip), shown as you come back till the video's there
+    private var heldFrame: Pair<String, androidx.compose.ui.graphics.ImageBitmap>? by mutableStateOf(null)
+    fun hold(id: String, frame: androidx.compose.ui.graphics.ImageBitmap) { heldFrame = id to frame }
+    fun held(id: String) = heldFrame?.takeIf { it.first == id }?.second
+    /** Moved on to another clip: the held frame let go. */
+    fun moved(id: String?) { if (heldFrame != null && heldFrame?.first != id) heldFrame = null }
     private var left: Tune? = null
     private var leftAt = 0L
     private var leftWatched = 0L
