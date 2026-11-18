@@ -13,7 +13,8 @@ import kotlin.math.min
 class Tuned(private val file: File) {
     /** Weakest to strongest: shown only, swiped past at once, watched a while, liked, not for me. */
     enum class Kind { SEEN, PASSED, KEPT, LIKED, NOPE }
-    data class Heard(val id: String, val artist: String, val kind: Kind, val at: Long)
+    /** A clip heard: its id, artist, verdict, when, and the source it came from (TunerMix's). */
+    data class Heard(val id: String, val artist: String, val kind: Kind, val at: Long, val from: String = "")
 
     private val guard = Guard()
     private val all = ArrayList<Heard>()
@@ -24,20 +25,21 @@ class Tuned(private val file: File) {
             val old = nowMs() - 120 * DAY
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                val h = Heard(o.getString("id"), o.getString("artist"), Kind.valueOf(o.getString("kind")), o.getLong("at"))
+                val h = Heard(o.getString("id"), o.getString("artist"), Kind.valueOf(o.getString("kind")), o.getLong("at"), o.optString("from"))
                 if (h.at > old) all += h
             }
         }
     }
 
     /** A clip's verdict (the strongest kept), written down. */
-    fun heard(id: String, artist: String, kind: Kind) = guard.run {
+    fun heard(id: String, artist: String, kind: Kind, from: String = "") = guard.run {
         val was = all.indexOfFirst { it.id == id }
         if (was >= 0 && all[was].kind.ordinal >= kind.ordinal && kind != Kind.NOPE) return@run
+        val source = from.ifEmpty { if (was >= 0) all[was].from else "" }
         if (was >= 0) all.removeAt(was)
-        all += Heard(id, artist, kind, nowMs())
+        all += Heard(id, artist, kind, nowMs(), source)
         val a = JSONArray()
-        all.forEach { a.put(JSONObject().put("id", it.id).put("artist", it.artist).put("kind", it.kind.name).put("at", it.at)) }
+        all.forEach { a.put(JSONObject().put("id", it.id).put("artist", it.artist).put("kind", it.kind.name).put("at", it.at).put("from", it.from)) }
         runCatching { file.getParentFile()?.mkdirs(); file.writeText(a.toString()) }
     }
 
@@ -52,6 +54,21 @@ class Tuned(private val file: File) {
             near[h.artist] = min(.85, (near[h.artist] ?: 0.0) + w * exp(-(now - h.at).coerceAtLeast(0) / DAY.toDouble() / 60.0))
         }
         if (near.isEmpty()) null else Brought("tuner", "", now, near, emptyList())
+    }
+
+    /**
+     * Each source's share for TunerMix: where it started, times how it's done with you (likes count twice, a clip
+     * watched once, against swipes past, a not for me twice, a clip only seen a little), two of each assumed so a few
+     * clips don't swing it; never under a tenth nor over three times.
+     */
+    fun shares(start: Map<String, Double>): Map<String, Double> = guard.run {
+        start.mapValues { (from, base) ->
+            val mine = all.filter { it.from == from }
+            fun n(k: Kind) = mine.count { it.kind == k }.toDouble()
+            val good = 2 * n(Kind.LIKED) + n(Kind.KEPT) + 2
+            val bad = n(Kind.PASSED) + 2 * n(Kind.NOPE) + .3 * n(Kind.SEEN) + 2
+            base * (good / bad).coerceIn(.1, 3.0)
+        }
     }
 
     /** The clips swiped past at once, as skips. */

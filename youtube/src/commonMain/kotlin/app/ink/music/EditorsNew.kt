@@ -25,6 +25,19 @@ object EditorsNew {
         "new jazz impressions" to "RDCLAK5uy_nlJdxcHTlQmkhdN48_-8CjPKyja3x86tQ",
         "country's new crop" to "RDCLAK5uy_n0vqPVYwwLGVv8XMpjj7IovO50hqegreo",
         "released" to "RDCLAK5uy_k5n4srrEB1wgvIjPNTXS9G1ufE9WQxhnA",
+        // beyond English (2026-11-18: chosen the same way, by whose artists are nearest you)
+        "latin now" to "RDCLAK5uy_lOAAW-PX5XUed76iQefCxkOXd6m6ZvyiM",
+        "latin pop before it breaks" to "RDCLAK5uy_lXoTYt3x31LVKo68NbfKdOK1EM98qBDbI",
+        "new tropical generation" to "RDCLAK5uy_kmwgk4Dlix6W33hNl4gaZtO8Iup18nDUM",
+        "afrobeats now" to "RDCLAK5uy_kmq8ZD0NbHbKkZZ6frtlEjd8khfeZrAd0",
+        "fresh sparkling k-pop" to "RDCLAK5uy_kpuUbU8iJ4nMJCwXTKm94T4eO9ixEWY4I",
+        "brand new korean r&b" to "RDCLAK5uy_kF8by5xrvesd2WJVI1iANa2rJKVtNKRzI",
+        "new j-rock" to "RDCLAK5uy_kPg2TV0-JyQhvB-uciA1_WNUELIv6vKGk",
+        "new music hindi" to "RDCLAK5uy_nNhhgRET3NcJ4SJBvqhAIJ6t7vjsQYowc",
+        "new music punjabi" to "RDCLAK5uy_mk3xwsayv9PxawuXS-U6ao9eMeNmSwYAM",
+        "new indian indie" to "RDCLAK5uy_l8jPcXx__5Dsu2D7vTiXPlO8pZhZsjBFk",
+        "fresh arabic" to "RDCLAK5uy_kkDewCncbIEmpbXsGk-2OLy9aWQLMO2-g",
+        "hotlist rap francophone" to "RDCLAK5uy_kFeijgv9TyjJ78k-kWLgCrdFr-2iS5lGM",
     )
     private val UNKNOWN = listOf("fresh new indie", "new alternative indie", "new alt-rock", "new electronica", "your new alternative", "the new roots")
 

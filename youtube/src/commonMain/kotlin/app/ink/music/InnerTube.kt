@@ -166,10 +166,11 @@ class InnerTube(
 
     /**
      * A mix's songs as its player queue (a mix may have no page of its own to browse); with [videoId], the radio
-     * from that song ("RDAMVM<id>"), as you if signed in (YouTube builds it from what you listen to).
+     * from that song ("RDAMVM<id>"), as you if signed in (YouTube builds it from what you listen to). Not `audioOnly`:
+     * each song's music video where it has one (TUNER's up next).
      */
-    fun queue(playlistId: String, max: Int = 50, videoId: String? = null): List<Track> = runCatching {
-        val body = JSONObject().put("playlistId", playlistId).put("isAudioOnly", true).apply { videoId?.let { put("videoId", it) } }
+    fun queue(playlistId: String, max: Int = 50, videoId: String? = null, audioOnly: Boolean = true): List<Track> = runCatching {
+        val body = JSONObject().put("playlistId", playlistId).put("isAudioOnly", audioOnly).apply { videoId?.let { put("videoId", it) } }
         all(post("next", body), "playlistPanelVideoRenderer").mapNotNull { r ->
             val id = r.optString("videoId").ifEmpty { return@mapNotNull null }
             val by = runs(r.optJSONObject("longBylineText"))

@@ -68,7 +68,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** One of TUNER's clips: its video, its song and artist, its length (s, 0 not known), the song to love or play (null: found when it's needed). */
-data class Tune(val id: String, val title: String, val artist: String, val song: Song?, val seconds: Int = 0)
+data class Tune(
+    val id: String, val title: String, val artist: String, val song: Song?, val seconds: Int = 0,
+    /** Its source (TunerMix's: yours, fans, related, editors) and what it was found through (an artist, a list). */
+    val from: String = "", val tag: String = "",
+)
 
 /** How long a clip plays before it goes round again (a tap on PLAY plays the whole song). */
 private const val CLIP = 30_000L
@@ -107,9 +111,44 @@ fun TunerDoor(pages: Pages) {
 fun TunerPage(pages: Pages) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val feed by produceState<List<Tune>?>(null) { value = runCatching { TunerFeed.of(ctx) }.getOrDefault(emptyList()) }
-    val pager = rememberPagerState { feed?.size ?: 0 }
-    val feedNow by androidx.compose.runtime.rememberUpdatedState(feed)
+    // the clips chosen so far (the pager's), and the pool the next are chosen from as you go (TunerMix)
+    val shown = remember { androidx.compose.runtime.mutableStateListOf<Tune>() }
+    val pool = remember { androidx.compose.runtime.mutableStateListOf<Tune>() }
+    var loaded by remember { mutableStateOf(false) }
+    val mix = remember { TunerMix(Fresh.tuned?.shares(TunerMix.START) ?: TunerMix.START) }
+    val pager = rememberPagerState { shown.size }
+    fun pick(t: Tune): TunerMix.Pick {
+        val taste = Fresh.taste.value
+        return TunerMix.Pick(t.id, t.artist, t.from, t.tag, maxOf(taste.of(t.artist), .4 * taste.of(t.tag)))
+    }
+    // chosen up to `upTo` clips, each from the pool as it stands
+    fun fill(upTo: Int) {
+        while (shown.size < upTo) {
+            val p = mix.next(pool.map(::pick), shown.map { it.artist }) ?: break
+            val t = pool.first { it.id == p.id }
+            pool.remove(t); shown.add(t)
+        }
+    }
+    // what's chosen after the next one put back and chosen again (a like or a not for me changes what's next)
+    fun rechoose() {
+        val keep = pager.settledPage + 2
+        while (shown.size > keep) pool.add(0, shown.removeAt(shown.lastIndex))
+        pool.removeAll { !mix.wanted(pick(it)) }
+        fill(pager.settledPage + 3)
+    }
+    fun add(more: List<Tune>) {
+        val have = (shown + pool).map { it.id }.toSet()
+        pool.addAll(more.filter { it.id !in have }.distinctBy { it.id })
+        android.util.Log.d("ink-tuner", "found ${more.size}: ${more.groupingBy { it.from }.eachCount()}, ${more.take(4).joinToString { it.artist }}")
+    }
+    LaunchedEffect(Unit) {
+        add(runCatching { TunerFeed.start(ctx) }.getOrDefault(emptyList()))
+        fill(3); loaded = true
+        // the fans of whom you play most, as they're found
+        val top = topArtists(ctx, 8)
+        add(runCatching { TunerFeed.fans(ctx, top, top.map { Curation.folded(it) }.toSet()) }.getOrDefault(emptyList()))
+        fill(pager.settledPage + 3)
+    }
     // what's been found for each clip ahead of it: its streams, and where it starts
     val streams = remember { mutableStateMapOf<String, Pair<String, String?>?>() }
     val starts = remember { mutableStateMapOf<String, Long>() }
@@ -147,7 +186,7 @@ fun TunerPage(pages: Pages) {
         onDispose {
             player.removeListener(listen); player.release()
             // the clip in view as it closed: shown, so not shown again
-            feedNow?.getOrNull(pager.settledPage)?.let { Fresh.tuned?.heard(it.id, it.artist, Tuned.Kind.SEEN) }
+            shown.getOrNull(pager.settledPage)?.let { Fresh.tuned?.heard(it.id, it.artist, Tuned.Kind.SEEN, it.from) }
         }
     }
     val life = LocalLifecycleOwner.current
@@ -177,13 +216,14 @@ fun TunerPage(pages: Pages) {
     }
 
     val eased by androidx.compose.animation.core.animateFloatAsState(if (seen > 0f) seen else shape, androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo), label = "seen")
-    val list = feed
-    // the clip in view: its stream in the player, from where it starts; the next two found ahead
-    LaunchedEffect(pager.settledPage, list) {
-        val tunes = list ?: return@LaunchedEffect
+    // the clip in view: its stream in the player, from where it starts; the next chosen, and two found ahead
+    LaunchedEffect(pager.settledPage, loaded) {
+        if (!loaded) return@LaunchedEffect
+        fill(pager.settledPage + 3)
+        val tunes = shown.toList()
         val t = tunes.getOrNull(pager.settledPage) ?: return@LaunchedEffect
         drawn = false; waiting = false; seen = 0f; said = ""; at = 0L; settledAt = android.os.SystemClock.elapsedRealtime()
-        android.util.Log.d("ink-tuner", "now ${t.id}: ${t.artist} - ${t.title}")
+        android.util.Log.d("ink-tuner", "now ${t.id}: ${t.artist} - ${t.title} (${t.from}, through ${t.tag})")
         player.stop(); player.clearMediaItems()
         launch { for (n in 1..2) tunes.getOrNull(pager.settledPage + n)?.let { launch { streamOf(it) }; launch { replayedOf(it) } } }
         val hook = launch { replayedOf(t) }
@@ -221,9 +261,9 @@ fun TunerPage(pages: Pages) {
     }
     // round its 30 seconds; how long it's been watched, for what it says as you leave it
     var watched by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(pager.settledPage, list) {
+    LaunchedEffect(pager.settledPage, loaded) {
         watched = 0L
-        val t = list?.getOrNull(pager.settledPage) ?: return@LaunchedEffect
+        val t = shown.getOrNull(pager.settledPage) ?: return@LaunchedEffect
         while (isActive) {
             delay(250)
             if (player.isPlaying) watched += 250
@@ -235,19 +275,24 @@ fun TunerPage(pages: Pages) {
         }
     }
     // a clip left: what that said (watched a while, a little nearer; gone at once, a skip), the taste made again
-    LaunchedEffect(list) {
-        val tunes = list ?: return@LaunchedEffect
+    LaunchedEffect(loaded) {
+        if (!loaded) return@LaunchedEffect
         var was = pager.settledPage
         androidx.compose.runtime.snapshotFlow { pager.settledPage }.collect { now ->
             if (now == was) return@collect
-            tunes.getOrNull(was)?.let { t ->
+            shown.getOrNull(was)?.let { t ->
                 val kind = when {
                     liked[t.id] == true -> null
                     watched >= 20_000 -> Tuned.Kind.KEPT
                     watched < 3_000 -> Tuned.Kind.PASSED
                     else -> Tuned.Kind.SEEN
                 }
-                if (kind != null) Fresh.tuned?.heard(t.id, t.artist, kind)
+                if (kind != null) Fresh.tuned?.heard(t.id, t.artist, kind, t.from)
+                when (kind) {
+                    Tuned.Kind.KEPT -> mix.kept(t.artist, t.tag)
+                    Tuned.Kind.PASSED -> mix.passed(t.artist, t.tag)
+                    else -> {}
+                }
                 if (kind == Tuned.Kind.KEPT || kind == Tuned.Kind.PASSED || liked[t.id] == true) Fresh.build(ctx)
             }
             was = now
@@ -258,12 +303,12 @@ fun TunerPage(pages: Pages) {
 
     FrostedPage(onClose = { pages.close() }) { _, top ->
         when {
-            list == null -> Box(Modifier.fillMaxSize(), Alignment.Center) { BasicText("tuning in", style = pixel(13.sp, Ink.mid)) }
-            list.isEmpty() -> Box(Modifier.fillMaxSize().padding(40.dp), Alignment.Center) {
+            !loaded -> Box(Modifier.fillMaxSize(), Alignment.Center) { BasicText("tuning in", style = pixel(13.sp, Ink.mid)) }
+            shown.isEmpty() -> Box(Modifier.fillMaxSize().padding(40.dp), Alignment.Center) {
                 BasicText("nothing to tune to right now. try again later", style = pixel(13.sp, Ink.mid))
             }
-            else -> VerticalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1, key = { list[it].id }) { page ->
-                val t = list[page]
+            else -> VerticalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1, key = { shown[it].id }) { page ->
+                val t = shown[page]
                 val here = page == pager.settledPage
                 val frame by produceState(frameKept(t.id), t.id) { if (value == null) value = videoFrame(t.id) }
                 val accent = frame?.accent ?: Ink.mid
@@ -299,7 +344,9 @@ fun TunerPage(pages: Pages) {
                         Row(Modifier.fillMaxWidth().padding(top = 26.dp), verticalAlignment = Alignment.CenterVertically) {
                             // not for me: a pixel thumb down, pressed down as it goes on to the next
                             ThumbDown(Modifier.padding(end = 8.dp)) {
-                                Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.NOPE)
+                                Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.NOPE, t.from)
+                                mix.refused(t.artist)
+                                rechoose()
                                 Fresh.notForMe(ctx, t.artist.substringBefore(" & "), "tune:${t.id}")
                                 scope.launch { delay(260); next() }
                             }
@@ -320,7 +367,18 @@ fun TunerPage(pages: Pages) {
                                     val song = t.song ?: withContext(Dispatchers.IO) { YouTubeMusic.byId(t.id) }
                                     song?.let { if ((it.id in Loved.ids.value) == on) Loved.toggle(it) }
                                 }
-                                if (!on) Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.LIKED)
+                                if (!on) {
+                                    Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.LIKED, t.from)
+                                    mix.liked(t.artist)
+                                    // what's like it, found now and chosen from straight away: its up next, its artist's fans' favorites
+                                    scope.launch {
+                                        add(runCatching { TunerFeed.related(ctx, t) }.getOrDefault(emptyList()))
+                                        rechoose()
+                                        val who = t.artist.substringBefore(" & ")
+                                        add(runCatching { TunerFeed.fans(ctx, listOf(who), (shown + pool).map { Curation.folded(it.artist) }.toSet()) }.getOrDefault(emptyList()))
+                                        rechoose()
+                                    }
+                                }
                             }
                         }
                     }
@@ -497,3 +555,12 @@ private fun barsOf(v: TextureView, shape: Float): Float? = runCatching {
     // in the video's own shape (the copy's pixels aren't square when its height was rounded)
     (pw / ph) * (shape / (w.toFloat() / h))
 }.getOrNull()
+
+/** Whom you've played most these three months (TUNER's fans also like starts from them). */
+private suspend fun topArtists(c: android.content.Context, n: Int): List<String> = withContext(Dispatchers.IO) {
+    val since = System.currentTimeMillis() - 90L * 86_400_000
+    History.read(c).filter { it.at >= since && it.artist.isNotBlank() }
+        .groupingBy { it.artist.substringBefore(", ").trim() }.eachCount()
+        .filterKeys { it != "unknown" && !it.equals("various artists", true) }
+        .entries.sortedByDescending { it.value }.take(n).map { it.key }
+}
