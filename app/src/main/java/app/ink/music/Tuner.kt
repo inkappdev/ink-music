@@ -1,6 +1,6 @@
 package app.ink.music
 
-import android.view.TextureView
+import android.view.SurfaceView
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -196,12 +197,14 @@ fun TunerPage(pages: Pages) {
     var givenId by remember { mutableStateOf("") }
     // the picture's own shape inside the video (black bars baked into it cut off), measured from its frames as it plays
     var seen by remember { mutableFloatStateOf(0f) }
-    var texture by remember { mutableStateOf<TextureView?>(null) }
+    // the picture: a SurfaceView, its frames straight to the screen, the video's frame rate told to it (2026-11-18,
+    // Bronson: "a little choppy"; a TextureView's 24 fps landed unevenly on the screen's refresh: 0 dropped, judder)
+    var texture by remember { mutableStateOf<SurfaceView?>(null) }
     DisposableEffect(player) {
         val listen = object : Player.Listener {
             // only the clip in view's own first frame: the last one's, drawn again into the new picture, showed the old
             // video while the new loaded (2026-11-18, Bronson)
-            override fun onRenderedFirstFrame() { if (!waiting) return; texture?.let { v -> barsOf(v, shape)?.let { seen = it } }; drawn = true; drawnId = givenId; android.util.Log.d("ink-tuner", "drawn ${android.os.SystemClock.elapsedRealtime() - settledAt} ms after it settled") }
+            override fun onRenderedFirstFrame() { if (!waiting) return; texture?.let { v -> barsOf(v, shape) { seen = it } }; drawn = true; drawnId = givenId; android.util.Log.d("ink-tuner", "drawn ${android.os.SystemClock.elapsedRealtime() - settledAt} ms after it settled") }
             override fun onVideoSizeChanged(v: VideoSize) { if (v.width > 0 && v.height > 0) shape = (v.width * v.pixelWidthHeightRatio / v.height).coerceIn(1f, 2.4f) }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) { playing = playWhenReady }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -260,6 +263,12 @@ fun TunerPage(pages: Pages) {
         fill(pager.settledPage + 3)
         val tunes = shown.toList()
         val t = tunes.getOrNull(pager.settledPage) ?: return@LaunchedEffect
+        // how the last clip played: its frame rate and what the decoder dropped (2026-11-18: "a little choppy")
+        runCatching {
+            val f = player.videoFormat; val d = player.videoDecoderCounters
+            if (f != null && d != null) android.util.Log.d("ink-tuner", "played ${f.width}x${f.height} at ${f.frameRate} fps, ${f.codecs}: " +
+                "${d.renderedOutputBufferCount} shown, ${d.droppedBufferCount} dropped, ${d.skippedOutputBufferCount} skipped, most in a row ${d.maxConsecutiveDroppedBufferCount}")
+        }
         drawn = false; waiting = false; givenId = ""; seen = 0f; said = ""; at = 0L; settledAt = android.os.SystemClock.elapsedRealtime()
         android.util.Log.d("ink-tuner", "now ${t.id}: ${t.artist} - ${t.title} (${t.from}, through ${t.tag})")
         player.stop(); player.clearMediaItems()
@@ -268,7 +277,7 @@ fun TunerPage(pages: Pages) {
         launch {
             var n = 0
             while (texture?.tag != t.id && n++ < 60) delay(16)
-            texture?.takeIf { it.tag == t.id }?.let { player.setVideoTextureView(it) }
+            texture?.takeIf { it.tag == t.id }?.let { player.setVideoSurfaceView(it) }
         }
         launch { for (n in 1..2) tunes.getOrNull(pager.settledPage + n)?.let { launch { streamOf(it) }; launch { replayedOf(it) } } }
         val hook = launch { replayedOf(t) }
@@ -314,7 +323,7 @@ fun TunerPage(pages: Pages) {
             delay(250)
             if (player.isPlaying) watched += 250
             // the bars measured again a second and a half and four seconds in (a first frame can be dark all over)
-            if (drawn && (watched == 1_500L || watched == 4_000L)) texture?.let { v -> barsOf(v, shape)?.let { seen = it } }
+            if (drawn && (watched == 1_500L || watched == 4_000L)) texture?.let { v -> barsOf(v, shape) { seen = it } }
             val from = starts[t.id] ?: continue
             at = player.currentPosition
             if (at > from + CLIP || (player.duration > 0 && at >= player.duration - 500)) player.seekTo(from)
@@ -356,7 +365,9 @@ fun TunerPage(pages: Pages) {
 
     // a like: the song loved, its artist nearer; what's like it found now and chosen from straight away (its up next, its
     // artist's fans' favorites); a second like close to another (one found through the other) opens a rabbit hole there
+    // a double tap's heart: how many, and for which clip (one count for them all had it pop again over the next clip)
     var burst by remember { mutableStateOf(0) }
+    var burstId by remember { mutableStateOf("") }
     fun like(t: Tune, on: Boolean) {
         liked[t.id] = on
         scope.launch {
@@ -364,7 +375,7 @@ fun TunerPage(pages: Pages) {
             song?.let { if ((it.id in Loved.ids.value) != on) Loved.toggle(it) }
         }
         if (!on) return
-        burst++
+        burstId = t.id; burst++
         Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.LIKED, t.from, t.title)
         mix.liked(t.artist)
         fun k(s: String) = Curation.folded(s.substringBefore(" & "))
@@ -424,7 +435,7 @@ fun TunerPage(pages: Pages) {
                             .pointerInput(t.id) {
                                 detectTapGestures(
                                     onTap = { if (player.playWhenReady) player.pause() else player.play() },
-                                    onDoubleTap = { if (liked[t.id] != true) like(t, true) else burst++ },
+                                    onDoubleTap = { if (liked[t.id] != true) like(t, true) else { burstId = t.id; burst++ } },
                                 )
                             },
                     ) {
@@ -439,10 +450,24 @@ fun TunerPage(pages: Pages) {
                         // only its cover on YouTube and no video of it found: moving art in its place, the cover's picture hidden
                         var moving by remember(t.id) { mutableStateOf(false) }
                         if (here && t.still && videos[t.id] == t.id) TunerMotion(t.title, t.artist.substringBefore(" & "), accent, Modifier.fillMaxSize()) { moving = it }
+                        // the frame's size, for the surface's clip (laid out larger than the frame to crop, a surface isn't
+                        // cut by the page's own clipping: its bounds clip it)
+                        val box = remember { IntArray(2) }
+                        Box(Modifier.fillMaxSize().onSizeChanged { box[0] = it.width; box[1] = it.height })
+                        fun clip(v: SurfaceView) {
+                            if (v.width <= 0 || box[0] <= 0) return
+                            val x = (v.width - box[0]) / 2; val y = (v.height - box[1]) / 2
+                            v.clipBounds = android.graphics.Rect(maxOf(0, x), maxOf(0, y), minOf(v.width, x + box[0]), minOf(v.height, y + box[1]))
+                        }
                         if (here) AndroidView(
-                            factory = { TextureView(it).apply { keepScreenOn = true; tag = t.id; texture = this } },
-                            update = { v -> v.alpha = if (drawnId == t.id && !moving) come else 0f },
-                            onRelease = { v -> player.clearVideoTextureView(v) },
+                            factory = {
+                                SurfaceView(it).apply {
+                                    keepScreenOn = true; tag = t.id; texture = this
+                                    addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ -> clip(v as SurfaceView) }
+                                }
+                            },
+                            update = { v -> v.alpha = if (drawnId == t.id && !moving) come else 0f; clip(v) },
+                            onRelease = { v -> player.clearVideoSurfaceView(v) },
                             // its picture's own shape, measured from its frames (black bars in the video itself: a 4:3 film
                             // inside 16:9 showed bars at its sides; YouTube's still hadn't them)
                             modifier = Modifier.covering(shape, eased)
@@ -450,7 +475,7 @@ fun TunerPage(pages: Pages) {
                         )
                         if (!moving) Static(1f - come, Modifier.fillMaxSize())
                         if (here && !playing && on) BasicText("paused", style = pixel(12.sp), modifier = Modifier.align(Alignment.Center))
-                        if (here) HeartBurst(burst, Modifier.align(Alignment.Center))
+                        if (here && burstId == t.id) HeartBurst(burst, Modifier.align(Alignment.Center))
                     }
                     Column(Modifier.padding(top = 16.dp)) {
                         // a stamp when you've never played them, the year when it's an old one: discoveries, marked
@@ -753,9 +778,19 @@ private fun Dial() {
  * frame, the dark columns at its sides and rows at its top and foot. Null when there are none, or they don't match on
  * both sides (a dark frame, not bars).
  */
-private fun barsOf(v: TextureView, shape: Float): Float? = runCatching {
+private fun barsOf(v: SurfaceView, shape: Float, found: (Float) -> Unit) {
+    if (android.os.Build.VERSION.SDK_INT < 24 || !v.holder.surface.isValid) return
     val w = 160; val h = (w / shape).toInt().coerceAtLeast(40)
-    val b = v.getBitmap(w, h) ?: return null
+    val b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+    // a copy of the surface's frame, scaled to the small bitmap (a surface can't be read as a view is)
+    runCatching {
+        android.view.PixelCopy.request(v, b, { r -> if (r == android.view.PixelCopy.SUCCESS) barsIn(b, shape)?.let(found) else b.recycle() },
+            android.os.Handler(android.os.Looper.getMainLooper()))
+    }.onFailure { b.recycle() }
+}
+
+private fun barsIn(b: android.graphics.Bitmap, shape: Float): Float? = runCatching {
+    val w = b.width; val h = b.height
     fun dark(x: Int, y: Int) = b.getPixel(x, y).let { c -> ((c shr 16) and 255) + ((c shr 8) and 255) + (c and 255) < 54 }
     fun colDark(x: Int) = (0 until h step 3).all { dark(x, it) }
     fun rowDark(y: Int) = (0 until w step 3).all { dark(it, y) }

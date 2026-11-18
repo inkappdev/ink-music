@@ -18,30 +18,39 @@ class TunerMix(private val shares: Map<String, Double>, private val random: Rand
     /** A clip as the mix sees it: its id, artist, source, what it was found through (an artist, a list), how near you. */
     class Pick(val id: String, val artist: String, val from: String, val tag: String, val near: Double)
 
+    // how near this sitting has moved an artist (their own clips), and what was found through them (their up next,
+    // their fans' favorites): a like moves the second far more (2026-11-18, Bronson: a liked artist came round "maybe
+    // too many")
     private val lean = HashMap<String, Double>()
+    private val through = HashMap<String, Double>()
+    private fun up(m: HashMap<String, Double>, k: String, by: Double) { m[k] = (m[k] ?: 0.0) + by }
     private val dropped = HashSet<String>()
     private fun key(s: String) = Curation.folded(s.substringBefore(" & ")).trim()
 
     /** Liked: the artist, and whatever was found through them, nearer this sitting. */
-    fun liked(artist: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) + .6; likes += key(artist) }
+    fun liked(artist: String) { up(lean, key(artist), .2); up(through, key(artist), .6); likes += key(artist) }
     private val likes = HashSet<String>()
     /** Liked this sitting. */
     fun isLiked(artist: String) = key(artist) in likes
     /** Dug (round its clip again, played in full, its artist's page opened): nearer, nearly as a like. */
-    fun dug(artist: String, tag: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) + .35; lean[key(tag)] = (lean[key(tag)] ?: 0.0) + .1 }
+    fun dug(artist: String, tag: String) { up(lean, key(artist), .15); up(through, key(artist), .35); up(through, key(tag), .1) }
     /** Watched a while: a little nearer. */
-    fun kept(artist: String, tag: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) + .15; lean[key(tag)] = (lean[key(tag)] ?: 0.0) + .05 }
+    fun kept(artist: String, tag: String) { up(lean, key(artist), .1); up(through, key(artist), .1); up(through, key(tag), .05) }
     /** Swiped past at once: a little further, and what it was found through a touch. */
-    fun passed(artist: String, tag: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) - .25; lean[key(tag)] = (lean[key(tag)] ?: 0.0) - .08 }
+    fun passed(artist: String, tag: String) { up(lean, key(artist), -.25); up(through, key(tag), -.08) }
     /** Not for me: the artist, and what was found through them, gone. */
     fun refused(artist: String) { dropped += key(artist) }
 
     /** Whether a clip's still wanted (not dropped by a not for me). */
     fun wanted(p: Pick) = key(p.artist) !in dropped && key(p.tag) !in dropped
 
-    /** The next clip from `pool`, never an artist of the last three (`recent`); null when there's none. */
+    /**
+     * The next clip from `pool`, never an artist of the last eight (`recent`, every clip shown this sitting); one
+     * already shown twice this sitting further back with each more. Null when there's none.
+     */
     fun next(pool: List<Pick>, recent: List<String>): Pick? {
-        val away = recent.takeLast(3).map(::key).toSet()
+        val away = recent.takeLast(8).map(::key).toSet()
+        val times = recent.groupingBy(::key).eachCount()
         val open = pool.filter { wanted(it) && key(it.artist) !in away }.ifEmpty { pool.filter(::wanted) }
         if (open.isEmpty()) return null
         // the source, by its share among those with something to give
@@ -50,7 +59,9 @@ class TunerMix(private val shares: Map<String, Double>, private val random: Rand
         var r = random.nextDouble() * weights.sum()
         val from = sources.indices.firstOrNull { i -> r -= weights[i]; r <= 0 }?.let { sources[it] } ?: sources.last()
         // then within it, the nearest you this sitting (a little chance so two sittings don't run the same)
-        return open.filter { it.from == from }.maxByOrNull { it.near + (lean[key(it.artist)] ?: 0.0) + (lean[key(it.tag)] ?: 0.0) + random.nextDouble() * .1 }
+        fun score(p: Pick) = p.near + (lean[key(p.artist)] ?: 0.0) + (through[key(p.tag)] ?: 0.0) -
+            .5 * ((times[key(p.artist)] ?: 0) - 1).coerceAtLeast(0) + random.nextDouble() * .1
+        return open.filter { it.from == from }.maxByOrNull(::score)
     }
 
     companion object {
