@@ -435,7 +435,7 @@ internal fun PickTile(s: Picks.Shown, pages: Pages, reason: String? = null, near
     }
 }
 
-/** The artist of the week: from the indie chart's top fifteen, the very famous passed over; their photo dithered, a line, play. */
+/** The artist of the week: from the indie chart's top fifteen, the very famous passed over; their photo as artist pages draw it, a line, play. */
 /**
  * ink weekly as INK's cover (2026-10-29): its four covers in
  * the dither across the page, its name on a black tab in their corner; the week's artists running across in the giant
@@ -635,7 +635,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, pages: Pages) {
         BasicText("ARTIST OF THE WEEK", style = headline(22.sp))
         BasicText("someone the djs and critics are into, a new one each monday", style = pixel(12.sp, Ink.mid))
         Spacer(Modifier.height(12.dp))
-        i.photo?.let { BoxWithConstraints(Modifier.fillMaxWidth()) { Dithered(remember(it) { faceSong(i.name, it) }, Modifier.size(headerSide(maxWidth))) } }
+        i.photo?.let { BoxWithConstraints(Modifier.fillMaxWidth()) { ArtistPhoto(remember(it) { faceSong(i.name, it) }, Modifier.size(headerSide(maxWidth))) } }
         Spacer(Modifier.height(12.dp))
         BasicText(i.name.uppercase(), style = headline(40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (i.audience.isNotEmpty()) BasicText(i.audience.lowercase().replace("monthly audience", "a month"), style = pixel(12.sp, Ink.mid))

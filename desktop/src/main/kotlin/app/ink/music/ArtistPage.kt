@@ -1,5 +1,11 @@
 package app.ink.music
 
+import androidx.compose.ui.graphics.graphicsLayer
+
+import androidx.compose.ui.graphics.toComposeImageBitmap
+
+import androidx.compose.ui.graphics.toArgb
+
 import androidx.compose.ui.draw.clipToBounds
 import kotlin.math.roundToInt
 import androidx.compose.animation.core.Animatable
@@ -95,20 +101,22 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     val picture = @Composable { side: androidx.compose.ui.unit.Dp ->
         val photo = i?.photo
         if (photo != null) Box(Modifier.size(side)) {
-            val grain by Moving.artistGrain.collectAsState()
-            val dithered = Moving.artistDither.collectAsState().value && !grain
+            val xray by Moving.artistXray.collectAsState()
+            val grain = Moving.artistGrain.collectAsState().value && !xray
+            val dithered = Moving.artistDither.collectAsState().value && !grain && !xray
             val still = remember(photo) { faceSong(name, photo, photo = true) }
             when {
+                xray -> Xrayed(still, Modifier.fillMaxSize())
                 grain -> Grainy(still, Modifier.fillMaxSize())
                 dithered -> Dithered(still, Modifier.fillMaxSize(), own = true)
                 else -> AsItIs(still, Modifier.fillMaxSize())
             }
             val c = rememberCover(still, 1080)
             // in the grain look their clip moves under the grain, out of focus (the player's blur)
-            ArtistVideo(shown, c?.accent ?: Ink.ink, when { grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }, Modifier.fillMaxSize())
+            ArtistVideo(shown, c?.accent ?: Ink.ink, when { xray -> Look.XRAY; grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }, Modifier.fillMaxSize())
             if (grain) FilmGrain(Modifier.fillMaxSize(), moving = true)
             // as it is (or in the grain), a light photo held down so the name over its foot reads (nameDim)
-            if (!dithered && c != null) {
+            if (!dithered && !xray && c != null) {
                 val dim = remember(c) { nameDim(c.image) }
                 if (dim < 1f) Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = 1f - dim)))
             }
@@ -436,6 +444,24 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
 @Composable
 fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value)
 
+/**
+ * An artist's still photo as their page draws it (settings, the look, ARTIST PAGES: dithered, blur, x-ray or clear):
+ * for wherever else their photo stands big (artist of the week, 2026-11-18, Bronson: "should go with what the person
+ * chose for the artist page").
+ */
+@Composable
+fun ArtistPhoto(photo: Song, modifier: Modifier) {
+    val xray by Moving.artistXray.collectAsState()
+    val grain = Moving.artistGrain.collectAsState().value && !xray
+    val dithered = Moving.artistDither.collectAsState().value && !grain && !xray
+    when {
+        xray -> Xrayed(photo, modifier)
+        grain -> Grainy(photo, modifier)
+        dithered -> Dithered(photo, modifier, own = true)
+        else -> AsItIs(photo, modifier)
+    }
+}
+
 /** A picture as it is, filling its space (an artist's photo with the dither off). */
 @Composable
 private fun AsItIs(photo: Song, modifier: Modifier, px: Int = 1080) {
@@ -452,6 +478,33 @@ private val SONGS = 720.dp
  * brought down to .4 at most, evenly, never below .4 of itself; a dark photo stays as it is (1). As the canvas behind
  * the player is held down: evenly, no gradient.
  */
+/**
+ * An artist's photo as an x-ray in its own accent ([Xray]), developing in from black as covers do; black till it's
+ * read. A light x-ray (a dark photo) held down at its foot so the name on it reads, as a clear photo is (nameDim).
+ */
+@Composable
+fun Xrayed(photo: Song, modifier: Modifier) {
+    val cover = rememberCover(photo, 1080)
+    val pic by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, cover) {
+        val c = cover ?: return@produceState
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val img = c.image; val w = img.width; val h = img.height
+            val px = IntArray(w * h).also { img.readPixels(it) }
+            val out = Xray.of(px, c.accent.toArgb())
+            java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB).apply { setRGB(0, 0, w, h, out, 0, w) }.toComposeImageBitmap()
+        }
+    }
+    val shown = remember(photo.id) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(pic) { if (pic != null) shown.animateTo(1f, androidx.compose.animation.core.tween(600, easing = Motion.expo)) }
+    Box(modifier.background(Ink.black)) {
+        pic?.let { p ->
+            androidx.compose.foundation.Image(p, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            val dim = remember(p) { nameDim(p) }
+            if (dim < 1f) Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = 1f - dim)))
+        }
+    }
+}
+
 fun nameDim(image: androidx.compose.ui.graphics.ImageBitmap): Float {
     val w = image.width; val h = image.height
     val side = minOf(w, h); val left = (w - side) / 2; val top = (h - side) / 2

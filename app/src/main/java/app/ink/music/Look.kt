@@ -24,6 +24,8 @@ enum class Look(val word: String, val alpha: Float, val crisp: Boolean) {
     BLUR("blur", .3f, false),
     PIXELS("pixels", .4f, true),
     DITHER("dither", .4f, true),
+    // the cover inside out in its own colour, as film is (Xray; 2026-11-18, Bronson: the artist pages' look, the canvas's too)
+    XRAY("x-ray", .4f, false),
     // the cover (or a song's canvas) itself, no effect, held to half over the black so the words over it read
     AS_IS("clear", .5f, false),
     PLAIN("plain", 0f, false),
@@ -65,6 +67,7 @@ object Looks {
             Look.BLUR -> Grain.lens(src)
             Look.PIXELS -> pixels(src, (shown / (18 * density)).roundToInt().coerceIn(4, 80))
             Look.DITHER -> dither(src, dots(shown, density), accent.toArgb())
+            Look.XRAY -> xray(src, accent.toArgb())
             Look.AS_IS -> src
             Look.PLAIN -> null
         }
@@ -113,6 +116,14 @@ object Looks {
             for (y in 1 until c) for (x in 1 until c) out[(cy * c + y) * n + cx * c + x] = avg
         }
         return Bitmap.createBitmap(out, n, n, Bitmap.Config.ARGB_8888)
+    }
+
+    /** An x-ray in the cover's colour (Xray, shared with the computer), at most 720 px a side. */
+    private fun xray(src: Bitmap, colour: Int): Bitmap {
+        val n = minOf(720, maxOf(src.width, src.height))
+        val s = if (src.width == n && src.height == n) src else Bitmap.createScaledBitmap(src, n, n, true)
+        val px = IntArray(n * n).also { s.getPixels(it, 0, n, 0, 0, n, n) }
+        return Bitmap.createBitmap(Xray.of(px, colour), n, n, Bitmap.Config.ARGB_8888)
     }
 
     private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)

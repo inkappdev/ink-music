@@ -477,7 +477,7 @@ private fun Chart(chart: List<IndieChart.Entry>?, before: Map<String, Int?>?, op
 }
 
 /**
- * The artist of the week: one from the indie chart's top, the same all week, their photo in the dither big, their
+ * The artist of the week: one from the indie chart's top, the same all week, their photo big as artist pages draw it, their
  * name, what's said of them; their best known songs, a station from them, their page.
  */
 @Composable
@@ -510,7 +510,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit)
             val side = featureSide(maxWidth)
             Row(verticalAlignment = Alignment.Bottom) {
                 Box(Modifier.size(side), contentAlignment = Alignment.BottomStart) {
-                    i.photo?.let { Dithered(remember(it) { faceSong(i.name, it, photo = true) }, Modifier.fillMaxSize()) }
+                    i.photo?.let { ArtistPhoto(remember(it) { faceSong(i.name, it, photo = true) }, Modifier.fillMaxSize()) }
                 }
                 Spacer(Modifier.width(32.dp))
                 Column(Modifier.weight(1f)) {

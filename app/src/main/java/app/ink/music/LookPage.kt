@@ -95,12 +95,13 @@ fun LookPage(pages: Pages) {
             val video by Moving.artistVideo.collectAsState()
             val dithered by Moving.artistDither.collectAsState()
             val grain by Moving.artistGrain.collectAsState()
-            val artistWord = if (grain) "blur" else if (dithered) "dithered" else "clear"
+            val xray by Moving.artistXray.collectAsState()
+            val artistWord = if (xray) "x-ray" else if (grain) "blur" else if (dithered) "dithered" else "clear"
             SettingRow("ARTIST PAGES", if (Moving.available) "${if (video) "video" else "photo"} · $artistWord" else artistWord, opened,
                 if (Moving.available) "their photo, or their moving one where apple music has one" else "their photo across their page") {
                 if (Moving.available) Pick(listOf("video" to video, "photo" to !video)) { Moving.set(ctx, artistVideo = it == 0) }
-                Pick(listOf("dithered" to (dithered && !grain), "blur" to grain, "clear" to (!dithered && !grain))) {
-                    Moving.set(ctx, artistDither = it == 0, artistGrain = it == 1)
+                Pick(listOf("dithered" to (dithered && !grain && !xray), "blur" to (grain && !xray), "x-ray" to xray, "clear" to (!dithered && !grain && !xray))) {
+                    Moving.set(ctx, artistDither = it == 0, artistGrain = it == 1, artistXray = it == 2)
                 }
             }
             // whether covers and canvases move: they're video, so on wifi unless you say

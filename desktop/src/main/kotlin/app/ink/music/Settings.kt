@@ -985,7 +985,7 @@ private fun LookSetting(opened: Opened) {
     SettingRow("THE COVER", cover?.word ?: "clear", opened, "the record's cover, still or moving, in an effect of its own") {
         Pick(covers.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(cover = covers[it]) }
     }
-    val behinds = listOf(Look.PLAIN, Look.BLUR, Look.PIXELS, Look.DITHER, Look.AS_IS)
+    val behinds = listOf(Look.PLAIN, Look.BLUR, Look.PIXELS, Look.DITHER, Look.XRAY, Look.AS_IS)
     SettingRow("BEHIND IT", behind.word, opened, if (behind == Look.PLAIN) "plain: the cover's print in the dither beside it, on black"
         else "the cover across the whole window behind the player") {
         Pick(behinds.map { it.word to (it == behind) }) { Looks.set(behinds[it]) }
@@ -1010,11 +1010,13 @@ private fun LookSetting(opened: Opened) {
     val artistVideo by Moving.artistVideo.collectAsState()
     val artistDither by Moving.artistDither.collectAsState()
     val artistGrain by Moving.artistGrain.collectAsState()
-    SettingRow("ARTIST PAGES", "${if (artistVideo) "video" else "photo"} · ${if (artistGrain) "blur" else if (artistDither) "dithered" else "clear"}", opened,
+    val artistXray by Moving.artistXray.collectAsState()
+    SettingRow("ARTIST PAGES", "${if (artistVideo) "video" else "photo"} · ${if (artistXray) "x-ray" else if (artistGrain) "blur" else if (artistDither) "dithered" else "clear"}", opened,
         "their photo, or their moving one where apple music has one") {
         Pick(listOf("video" to artistVideo, "photo" to !artistVideo)) { Moving.set(artistVideo = it == 0) }
-        Pick(listOf("dithered" to (artistDither && !artistGrain), "blur" to artistGrain, "clear" to (!artistDither && !artistGrain))) {
-            Moving.set(artistDither = it == 0, artistGrain = it == 1)
+        Pick(listOf("dithered" to (artistDither && !artistGrain && !artistXray), "blur" to (artistGrain && !artistXray), "x-ray" to artistXray,
+            "clear" to (!artistDither && !artistGrain && !artistXray))) {
+            Moving.set(artistDither = it == 0, artistGrain = it == 1, artistXray = it == 2)
         }
     }
     SettingRow("THE NAME", if (names) "moving" else "still", opened, "the big artist names along the player's foot and on their pages") {

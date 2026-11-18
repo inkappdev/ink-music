@@ -274,6 +274,20 @@ object Effects {
         }
     """
 
+    // x-ray: inside out in the cover's colour (the phone's, and Xray's stills): a frame's range isn't known ahead, so
+    // its light taken through a soft curve, bent (power 1.6) so the black stays deep
+    private const val XRAY = """
+        uniform shader content;
+        uniform half4 ink;
+        half4 main(float2 p) {
+            half4 s = content.eval(p);
+            if (s.a < 0.5) return half4(0.0);
+            float l = dot(float3(s.rgb), float3(0.3, 0.59, 0.11));
+            float v = pow(smoothstep(0.04, 0.96, 1.0 - l), 1.6);
+            return half4(ink.rgb * v, 1.0);
+        }
+    """
+
     private val made = HashMap<String, RuntimeEffect>()
     private fun effect(sksl: String) = synchronized(made) { made.getOrPut(sksl) { RuntimeEffect.makeForShader(sksl) } }
 
@@ -291,6 +305,9 @@ object Effects {
             Look.DITHER -> ImageFilter.makeRuntimeShader(RuntimeShaderBuilder(effect(DITHER)).apply {
                 // whole pixels a dot, as Dither.cells (a zoom of 1.1 had made 6.6: dots of two sizes)
                 uniform("cell", Dither.cell(density, k).toFloat()); uniform("gain", gain)
+                uniform("ink", accent.red, accent.green, accent.blue, 1f)
+            }, "content", null)
+            Look.XRAY -> ImageFilter.makeRuntimeShader(RuntimeShaderBuilder(effect(XRAY)).apply {
                 uniform("ink", accent.red, accent.green, accent.blue, 1f)
             }, "content", null)
             // a whole number of squares across, about 18 dp each (else a strip at the right and foot where none fit)

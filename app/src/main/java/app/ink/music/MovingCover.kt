@@ -55,7 +55,7 @@ object Moving {
     /** The effects a cover takes (blur would hide it; plain is as it is). */
     val coverLooks = listOf(Look.DITHER, Look.PIXELS)
     /** The effects a canvas takes. */
-    val canvasLooks = listOf(Look.BLUR, Look.PIXELS, Look.DITHER)
+    val canvasLooks = listOf(Look.BLUR, Look.PIXELS, Look.DITHER, Look.XRAY)
 
     private val _when = MutableStateFlow(WIFI)
     val whenOn: StateFlow<String> = _when
@@ -77,6 +77,9 @@ object Moving {
     private val _artistGrain = MutableStateFlow(false)
     /** An artist's photo and clip out of focus with film's grain over them (Grainy), whatever [artistDither] says. */
     val artistGrain: StateFlow<Boolean> = _artistGrain
+    private val _artistXray = MutableStateFlow(false)
+    /** An artist's photo and clip as an x-ray in its own colour ([Xray]; 2026-11-18), whatever the two above say. */
+    val artistXray: StateFlow<Boolean> = _artistXray
 
     private fun file(c: Context) = File(c.filesDir, "moving-covers")
 
@@ -100,18 +103,21 @@ object Moving {
         _artistVideo.value = said.getOrNull(3) != "artist photo"
         _artistDither.value = said.getOrNull(4) != "artist as it is"
         _artistGrain.value = said.getOrNull(4) == "artist grain"
+        _artistXray.value = said.getOrNull(5) == "artist x-ray"
     }
 
     fun set(
         c: Context, whenOn: String = _when.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value, canvas: Look? = _canvas.value,
         artistVideo: Boolean = _artistVideo.value, artistDither: Boolean = _artistDither.value, artistGrain: Boolean = _artistGrain.value,
+        artistXray: Boolean = _artistXray.value,
     ) {
         _when.value = whenOn; _cover.value = cover; _canvasOn.value = canvasOn; _canvas.value = canvas
-        _artistVideo.value = artistVideo; _artistDither.value = artistDither; _artistGrain.value = artistGrain
+        _artistVideo.value = artistVideo; _artistDither.value = artistDither; _artistGrain.value = artistGrain; _artistXray.value = artistXray
         val said = if (!canvasOn) "no canvas" else canvas?.let { "canvas ${it.name}" } ?: "canvas as it is"
         runCatching { file(c).writeText(listOf(
             whenOn, cover?.name ?: "as it is", said,
             if (artistVideo) "artist video" else "artist photo", when { artistGrain -> "artist grain"; artistDither -> "artist dithered"; else -> "artist as it is" },
+            if (artistXray) "artist x-ray" else "artist no x-ray",
         ).joinToString("\n")) }
     }
 
@@ -310,12 +316,27 @@ private object Shaders {
         }
     """
 
+    // x-ray: each frame inside out in the cover's colour (Xray's, the stills'): a frame's range isn't known ahead, so
+    // its light taken through a soft curve, bent as the still one is (power 1.6) so the black stays deep
+    private const val XRAY = """
+        uniform shader content;
+        uniform half4 ink;
+        half4 main(float2 p) {
+            half4 s = content.eval(p);
+            if (s.a < 0.5) return half4(0.0);
+            float l = dot(float3(s.rgb), float3(0.3, 0.59, 0.11));
+            float v = pow(smoothstep(0.04, 0.96, 1.0 - l), 1.6);
+            return half4(ink.rgb * v, 1.0);
+        }
+    """
+
     fun effect(look: Look, accent: Color, density: Float, gain: Float, wide: Float): RenderEffect? = if (Build.VERSION.SDK_INT < 33) null else runCatching {
         val s = when (look) {
             Look.DITHER -> RuntimeShader(DITHER).apply {
                 setFloatUniform("cell", Looks.cell(density).toFloat()); setFloatUniform("gain", gain)
                 setFloatUniform("ink", accent.red, accent.green, accent.blue, 1f)
             }
+            Look.XRAY -> RuntimeShader(XRAY).apply { setFloatUniform("ink", accent.red, accent.green, accent.blue, 1f) }
             // a whole number of squares across the cover, about 18 dp each (an 18 dp square left a strip at the
             // right and foot where none fit, the still cover showing through)
             Look.PIXELS -> RuntimeShader(PIXELS).apply {

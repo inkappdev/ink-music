@@ -14,6 +14,8 @@ enum class Look(val word: String, val alpha: Float) {
     BLUR("blur", .3f),
     PIXELS("pixels", .4f),
     DITHER("dither", .4f),
+    // the cover inside out in its own colour, as film is (Xray; 2026-11-18, Bronson: the artist pages' look, the canvas's too)
+    XRAY("x-ray", .4f),
     // the cover itself, held to half over the black so the words over it read
     AS_IS("clear", .5f),
     PLAIN("plain", 0f),
@@ -47,13 +49,17 @@ object Moving {
     private val _artistGrain = MutableStateFlow(false)
     /** An artist's photo and clip out of focus with film's grain over them (Grainy), whatever [artistDither] says. */
     val artistGrain: StateFlow<Boolean> = _artistGrain
+    private val _artistXray = MutableStateFlow(false)
+    /** An artist's photo and clip as an x-ray in its own colour ([Xray]; 2026-11-18), whatever the two above say. */
+    val artistXray: StateFlow<Boolean> = _artistXray
     fun set(on: Boolean = _on.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value,
-            artistVideo: Boolean = _artistVideo.value, artistDither: Boolean = _artistDither.value, artistGrain: Boolean = _artistGrain.value) {
-        put(on, cover, canvasOn, artistVideo, artistDither, artistGrain); LookFile.save()
+            artistVideo: Boolean = _artistVideo.value, artistDither: Boolean = _artistDither.value, artistGrain: Boolean = _artistGrain.value,
+            artistXray: Boolean = _artistXray.value) {
+        put(on, cover, canvasOn, artistVideo, artistDither, artistGrain, artistXray); LookFile.save()
     }
-    internal fun put(on: Boolean, cover: Look?, canvasOn: Boolean, artistVideo: Boolean, artistDither: Boolean, artistGrain: Boolean = false) {
+    internal fun put(on: Boolean, cover: Look?, canvasOn: Boolean, artistVideo: Boolean, artistDither: Boolean, artistGrain: Boolean = false, artistXray: Boolean = false) {
         _on.value = on; _cover.value = cover; _canvasOn.value = canvasOn; _artistVideo.value = artistVideo; _artistDither.value = artistDither
-        _artistGrain.value = artistGrain
+        _artistGrain.value = artistGrain; _artistXray.value = artistXray
     }
 }
 
@@ -100,7 +106,7 @@ internal object LookFile {
         val o = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
         Looks.put(Look.entries.firstOrNull { it.name == o.optString("behind") } ?: Look.PLAIN)
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true),
-            o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true), o.optBoolean("artistGrain", false))
+            o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true), o.optBoolean("artistGrain", false), o.optBoolean("artistXray", false))
         Marquees.put(o.optBoolean("marquee", true))
         CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") } ?: Print.TILES)
         ListCovers.put(o.optBoolean("listCovers", false))
@@ -111,7 +117,7 @@ internal object LookFile {
         runCatching {
             file.writeText(JSONObject().put("behind", Looks.on.value.name).put("moving", Moving.on.value)
                 .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value)
-                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("artistGrain", Moving.artistGrain.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).put("print", CoverPrint.on.value.name).toString())
+                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("artistGrain", Moving.artistGrain.value).put("artistXray", Moving.artistXray.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).put("print", CoverPrint.on.value.name).toString())
         }
     }
 }

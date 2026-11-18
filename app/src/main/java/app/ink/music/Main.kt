@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.border
@@ -1640,11 +1641,13 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
             val photo = i?.photo
             if (photo != null || waiting) BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomStart) {
                 val side = headerSide(maxWidth)
-                val grain by Moving.artistGrain.collectAsState()
-                val dithered = Moving.artistDither.collectAsState().value && !grain
+                val xray by Moving.artistXray.collectAsState()
+                val grain = Moving.artistGrain.collectAsState().value && !xray
+                val dithered = Moving.artistDither.collectAsState().value && !grain && !xray
                 if (photo != null) Box(Modifier.size(side).align(Alignment.Center)) {
                     val still = remember(photo) { photoSong(name, photo) }
                     when {
+                        xray -> Xrayed(still, Modifier.fillMaxSize())
                         grain -> Grainy(still, Modifier.fillMaxSize())
                         dithered -> Dithered(still, Modifier.fillMaxSize(), own = true)
                         else -> AsItIs(still, Modifier.fillMaxSize())
@@ -1652,10 +1655,10 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                     val c = rememberCover(still, 1080)
                     val accent = c?.accent ?: Ink.ink
                     // in the grain look their clip moves under the grain, out of focus (the player's blur)
-                    ArtistVideo(i.name.ifBlank { name }, accent, when { grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }, Modifier.fillMaxSize())
+                    ArtistVideo(i.name.ifBlank { name }, accent, when { xray -> Look.XRAY; grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }, Modifier.fillMaxSize())
                     if (grain) FilmGrain(Modifier.fillMaxSize(), moving = true)
                     // as it is (or in the grain), a light photo held down so the name on it reads (nameDim)
-                    if (!dithered && c != null) {
+                    if (!dithered && !xray && c != null) {
                         val dim = remember(c) { nameDim(c.image) }
                         if (dim < 1f) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 1f - dim)))
                     }
@@ -2273,6 +2276,52 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
 /** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither, tiles or grain. */
 @Composable
 fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value)
+
+/**
+ * An artist's photo as an x-ray in its own accent ([Xray]), developing in from black as covers do; black till it's
+ * read. A light x-ray (a dark photo) held down at its foot so the name on it reads, as a clear photo is (nameDim).
+ */
+@Composable
+private fun Xrayed(photo: Song, modifier: Modifier, px: Int = 1080) {
+    val cover = rememberCover(photo, px)
+    val pic by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, cover) {
+        val c = cover ?: return@produceState
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val img = c.image; val w = img.width; val h = img.height
+            val pixels = IntArray(w * h).also { img.readPixels(it) }
+            android.graphics.Bitmap.createBitmap(Xray.of(pixels, c.accent.toArgb()), w, h, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+        }
+    }
+    val shown = remember(photo.id) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(pic) {
+        if (pic != null) { if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, tween(600, easing = Motion.expo)) }
+    }
+    Box(modifier.background(androidx.compose.ui.graphics.Color.Black)) {
+        pic?.let { p ->
+            Image(p, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop)
+            val dim = remember(p) { nameDim(p) }
+            if (dim < 1f) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 1f - dim)))
+        }
+    }
+}
+
+/**
+ * An artist's still photo as their page draws it (settings, the look, ARTIST PAGES: dithered, blur, x-ray or clear):
+ * for wherever else their photo stands big (artist of the week, 2026-11-18, Bronson: "should go with what the person
+ * chose for the artist page").
+ */
+@Composable
+fun ArtistPhoto(photo: Song, modifier: Modifier) {
+    val xray by Moving.artistXray.collectAsState()
+    val grain = Moving.artistGrain.collectAsState().value && !xray
+    val dithered = Moving.artistDither.collectAsState().value && !grain && !xray
+    when {
+        xray -> Xrayed(photo, modifier)
+        grain -> Grainy(photo, modifier)
+        dithered -> Dithered(photo, modifier, own = true)
+        else -> AsItIs(photo, modifier)
+    }
+}
 
 /** A picture as it is, filling its space (an artist's photo with the dither off). */
 @Composable
