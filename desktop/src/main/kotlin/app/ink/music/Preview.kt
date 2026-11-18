@@ -16,7 +16,9 @@ object Preview {
     val CHOICES = listOf(10, 20, 30)
     @Volatile private var song: String? = null
     @Volatile private var from = 0L
-    /** Where each song's taste begins, chosen once a run (its handover and the player's seek agree on it). */
+    /** Where a song's next taste begins, chosen when it's first asked for (the transition into it and the player's
+     *  seek agree on it) and let go once it plays: played again, it's from somewhere new (2026-11-18, the tester:
+     *  a song gone back to began at the very same place, as if fixed to it). */
     private val starts = ConcurrentHashMap<String, Long>()
 
     fun set(n: Int) { secs.value = n; song = null; starts.clear() }
@@ -25,17 +27,19 @@ object Preview {
     fun next() = set(listOf(0, *CHOICES.toTypedArray()).let { l -> l[(l.indexOf(secs.value) + 1) % l.size] })
 
     /** Where `id`'s taste begins (ms), for a song this long. */
-    fun startOf(id: String, duration: Long): Long = starts.getOrPut(id) {
+    fun startOf(id: String, duration: Long): Long = starts.getOrPut(id) { fresh(duration) }
+
+    private fun fresh(duration: Long): Long {
         val n = secs.value * 1000L
         val at = (duration * (.2 + Math.random() * .5)).toLong()
-        at.coerceAtMost(duration - n - 3_000).coerceAtLeast(0)
+        return at.coerceAtMost(duration - n - 3_000).coerceAtLeast(0)
     }
 
     /** The playing song's taste's end, where the transition hands over (null: preview off, or a station). */
     fun endOf(s: Song, duration: Long): Long? {
         val n = secs.value
         if (n <= 0 || s.station || duration <= 0) return null
-        return startOf(s.id, duration) + n * 1000L
+        return (if (song == s.id) from else startOf(s.id, duration)) + n * 1000L
     }
 
     /** The player's position as it goes (its own thread): a new song sent to its taste, a song heard long enough left. */
@@ -44,7 +48,7 @@ object Preview {
         if (n <= 0 || s.station || duration <= 0) return
         if (song != s.id) {
             song = s.id
-            from = startOf(s.id, duration)
+            from = starts.remove(s.id) ?: fresh(duration)
             // come in by a transition, it's there already
             if (ms < from - 1_000) Player.seek(from)
             return

@@ -152,7 +152,7 @@ object GoToPlaying {
     val asked = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
     fun go(s: Song) {
         if (Nav.place == "songs" && Nav.pages.isEmpty()) asked.tryEmit(s.id)
-        else if (s.album.isNotEmpty() && !s.station && !s.episode) Nav.open(Page.Record(s.albumId))
+        else if (s.album.isNotEmpty() && !s.station && !s.episode) Nav.open(Page.Record(s.albumId, s))
     }
 }
 

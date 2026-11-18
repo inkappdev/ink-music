@@ -130,7 +130,7 @@ private fun nameOf(s: DialedIn.Slot, song: Song?): String = when (s.kind) {
 }
 
 /** A YouTube record by its id ("ya" and its browse id, or its own playlist's). */
-private fun tubeRecord(record: String, song: Song?): TubeAlbum {
+fun tubeRecord(record: String, song: Song?): TubeAlbum {
     val id = record.removePrefix("ya")
     val url = if (id.startsWith("OLAK5uy_")) "${InnerTube.BASE}/playlist?list=$id" else "${InnerTube.BASE}/browse/$id"
     return TubeAlbum(url, song?.album.orEmpty(), song?.albumArtist?.ifEmpty { null } ?: song?.artist.orEmpty(), song?.art)

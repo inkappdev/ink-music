@@ -292,7 +292,7 @@ fun NowColumn(onTuck: () -> Unit, open: (Page) -> Unit) {
                     else if (!n.song.station) open(Page.Artist(n.song.albumArtist.ifBlank { n.song.artist.substringBefore(", ") }))
                 }
                 airedSong?.let { s -> Word("add to a list", pixel(12.sp, Ink.mid), touch = 6.dp) { open(Page.AddTo(s)) } }
-                if (n.song.album.isNotEmpty()) Word(n.song.album.lowercase(), pixel(12.sp, Ink.mid)) { open(Page.Record(n.song.albumId)) }
+                if (n.song.album.isNotEmpty()) Word(n.song.album.lowercase(), pixel(12.sp, Ink.mid)) { open(Page.Record(n.song.albumId, n.song)) }
                 on?.let { BasicText("on ${it.name.lowercase()}", style = pixel(12.sp, Ink.mid)) }
             }
         }

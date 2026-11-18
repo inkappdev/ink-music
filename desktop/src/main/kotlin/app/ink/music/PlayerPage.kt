@@ -273,7 +273,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                 if (s.episode) Word(by.lowercase(), pixel(14.sp)) { show?.let(open) }
                                 else if (s.station && aired != null) Word(by.lowercase(), pixel(14.sp)) { open(Page.Artist(aired.artist!!.substringBefore(", "))) }
                                 else if (!s.station) Word(by.lowercase(), pixel(14.sp)) { open(Page.Artist(s.albumArtist.ifBlank { s.artist.substringBefore(", ") })) }
-                                if (s.album.isNotEmpty() && !s.episode) Word(s.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(s.albumId)) }
+                                if (s.album.isNotEmpty() && !s.episode) Word(s.album.lowercase(), pixel(14.sp, Ink.mid)) { open(Page.Record(s.albumId, s)) }
                                 Spacer(Modifier.height(4.dp))
                                 // an episode's day out ("oct 31"), a song's year
                                 val day = if (s.episode && s.modified > 0) java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(s.modified)).lowercase() else null
@@ -725,7 +725,7 @@ private fun RecordSide(n: Player.Now, open: (Page) -> Unit) {
     if (record.size <= 1) {
         Column {
             BasicText("just this song from ${s0.album.ifEmpty { "its record" }.lowercase()} is here", style = pixel(13.sp, Ink.mid))
-            if (s0.album.isNotEmpty()) Word("its record", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Record(s0.albumId)) }
+            if (s0.album.isNotEmpty()) Word("its record", pixel(14.sp), Modifier.padding(top = 10.dp), touch = 8.dp) { open(Page.Record(s0.albumId, s0)) }
         }
         return
     }

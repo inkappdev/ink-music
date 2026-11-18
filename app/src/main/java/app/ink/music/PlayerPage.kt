@@ -962,8 +962,14 @@ fun rememberLines(n: Now?, on: Boolean): List<Line>? {
     // asked again once the song's length is known: Better Lyrics answers only with it, and a stream's comes a moment
     // after the song does (2026-11-16: what came first then was lrclib's, without word timing or English)
     val known = (n?.duration ?: 0L) > 0
+    // what the lines were found for: kept only while it's the same song, lyrics still on, and its length now known
+    // (lrclib's showing while Better Lyrics is asked); off or another song clears them (since 2.1.22 they'd stayed
+    // up after the lyrics word was turned off: a listener's report, 2026-11-18)
+    val of = remember { arrayOf<String?>(null) }
     val lines by produceState<List<Line>?>(null, n?.artist, n?.title, on, known) {
-        if (!known) value = null
+        val song = "${n?.artist}\u0000${n?.title}"
+        if (!known || !on || of[0] != song) value = null
+        of[0] = song
         // a station's song: live, its place unknown, so no lines to follow
         // nor a podcast's episode (its notes are where its lyrics would be)
         if (n == null || !on || n.song?.station == true || n.song?.episode == true) return@produceState

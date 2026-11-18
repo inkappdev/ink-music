@@ -264,7 +264,8 @@ fun quit(): Nothing {
 
 /** What's over the library: a record, an artist, the player. */
 sealed interface Page {
-    data class Record(val id: String) : Page
+    /** A record of yours; `song`, one of its songs, finds it on YouTube Music when it isn't yours (a stream's). */
+    data class Record(val id: String, val song: Song? = null) : Page
     /** An artist's page: by name (found on YouTube Music), or by their page's id there too. */
     data class Artist(val name: String, val id: String = "") : Page
     data object Find : Page
@@ -545,7 +546,7 @@ private fun App() {
                         LocalOpened provides opened) {
                     when (page) {
                         null -> LibraryPage(place, frame == Frame.NARROW, { place = it }) { pages += it }
-                        is Page.Record -> RecordPage(page.id, { pages += it }) { Nav.close() }
+                        is Page.Record -> RecordPage(page.id, page.song, { pages += it }) { Nav.close() }
                         is Page.Artist -> ArtistPage(page.name, page.id, { pages += it }) { Nav.close() }
                         is Page.Watch -> WatchPage(page.clip, page.list, { pages += it }) { Nav.close() }
                         Page.Find -> Column(Modifier.fillMaxSize()) { Close { Nav.close() }; FindTab { pages += it } }
@@ -1184,7 +1185,7 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
         listOfNotNull(
             // an episode's show where a song's record and artist are
             Pods.page(s)?.let { p -> "show" to { go(p) } }?.takeIf { open != null && s.episode },
-            ("record" to { go(Page.Record(s.albumId)) }).takeIf { open != null && s.album.isNotEmpty() && !s.episode },
+            ("record" to { go(Page.Record(s.albumId, s)) }).takeIf { open != null && s.album.isNotEmpty() && !s.episode },
             ("artist" to { go(Page.Artist(s.albumArtist)) }).takeIf { open != null && !s.episode },
             // a file of yours: shown where it is (Explorer, the Finder)
             file?.let { f -> (if (Home.mac) "show in finder" else "show in folder") to { SongLink.reveal(f) } },
@@ -1523,10 +1524,30 @@ internal fun filled(mine: List<Song>, whole: List<Song>?): List<Song> {
     return out + left
 }
 
+/**
+ * The record of a song that isn't yours (YouTube Music's, a stream's): its page there, by its id where the song has it,
+ * else found by its name and whose it is. A record name clicked had opened a black page (2026-11-18, a listener).
+ */
 @Composable
-private fun RecordPage(id: String, open: (Page) -> Unit, onClose: () -> Unit) {
+private fun ElsewhereRecord(id: String, song: Song, open: (Page) -> Unit, onClose: () -> Unit) {
+    val artist = song.albumArtist.ifBlank { song.artist.substringBefore(", ") }
+    var gone by remember(id) { androidx.compose.runtime.mutableStateOf(false) }
+    val found by androidx.compose.runtime.produceState<TubeAlbum?>(if (id.startsWith("ya")) tubeRecord(id, song) else null, id) {
+        if (value != null || Local.on) return@produceState
+        value = runCatching { YouTube.search("$artist ${song.album}")?.albums?.firstOrNull { Pipe.same(it.title, it.artist, song.album, artist) } }.getOrNull()
+        if (value == null) gone = true
+    }
+    found?.let { return TubeRecordPage(it, open, onClose) }
+    Column(Modifier.fillMaxSize()) {
+        Close(onClose)
+        BasicText(if (gone || Local.on) "not found on youtube music" else "looking", style = pixel(14.sp, Ink.mid), modifier = Modifier.padding(start = SIDE, top = 16.dp))
+    }
+}
+
+@Composable
+private fun RecordPage(id: String, song: Song?, open: (Page) -> Unit, onClose: () -> Unit) {
     val albums by Library.albums.collectAsState()
-    val a = albums.firstOrNull { it.id == id } ?: return Close(onClose)
+    val a = albums.firstOrNull { it.id == id } ?: return if (song != null) ElsewhereRecord(id, song, open, onClose) else Close(onClose)
     // the record whole: what you have of it, and the rest from YouTube Music in its place in the record's order, dimmed
     // (2026-11-10, Bronson: "youtube music doesn't fill in the rest of the full album")
     val whole by androidx.compose.runtime.produceState<List<Song>?>(null, a.id) { value = YouTube.whole(a.title, a.artist) }
