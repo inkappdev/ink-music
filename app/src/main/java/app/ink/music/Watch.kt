@@ -457,3 +457,26 @@ object Wide {
 }
 
 private fun time(ms: Long): String { val s = ms / 1000; return "%d:%02d".format(s / 60, s % 60) }
+
+/**
+ * INK's live sessions (2026-11-18, LiveSessions: KEXP, Tiny Desk, COLORS and more): the artists near you first, then
+ * the newest, one of each artist (KEXP puts up each song of a session apart); each its frame, who, what and where.
+ */
+@Composable
+fun LiveSessionsShelf(all: List<LiveSessions.One>, pages: Pages) {
+    val taste by Fresh.taste.collectAsState()
+    val shown = androidx.compose.runtime.remember(all, taste) {
+        val (near, rest) = all.partition { taste.of(it.artist) >= .2 }
+        (near.sortedByDescending { taste.of(it.artist) } + rest).distinctBy { it.artist.lowercase() }.take(24)
+    }
+    val clips = shown.map { MusicVideos.Clip(it.id, if (it.what == "full session") "live" else it.what, it.artist, it.at) }
+    Heading("live sessions", "kexp, tiny desk, colors and more")
+    Shelf(shown.indices.toList()) { i ->
+        val s = shown[i]
+        Column(Modifier.width(240.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { pages.open(Page.Watch(clips[i], clips)) })) {
+            ClipFrame(clips[i], Modifier.fillMaxWidth().aspectRatio(16 / 9f))
+            Spacer(Modifier.height(8.dp))
+            UnderCover(s.artist, "${s.what}  ·  ${s.says}", pixel(12.sp, Ink.mid))
+        }
+    }
+}

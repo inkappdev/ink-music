@@ -44,7 +44,13 @@ object TunerFeed {
             .map { (list, t) -> val who = t.artists.joinToString(" & ")
                 Tune(t.videoId, plain(t.title, t.artists), who, YouTubeMusic.songOf(t), t.seconds, "editors", list, still = t.albumId != null) }
         val yours = MusicVideos.clips.value.filter { fine(c, it.id, it.title, it.artist) }.map { Tune(it.id, it.title, it.artist, null, 0, "yours", it.artist, at = it.at) }
-        clean((editors + yours).distinctBy { it.id })
+        // live sessions (KEXP, Tiny Desk, COLORS...): the artists near you, and as many new to you
+        val all = LiveSessions.all.value.filter { fine(c, it.id, it.what, it.artist) }
+        val (near, far) = all.partition { taste.of(it.artist) >= .1 }
+        val sessions = (near.take(20) + far.shuffled().take(20)).map { s ->
+            Tune(s.id, if (s.what == "full session") "live" else s.what, s.artist, null, 0, "sessions", s.says, at = s.at)
+        }
+        clean((editors + yours + sessions).distinctBy { it.id })
     }
 
     /**

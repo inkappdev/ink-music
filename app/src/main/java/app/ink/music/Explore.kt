@@ -93,6 +93,8 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val air by Picks.onAir.collectAsState()
     val chart by Listen.indie.collectAsState()
     val liveSets by LiveSets.clips.collectAsState()
+    val sessions by LiveSessions.all.collectAsState()
+    LaunchedEffect(Unit) { LiveSessions.start(ctx) }
     val before = remember(chart) { IndieChart.before(ctx) }
     val moods by produceState<List<TubeMood>?>(Moods.kept(ctx)) { value = Moods.read(ctx) ?: value }
     val scope = rememberCoroutineScope()
@@ -131,6 +133,7 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             Spacer(Modifier.height(14.dp))
         }
         // live DJ sets, beside what's on the air: the live things together (from listen, 2026-11-12)
+        if (sessions.isNotEmpty() && !tv) item(key = "sessions") { LiveSessionsShelf(sessions, pages) }
         if (liveSets.isNotEmpty()) item(key = "liveSets") { LiveSetsShelf(liveSets, pages) }
         item(key = "radio") { InkRadioShelf(pages) }
         item(key = "festivals") { FestivalsShelf(pages) }

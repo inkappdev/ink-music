@@ -580,6 +580,7 @@ private fun whyOf(t: Tune): String {
         "decades" -> tag
         "far" -> "two steps out from $tag"
         "hole" -> "down the rabbit hole from $tag"
+        "sessions" -> tag
         else -> ""
     }
 }

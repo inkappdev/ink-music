@@ -70,6 +70,8 @@ class TunerMix(private val shares: Map<String, Double>, private val random: Rand
             "yours" to 1.0, "fans" to 1.0, "related" to 1.3, "editors" to 1.0,
             // the older and further out: an artist's deep cuts, the decades' lists, fans of fans, a rabbit hole's
             "deep" to .8, "decades" to .6, "far" to .7, "hole" to 1.6,
+            // bands live in a room: KEXP, Tiny Desk, COLORS and the rest
+            "sessions" to 1.0,
         )
     }
 }
