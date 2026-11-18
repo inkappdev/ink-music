@@ -56,6 +56,14 @@ object MusicVideos {
         videos.also { if (theirs.isNotEmpty()) byArtist[name.lowercase()] = it }
     }
 
+    /** An artist's older music videos, a year old and more, oldest first (TUNER's deep cuts). */
+    suspend fun older(name: String, browseId: String = ""): List<Clip> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val theirs = runCatching { channelsFor(name, browseId, now) }.getOrDefault(emptyList())
+        theirs.flatMap { ch -> TubeVideos.uploads(ch.id).filter { it.days >= 365 && TubeVideos.isVideo(it, name, ch) } }
+            .distinctBy { it.id }.sortedByDescending { it.days }.take(8).map { clip(it, name, now) }
+    }
+
     private fun channelsFor(name: String, browseId: String, now: Long): List<TubeVideos.Channel> {
         channels[name.lowercase()]?.takeIf { it.first.isNotEmpty() || now - it.second < 7 * 86_400_000L }?.let { return it.first }
         val id = browseId.takeIf { it.startsWith("UC") } ?: runCatching { InnerTube().searchItems(name, InnerTube.Kind.ARTIST, 3) }.getOrNull()
@@ -79,7 +87,8 @@ object MusicVideos {
             .groupingBy { it.artist.substringBefore(", ").trim() }.eachCount()
             .filterKeys { it != "unknown" && !it.equals("various artists", true) }
             .entries.sortedByDescending { it.value }.map { it.key }
-        return (Seeds.artists.value.map { it.name } + played).distinctBy { it.lowercase() }.take(30)
+        // the artists you took to on TUNER among them (2026-11-18): their new videos come here too
+        return (Seeds.artists.value.map { it.name } + Fresh.tuned?.artists().orEmpty().take(10) + played).distinctBy { it.lowercase() }.take(36)
     }
 
     private fun find(ctx: Context, file: File) {

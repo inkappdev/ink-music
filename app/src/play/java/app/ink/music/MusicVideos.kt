@@ -11,5 +11,6 @@ object MusicVideos {
     val clips: StateFlow<List<Clip>> = MutableStateFlow(emptyList())
     fun start(ctx: Context) {}
     suspend fun of(name: String, browseId: String = ""): List<Clip> = emptyList()
+    suspend fun older(name: String, browseId: String = ""): List<Clip> = emptyList()
     fun stream(id: String, high: Int = 720): Pair<String, String?>? = null
 }

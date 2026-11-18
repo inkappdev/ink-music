@@ -79,12 +79,14 @@ object Fresh {
             val heard = History.read()
             // the computer keeps listens only (30 s and more): no skips to go by here
             val plays = heard.map { Taste.Play(it.artist, it.at, it.ms) }
-            val skips = emptyList<Taste.Play>()
+            // TUNER's verdicts, the phone's, carried across by sync: its swipes past as skips, its likes and clips watched brought in
+            val tuned = Tuned(File(Home.dir, "tuned.json"))
+            val skips = tuned.skips()
             val library = Library.songs.value
             val loved = (library.filter { it.id in Loved.ids.value } + Loved.tube.value + TubeAccount.liked.value).map { it.artist }
             val kept = library.map { it.albumArtist.ifBlank { it.artist } }.distinct()
             // without the artists blocked (their listens count for nothing)
-            val brought = listOfNotNull(LastFm.brought(Home.dir), ListenBrainz.brought(Home.dir)).map { it.without(Blocked::artist) }
+            val brought = listOfNotNull(LastFm.brought(Home.dir), ListenBrainz.brought(Home.dir), tuned.brought()).map { it.without(Blocked::artist) }
             this@Fresh.brought.value = brought
             fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(), brought = brought)
             val first = of(emptyMap())
@@ -183,7 +185,7 @@ object Fresh {
         return when (val w = t.why(s.pick.artist)) {
             Taste.Why.Loved -> "you love them"
             is Taste.Why.Like -> "if you like ${w.of.lowercase()}"
-            is Taste.Why.Brought -> "from your ${w.from}"
+            is Taste.Why.Brought -> if (w.from == "tuner") "you liked them on tuner" else "from your ${w.from}"
             else -> null
         }
     }

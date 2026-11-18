@@ -4,6 +4,10 @@ import android.view.TextureView
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -74,6 +78,8 @@ data class Tune(
     val from: String = "", val tag: String = "",
     /** YouTube has it only as its cover (a "- Topic" art track): its real video looked for, else moving art shown. */
     val still: Boolean = false,
+    /** When the video went up (0 not known): an old one says its year. */
+    val at: Long = 0L,
 )
 
 /** How long a clip plays before it goes round again (a tap on PLAY plays the whole song). */
@@ -153,12 +159,22 @@ fun TunerPage(pages: Pages) {
         fill(3); loaded = true
         // the fans of whom you play most, as they're found
         val top = topArtists(ctx, 8)
-        add(runCatching { TunerFeed.fans(ctx, top, top.map { Curation.folded(it) }.toSet()) }.getOrDefault(emptyList()))
-        fill(pager.settledPage + 3)
+        val have = top.map { Curation.folded(it) }.toSet()
+        add(runCatching { TunerFeed.fans(ctx, top, have) }.getOrDefault(emptyList()))
+        // then the older and further out: your artists' deep cuts, the decades nearest you, fans of their fans
+        add(runCatching { TunerFeed.deep(ctx, top.take(5)) }.getOrDefault(emptyList()))
+        add(runCatching { TunerFeed.decades(ctx) }.getOrDefault(emptyList()))
+        add(runCatching { TunerFeed.far(ctx, top.take(3), have) }.getOrDefault(emptyList()))
     }
     // what's been found for each clip ahead of it: its streams, and where it starts
     val streams = remember { mutableStateMapOf<String, Pair<String, String?>?>() }
     val starts = remember { mutableStateMapOf<String, Long>() }
+    // why it starts where it does, said over its line: "most replayed", "from the chorus", "a third in"
+    val startWhy = remember { mutableStateMapOf<String, String>() }
+    // dug: played in full, or its artist's page opened (a strong yes, short of a like)
+    val dug = remember { mutableStateMapOf<String, Boolean>() }
+    // what you liked this sitting, for rabbit holes
+    val likedNow = remember { mutableListOf<Tune>() }
     val liked = remember { mutableStateMapOf<String, Boolean>() }
     val player = remember {
         val load = androidx.media3.exoplayer.DefaultLoadControl.Builder().setBufferDurationsMs(8_000, 40_000, 1_000, 2_000).build()
@@ -198,7 +214,7 @@ fun TunerPage(pages: Pages) {
         onDispose {
             player.removeListener(listen); player.release()
             // the clip in view as it closed: shown, so not shown again
-            shown.getOrNull(pager.settledPage)?.let { Fresh.tuned?.heard(it.id, it.artist, Tuned.Kind.SEEN, it.from) }
+            shown.getOrNull(pager.settledPage)?.let { Fresh.tuned?.heard(it.id, it.artist, Tuned.Kind.SEEN, it.from, it.title) }
         }
     }
     val life = LocalLifecycleOwner.current
@@ -228,13 +244,14 @@ fun TunerPage(pages: Pages) {
     suspend fun replayedOf(t: Tune) {
         if (starts.containsKey(t.id)) return
         val vid = videoOf(t)
-        withContext(Dispatchers.IO) { TunerFeed.replayed(vid) }?.let { starts[t.id] = it; return }
+        withContext(Dispatchers.IO) { TunerFeed.replayed(vid) }?.let { starts[t.id] = it; startWhy[t.id] = "most replayed"; return }
         if (t.seconds <= 0) return
         val length = t.seconds * 1000L
         val chorus = withContext(Dispatchers.IO) {
             runCatching { Lyrics.of(Now(null, t.title, t.artist.substringBefore(" & "), "", length, 0L, 0L, false, false, 0, 0))?.let { TunerFeed.chorus(it) } }.getOrNull()
         }
         starts[t.id] = (chorus ?: (length / 3)).coerceAtMost((length - CLIP).coerceAtLeast(0L))
+        startWhy[t.id] = if (chorus != null) "from the chorus" else "a third in"
     }
 
     val eased by androidx.compose.animation.core.animateFloatAsState(if (seen > 0f) seen else shape, androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo), label = "seen")
@@ -284,9 +301,10 @@ fun TunerPage(pages: Pages) {
             }
             val start = (chorus ?: (length / 3)).coerceAtMost((length - CLIP).coerceAtLeast(0L))
             starts[t.id] = start
+            startWhy[t.id] = if (chorus != null) "from the chorus" else "a third in"
             player.seekTo(start)
             android.util.Log.d("ink-tuner", "${t.artist} - ${t.title}: from ${start / 1000}s (${if (chorus != null) "chorus" else "a third in"})")
-        } else android.util.Log.d("ink-tuner", "${t.artist} - ${t.title}: from ${starts[t.id]!! / 1000}s (most replayed)")
+        } else android.util.Log.d("ink-tuner", "${t.artist} - ${t.title}: from ${starts[t.id]!! / 1000}s (${startWhy[t.id]})")
     }
     // round its 30 seconds; how long it's been watched, for what it says as you leave it
     var watched by remember { mutableLongStateOf(0L) }
@@ -312,6 +330,8 @@ fun TunerPage(pages: Pages) {
             shown.getOrNull(was)?.let { t ->
                 val kind = when {
                     liked[t.id] == true -> null
+                    // round its clip again (50 s and more), played in full, or its artist's page opened
+                    dug[t.id] == true || watched >= 50_000 -> Tuned.Kind.DUG
                     watched >= 20_000 -> Tuned.Kind.KEPT
                     // swiped past at once by a fan (an artist you've liked here or love): "not this one", that song only
                     // (2026-11-18, Bronson: a couple liked, then one swiped past, shouldn't count against them)
@@ -319,13 +339,14 @@ fun TunerPage(pages: Pages) {
                     watched < 5_000 -> Tuned.Kind.PASSED   // 5 s (2026-11-18, Bronson: 3 was too quick to be fair)
                     else -> Tuned.Kind.SEEN
                 }
-                if (kind != null) Fresh.tuned?.heard(t.id, t.artist, kind, t.from)
+                if (kind != null) Fresh.tuned?.heard(t.id, t.artist, kind, t.from, t.title)
                 when (kind) {
+                    Tuned.Kind.DUG -> mix.dug(t.artist, t.tag)
                     Tuned.Kind.KEPT -> mix.kept(t.artist, t.tag)
                     Tuned.Kind.PASSED -> mix.passed(t.artist, t.tag)
                     else -> {}
                 }
-                if (kind == Tuned.Kind.KEPT || kind == Tuned.Kind.PASSED || liked[t.id] == true) Fresh.build(ctx)
+                if (kind == Tuned.Kind.KEPT || kind == Tuned.Kind.DUG || kind == Tuned.Kind.PASSED || liked[t.id] == true) Fresh.build(ctx)
             }
             was = now
         }
@@ -334,7 +355,41 @@ fun TunerPage(pages: Pages) {
     fun next() = scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
     LaunchedEffect(intro) { if (!intro) player.play() else player.pause() }
 
+    // a like: the song loved, its artist nearer; what's like it found now and chosen from straight away (its up next, its
+    // artist's fans' favorites); a second like close to another (one found through the other) opens a rabbit hole there
+    var burst by remember { mutableStateOf(0) }
+    fun like(t: Tune, on: Boolean) {
+        liked[t.id] = on
+        scope.launch {
+            val song = t.song ?: withContext(Dispatchers.IO) { YouTubeMusic.byId(t.id) }
+            song?.let { if ((it.id in Loved.ids.value) != on) Loved.toggle(it) }
+        }
+        if (!on) return
+        burst++
+        Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.LIKED, t.from, t.title)
+        mix.liked(t.artist)
+        fun k(s: String) = Curation.folded(s.substringBefore(" & "))
+        val near = likedNow.lastOrNull { o -> k(o.artist) == k(t.tag) || k(o.tag) == k(t.artist) || k(o.artist) == k(t.artist) ||
+            (o.tag == t.tag && o.from in setOf("fans", "far", "hole", "related", "deep")) }
+        likedNow += t
+        scope.launch {
+            val have = (shown + pool).map { k(it.artist) }.toSet()
+            add(runCatching { TunerFeed.related(ctx, t) }.getOrDefault(emptyList()))
+            rechoose()
+            if (near != null) {
+                android.util.Log.d("ink-tuner", "rabbit hole: ${t.artist}, after ${near.artist}")
+                add(runCatching { TunerFeed.hole(ctx, t.artist.substringBefore(" & "), have) }.getOrDefault(emptyList()))
+            } else add(runCatching { TunerFeed.fans(ctx, listOf(t.artist.substringBefore(" & ")), have) }.getOrDefault(emptyList()))
+            rechoose()
+        }
+    }
+
+    // the dial's station: each clip its own frequency on the FM band, the needle stepping to it as a clip settles
+    val station = shown.getOrNull(pager.settledPage)?.let { frequency(it.id) } ?: 98.7f
+
     FrostedPage(onClose = { pages.close() }) { _, top -> Box(Modifier.fillMaxSize()) {
+        // the dial's height: its readout and its scale, held still at the top while the clips move under it
+        val face = 96.dp
         when {
             !loaded -> Box(Modifier.fillMaxSize(), Alignment.Center) { BasicText("tuning in", style = pixel(13.sp, Ink.mid)) }
             shown.isEmpty() -> Box(Modifier.fillMaxSize().padding(40.dp), Alignment.Center) {
@@ -345,90 +400,210 @@ fun TunerPage(pages: Pages) {
                 val here = page == pager.settledPage
                 val frame by produceState(frameKept(t.id), t.id) { if (value == null) value = videoFrame(t.id) }
                 val accent = frame?.accent ?: Ink.mid
-                Column(Modifier.fillMaxSize().background(Ink.black).padding(top = top), verticalArrangement = Arrangement.Center) {
-                    // the progress through its clip, along the picture's top edge in its colour
+                val taste by Fresh.taste.collectAsState()
+                Column(Modifier.fillMaxSize().background(Ink.black).padding(top = top + face)) {
+                    // why it's here: the learning, said
+                    BasicText(whyOf(t), style = pixel(12.sp, Ink.mid), maxLines = 2, modifier = Modifier.padding(horizontal = 20.dp).padding(top = 10.dp))
+                    Spacer(Modifier.weight(1f))
+                    // the times over the line, as the player's are: where it is, and why it starts there
                     val from = starts[t.id]
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+                        BasicText(if (here && from != null) tunerClock(at) else " ", style = pixel(12.sp, Ink.mid))
+                        Spacer(Modifier.weight(1f))
+                        BasicText(startWhy[t.id].orEmpty(), style = pixel(12.sp, Ink.mid))
+                    }
+                    // the progress through its clip, along the picture's top edge in its colour
                     val part = if (here && from != null) ((at - from).toFloat() / CLIP).coerceIn(0f, 1f) else 0f
-                    Box(Modifier.fillMaxWidth().height(2.dp)) {
+                    Box(Modifier.fillMaxWidth().height(3.dp).background(Ink.line)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(part).background(accent))
                     }
                     Box(
                         // one frame for every clip (2026-11-18, Bronson: smoother with so many shapes): 16:9, each video
                         // cropped to fill it (a wide film's sides, a 4:3's top and foot), so nothing moves from one to the next
                         Modifier.fillMaxWidth().aspectRatio(16 / 9f).clipToBounds()
-                            .clickable(remember { MutableInteractionSource() }, indication = null) { if (player.playWhenReady) player.pause() else player.play() },
+                            // a tap pauses; a double tap likes it, a pixel heart popping up in the middle
+                            .pointerInput(t.id) {
+                                detectTapGestures(
+                                    onTap = { if (player.playWhenReady) player.pause() else player.play() },
+                                    onDoubleTap = { if (liked[t.id] != true) like(t, true) else burst++ },
+                                )
+                            },
                     ) {
-                        frame?.let { Image(it.image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                        val on = here && drawnId == t.id
+                        // tuning in (2026-11-18, Bronson: the develop in, an x-ray or a static effect): till its picture
+                        // comes, the clip's still in x-ray (its negative, in its own colour) under static, as between
+                        // stations; its picture fades in over it as the static clears
+                        val come by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else 0f,
+                            androidx.compose.animation.core.tween(if (on) 420 else 0, easing = Motion.expo), label = "tune")
+                        val xray = remember(accent) { xrayEffect(accent)?.asComposeRenderEffect() }
+                        frame?.let { Image(it.image, null, Modifier.fillMaxSize().graphicsLayer { renderEffect = xray }, contentScale = ContentScale.Crop) }
                         // only its cover on YouTube and no video of it found: moving art in its place, the cover's picture hidden
                         var moving by remember(t.id) { mutableStateOf(false) }
                         if (here && t.still && videos[t.id] == t.id) TunerMotion(t.title, t.artist.substringBefore(" & "), accent, Modifier.fillMaxSize()) { moving = it }
                         if (here) AndroidView(
                             factory = { TextureView(it).apply { keepScreenOn = true; tag = t.id; texture = this } },
-                            update = { v -> v.alpha = if (drawnId == t.id && !moving) 1f else 0f },
+                            update = { v -> v.alpha = if (drawnId == t.id && !moving) come else 0f },
                             onRelease = { v -> player.clearVideoTextureView(v) },
                             // its picture's own shape, measured from its frames (black bars in the video itself: a 4:3 film
                             // inside 16:9 showed bars at its sides; YouTube's still hadn't them)
                             modifier = Modifier.covering(shape, eased)
-                                .alpha(if (drawnId == t.id && !moving) 1f else 0f),
+                                .alpha(if (drawnId == t.id && !moving) come else 0f),
                         )
-                        if (here && !playing) BasicText("paused", style = pixel(12.sp), modifier = Modifier.align(Alignment.Center))
+                        if (!moving) Static(1f - come, Modifier.fillMaxSize())
+                        if (here && !playing && on) BasicText("paused", style = pixel(12.sp), modifier = Modifier.align(Alignment.Center))
+                        if (here) HeartBurst(burst, Modifier.align(Alignment.Center))
                     }
-                    Column(Modifier.padding(horizontal = 20.dp).padding(top = 18.dp)) {
-                        BasicText(t.title.uppercase(), style = headline(26.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Word(t.artist.lowercase(), pixel(14.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 6.dp) {
+                    Column(Modifier.padding(top = 16.dp)) {
+                        // a stamp when you've never played them, the year when it's an old one: discoveries, marked
+                        val newToYou = taste.of(t.artist) <= 0.0 && Library.songs.value.none { Curation.folded(it.artist) == Curation.folded(t.artist) }
+                        val year = t.at.takeIf { it > 0 && System.currentTimeMillis() - it > 400L * 86_400_000 }
+                            ?.let { java.util.Calendar.getInstance().apply { timeInMillis = it }.get(java.util.Calendar.YEAR) }
+                        if (newToYou || year != null) Row(Modifier.padding(horizontal = 20.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (newToYou) BasicText("NEW TO YOU", style = pixel(11.sp, Ink.black), modifier = Modifier.background(Ink.ink).padding(horizontal = 5.dp, vertical = 1.dp))
+                            if (year != null) BasicText("from $year", style = pixel(12.sp, Ink.mid))
+                        }
+                        // the name as big as a poster's, running when it's longer than the screen
+                        BasicText(t.title.uppercase(), style = headline(44.sp), maxLines = 1, softWrap = false,
+                            modifier = Modifier.padding(top = 4.dp).basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_600, velocity = 40.dp).padding(horizontal = 20.dp))
+                        Word(t.artist.lowercase(), pixel(14.sp, Ink.mid), Modifier.padding(start = 20.dp, top = 2.dp), touch = 6.dp) {
+                            dug[t.id] = true
                             pages.open(Page.Artist(t.artist.substringBefore(" & ")))
                         }
-                        if (here && said.isNotEmpty()) BasicText(said, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 10.dp))
-                        // the thumb at the left, the heart at the right, play in the very middle (in a row, it sat
-                        // off centre by how much wider the thumb is than the heart, 2026-11-18)
-                        Box(Modifier.fillMaxWidth().padding(top = 26.dp)) {
-                            // not for me: a pixel thumb down, pressed down as it goes on to the next
-                            ThumbDown(Modifier.align(Alignment.CenterStart)) {
-                                Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.NOPE, t.from)
-                                mix.refused(t.artist)
-                                rechoose()
-                                Fresh.notForMe(ctx, t.artist.substringBefore(" & "), "tune:${t.id}")
-                                scope.launch { delay(260); next() }
-                            }
-                            Word("play", pixel(14.sp), Modifier.align(Alignment.Center), touch = 10.dp) {
-                                player.pause()
-                                scope.launch {
-                                    val song = t.song ?: withContext(Dispatchers.IO) { YouTubeMusic.byId(t.id) }
-                                    song?.let { Playback.play(listOf(it), 0) }
-                                }
-                            }
-                            // like: a pixel heart, filling with red from its foot up
-                            val on = liked[t.id] == true
-                            FillingHeart(on, Modifier.align(Alignment.CenterEnd)) {
-                                liked[t.id] = !on
-                                scope.launch {
-                                    val song = t.song ?: withContext(Dispatchers.IO) { YouTubeMusic.byId(t.id) }
-                                    song?.let { if ((it.id in Loved.ids.value) == on) Loved.toggle(it) }
-                                }
-                                if (!on) {
-                                    Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.LIKED, t.from)
-                                    mix.liked(t.artist)
-                                    // what's like it, found now and chosen from straight away: its up next, its artist's fans' favorites
-                                    scope.launch {
-                                        add(runCatching { TunerFeed.related(ctx, t) }.getOrDefault(emptyList()))
-                                        rechoose()
-                                        val who = t.artist.substringBefore(" & ")
-                                        add(runCatching { TunerFeed.fans(ctx, listOf(who), (shown + pool).map { Curation.folded(it.artist) }.toSet()) }.getOrDefault(emptyList()))
-                                        rechoose()
-                                    }
-                                }
+                        if (here && said.isNotEmpty()) BasicText(said, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(horizontal = 20.dp).padding(top = 10.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    // the thumb at the left, the heart at the right, play in the very middle (in a row, it sat
+                    // off centre by how much wider the thumb is than the heart, 2026-11-18)
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                        // not for me: a pixel thumb down, pressed down as it goes on to the next
+                        ThumbDown(Modifier.align(Alignment.CenterStart)) {
+                            Fresh.tuned?.heard(t.id, t.artist, Tuned.Kind.NOPE, t.from, t.title)
+                            mix.refused(t.artist)
+                            rechoose()
+                            Fresh.notForMe(ctx, t.artist.substringBefore(" & "), "tune:${t.id}")
+                            scope.launch { delay(260); next() }
+                        }
+                        Word("play", pixel(14.sp), Modifier.align(Alignment.Center), touch = 10.dp) {
+                            dug[t.id] = true
+                            player.pause()
+                            scope.launch {
+                                val song = t.song ?: withContext(Dispatchers.IO) { YouTubeMusic.byId(t.id) }
+                                song?.let { Playback.play(listOf(it), 0) }
                             }
                         }
+                        // like: a pixel heart, filling with red from its foot up
+                        val on = liked[t.id] == true
+                        FillingHeart(on, Modifier.align(Alignment.CenterEnd)) { like(t, !on) }
                     }
-                    Spacer(Modifier.height(LocalFoot.current + 40.dp))
+                    Spacer(Modifier.height(LocalFoot.current + 28.dp))
                 }
             }
         }
-        if (loaded && !intro) Word("how it learns", pixel(12.sp, Ink.mid), Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = top + 4.dp), touch = 10.dp) {
-            intro = true
+        // the dial, still at the top: the station's frequency, its scale, the needle stepping to each clip
+        // (below the close row's soft strip, which had blurred the readout's top)
+        if (loaded && shown.isNotEmpty()) Column(Modifier.fillMaxWidth().padding(top = top).height(face).background(Ink.black).padding(start = 20.dp, end = 20.dp, top = 18.dp)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                BasicText("FM ${"%.1f".format(java.util.Locale.US, station)}", style = headline(30.sp))
+                Spacer(Modifier.weight(1f))
+                if (!intro) Word("how it learns", pixel(12.sp, Ink.mid), touch = 10.dp) { intro = true }
+            }
+            Scale(station, Modifier.fillMaxWidth().padding(top = 8.dp).height(18.dp))
         }
         if (intro) TunerIntro(top) { intro = false; Hints.did(TUNER_HINT) }
     } }
+}
+
+/** A clip's station on the FM band (87.9 to 107.9, odd tenths, as American stations are), from its id: the same every time. */
+private fun frequency(id: String): Float = 87.9f + (((id.hashCode() and 0x7fffffff) % 101) * 2) / 10f
+
+/** Why a clip's here, as a line (its source and what it was found through). */
+private fun whyOf(t: Tune): String {
+    val tag = t.tag.lowercase()
+    return when (t.from) {
+        "yours" -> "new from ${t.artist.lowercase()}, one of yours"
+        "fans" -> "fans of $tag also like them"
+        "related" -> "because you liked $tag"
+        "editors" -> "youtube's editors: $tag"
+        "deep" -> "a deep cut from $tag"
+        "decades" -> tag
+        "far" -> "two steps out from $tag"
+        "hole" -> "down the rabbit hole from $tag"
+        else -> ""
+    }
+}
+
+private fun tunerClock(ms: Long): String { val s = ms / 1000; return "%d:%02d".format(s / 60, s % 60) }
+
+/**
+ * The dial's scale (2026-11-18, Bronson's pick, after a mock of three): ticks across the FM band in pixels (a long one
+ * each megahertz, a short one between), a line under them, and the needle, ink, which steps a cell at a time to
+ * `station` when it changes, as a hand turns a dial.
+ */
+@Composable
+private fun Scale(station: Float, modifier: Modifier = Modifier) {
+    val less by Moves.less.collectAsState()
+    val needle = remember { androidx.compose.animation.core.Animatable(station) }
+    LaunchedEffect(station) {
+        if (less) needle.snapTo(station) else needle.animateTo(station, androidx.compose.animation.core.tween(520, easing = Motion.expo))
+    }
+    androidx.compose.foundation.Canvas(modifier) {
+        val px = 3.dp.toPx()
+        val cols = (size.width / px).toInt()
+        val rows = (size.height / px).toInt()
+        fun cell(c: Int, r: Int, color: androidx.compose.ui.graphics.Color) =
+            drawRect(color, androidx.compose.ui.geometry.Offset(c * px, r * px), androidx.compose.ui.geometry.Size(px, px))
+        // 87.5 to 108.5 across the width: a long tick each whole megahertz, a short one each half
+        fun colOf(f: Float) = ((f - 87.5f) / 21f * (cols - 1)).toInt().coerceIn(0, cols - 1)
+        var f = 88f
+        while (f <= 108f) {
+            val c = colOf(f)
+            val whole = f % 1f == 0f
+            for (r in (if (whole) 1 else 3) until rows - 2) cell(c, r, if (whole) Ink.mid else Ink.dim)
+            f += .5f
+        }
+        for (c in 0 until cols) cell(c, rows - 1, Ink.dim)
+        // the needle on whole cells, so it steps
+        val at = colOf(needle.value)
+        for (r in 0 until rows) cell(at, r, Ink.ink)
+    }
+}
+
+/**
+ * Static, as between stations: cells of grey noise across the picture, new every few frames, at `strength` (gone at 0);
+ * none on a slower phone (MOTION: less), the x-ray still under it showing alone.
+ */
+@Composable
+private fun Static(strength: Float, modifier: Modifier = Modifier) {
+    if (strength <= .01f) return
+    val less by Moves.less.collectAsState()
+    if (less) return
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) { while (isActive) { delay(70); tick++ } }
+    androidx.compose.foundation.Canvas(modifier) {
+        val px = 4.dp.toPx()
+        val rnd = kotlin.random.Random(tick)
+        val cols = (size.width / px).toInt() + 1
+        val rows = (size.height / px).toInt() + 1
+        for (r in 0 until rows) for (c in 0 until cols) {
+            val v = rnd.nextFloat()
+            if (v > .55f) drawRect(Ink.ink.copy(alpha = (v - .55f) * .9f * strength), androidx.compose.ui.geometry.Offset(c * px, r * px), androidx.compose.ui.geometry.Size(px, px))
+        }
+    }
+}
+
+/** A double tap's like: a big pixel heart in red pops up in the middle of the picture, swells and rises away. */
+@Composable
+private fun HeartBurst(count: Int, modifier: Modifier = Modifier) {
+    if (count == 0) return
+    val a = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(count) { a.snapTo(0f); a.animateTo(1f, androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.LinearEasing)) }
+    val t = a.value
+    if (t <= 0f || t >= 1f) return
+    val scale = if (t < .2f) .6f + t / .2f * .7f else if (t < .35f) 1.3f - (t - .2f) / .15f * .3f else 1f
+    val fade = if (t < .7f) 1f else 1f - (t - .7f) / .3f
+    Box(modifier.graphicsLayer { scaleX = scale; scaleY = scale; alpha = fade; translationY = -(if (t > .7f) (t - .7f) * 120.dp.toPx() else 0f) }) {
+        Sprite(HEART, HeartRed, 9.dp)
+    }
 }
 
 /**
@@ -618,12 +793,13 @@ private const val TUNER_HINT = "tuner"
 private fun TunerIntro(top: androidx.compose.ui.unit.Dp, onStart: () -> Unit) {
     val lines = listOf(
         null to "swipe up for the next one. each starts at its best part",
-        HEART to "love it, and more like it comes next",
+        HEART to "double tap or the heart: love it, and more like it comes next",
         THUMB_DOWN to "not for you. that artist won't come back",
         null to "watch 20 seconds: a little more like it",
         null to "swipe on within 5: a little less",
         null to "anything in between: no harm done",
         null to "play: the whole song, in your player",
+        null to "like two close together and it goes down the rabbit hole",
     )
     Column(
         Modifier.fillMaxSize().background(Ink.black)
@@ -642,5 +818,37 @@ private fun TunerIntro(top: androidx.compose.ui.unit.Dp, onStart: () -> Unit) {
             }
         }
         Word("TUNE IN", headline(28.sp), Modifier.padding(top = 40.dp), touch = 12.dp) { onStart() }
+    }
+}
+
+/** "found on tuner, nov 18": an artist page's line when you took to them on TUNER (null when you didn't). */
+fun foundOnTuner(artist: String): String? = Fresh.tuned?.found(artist)?.let {
+    "found on tuner, " + java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(it)).lowercase()
+}
+
+/**
+ * Listen's shelf of what you liked on TUNER (2026-11-18, Bronson: "how and where can we make this all reflect?"), newest
+ * first: each its video's frame across, its song and artist; a tap plays the song in ink's player.
+ */
+@Composable
+fun FoundOnTuner(likes: List<Tuned.Heard>, pages: Pages) {
+    val scope = rememberCoroutineScope()
+    Heading("found on tuner", "what you liked there")
+    androidx.compose.foundation.lazy.LazyRow(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        items(likes.size, key = { likes[it].id }) { i ->
+            val h = likes[i]
+            Column(
+                Modifier.width(220.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt {
+                    scope.launch { withContext(Dispatchers.IO) { YouTubeMusic.byId(h.id) }?.let { Playback.play(listOf(it), 0) } }
+                }),
+            ) {
+                ClipFrame(MusicVideos.Clip(h.id, h.title, h.artist, h.at), Modifier.fillMaxWidth().aspectRatio(16 / 9f))
+                BasicText(h.title.uppercase(), style = headline(14.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+                BasicText(h.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }

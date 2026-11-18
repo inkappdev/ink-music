@@ -301,6 +301,9 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
  * The still looks (Looks: dither, pixels) as shaders, so each frame of a moving cover is drawn so. Past
  * the picture's edge each gives nothing: an effect isn't held to its view, and black there hid the page.
  */
+/** The x-ray look as an effect for any picture (TUNER's clip as it tunes in), in `accent`; null before Android 13. */
+internal fun xrayEffect(accent: Color): RenderEffect? = Shaders.effect(Look.XRAY, accent, 1f, 1f, 0f)
+
 private object Shaders {
     // the dither: cells 3 dp a side, each lit in the cover's colour or black by a 4 x 4 ordered (Bayer) threshold; the
     // light lifted through a soft curve where the still one stretches the cover's own range (a frame's isn't known

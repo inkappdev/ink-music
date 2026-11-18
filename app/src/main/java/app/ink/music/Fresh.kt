@@ -119,12 +119,13 @@ object Fresh {
             // your listening elsewhere, brought in (Last.fm): counted from the first day
             // without the artists blocked (their listens count for nothing)
             Blocked.load(app)
-            val brought = listOfNotNull(LastFm.brought(app), ListenBrainz.brought(app)).map { it.without(Blocked::artist) }
+            // and the artists you took to on TUNER (2026-11-18: they count as yours across the app, "new from your artists" too)
+            val brought = listOfNotNull(LastFm.brought(app), ListenBrainz.brought(app), tuned?.brought()).map { it.without(Blocked::artist) }
             this@Fresh.brought.value = brought
             // the artists you picked (the first open, settings): near from the day you picked them, said "from your picks"
             val picks = Seeds.artists.value.map { it.name }.takeIf { it.isNotEmpty() }
                 ?.let { Brought("picks", "", builtAt, it.associateWith { .8 }, emptyList()) }
-            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app), brought = brought + listOfNotNull(picks, tuned?.brought()))
+            fun of(related: Map<String, List<String>>) = Taste.of(plays, skips, loved, kept, related, refused(app), brought = brought + listOfNotNull(picks))
             val first = of(emptyMap())
             taste.value = first
             val related = first.top(12).map { bareName ->
@@ -196,7 +197,7 @@ object Fresh {
         return when (val w = t.why(s.pick.artist)) {
             Taste.Why.Loved -> "you love them"
             is Taste.Why.Like -> "if you like ${w.of.lowercase()}"
-            is Taste.Why.Brought -> "from your ${w.from}"
+            is Taste.Why.Brought -> if (w.from == "tuner") "you liked them on tuner" else "from your ${w.from}"
             else -> null
         }
     }

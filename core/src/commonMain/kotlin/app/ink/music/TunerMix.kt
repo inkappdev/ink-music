@@ -27,6 +27,8 @@ class TunerMix(private val shares: Map<String, Double>, private val random: Rand
     private val likes = HashSet<String>()
     /** Liked this sitting. */
     fun isLiked(artist: String) = key(artist) in likes
+    /** Dug (round its clip again, played in full, its artist's page opened): nearer, nearly as a like. */
+    fun dug(artist: String, tag: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) + .35; lean[key(tag)] = (lean[key(tag)] ?: 0.0) + .1 }
     /** Watched a while: a little nearer. */
     fun kept(artist: String, tag: String) { lean[key(artist)] = (lean[key(artist)] ?: 0.0) + .15; lean[key(tag)] = (lean[key(tag)] ?: 0.0) + .05 }
     /** Swiped past at once: a little further, and what it was found through a touch. */
@@ -52,7 +54,11 @@ class TunerMix(private val shares: Map<String, Double>, private val random: Rand
     }
 
     companion object {
-        /** Where each source starts before it's earned anything: up next for a like a little ahead. */
-        val START = mapOf("yours" to 1.0, "fans" to 1.0, "related" to 1.3, "editors" to 1.0)
+        /** Where each source starts before it's earned anything: up next for a like a little ahead, a rabbit hole well ahead. */
+        val START = mapOf(
+            "yours" to 1.0, "fans" to 1.0, "related" to 1.3, "editors" to 1.0,
+            // the older and further out: an artist's deep cuts, the decades' lists, fans of fans, a rabbit hole's
+            "deep" to .8, "decades" to .6, "far" to .7, "hole" to 1.6,
+        )
     }
 }

@@ -11,10 +11,13 @@ import kotlin.math.min
  * a month. The taste's made with it (Fresh.build): brought in as "tuner", the skips with the player's.
  */
 class Tuned(private val file: File) {
-    /** Weakest to strongest: shown only, swiped past at once, watched a while, liked, not for me. */
-    enum class Kind { SEEN, PASSED, KEPT, LIKED, NOPE }
+    /**
+     * Weakest to strongest: shown only, swiped past at once, watched a while, dug (round its clip twice, played in
+     * full, or its artist's page opened), liked, not for me.
+     */
+    enum class Kind { SEEN, PASSED, KEPT, DUG, LIKED, NOPE }
     /** A clip heard: its id, artist, verdict, when, and the source it came from (TunerMix's). */
-    data class Heard(val id: String, val artist: String, val kind: Kind, val at: Long, val from: String = "")
+    data class Heard(val id: String, val artist: String, val kind: Kind, val at: Long, val from: String = "", val title: String = "")
 
     private val guard = Guard()
     private val all = ArrayList<Heard>()
@@ -25,21 +28,22 @@ class Tuned(private val file: File) {
             val old = nowMs() - 120 * DAY
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                val h = Heard(o.getString("id"), o.getString("artist"), Kind.valueOf(o.getString("kind")), o.getLong("at"), o.optString("from"))
+                val h = Heard(o.getString("id"), o.getString("artist"), Kind.valueOf(o.getString("kind")), o.getLong("at"), o.optString("from"), o.optString("title"))
                 if (h.at > old) all += h
             }
         }
     }
 
     /** A clip's verdict (the strongest kept), written down. */
-    fun heard(id: String, artist: String, kind: Kind, from: String = "") = guard.run {
+    fun heard(id: String, artist: String, kind: Kind, from: String = "", title: String = "") = guard.run {
         val was = all.indexOfFirst { it.id == id }
         if (was >= 0 && all[was].kind.ordinal >= kind.ordinal && kind != Kind.NOPE) return@run
         val source = from.ifEmpty { if (was >= 0) all[was].from else "" }
+        val named = title.ifEmpty { if (was >= 0) all[was].title else "" }
         if (was >= 0) all.removeAt(was)
-        all += Heard(id, artist, kind, nowMs(), source)
+        all += Heard(id, artist, kind, nowMs(), source, named)
         val a = JSONArray()
-        all.forEach { a.put(JSONObject().put("id", it.id).put("artist", it.artist).put("kind", it.kind.name).put("at", it.at).put("from", it.from)) }
+        all.forEach { a.put(JSONObject().put("id", it.id).put("artist", it.artist).put("kind", it.kind.name).put("at", it.at).put("from", it.from).put("title", it.title)) }
         runCatching { file.getParentFile()?.mkdirs(); file.writeText(a.toString()) }
     }
 
@@ -50,7 +54,7 @@ class Tuned(private val file: File) {
     fun brought(now: Long = nowMs()): Brought? = guard.run {
         val near = HashMap<String, Double>()
         for (h in all) {
-            val w = when (h.kind) { Kind.KEPT -> .2; Kind.LIKED -> .4; else -> continue }
+            val w = when (h.kind) { Kind.KEPT -> .2; Kind.DUG -> .3; Kind.LIKED -> .4; else -> continue }
             near[h.artist] = min(.85, (near[h.artist] ?: 0.0) + w * exp(-(now - h.at).coerceAtLeast(0) / DAY.toDouble() / 60.0))
         }
         if (near.isEmpty()) null else Brought("tuner", "", now, near, emptyList())
@@ -65,10 +69,25 @@ class Tuned(private val file: File) {
         start.mapValues { (from, base) ->
             val mine = all.filter { it.from == from }
             fun n(k: Kind) = mine.count { it.kind == k }.toDouble()
-            val good = 2 * n(Kind.LIKED) + n(Kind.KEPT) + 2
+            val good = 2 * n(Kind.LIKED) + 1.5 * n(Kind.DUG) + n(Kind.KEPT) + 2
             val bad = n(Kind.PASSED) + 2 * n(Kind.NOPE) + .3 * n(Kind.SEEN) + 2
             base * (good / bad).coerceIn(.1, 3.0)
         }
+    }
+
+    /** What you liked here, newest first (listen's "found on tuner"): each clip's id, title and artist. */
+    fun liked(): List<Heard> = guard.run { all.filter { it.kind == Kind.LIKED && it.title.isNotEmpty() }.sortedByDescending { it.at } }
+
+    /** The artists you've taken to here (liked, or dug), newest first: they count as yours across the app. */
+    fun artists(): List<String> = guard.run {
+        all.filter { it.kind == Kind.LIKED || it.kind == Kind.DUG }.sortedByDescending { it.at }.map { it.artist.substringBefore(" & ") }
+            .distinctBy { Curation.folded(it) }
+    }
+
+    /** When you first took to an artist here (an artist's page says so), or null. */
+    fun found(artist: String): Long? = guard.run {
+        val k = Curation.folded(artist)
+        all.filter { (it.kind == Kind.LIKED || it.kind == Kind.DUG) && Curation.folded(it.artist.substringBefore(" & ")) == k }.minOfOrNull { it.at }
     }
 
     /** An artist liked here before. */

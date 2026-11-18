@@ -16,8 +16,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  * nothing of an artist said not for you, blocked or on the AI list.
  */
 object TunerFeed {
+    // not a music video: lyric and visualiser uploads, reactions, covers, karaoke, sped up and slowed, hour-long loops
+    private val NOT_A_VIDEO = Regex("""\b(lyrics?\s*video|lyric|reaction|reacts?|karaoke|cover\b|sped\s*up|slowed|nightcore|8d audio|1\s*hour|loop(ed)?\b|tutorial|instrumental)""", RegexOption.IGNORE_CASE)
+
     private fun fine(c: Context, id: String, title: String, artist: String): Boolean {
         val tuned = Fresh.tuned ?: return false
+        if (NOT_A_VIDEO.containsMatchIn(title)) return false
         return !tuned.shown(id) && Curation.folded(artist) !in Fresh.turnedDown(c) && !Blocked.hides(title, artist) && !Fresh.taste.value.refused(artist)
     }
 
@@ -29,10 +33,10 @@ object TunerFeed {
     /** The first pool: the editors' lists' songs and your artists' new videos. */
     suspend fun start(c: Context): List<Tune> = withContext(Dispatchers.IO) {
         val taste = Fresh.taste.value
-        val editors = EditorsNew.songs(YouTubeMusic.editorsLists(), taste::of).filter { fine(c, it.videoId, it.title, it.artists.joinToString(" & ")) }
-            .map { t -> val who = t.artists.joinToString(" & ")
-                Tune(t.videoId, plain(t.title, t.artists), who, YouTubeMusic.songOf(t), t.seconds, "editors", "editors", still = t.albumId != null) }
-        val yours = MusicVideos.clips.value.filter { fine(c, it.id, it.title, it.artist) }.map { Tune(it.id, it.title, it.artist, null, 0, "yours", it.artist) }
+        val editors = EditorsNew.songs(YouTubeMusic.editorsLists(), taste::of).filter { (_, t) -> fine(c, t.videoId, t.title, t.artists.joinToString(" & ")) }
+            .map { (list, t) -> val who = t.artists.joinToString(" & ")
+                Tune(t.videoId, plain(t.title, t.artists), who, YouTubeMusic.songOf(t), t.seconds, "editors", list, still = t.albumId != null) }
+        val yours = MusicVideos.clips.value.filter { fine(c, it.id, it.title, it.artist) }.map { Tune(it.id, it.title, it.artist, null, 0, "yours", it.artist, at = it.at) }
         clean((editors + yours).distinctBy { it.id })
     }
 
@@ -40,18 +44,76 @@ object TunerFeed {
      * Artists whose fans also like those `of` (their YouTube Music pages), new to you (not near you yet), a video or
      * two each, their newest; found through `of`'s artist (the tag a like of them brings forward).
      */
-    suspend fun fans(c: Context, of: List<String>, have: Set<String>, each: Int = 4): List<Tune> = withContext(Dispatchers.IO) {
+    suspend fun fans(c: Context, of: List<String>, have: Set<String>, each: Int = 4, from: String = "fans"): List<Tune> = withContext(Dispatchers.IO) {
         val taste = Fresh.taste.value
         coroutineScope {
             of.map { name ->
                 async {
-                    val like = withTimeoutOrNull(6_000) { YouTubeAccount.artist(name, "").firstOrNull { it != null } }?.like.orEmpty()
-                        .map { it.name }.filter { taste.of(it) < .3 && Curation.folded(it) !in have }.take(each)
-                    like.map { n -> async { runCatching { MusicVideos.of(n) }.getOrDefault(emptyList()).take(2).map { Tune(it.id, it.title, it.artist, null, 0, "fans", name) } } }
+                    val like = neighbors(name).filter { taste.of(it) < .3 && Curation.folded(it) !in have }.take(each)
+                    like.map { n -> async { runCatching { MusicVideos.of(n) }.getOrDefault(emptyList()).take(2).map { Tune(it.id, it.title, it.artist, null, 0, from, name, at = it.at) } } }
                         .awaitAll().flatten()
                 }
             }.awaitAll().flatten()
         }.filter { fine(c, it.id, it.title, it.artist) }.distinctBy { it.id }.let(::clean)
+    }
+
+    /** Whom an artist's fans also like (their YouTube Music page's, as kept). */
+    private suspend fun neighbors(name: String): List<String> =
+        withTimeoutOrNull(6_000) { YouTubeAccount.artist(name, "").firstOrNull { it != null } }?.like.orEmpty().map { it.name }
+
+    /**
+     * Two steps out (2026-11-18, Bronson: "find old crazy music"): artists whose fans also like those that `of`'s fans
+     * like, and not near you at all, a video each: further from the middle, where the odd ones are.
+     */
+    suspend fun far(c: Context, of: List<String>, have: Set<String>, from: String = "far"): List<Tune> = withContext(Dispatchers.IO) {
+        val taste = Fresh.taste.value
+        coroutineScope {
+            of.map { name ->
+                async {
+                    val first = neighbors(name).take(3)
+                    val second = first.map { async { neighbors(it) } }.awaitAll().flatten()
+                        .filter { n -> taste.of(n) < .05 && Curation.folded(n) !in have && first.none { Curation.folded(it) == Curation.folded(n) } }
+                        .distinctBy { Curation.folded(it) }.take(4)
+                    second.map { n -> async { runCatching { MusicVideos.of(n) }.getOrDefault(emptyList()).take(1).map { Tune(it.id, it.title, it.artist, null, 0, from, name, at = it.at) } } }
+                        .awaitAll().flatten()
+                }
+            }.awaitAll().flatten()
+        }.filter { fine(c, it.id, it.title, it.artist) }.distinctBy { it.id }.let(::clean)
+    }
+
+    /** Deep cuts: the older videos (a year and more) of artists `of`, a couple each, oldest first. */
+    suspend fun deep(c: Context, of: List<String>, each: Int = 2, from: String = "deep"): List<Tune> = withContext(Dispatchers.IO) {
+        coroutineScope {
+            of.map { name -> async { runCatching { MusicVideos.older(name) }.getOrDefault(emptyList()).take(each).map { Tune(it.id, it.title, it.artist, null, 0, from, name, at = it.at) } } }
+                .awaitAll().flatten()
+        }.filter { fine(c, it.id, it.title, it.artist) }.distinctBy { it.id }.let(::clean)
+    }
+
+    /**
+     * The decades: YouTube Music's decade lists (its moods & genres page, "Decades": the 60s to the 2000s, by genre),
+     * six of them read, the two whose artists are nearest your taste kept.
+     */
+    suspend fun decades(c: Context): List<Tune> = withContext(Dispatchers.IO) {
+        val taste = Fresh.taste.value
+        val tube = InnerTube()
+        val mood = runCatching { tube.moods() }.getOrDefault(emptyList()).firstOrNull { it.title.equals("decades", true) } ?: return@withContext emptyList()
+        val lists = runCatching { tube.mood(mood.params) }.getOrDefault(emptyList()).flatMap { it.items }
+            .filter { it.kind == InnerTube.Kind.PLAYLIST }.distinctBy { it.id }.shuffled().take(6)
+        val read = coroutineScope { lists.map { l -> async { l.title to runCatching { tube.tracks(if (l.id.startsWith("VL")) l.id else "VL${l.id}", 40) }.getOrDefault(emptyList()) } }.awaitAll() }
+        read.filter { it.second.isNotEmpty() }.sortedByDescending { (_, songs) -> songs.sumOf { t -> t.artists.maxOfOrNull(taste::of) ?: 0.0 } }.take(2)
+            .flatMap { (list, songs) -> songs.map { t -> Tune(t.videoId, plain(t.title, t.artists), t.artists.joinToString(" & "), YouTubeMusic.songOf(t), t.seconds, "decades", list.lowercase(), still = t.albumId != null) } }
+            .filter { fine(c, it.id, it.title, it.artist) }.distinctBy { it.id }.let(::clean)
+    }
+
+    /**
+     * A rabbit hole (2026-11-18): two likes close together (one found through the other, or the same artist): further in
+     * round them, their fans' favorites, their fans' fans' and their deep cuts, all found through the hole's artist.
+     */
+    suspend fun hole(c: Context, artist: String, have: Set<String>): List<Tune> = coroutineScope {
+        val a = async { fans(c, listOf(artist), have, each = 6, from = "hole") }
+        val b = async { far(c, listOf(artist), have, from = "hole") }
+        val d = async { deep(c, listOf(artist), each = 3, from = "hole") }
+        (a.await() + b.await() + d.await()).distinctBy { it.id }
     }
 
     /** YouTube's up next for a clip (its song's radio, as videos), found through its artist. */

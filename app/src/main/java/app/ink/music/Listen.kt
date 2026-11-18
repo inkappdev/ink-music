@@ -75,7 +75,7 @@ private fun Modifier.moving(scope: androidx.compose.foundation.lazy.LazyItemScop
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment). */
 // listen is you, INK is the world (2026-11-12, Bronson): live sets, ink radio, the indie chart and stations are INK's;
 // your mix (your own music at a tempo) is here
-val LISTEN_SHELVES = listOf("fromYours", "videos", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "because", "newToYou",
+val LISTEN_SHELVES = listOf("fromYours", "videos", "tuner", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "because", "newToYou",
     "onRepeat", "fresh", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours")
 
 object Listen {
@@ -331,6 +331,9 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val videos = videosAll.unblocked { it.title to it.artist }
     LaunchedEffect(Unit) { MusicVideos.start(ctx) }
     if (videos.isNotEmpty()) sections["videos"] = { NewVideosShelf(videos, pages) }
+    // what you liked on TUNER (2026-11-18), newest first: each its video's frame, a tap plays the song
+    val tunedLikes = remember(Listen.visit) { Fresh.tuned?.liked().orEmpty().take(16) }
+    if (tunedLikes.isNotEmpty()) sections["tuner"] = { FoundOnTuner(tunedLikes, pages) }
     // live DJ sets from four channels that film them (LiveSets, the full build's)
     LaunchedEffect(Unit) { LiveSets.start(ctx) }
     // new from your artists: out this week or picked lately, by artists you play (where ink weekly was: it's INK's cover now)

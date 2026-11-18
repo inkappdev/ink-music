@@ -221,8 +221,10 @@ object Sync {
         fun stop() {}
     }
 
-    /** The sign-ins that go across, each its file in the app's folder. */
-    val SIGNINS = mapOf("server" to "server-account.json", "listenbrainz" to "listenbrainz.json", "lastfm" to "lastfm.json")
+    /** The sign-ins that go across, each its file in the app's folder (and TUNER's verdicts the same way). */
+    val SIGNINS = mapOf("server" to "server-account.json", "listenbrainz" to "listenbrainz.json", "lastfm" to "lastfm.json",
+        // TUNER's verdicts (the phone's), carried as a sign-in is (the newest wins), so the computer's taste has them too
+        "tuner" to "tuned.json")
 
     private fun heardFile(side: Side) = File(side.dir, "heard.jsonl")
 
