@@ -19,6 +19,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -268,8 +269,10 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             // what's played with, drawn (as the speaker is), by how often it's pressed: play in the middle, under the
             // thumb, the biggest; back and next either side; shuffle and repeat a size smaller at the ends, lit when on.
             // A play shape says what it does, where "play" and "pause" read as a state to a tester (2026-10-28)
+            // the system's back swipe off along this row: a thumb skipping fast, starting at the edge by repeat, went
+            // back, the player closed, and the next taps fell on INK's moods under it (2026-11-20)
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                Modifier.fillMaxWidth().systemGestureExclusion().padding(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (episode) {

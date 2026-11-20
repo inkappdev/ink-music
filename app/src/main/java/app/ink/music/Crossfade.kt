@@ -923,8 +923,14 @@ class Crossfade(
         provisional.remove(id)
         precut.remove(id)
         blend?.tails?.remove(id)
-        val i = (0 until exo.mediaItemCount).firstOrNull { exo.getMediaItemAt(it).mediaId == id } ?: return
-        swap(i, was)
+        // after the player's done telling of what changed: put back while it told (a skip), a song before the one
+        // playing moved its place mid-telling, and the session's check of it failed: the player's process died, the
+        // queue at its end with nothing more brought (a 6-song queue, the 6th skipped to, 2026-11-20)
+        main.post {
+            if (exo.currentMediaItem?.mediaId == id) return@post
+            val i = (0 until exo.mediaItemCount).firstOrNull { exo.getMediaItemAt(it).mediaId == id } ?: return@post
+            swap(i, was)
+        }
     }
 
     /**
