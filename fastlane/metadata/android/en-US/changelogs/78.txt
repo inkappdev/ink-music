@@ -1,0 +1,6 @@
+- Songs no longer jump to a mood on their own
+- Skipping fast won't close the player anymore
+- Fixed the player stopping at the end of a short queue
+- Up next fills sooner, and shows you while it's finding more
+- Your thumb is fast. Now so are we
+- Text someone you haven't talked to in a while today
