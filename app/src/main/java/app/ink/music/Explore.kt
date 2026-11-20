@@ -978,21 +978,34 @@ object Moodboard {
         }
     }
 
-    /** The mood as a station: its songs in a new order, the first few found at once, the rest after. */
+    /**
+     * The mood as a station: its songs in a new order, the first few found at once, the rest after. Only the last mood
+     * tapped plays, and not once something else has been played meanwhile: finding its songs takes seconds, and every
+     * tap's had played when it was done, a late one 16 s on, the song playing gone mid-way ("songs went on their own",
+     * 2026-11-20).
+     */
     suspend fun play(m: InkMoods.Mood): Boolean {
+        val mine = ++asked
+        val begun = Playback.begun.value
         val songs = (kept.value[m.key]?.songs ?: withContext(Dispatchers.IO) { InkMoods.songs(m, LastFm.key, week()) }).shuffled()
         if (songs.isEmpty()) return false
         val first = find(songs.take(8))
+        if (mine != asked || Playback.begun.value != begun) return true
         if (first.isEmpty()) return false
         Playback.radio(true)
         Playback.play(first, 0)
-        scope.launch {
+        rest?.cancel()
+        rest = scope.launch {
             songs.drop(8).take(40).chunked(8).forEach { group ->
                 find(group).takeIf { it.isNotEmpty() }?.let { more -> withContext(Dispatchers.Main) { Playback.follow(first.first(), more) } }
             }
         }
         return true
     }
+
+    // the last mood tapped (on the main thread), and the finding of the one playing's other songs
+    private var asked = 0
+    private var rest: kotlinx.coroutines.Job? = null
 
     private suspend fun find(group: List<Pair<String, String>>): List<Song> = withContext(Dispatchers.IO) {
         kotlinx.coroutines.coroutineScope { group.map { (t, a) -> async { YouTubeMusic.find(t, a) } }.map { it.await() }.filterNotNull() }
