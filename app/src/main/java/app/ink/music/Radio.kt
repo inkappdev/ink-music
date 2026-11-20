@@ -61,7 +61,12 @@ object Radio {
         // blocked from a held song (Blocked): read again if the screens blocked something since
         Blocked.load(c)
         val lately = said(c).let { m -> val now = System.currentTimeMillis(); m.filterValues { now - it < SUGGESTED_FOR }.keys }
-        val lists = seeds.take(WEIGHT.size).map { related(c, it) }
+        // each seed asked about at once (in turn, three waits end to end: the queue's end came first, 2026-11-20)
+        val asking = seeds.take(WEIGHT.size)
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(asking.size.coerceAtLeast(1))
+        val lists = try {
+            asking.map { s -> pool.submit<List<Song>> { runCatching { related(c, s) }.getOrDefault(emptyList()) } }.map { it.get() }
+        } finally { pool.shutdown() }
         val since = System.currentTimeMillis() - RECENT
         val recent = History.read(c).filter { it.at >= since }
         val heard = recent.flatMap { listOf(it.id, key(it.title, it.artist)) }.toHashSet()

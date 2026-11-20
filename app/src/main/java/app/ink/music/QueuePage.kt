@@ -29,6 +29,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -65,6 +70,7 @@ fun QueuePage(onClose: () -> Unit) {
     val queue by Playback.queue.collectAsState()
     val now by Playback.now.collectAsState()
     val playing = now?.index ?: -1
+    val finding by Playback.finding.collectAsState()
     val haptic = LocalHapticFeedback.current
     val rowPx = with(LocalDensity.current) { ROW.toPx() }
     var lifted by remember { mutableStateOf<Int?>(null) }
@@ -182,11 +188,65 @@ fun QueuePage(onClose: () -> Unit) {
                     }
                 }
             }
+            finding?.let { a -> item { FindingRows(a) } }
         }
         Box(Modifier.fillMaxWidth().height(BAND).softEdge(soft, towardBottom = false))
         }
     }
 }
+
+/**
+ * Radio finding more for the queue's end: rows under its last song developing in the dither from black as covers do
+ * (the brightest dots first), each a beat behind the one above, then going back to black and again; still, half come,
+ * when ink music moves less. The songs found take their place as they land. (2026-11-20: the queue's end, waiting,
+ * read as broken.)
+ */
+@Composable
+private fun FindingRows(artist: String) {
+    val less by Moves.less.collectAsState()
+    var t by remember { mutableFloatStateOf(0f) }
+    if (!less) LaunchedEffect(Unit) { val from = withFrameNanos { it }; while (true) withFrameNanos { t = (it - from) / 1e9f } }
+    BasicText("finding more like ${artist.lowercase()}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+    repeat(3) { r ->
+        Canvas(Modifier.fillMaxWidth().height(ROW)) {
+            val level = if (less) .6f else {
+                // a round of 2.4 s: in over 55% (ease-out-expo), held, out over the last 30%
+                val p = (((t - r * .22f) % CYCLE) + CYCLE) % CYCLE / CYCLE
+                when {
+                    p < .55f -> Motion.expo.transform(p / .55f)
+                    p < .7f -> 1f
+                    else -> 1f - Motion.expo.transform((p - .7f) / .3f)
+                }
+            }
+            val cell = 3.dp.toPx()
+            val dot = Size(cell * .7f, cell * .7f)
+            // the title's line and the artist's under it, as the rows above set them
+            val titleTop = 12.dp.toPx(); val titleH = 14.dp.toPx()
+            val artistTop = titleTop + titleH + 8.dp.toPx(); val artistH = 7.dp.toPx()
+            fun block(top: Float, h: Float, w: Float, salt: Int) {
+                var y = 0
+                while (y * cell < h) {
+                    var x = 0
+                    while (x * cell < w) {
+                        // each dot's own moment to come in: the brightest first
+                        // (mixed, so they come scattered: the plain product came in diagonal stripes)
+                        var k = (x * 73856093) xor (y * 19349663) xor ((r * 4 + salt) * 83492791)
+                        k = k xor (k ushr 16); k *= 0x45d9f3b; k = k xor (k ushr 16)
+                        val at = (k and 0xffff) / 65536f
+                        if (at < level) drawRect(if (at < level * .3f) Ink.mid else Ink.dim, Offset(x * cell, top + y * cell), dot)
+                        x++
+                    }
+                    y++
+                }
+            }
+            block(titleTop, titleH, size.width * TITLE_W[r], 1)
+            block(artistTop, artistH, size.width * ARTIST_W[r], 2)
+        }
+    }
+}
+private const val CYCLE = 2.4f
+private val TITLE_W = floatArrayOf(.62f, .46f, .7f)
+private val ARTIST_W = floatArrayOf(.3f, .38f, .24f)
 
 /**
  * Up next on another device (opened from its now playing): its queue as [QueuePage] draws this phone's, the song

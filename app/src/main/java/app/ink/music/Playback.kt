@@ -105,6 +105,7 @@ object Playback {
                 // the sleep timer, as the player says it
                 override fun onExtrasChanged(controller: MediaController, extras: android.os.Bundle) {
                     sleepAt = extras.getLong(PlayerService.SLEEP_AT); radio = extras.getBoolean(PlayerService.RADIO, true)
+                    finding.value = extras.getString(PlayerService.FINDING)
                     heard = Heard.of(extras.getString(PlayerService.HEARD)); audioSession = extras.getInt(PlayerService.AUDIO)
                     mix(Mix.of(extras.getString(PlayerService.MIX)))
                 Eq.bandsOf(extras.getString(PlayerService.EQ))?.let { bands.value = it }; update()
@@ -139,6 +140,7 @@ object Playback {
                 it.addListener(listener)
                 sleepAt = it.sessionExtras.getLong(PlayerService.SLEEP_AT)
                 radio = it.sessionExtras.getBoolean(PlayerService.RADIO, true)
+                finding.value = it.sessionExtras.getString(PlayerService.FINDING)
                 heard = Heard.of(it.sessionExtras.getString(PlayerService.HEARD))
                 mix(Mix.of(it.sessionExtras.getString(PlayerService.MIX)))
                 audioSession = it.sessionExtras.getInt(PlayerService.AUDIO)
@@ -240,6 +242,9 @@ object Playback {
             md.albumTitle?.toString().orEmpty(), id, md.albumArtist?.toString().orEmpty(), 0, 1, 0, 0,
             art = md.artworkUri?.toString(), format = "youtube").also(YouTubeMusic::remember)
     }
+
+    /** Radio asking for more songs for the queue's end, after this artist's (null: not asking), as the player says. */
+    val finding = MutableStateFlow<String?>(null)
 
     /** A queue begun here (a song, a record, a mix chosen), counted: a TV brings the player up for it ([Main]). */
     val begun = MutableStateFlow(0)

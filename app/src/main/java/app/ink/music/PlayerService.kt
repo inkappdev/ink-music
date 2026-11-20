@@ -271,6 +271,7 @@ class PlayerService : MediaLibraryService() {
         val audio = exo?.audioSessionId ?: 0
         session?.setSessionExtras(Bundle().apply {
             putLong(SLEEP_AT, sleepAt); putBoolean(RADIO, radio); putString(HEARD, heard); putInt(AUDIO, audio)
+            putString(FINDING, finding)
             putString(EQ, Eq.bandsJson(bands))
             putString(MIX, crossfade?.said()?.json().orEmpty())
             // for the screens to hand Android: their volume buttons to this session (a speaker's, while casting)
@@ -367,10 +368,15 @@ class PlayerService : MediaLibraryService() {
     /** The songs being added were asked to play next (the screens mark them): read once by [Shuffle]. */
     private var playNext = false
     private var radioFrom: String? = null
+    /** Radio asking for more, after this artist's song (null: not asking): told to the screens ([FINDING]). */
+    private var finding: String? = null
     /** Songs radio added (this run): not seeds for the next round while there are songs you chose. */
     private val fromRadio = HashSet<String>()
 
-    /** One song or none left (repeat off): ten more like the last, added at the end. */
+    /**
+     * Fewer than three songs left (repeat off): ten more like the last, added at the end. (One left, it was: skipping
+     * fast, the queue's end came before radio's answer, and it looked broken, 2026-11-20.)
+     */
     private fun topUp(p: Player) {
         if (!radio || p.repeatMode != Player.REPEAT_MODE_OFF || p.mediaItemCount == 0) return
         // casting, the speaker plays the list in order (shuffle is the phone's own): its end is the list's end. Going
@@ -378,10 +384,11 @@ class PlayerService : MediaLibraryService() {
         val inOrder = onSpeaker?.casting == true
         fun after(i: Int) = if (inOrder) (i + 1).takeIf { it < p.mediaItemCount } ?: C.INDEX_UNSET
             else p.currentTimeline.getNextWindowIndex(i, p.repeatMode, p.shuffleModeEnabled)
-        val next = if (inOrder) after(p.currentMediaItemIndex) else p.nextMediaItemIndex
-        val after = if (next == C.INDEX_UNSET) C.INDEX_UNSET else after(next)
-        if (after != C.INDEX_UNSET) return
-        val last = p.getMediaItemAt(if (next != C.INDEX_UNSET) next else p.currentMediaItemIndex)
+        var end = p.currentMediaItemIndex
+        var left = 0
+        while (left < AHEAD) { val n = after(end); if (n == C.INDEX_UNSET) break; end = n; left++ }
+        if (left >= AHEAD) return
+        val last = p.getMediaItemAt(end)
         // a station plays on forever: nothing to follow it
         // nor a podcast's episode: no songs like it to bring
         if (radioFrom == last.mediaId || last.mediaId.startsWith("s") || last.mediaId.startsWith("e")) return
@@ -400,11 +407,15 @@ class PlayerService : MediaLibraryService() {
             .distinctBy { it.mediaId }.take(2)
         val seeds = listOf(seed(last)) + chosen.map(::seed)
         val firstId = p.getMediaItemAt(0).mediaId
+        // the screens told, for the queue's rows developing under its last song till they come
+        finding = seed(last).artist.substringBefore(", ").ifBlank { "this" }; tell()
+        val began = System.currentTimeMillis()
         net.execute {
             // a mix's queue (its first song the mix's): radio keeps to its tempo
             val tempo = Mixes.keeping(this, firstId)
-            val more = Radio.after(this, seeds, queued, tempo, synchronized(fromRadio) { fromRadio.toSet() })
-            android.util.Log.d("ink-radio", "after ${seeds.joinToString(" + ") { it.title + " - " + it.artist }}: ${more.size} (${more.joinToString { it.title + " - " + it.artist }})")
+            val more = runCatching { Radio.after(this, seeds, queued, tempo, synchronized(fromRadio) { fromRadio.toSet() }) }.getOrDefault(emptyList())
+            android.util.Log.d("ink-radio", "after ${seeds.joinToString(" + ") { it.title + " - " + it.artist }}: ${more.size} in ${System.currentTimeMillis() - began} ms (${more.joinToString { it.title + " - " + it.artist }})")
+            main.post { finding = null; tell() }
             if (more.isEmpty()) return@execute
             main.post {
                 if (!radio) return@post
@@ -992,6 +1003,9 @@ class PlayerService : MediaLibraryService() {
         /** In an item's request extras: it was asked to play next (for [Shuffle]). */
         const val NEXT = "app.ink.music.NEXT"
         const val RADIO = "app.ink.music.RADIO"
+        const val FINDING = "finding"
+        /** Radio asks for more while fewer than this many songs are left after the one playing. */
+        private const val AHEAD = 3
         const val WARM = "app.ink.music.WARM"
         const val HEARD = "heard"
         /** The transitions, said for the player page (Mix: this song's mix point, the blend in hand). */
