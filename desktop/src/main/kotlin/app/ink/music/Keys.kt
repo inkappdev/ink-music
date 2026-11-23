@@ -16,6 +16,7 @@ object Keys {
         runCatching { Keys::class.java.getResourceAsStream("/keys.properties")?.use { p.load(it) } }
         LastFm.key = p.getProperty("lastfmKey").orEmpty()
         LastFm.secret = p.getProperty("lastfmSecret").orEmpty()
+        Tours.ticketmasterKey = p.getProperty("ticketmasterKey").orEmpty()
         ListenBrainz.version = p.getProperty("version").orEmpty()
         build = p.getProperty("build").orEmpty()
         version = p.getProperty("version").orEmpty()

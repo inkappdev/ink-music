@@ -161,6 +161,10 @@ fun SettingsPage(onClose: () -> Unit) {
                             val lb by ListenBrainz.account.collectAsState()
                             val fm by LastFm.account.collectAsState()
                             SettingRow("PRIVATE LISTENING", if (hidden) "on" else "off", opened) { PrivateSetting() }
+                            // your artists on tour near a city (OnTour): chosen by its name, never the computer's location
+                            OnTour.start()
+                            val tourPlace by OnTour.place.collectAsState()
+                            SettingRow("ON TOUR", tourPlace?.name?.lowercase() ?: "pick your city", opened) { TourSetting() }
                             if (!Local.on) SettingRow("SKIP THE TALKING", if (SkipTalking.on.collectAsState().value) "on" else "off", opened) { SkipTalkingSetting() }
                             SettingRow("DISCORD", if (discord) "on" else "off", opened) { DiscordSetting() }
                             SettingRow("LISTENBRAINZ", lb?.user?.lowercase() ?: "connect", opened) { ListenBrainzSetting() }
@@ -1065,4 +1069,26 @@ private fun LookPreview() {
         }
         Marquee(song.artist.substringBefore(", "), names, Modifier.align(Alignment.BottomStart).fillMaxWidth(), size = 56.sp)
     }
+}
+
+/** On tour's city: typed, the cities of that name found, one clicked; none takes it away. */
+@Composable
+private fun TourSetting() {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val tourPlace by OnTour.place.collectAsState()
+    var typed by remember { mutableStateOf("") }
+    val found by androidx.compose.runtime.produceState(emptyList<Tours.Place>(), typed) {
+        kotlinx.coroutines.delay(350)
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Tours.cities(typed) }
+    }
+    BasicText("your artists' shows near it, on INK" + if (!OnTour.askable()) ". the phone hands this computer spotify's word, while it's open and in step" else "",
+        style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(10.dp))
+    Field("city", typed, { typed = it }, "your city") {}
+    found.forEach { p ->
+        Word(p.name.lowercase(), pixel(14.sp), Modifier.padding(bottom = 6.dp), touch = 6.dp) {
+            OnTour.choose(p); typed = ""; scope.launch { OnTour.freshen(now = true) }
+        }
+    }
+    if (tourPlace != null && found.isEmpty()) Word("none", pixel(14.sp, Ink.mid), touch = 8.dp) { OnTour.choose(null) }
 }

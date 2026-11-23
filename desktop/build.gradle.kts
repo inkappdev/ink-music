@@ -46,7 +46,9 @@ val writeKeys by tasks.registering {
         if (from.exists()) from.inputStream().use { p.load(it) }
         val key = System.getenv("LASTFM_KEY") ?: p.getProperty("lastfmKey").orEmpty()
         val secret = System.getenv("LASTFM_SECRET") ?: p.getProperty("lastfmSecret").orEmpty()
-        out.get().asFile.apply { parentFile.mkdirs() }.writeText("lastfmKey=$key\nlastfmSecret=$secret\nversion=$version\nbuild=$build\n")
+        // Ticketmaster's Discovery API, for your artists on tour (OnTour), as the phone's
+        val tm = System.getenv("TICKETMASTER_KEY") ?: p.getProperty("ticketmasterKey").orEmpty()
+        out.get().asFile.apply { parentFile.mkdirs() }.writeText("lastfmKey=$key\nlastfmSecret=$secret\nticketmasterKey=$tm\nversion=$version\nbuild=$build\n")
     }
 }
 tasks.named("processResources") { dependsOn(writeKeys, copyEjs) }

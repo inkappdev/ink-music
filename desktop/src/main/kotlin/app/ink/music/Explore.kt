@@ -124,6 +124,8 @@ fun ExplorePage(open: (Page) -> Unit) {
             item(key = "live-sets") { LiveSetsShelf(open) }
             item(key = "radio") { InkRadio(air) }
             item(key = "festivals") { FestivalsShelf(open) }
+            // your artists playing near the city you chose (OnTour)
+            item(key = "tours") { OnTourShelf() }
             item(key = "moods") { InkMoodsShelf() }
             if (!moods.isNullOrEmpty()) item(key = "genres") { Genres(moods.orEmpty(), open) }
             // YouTube Music's own lists, the cool ones only (CoolLists): the ones with your artists, or the critics', in them
