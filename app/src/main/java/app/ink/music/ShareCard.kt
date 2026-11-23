@@ -41,17 +41,27 @@ object ShareCard {
      */
     fun link(n: Now): String? {
         val s = n.song
-        if (s?.station == true || s?.episode == true || n.title.isBlank() || n.artist.isBlank()) return null
-        val artist = n.artist.substringBefore(", ")
-        val words = java.text.Normalizer.normalize("$artist ${n.title}", java.text.Normalizer.Form.NFD)
+        if (s?.station == true || s?.episode == true) return null
+        return linkOf(n.title, n.artist, n.album, n.duration, s?.takeIf { it.tube }?.id?.removePrefix("y"))
+    }
+
+    /**
+     * A song's link by its names (or a record's, `record`: the site finds it as a record, 2026-11-23, INK's picks sent):
+     * null without a title and an artist.
+     */
+    fun linkOf(title: String, artistAll: String, album: String = "", ms: Long = 0, tube: String? = null, record: Boolean = false): String? {
+        if (title.isBlank() || artistAll.isBlank()) return null
+        val artist = artistAll.substringBefore(", ")
+        val words = java.text.Normalizer.normalize("$artist $title", java.text.Normalizer.Form.NFD)
             .replace(Regex("\\p{Mn}+"), "").lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "")
             .replace(Regex("[^a-z0-9]+"), "-").trim('-').take(80).ifEmpty { "song" }
         fun q(v: String) = java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20")
         val params = buildList {
-            add("t=" + q(n.title)); add("a=" + q(artist))
-            if (n.album.isNotBlank()) add("r=" + q(n.album))
-            if (n.duration > 0) add("d=${n.duration / 1000}")
-            if (s?.tube == true) add("y=" + q(s.id.removePrefix("y")))
+            if (record) add("k=r")
+            add("t=" + q(title)); add("a=" + q(artist))
+            if (!record && album.isNotBlank()) add("r=" + q(album))
+            if (!record && ms > 0) add("d=${ms / 1000}")
+            if (!record && tube != null) add("y=" + q(tube))
         }
         return "https://inkhome.app/song/$words?" + params.joinToString("&")
     }
@@ -62,9 +72,13 @@ object ShareCard {
      * /s/y/<its YouTube id> for a YouTube song, else the long link. Two ids, so the site still finds the song when one
      * service turns it away (Apple did, from Cloudflare); the same song is always the same link.
      */
-    suspend fun short(n: Now): String? = withContext(Dispatchers.IO) { coroutineScope {
-        val long = link(n) ?: return@coroutineScope null
-        val artist = n.artist.substringBefore(", ")
+    suspend fun short(n: Now): String? =
+        if (link(n) == null) null else shortOf(n.title, n.artist, n.album, n.duration, n.song?.takeIf { it.tube }?.id?.removePrefix("y"))
+
+    /** A song's short link by its names, as [short]; the long one where neither Apple nor Deezer has it. */
+    suspend fun shortOf(title: String, artistAll: String, album: String = "", ms: Long = 0, tube: String? = null): String? = withContext(Dispatchers.IO) { coroutineScope {
+        val long = linkOf(title, artistAll, album, ms, tube) ?: return@coroutineScope null
+        val artist = artistAll.substringBefore(", ")
         fun fold(v: String) = java.text.Normalizer.normalize(v, java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
             .lowercase().replace(Regex("\\s*[(\\[].*?[)\\]]"), "").replace(Regex("[^a-z0-9]+"), " ").trim()
         fun same(a: String, b: String) = fold(a).let { x -> fold(b).let { y -> x.isNotEmpty() && (x == y || x.startsWith("$y ") || y.startsWith("$x ")) } }
@@ -75,21 +89,21 @@ object ShareCard {
         }
         val deezer = async {
             runCatching {
-                val term = java.net.URLEncoder.encode("$artist ${n.title}", "UTF-8")
+                val term = java.net.URLEncoder.encode("$artist ${title}", "UTF-8")
                 val r = org.json.JSONObject(get("https://api.deezer.com/search?q=$term&limit=10") ?: return@runCatching null).optJSONArray("data") ?: return@runCatching null
                 (0 until r.length()).map { r.getJSONObject(it) }
-                    .firstOrNull { same(it.optJSONObject("artist")?.optString("name").orEmpty(), artist) && same(it.optString("title"), n.title) }?.optLong("id")?.takeIf { it > 0 }
+                    .firstOrNull { same(it.optJSONObject("artist")?.optString("name").orEmpty(), artist) && same(it.optString("title"), title) }?.optLong("id")?.takeIf { it > 0 }
             }.getOrNull()
         }
         val apple = runCatching {
             val shop = java.util.Locale.getDefault().country.lowercase().takeIf { it.length == 2 } ?: "us"
-            val term = java.net.URLEncoder.encode("$artist ${n.title}", "UTF-8")
+            val term = java.net.URLEncoder.encode("$artist ${title}", "UTF-8")
             val c = java.net.URL("https://itunes.apple.com/search?term=$term&entity=song&limit=10&country=$shop").openConnection() as java.net.HttpURLConnection
             c.connectTimeout = 2_500; c.readTimeout = 3_000
             val text = try { if (c.responseCode == 200) c.inputStream.bufferedReader().readText() else null } finally { c.disconnect() }
             val r = org.json.JSONObject(text ?: return@runCatching null).optJSONArray("results") ?: return@runCatching null
             (0 until r.length()).map { r.getJSONObject(it) }
-                .firstOrNull { same(it.optString("artistName"), artist) && same(it.optString("trackName"), n.title) }?.optLong("trackId")?.takeIf { it > 0 }
+                .firstOrNull { same(it.optString("artistName"), artist) && same(it.optString("trackName"), title) }?.optLong("trackId")?.takeIf { it > 0 }
         }.getOrNull()
         val dz = deezer.await()
         when {
@@ -97,7 +111,7 @@ object ShareCard {
             // its id found nothing; Deezer's id always goes with it
             apple != null && dz != null -> "https://inkhome.app/s/$apple.$dz"
             dz != null -> "https://inkhome.app/s/d/$dz"
-            n.song?.tube == true -> "https://inkhome.app/s/y/" + n.song.id.removePrefix("y")
+            tube != null -> "https://inkhome.app/s/y/$tube"
             else -> long
         }
     } }
@@ -112,6 +126,24 @@ object ShareCard {
             .putExtra(Intent.EXTRA_TITLE, "${n.title}, ${n.artist.substringBefore(", ")}")
         ctx.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+
+    /** A link sent as a link alone (a phone shows it as its card), its name as the share's title. */
+    fun sendLink(ctx: Context, url: String, name: String) {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url).putExtra(Intent.EXTRA_TITLE, name)
+        ctx.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /**
+     * Something INK picked, sent (2026-11-23): a record as its page on inkhome.app (where to hear it, its dithered card
+     * in a chat), a song as its short link.
+     */
+    suspend fun sendPick(ctx: Context, title: String, artist: String, record: Boolean) {
+        val url = (if (record) linkOf(title, artist, record = true) else shortOf(title, artist)) ?: return
+        sendLink(ctx, url, "$title, ${artist.substringBefore(", ")}")
+    }
+
+    /** An issue of ink weekly, sent: its page on inkhome.app, its mosaic card in a chat. */
+    fun sendWeekly(ctx: Context, week: Int, name: String) = sendLink(ctx, "https://inkhome.app/weekly/$week", "ink weekly: $name")
 
     suspend fun share(ctx: Context, n: Now, look: Look) {
         val png = withContext(Dispatchers.Default) {

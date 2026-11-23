@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -344,6 +345,8 @@ private fun RecordOfTheDay(d: Picks.Shown, pages: Pages) {
                 if (d.pick.link.isNotBlank() && !tvHere) Word("read it", pixel(14.sp, Ink.mid), touch = 8.dp) {
                     runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(d.pick.link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 }
+                // sent as its page on inkhome.app: where to hear it, its card in a chat (2026-11-23)
+                if (!tvHere) Word("send", pixel(14.sp, Ink.mid), touch = 8.dp) { scope.launch { ShareCard.sendPick(ctx, d.pick.title, d.pick.artist, d.pick.record) } }
             }
         }
         if (tvHere) {
@@ -435,7 +438,11 @@ internal fun PickTile(s: Picks.Shown, pages: Pages, reason: String? = null, near
         // text); its room always kept, so every tile's as tall and the shelf under doesn't move as these scroll by
         Box {
             BasicText("i", style = pixel(12.sp), modifier = Modifier.alpha(0f))
-            if (asking) Word("not for me", pixel(12.sp), touch = 6.dp) { asking = false; Fresh.notForMe(ctx, s.pick.artist, Fresh.key(s.pick)) }
+            // held: not for me, or send it (its page on inkhome.app, 2026-11-23)
+            if (asking) Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Word("send", pixel(12.sp), touch = 6.dp) { asking = false; scope.launch { ShareCard.sendPick(ctx, s.pick.title, s.pick.artist, s.pick.record) } }
+                Word("not for me", pixel(12.sp, Ink.mid), touch = 6.dp) { asking = false; Fresh.notForMe(ctx, s.pick.artist, Fresh.key(s.pick)) }
+            }
             else (said ?: reason)?.let { BasicText(it, style = pixel(12.sp, if (said == null && near) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
@@ -459,7 +466,13 @@ private fun InkWeeklyCover(pages: Pages) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             BasicText(w.heading.uppercase(), style = headline(16.sp))
             Spacer(Modifier.width(12.dp))
-            BasicText(listOf("vol ${w.week}", Weekly.day(w.date), "this week").filter { it.isNotEmpty() }.joinToString("  ·  "), style = pixel(12.sp, Ink.mid))
+            BasicText(listOf("vol ${w.week}", Weekly.day(w.date), "this week").filter { it.isNotEmpty() }.joinToString("  ·  "), style = pixel(12.sp, Ink.mid),
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            // the issue sent as its page on inkhome.app (2026-11-23): not from a TV
+            if (!onTv()) {
+                Spacer(Modifier.weight(1f).widthIn(min = 12.dp))
+                Word("send", pixel(12.sp, Ink.mid), touch = 8.dp) { ShareCard.sendWeekly(ctx, w.week, w.heading.lowercase()) }
+            }
         }
         Spacer(Modifier.height(10.dp))
         val tv = onTv()
