@@ -221,6 +221,7 @@ private fun featureSide(across: androidx.compose.ui.unit.Dp): androidx.compose.u
 }
 
 /** The record of the day: its cover big, its name, what was said of it and by whom; play, or its page. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun RecordOfTheDay(d: Picks.Shown, open: (Page) -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -252,7 +253,8 @@ private fun RecordOfTheDay(d: Picks.Shown, open: (Page) -> Unit) {
                     BasicText("— ${d.pick.from}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
                 }
                 Spacer(Modifier.height(18.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                // wrapping where the room runs out (a half-width window: 2026-11-23)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(26.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Word("play", pixel(14.sp), touch = 8.dp) { go(true) }
                     Word("its page", pixel(14.sp, Ink.mid), touch = 8.dp) { go(false) }
                     if (d.pick.link.isNotBlank()) Word("read it", pixel(14.sp, Ink.mid), touch = 8.dp) { browse(d.pick.link) }

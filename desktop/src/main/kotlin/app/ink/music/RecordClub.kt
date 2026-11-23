@@ -74,6 +74,7 @@ object RecordClub {
 }
 
 /** INK's record club: the week's record big beside its words, a critic's line, play from the start, how much you've heard. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun RecordClubCard(today: Picks.Shown?, open: (Page) -> Unit) {
     val records by Picks.records.collectAsState()
@@ -104,7 +105,9 @@ fun RecordClubCard(today: Picks.Shown?, open: (Page) -> Unit) {
                     BasicText("— ${d.pick.from}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
                 }
                 Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(26.dp), verticalAlignment = Alignment.CenterVertically) {
+                // wrapping where the room runs out (a half-width window)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(26.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically) {
                     Word("play from the start", pixel(14.sp), touch = 8.dp) {
                         val s = songs
                         if (!s.isNullOrEmpty()) Player.play(s) else scope.launch {

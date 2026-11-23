@@ -116,6 +116,7 @@ fun InkWeekly() {
 
 /** A week's words: ink weekly, its volume and day; its name huge; its note; play the week, shuffle, how long. */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         BasicText(w.heading.uppercase(), style = headline(18.sp))
@@ -132,7 +133,10 @@ private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: (
             modifier = Modifier.widthIn(max = READ))
     }
     Spacer(Modifier.height(20.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+    // the words wrap where the room runs out, and how long it is goes under them (2026-11-23: at half width "copy link"
+    // was cut and the count squeezed to a letter a line)
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(28.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+        itemVerticalAlignment = Alignment.CenterVertically) {
         Word("PLAY THE WEEK", headline(24.sp), touch = 8.dp) { Player.play(w.songs) }
         Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(w.songs.shuffled()) }
         MixWord("ink weekly", w.songs)
@@ -140,8 +144,8 @@ private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: (
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         var copied by remember(w.week) { mutableStateOf(false) }
         Word(if (copied) "link copied" else "copy link", pixel(14.sp, Ink.mid), touch = 8.dp) { scope.launch { SongLink.clip("https://inkhome.app/weekly/${w.week}"); copied = true } }
-        BasicText("${w.songs.size} songs  ·  ${w.songs.sumOf { it.duration } / 60_000} min", style = pixel(12.sp, Ink.mid))
     }
+    BasicText("${w.songs.size} songs  ·  ${w.songs.sumOf { it.duration } / 60_000} min", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
     MixProgress("ink weekly")
 }
 
