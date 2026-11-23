@@ -1,5 +1,6 @@
 package app.ink.music
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
@@ -103,6 +104,8 @@ internal object LookFile {
     fun start() {
         MotionCover.dir = Home.cache
         SpotifyHanded.start()
+        // copies of Spotify playlists brought up to date, once a day each, when the phone's passes come (InStep)
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { SpotifyHanded.pass.collect { if (it != null) runCatching { InStep.catchUp() } } }
         val o = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
         Looks.put(Look.entries.firstOrNull { it.name == o.optString("behind") } ?: Look.PLAIN)
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true),

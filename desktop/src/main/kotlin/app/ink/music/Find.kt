@@ -466,6 +466,8 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
                         PlayShuffle(s)
                         if (playlist) MixWord(a.title, s, Modifier.padding(start = 24.dp), bold = true)
                     }
+                    // yours on YouTube Music, a copy of a Spotify playlist: kept in step with it (InStep)
+                    if (playlist && TubeAccount.playlists.collectAsState().value.any { TubeAccount.listId(it) == TubeAccount.listId(a) }) InStepLine("youtube", TubeAccount.listId(a), a.title)
                     // the rest small under them, one row of four (2026-11-16, Bronson's screenshot: "the top controls of a
                     // playlist need some work it gets a little messy": seven words of three kinds wrapped onto two rows).
                     // Follow and keep offline, then more: the covers, a copy, its link. Closer than elsewhere, so the

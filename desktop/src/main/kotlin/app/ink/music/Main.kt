@@ -306,6 +306,8 @@ sealed interface Page {
     data class Chart(val chart: Charts.Chart) : Page
     /** New releases and moods & genres, from listen's three ways in (Doors). */
     data object NewReleases : Page
+    /** Bringing a Spotify playlist in (Import). */
+    data object Import : Page
     data object AllMoods : Page
     data class Festival(val name: String) : Page
     data class Mood(val mood: InnerTube.Mood) : Page
@@ -591,6 +593,7 @@ private fun App() {
                         Page.Queue -> QueuePage({ pages += it }) { Nav.close() }
                         Page.PlayOn -> PlayOnPage { Nav.close() }
                         is Page.Tube -> TubeRecordPage(page.album, { pages += it }) { Nav.close() }
+                        is Page.Import -> ImportPage { pages += it }
                         is Page.List -> ListPage(page.id, page.name, { pages += it }) { Nav.close() }
                         is Page.Show -> ShowPage(page.feed, page.first, { pages += it }) { Nav.close() }
                         // done, back where it was added from; closed, only itself (not the trail under it)

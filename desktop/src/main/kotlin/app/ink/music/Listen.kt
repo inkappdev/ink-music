@@ -578,7 +578,7 @@ fun ListsPage(open: (Page) -> Unit) {
     // as a grid, the same right click over it (2026-11-12: the grid had none)
     if (gridded) { ListsTiles(open); return@Box }
     LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp)) { cascading {
-        item { ListsView() }
+        item { ListsView(open) }
         if (loved.isNotEmpty()) item { ListRow(Server.Playlist(LOVED, "loved", loved.size, true)) { open(Page.List(LOVED, "loved")) } }
         // what's on the computer to play with no signal (your server's, YouTube's)
         if (keptIds.isNotEmpty()) item { ListRow(Server.Playlist(KEPT, "kept on this computer", keptIds.size, true)) { open(Page.List(KEPT, "kept on this computer")) } }
@@ -637,11 +637,13 @@ fun ListsPage(open: (Page) -> Unit) {
 
 /** Lists as a list or a grid: two words, the one chosen lit. */
 @Composable
-private fun ListsView() {
+private fun ListsView(open: (Page) -> Unit) {
     val grid by ListsGrid.on.collectAsState()
     Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(26.dp)) {
         Word("list", pixel(14.sp, if (!grid) Ink.ink else Ink.dim), touch = 8.dp) { ListsGrid.set(false) }
         Word("grid", pixel(14.sp, if (grid) Ink.ink else Ink.dim), touch = 8.dp) { ListsGrid.set(true) }
+        // a playlist brought in from spotify (Import)
+        Word("from spotify", pixel(14.sp, Ink.mid), touch = 8.dp) { open(Page.Import) }
     }
 }
 
@@ -691,7 +693,7 @@ private fun ListsTiles(open: (Page) -> Unit) {
         contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 14.dp, bottom = 32.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "view") { ListsView() }
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "view") { ListsView(open) }
         if (loved.isNotEmpty()) item(key = "loved") {
             ListTile("loved", "${loved.size} ${if (loved.size == 1) "song" else "songs"}", { open(Page.List(LOVED, "loved")) }) { Mosaic(loved, "loved") }
         }
@@ -792,6 +794,9 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                         PlayShuffle(s)
                         MixWord(name, s, Modifier.padding(start = 24.dp), bold = true)
                     }
+                    // a copy of a Spotify playlist, here or on your server: kept in step with it (InStep)
+                    if (id.startsWith(HereLists.PREFIX)) InStepLine("here", id, name)
+                    else if (Server.playlists.collectAsState().value.any { it.id == id && it.mine }) InStepLine("server", id, name)
                     var copied by remember { mutableStateOf(false) }
                     HeadWords {
                         CoversWord()
