@@ -109,6 +109,9 @@ object SpotifyCanvas {
         return null
     }
 
+    /** A query's current hash, for another of the web player's asks ([Tours]): read from its scripts. */
+    fun hashOf(operation: String, pass: Pass): String? = liveHash(operation, pass)
+
     /** A query's current hash, from the web player's own scripts (it changes when Spotify rebuilds the player). */
     private fun liveHash(operation: String, pass: Pass): String? = runCatching {
         val html = get("https://open.spotify.com/", pass)

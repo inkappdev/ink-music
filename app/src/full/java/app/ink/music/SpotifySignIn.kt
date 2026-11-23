@@ -195,6 +195,9 @@ object Spotify {
 
     // ---- canvas: the looping clip Spotify shows behind a song (SpotifyCanvas, shared with the computer) ----
 
+    /** Passes within the hour for another of the web player's asks (your artists on tour: Tours), or null signed out. */
+    suspend fun passFor(c: Context): SpotifyCanvas.Pass? = if (fresh(c)) pass() else null
+
     /** The passes as the shared lookup takes them, or null. */
     private fun pass(): SpotifyCanvas.Pass? = bearer?.let { SpotifyCanvas.Pass(it, client, agent, _at.value) }
 

@@ -140,6 +140,8 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (liveSets.isNotEmpty()) item(key = "liveSets") { LiveSetsShelf(liveSets, pages) }
         item(key = "radio") { InkRadioShelf(pages) }
         item(key = "festivals") { FestivalsShelf(pages) }
+        // your artists playing near the city you chose (OnTour)
+        if (!tv) item(key = "tours") { OnTourShelf() }
         // ink's own moods (Last.fm listeners' tags), then YouTube Music's genres (its own moods gone: 2026-10-28)
         if (!tv) item(key = "inkmoods") { InkMoodsShelf() }
         if (!tv) moods?.takeIf { it.isNotEmpty() }?.let { all -> item(key = "moods") { MoodsAndGenres(all, pages) } }

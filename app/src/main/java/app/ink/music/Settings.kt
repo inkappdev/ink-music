@@ -354,6 +354,24 @@ fun SettingsPage(pages: Pages, part: String? = null) {
             }
 
             if (part == "listening") Column(Modifier.cascade(1)) {
+                // your artists on tour near a city (OnTour): chosen by its name, never the phone's location
+                OnTour.start(ctx)
+                val tourPlace by OnTour.place.collectAsState()
+                SettingRow("ON TOUR", tourPlace?.name?.lowercase() ?: "pick your city", opened, "your artists' shows near it, on INK") {
+                    var typed by remember { mutableStateOf("") }
+                    val found by androidx.compose.runtime.produceState(emptyList<Tours.Place>(), typed) {
+                        kotlinx.coroutines.delay(350)
+                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Tours.cities(typed) }
+                    }
+                    Field("city", typed, { typed = it }, "your city", KeyboardType.Text)
+                    found.forEach { p ->
+                        Word(p.name.lowercase(), pixel(14.sp), Modifier.padding(bottom = 6.dp), touch = 6.dp) {
+                            OnTour.choose(ctx, p); typed = ""; scope.launch { OnTour.freshen(ctx, now = true) }
+                        }
+                    }
+                    if (tourPlace != null && found.isEmpty()) Word("none", pixel(14.sp, Ink.mid), touch = 8.dp) { OnTour.choose(ctx, null) }
+                    if (!OnTour.askable()) BasicText("sign in to spotify (music, from spotify) for their shows", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
+                }
                 // the artists the listen page grows from (YouTube Music's mixes and records: the full build)
                 if (YouTubeMusic.available) {
                     val seeds by Seeds.artists.collectAsState()

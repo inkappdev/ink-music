@@ -13,6 +13,7 @@ object Spotify {
     fun signedIn() = false
     fun signOut() {}
     suspend fun canvas(c: Context, title: String, artist: String): String? = null
+    suspend fun passFor(c: Context): SpotifyCanvas.Pass? = null
     fun signIn(c: Context) {}
     fun handover(c: Context, scope: kotlinx.coroutines.CoroutineScope): String? = null
     fun signInCookies(): String? = null
