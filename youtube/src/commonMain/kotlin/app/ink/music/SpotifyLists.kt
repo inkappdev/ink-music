@@ -33,7 +33,7 @@ object SpotifyLists {
         val each = ALL.map { l ->
             runCatching {
                 if (!l.turn) list(l.id, l.from, l.max, now)
-                else list(l.id, l.from, 500, now).let { all ->
+                else whole(l.id, l.from, now).let { all ->
                     // today's run of it: the day's place along the list, wrapping round
                     if (all.size <= l.max) all else {
                         val from = ((now / 86_400_000L) * l.max % all.size).toInt()
@@ -45,6 +45,20 @@ object SpotifyLists {
         return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }.distinctBy { Curation.key(it) }
             .also { log("spotify: ${it.size} songs from ${each.count { l -> l.isNotEmpty() }} lists") }
     }
+
+    /**
+     * A whole list, every song (an archive of 700: the embed page shows only its first 100), from inkhome.app, which reads
+     * it with Spotify's API and keeps it 12 hours (functions/lists there); the embed page's 100 if the site won't say.
+     */
+    fun whole(id: String, from: String, now: Long): List<Curation.Pick> = runCatching {
+        val r = http("https://inkhome.app/lists/$id.json", connectMs = 8_000, readMs = 15_000)
+        if (r.code != 200) error("site ${r.code}")
+        val a = JSONObject(r.text).getJSONArray("songs")
+        (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+            Curation.Pick(false, o.optString("t").replace(Regex("\\s+-\\s+(From|Remaster).*$", RegexOption.IGNORE_CASE), ""), o.optString("a"), from, "", "", now,
+                o.optString("art").takeIf { it.startsWith("http") })
+        }.filter { it.title.isNotBlank() && it.artist.isNotBlank() }.ifEmpty { error("site: none") }
+    }.getOrElse { list(id, from, 500, now) }
 
     /** One public list's songs, in its order, the first `max` (blocking; throws when it won't answer twice). */
     fun list(id: String, from: String, max: Int, now: Long): List<Curation.Pick> {
