@@ -43,11 +43,14 @@ object SpotifyLists {
             runCatching {
                 if (!l.turn) list(l.id, l.from, l.max, now)
                 else whole(l.id, l.from, now).let { all ->
-                    // today's run of it: the day's place along the list, wrapping round
-                    if (all.size <= l.max) all else {
-                        val from = ((now / 86_400_000L) * l.max % all.size).toInt()
-                        (all.drop(from) + all.take(from)).take(l.max)
+                    // the week's additions first (`at`: when inkhome.app first saw the song; 0, there before), then
+                    // today's run of the rest: the day's place along it, wrapping round
+                    val (fresh, rest) = all.partition { it.at > 0 && now - it.at < 7 * 86_400_000L }
+                    val turn = if (rest.size <= l.max) rest else {
+                        val from = ((now / 86_400_000L) * l.max % rest.size).toInt()
+                        rest.drop(from) + rest.take(from)
                     }
+                    (fresh + turn).take(maxOf(l.max, minOf(fresh.size, l.max * 2))).map { it.copy(at = now) }
                 }
             }.onFailure { log("spotify ${l.id}: $it") }.getOrDefault(emptyList())
         }
@@ -69,22 +72,25 @@ object SpotifyLists {
      * (functions/lists there); else the embed page's 100.
      */
     fun whole(id: String, from: String, now: Long): List<Curation.Pick> {
-        runCatching { reader?.invoke(id) }.getOrNull()?.filter { it.first.isNotBlank() && it.second.isNotBlank() }?.takeIf { it.size > 100 }?.let { all ->
-            runCatching { readWhole?.invoke(id, all) }
-            return all.map { (t, a) -> Curation.Pick(false, t.replace(Regex("\\s+-\\s+(From|Remaster).*$", RegexOption.IGNORE_CASE), ""), a, from, "", "", now, null) }
-        }
-        return fromSite(id, from, now)
+        val read = runCatching { reader?.invoke(id) }.getOrNull()?.filter { it.first.isNotBlank() && it.second.isNotBlank() }?.takeIf { it.size > 100 }
+        read?.let { runCatching { readWhole?.invoke(id, it) } }
+        // the site's copy first even signed in: it knows when each song was added (the week's shown first)
+        val site = runCatching { fromSite(id, from) }.getOrNull()
+        if (site != null && (read == null || site.size >= read.size * 0.9)) return site
+        read?.let { all -> return all.map { (t, a) -> Curation.Pick(false, t.replace(Regex("\\s+-\\s+(From|Remaster).*$", RegexOption.IGNORE_CASE), ""), a, from, "", "", 0, null) } }
+        return list(id, from, 500, 0)
     }
 
-    private fun fromSite(id: String, from: String, now: Long): List<Curation.Pick> = runCatching {
+    /** inkhome.app's copy of a list, each song's `at` when the site first saw it (0: there from the start). */
+    private fun fromSite(id: String, from: String): List<Curation.Pick> = run {
         val r = http("https://inkhome.app/lists/$id.json", connectMs = 8_000, readMs = 15_000)
         if (r.code != 200) error("site ${r.code}")
         val a = JSONObject(r.text).getJSONArray("songs")
         (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
-            Curation.Pick(false, o.optString("t").replace(Regex("\\s+-\\s+(From|Remaster).*$", RegexOption.IGNORE_CASE), ""), o.optString("a"), from, "", "", now,
-                o.optString("art").takeIf { it.startsWith("http") })
+            Curation.Pick(false, o.optString("t").replace(Regex("\\s+-\\s+(From|Remaster).*$", RegexOption.IGNORE_CASE), ""), o.optString("a"), from, "", "",
+                o.optLong("seen"), o.optString("art").takeIf { it.startsWith("http") })
         }.filter { it.title.isNotBlank() && it.artist.isNotBlank() }.ifEmpty { error("site: none") }
-    }.getOrElse { list(id, from, 500, now) }
+    }
 
     /** One public list's songs, in its order, the first `max` (blocking; throws when it won't answer twice). */
     fun list(id: String, from: String, max: Int, now: Long): List<Curation.Pick> {
