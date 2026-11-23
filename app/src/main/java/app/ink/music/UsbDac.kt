@@ -190,6 +190,15 @@ object UsbDac {
             return out.distinct().sorted()
         }
 
+        /**
+         * The rate a song at `rate` goes to the DAC at: its own where the DAC takes it, else the highest whole step down
+         * it does (384 to 192, 352.8 to 176.4: [Down] brings it there); null for none (Android's way, as before).
+         */
+        fun rateFor(rate: Int, channels: Int): Int? {
+            if (altFor(rate, channels) != null) return rate
+            return (2..8).firstOrNull { n -> rate % n == 0 && rate / n >= 44_100 && altFor(rate / n, channels) != null }?.let { rate / it }
+        }
+
         /** The setting for a stream: its channels, the most bits it has, room enough for the rate. */
         fun altFor(rate: Int, channels: Int): Alt? {
             if (rate !in rates) return null

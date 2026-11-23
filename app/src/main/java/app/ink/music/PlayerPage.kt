@@ -1296,7 +1296,13 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         }
         // ink music's own way to the DAC: android set aside, the DAC's own word on its clock and any gaps
         if (h.slot > 0) {
-            steps += "to the dac" to "ink music's own driver · ${h.slot} bit · ${k(h.outRate)}" + if (h.eq.isEmpty()) "\nevery sample the number it was in the file" else ""
+            val brought = h.rate > 0 && h.outRate > 0 && h.outRate != h.rate
+            steps += "to the dac" to "ink music's own driver · ${h.slot} bit · ${k(h.outRate)}" + when {
+                // a rate the DAC won't take: brought down a whole step on the way (Down), said here
+                brought -> "\nyour dac doesn't take ${k(h.rate)}: brought down to ${k(h.outRate)}, filtered clean"
+                h.eq.isEmpty() -> "\nevery sample the number it was in the file"
+                else -> ""
+            }
             acts["to the dac"] = "exact: off" to { exactOn = false; Playback.exact(ctx, false) }
             steps += "android" to "set aside: ink music drives the dac itself"
             if (h.clock > 0) steps += "the dac's clock" to "%.1f hz, as the dac says it, a thousand times a second".format(java.util.Locale.ROOT, h.clock)
@@ -1348,6 +1354,8 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
         n.device.isNotEmpty() -> "the phone hands it on; what happens next is the speaker's"
         h == null -> ""
         h.exclusive > 0 && h.exclusive == h.rate -> "yes: at its own rate, the output ink music's alone; android's mixer kept out (what the dac's own chip does, its maker knows)"
+        h.slot > 0 && h.rate > 0 && h.outRate > 0 && h.outRate != h.rate ->
+            "close: your dac doesn't take ${k(h.rate)}, so ink music brings it down to ${k(h.outRate)} on the way, filtered clean; nothing else touches it"
         h.slot > 0 && h.eq.isNotEmpty() -> "close: your equalizer shapes it, in 64 bit; nothing else touches it. no mixer, no resampling, at its own rate straight to your dac"
         h.slot > 0 && h.dropouts > 0 -> "yes, but ${h.dropouts} ${if (h.dropouts == 1) "gap" else "gaps"}: every sample as in the file, at its own rate, by ink music's own driver; the music didn't come in time ${if (h.dropouts == 1) "once" else "${h.dropouts} times"}"
         h.slot > 0 -> "yes: every sample as in the file, at its own rate, straight to your dac. android never touched it"

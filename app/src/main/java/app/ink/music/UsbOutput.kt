@@ -23,7 +23,7 @@ class UsbOutputProvider(private val c: Context, private val fallback: AudioOutpu
     private fun dac(rate: Int, channels: Int, encoding: Int): UsbDac.Held? {
         if (!Exact.on(c) || (encoding != C.ENCODING_PCM_FLOAT && encoding != C.ENCODING_PCM_16BIT)) return null
         val h = UsbDac.hold(c) ?: return null
-        return h.takeIf { it.altFor(rate, channels) != null }
+        return h.takeIf { it.rateFor(rate, channels) != null }
     }
 
     // only decoded samples: a flac file's own format says 16 bit too, and taken as the DAC's, Media3 sent it the
@@ -56,9 +56,12 @@ class UsbOutputProvider(private val c: Context, private val fallback: AudioOutpu
     override fun getAudioOutput(config: AudioOutputProvider.OutputConfig): AudioOutput {
         val channels = Integer.bitCount(config.channelMask)
         val h = dac(config.sampleRate, channels, config.encoding) ?: return exclusive(config, channels) ?: fallback.getAudioOutput(config)
-        val stream = h.begin(config.sampleRate, channels, config.encoding == C.ENCODING_PCM_FLOAT)
+        // its own rate, or a whole step down where the DAC won't take it (Down)
+        val to = h.rateFor(config.sampleRate, channels) ?: config.sampleRate
+        val stream = h.begin(to, channels, config.encoding == C.ENCODING_PCM_FLOAT)
             ?: throw AudioOutputProvider.InitializationException()
-        return UsbAudioOutput(c, h, stream, config)
+        if (to != config.sampleRate) android.util.Log.i("ink-usb", "${config.sampleRate} the dac won't take: brought down to $to")
+        return UsbAudioOutput(c, h, stream, config, config.sampleRate / to)
     }
 
     /**
@@ -87,7 +90,12 @@ class UsbOutputProvider(private val c: Context, private val fallback: AudioOutpu
  * stream gone (the DAC unplugged, exact off), a write fails as recoverable, and Media3 asks again where to play.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
-class UsbAudioOutput(private val c: Context, private val h: UsbDac.Held, private val stream: UsbDac.Held.Stream, private val config: AudioOutputProvider.OutputConfig) : AudioOutput {
+class UsbAudioOutput(
+    private val c: Context, private val h: UsbDac.Held, private val stream: UsbDac.Held.Stream, private val config: AudioOutputProvider.OutputConfig,
+    factor: Int = 1,
+) : AudioOutput {
+    // a song at a rate the DAC won't take, brought down a whole step on its way (Down); null: as it is
+    private val down = if (factor > 1) Down(factor, Integer.bitCount(config.channelMask), config.encoding) else null
     private val listeners = CopyOnWriteArraySet<AudioOutput.Listener>()
     private var scratch: ByteBuffer? = null
     private var started = false
@@ -132,6 +140,18 @@ class UsbAudioOutput(private val c: Context, private val h: UsbDac.Held, private
             pending = out.takeIf { it.hasRemaining() }
             return !buffer.hasRemaining()
         }
+        val d = down
+        if (d != null) {
+            // what's left of the last one first; then this buffer brought down whole, as much of it as fits now
+            pending?.let { p -> val n = put(p); if (n < 0) throw AudioOutput.WriteException(n, true); p.position(p.position() + n); if (p.hasRemaining()) return false }
+            val out = d.process(buffer)
+            val n = put(out)
+            if (n < 0) throw AudioOutput.WriteException(n, true)
+            out.position(out.position() + n)
+            pending = out.takeIf { it.hasRemaining() }
+            stream.underruns().let { u -> if (u > underruns && started) { underruns = u; listeners.forEach { it.onUnderrun() } } }
+            return true
+        }
         val n = put(buffer)
         if (n < 0) throw AudioOutput.WriteException(n, true)
         buffer.position(buffer.position() + n)
@@ -142,6 +162,7 @@ class UsbAudioOutput(private val c: Context, private val h: UsbDac.Held, private
     override fun flush() {
         stream.flush(); started = false
         pending = null; baseUs = 0; playedAtBase = 0
+        down?.flush()
         sonic?.flush(androidx.media3.common.audio.AudioProcessor.StreamMetadata.DEFAULT)
     }
     override fun stop() {}   // what's written plays out by itself
@@ -160,7 +181,8 @@ class UsbAudioOutput(private val c: Context, private val h: UsbDac.Held, private
     override fun getAudioSessionId() = config.audioSessionId
     override fun getSampleRate() = config.sampleRate
     override fun getBufferSizeInFrames() = (config.sampleRate / 4).toLong()
-    override fun getPositionUs() = baseUs + ((stream.played() - playedAtBase) * 1_000_000L / config.sampleRate * speed).toLong()
+    // the DAC's frames, at the rate it runs at (the song's, or a step down)
+    override fun getPositionUs() = baseUs + ((stream.played() - playedAtBase) * 1_000_000L / stream.rate * speed).toLong()
     override fun getPlaybackParameters(): PlaybackParameters = PlaybackParameters(speed)
     override fun isStalled() = false
     override fun addListener(listener: AudioOutput.Listener) { listeners += listener }

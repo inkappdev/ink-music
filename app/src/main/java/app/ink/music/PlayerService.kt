@@ -357,8 +357,11 @@ class PlayerService : MediaLibraryService() {
     private fun levelWanted() = Levelled.on(this) && !Exact.inUse(this)
     /** Exact's word for a format: ink music's own way to the DAC where it holds one, else Android's bit-perfect path asked. */
     private fun exactFor(format: androidx.media3.common.Format): String {
-        if (Exact.on(this) && UsbDac.hold(this)?.altFor(format.sampleRate, format.channelCount.coerceAtLeast(1)) != null)
-            return "yes ${Heard.bitsOf(format).takeIf { it > 0 } ?: 16}/${Heard.khz(format.sampleRate)}"
+        val to = if (Exact.on(this)) UsbDac.hold(this)?.rateFor(format.sampleRate, format.channelCount.coerceAtLeast(1)) else null
+        val bits = Heard.bitsOf(format).takeIf { it > 0 } ?: 16
+        // a rate the DAC won't take, brought down a step by ink music's own driver (Down): said, not silent
+        if (to != null && to != format.sampleRate) return "yes $bits/${Heard.khz(to)}, brought down from ${Heard.khz(format.sampleRate)}: the dac won't take it"
+        if (to != null) return "yes $bits/${Heard.khz(format.sampleRate)}"
         return Exact.request(this, format)
     }
     private var exactSaid = ""
