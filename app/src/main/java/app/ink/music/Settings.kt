@@ -195,6 +195,14 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     }
                 }
 
+                // youtube's music videos: shown, or songs only (SongsOnly)
+                if (YouTubeMusic.available) {
+                    val songsOnly by SongsOnly.on.collectAsState()
+                    SettingRow("VIDEOS", if (songsOnly) "songs only" else "shown", opened, "new music videos on listen and artists' pages, youtube's videos in find") {
+                        Pick(listOf("shown" to !songsOnly, "songs only" to songsOnly)) { SongsOnly.set(it == 1) }
+                    }
+                }
+
                 // your computer: paired, kept in step on the wifi (Sync)
                 if (onTv()) { RowsEnd(); Spacer(Modifier.height(30.dp)); TvPhoneSetting() }
                 else {
@@ -220,7 +228,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 // how good a stream is: on wifi, and on mobile data (Quality)
                 var quality by remember { mutableStateOf(Quality.read(ctx)) }
                 SettingRow("QUALITY", "${Quality.words[quality.first]} · ${Quality.words[quality.second]} on data", opened,
-                    "original, the file as it is; high, mp3 320; data saver, the smallest") {
+                    "original, the file as it is: your server's flac stays flac; high, mp3 320; data saver, the smallest") {
                     for ((where, onData) in listOf("on wifi" to false, "on mobile data" to true)) {
                         PickLabel(where)
                         Pick(Quality.words.mapIndexed { q, w -> w to ((if (onData) quality.second else quality.first) == q) }) { q ->

@@ -53,8 +53,10 @@ object Covers {
         return read(ctx, song, px)
     }
 
-    private suspend fun read(ctx: Context, song: Song, px: Int): Cover? {
+    private suspend fun read(ctx: Context, given: Song, px: Int): Cover? {
         return withContext(Dispatchers.IO) {
+            // a YouTube song with only its video's picture: the studio art of its record, where the catalogs have it
+            val song = studio(ctx, given)
             // one from the network (YouTube's, the server's, a station's) is kept on the phone too: the next start has it at once
             val remote = (song.server || song.tube || song.station || song.episode) && song.art != null
             val t0 = System.currentTimeMillis()
@@ -104,6 +106,18 @@ object Covers {
         } ?: return null
         val found = song.copy(art = url)
         return fromDisk(ctx, found, px) ?: fetch(url, px)?.also { toDisk(ctx, found, px, it) }
+    }
+
+    /**
+     * A YouTube song that comes with only its video's frame (a music video's, a mix's or radio's songs) as the record it's
+     * on would look: its studio cover found by the song's name (iTunes, then Deezer), the link kept on the phone; none
+     * found, the frame as before (a Reddit ask, 2026-11-23: "YT videos covers ... appear as thumbnail of the videos").
+     */
+    private fun studio(ctx: Context, song: Song): Song {
+        val art = song.art ?: return song
+        if (!song.tube || face(song) || !Regex("""^https?://i\d?\.ytimg\.com/vi(?:_webp)?/""").containsMatchIn(art)) return song
+        val found = runCatching { FoundCovers.song(java.io.File(ctx.cacheDir, "covers"), song.title, song.artist) }.getOrNull()
+        return if (found != null) song.copy(art = found) else song
     }
 
     private fun face(song: Song) = song.id.startsWith("yface:") || song.id.startsWith("yphoto:")

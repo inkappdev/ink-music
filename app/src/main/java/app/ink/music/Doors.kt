@@ -161,8 +161,9 @@ fun AllMoodsPage(pages: Pages) {
             listOf("moods" to ordered(all.filter { !it.genre }), "genres" to ordered(all.filter { it.genre })).filter { it.second.isNotEmpty() }.forEach { (label, xs) ->
                 item { BasicText(label, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 14.dp, bottom = 8.dp)) }
                 items(xs.chunked(3)) { row ->
+                    val size = genreSize(all.map { it.title })
                     Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { m -> GenreTile(m.title, (counts[m.title] ?: 0) > 0, Modifier.weight(1f)) { Moods.open(ctx, m); pages.open(Page.Mood(m)) } }
+                        row.forEach { m -> GenreTile(m, (counts[m.title] ?: 0) > 0, size, Modifier.weight(1f)) { Moods.open(ctx, m); pages.open(Page.Mood(m)) } }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }

@@ -121,6 +121,20 @@ fun agoOf(at: Long): String {
     return when { d < 1 -> "today"; d == 1 -> "yesterday"; d < 7 -> "$d days ago"; d < 14 -> "a week ago"; d < 60 -> "${d / 7} weeks ago"; d < 365 -> "${d / 30} months ago"; d < 730 -> "a year ago"; else -> "${d / 365} years ago" }
 }
 
+/**
+ * Songs only (settings, youtube music's videos; a Reddit ask, 2026-11-23: "a music only profile where videos do not get
+ * suggested"): no new videos on listen, none on an artist's page, none of youtube.com's videos in find. Live DJ sets
+ * stay (each one listened to as well as watched). The screens' own, so in their prefs.
+ */
+object SongsOnly {
+    val on = kotlinx.coroutines.flow.MutableStateFlow(false)
+    private var prefs: android.content.SharedPreferences? = null
+    fun start(c: android.content.Context) {
+        prefs = c.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).also { on.value = it.getBoolean("songs-only", false) }
+    }
+    fun set(v: Boolean) { on.value = v; prefs?.edit()?.putBoolean("songs-only", v)?.apply() }
+}
+
 /** Listen's shelf of new videos from your artists: each frame wide, its song, the artist and how long ago. */
 @Composable
 fun NewVideosShelf(clips: List<MusicVideos.Clip>, pages: Pages) {
@@ -149,6 +163,7 @@ fun LiveSetsShelf(all: List<MusicVideos.Clip>, pages: Pages) {
 /** An artist's music videos on their page, newest first: each frame wide, its song and how long ago. */
 @Composable
 fun ArtistVideos(name: String, browseId: String, pages: Pages) {
+    if (SongsOnly.on.collectAsState().value) return
     val videos by produceState(emptyList<MusicVideos.Clip>(), name, browseId) {
         value = runCatching { MusicVideos.of(name, browseId) }.getOrDefault(emptyList())
     }

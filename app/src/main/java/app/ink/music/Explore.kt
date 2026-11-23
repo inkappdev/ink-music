@@ -66,6 +66,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Explore (the Mac's, here): what isn't yours yet, picked by critics and DJs. The record of the day; what DJs are playing this
@@ -746,27 +747,71 @@ private fun MoodsAndGenres(all: List<TubeMood>, pages: Pages) {
     // the genres as a row of tiles to slide through, the ones you open most first (as words they were a wall of
     // text on a phone: 2026-10-28)
     Heading("genres")
-    Shelf(all.filter { it.genre }.sortedWith(compareByDescending<TubeMood> { counts[it.title] ?: 0 }.thenBy { Moods.rank(it.title) })) { m ->
-        GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(ctx, m); pages.open(Page.Mood(m)) }
+    val genres = all.filter { it.genre }
+    val size = genreSize(genres.map { it.title })
+    Shelf(genres.sortedWith(compareByDescending<TubeMood> { counts[it.title] ?: 0 }.thenBy { Moods.rank(it.title) })) { m ->
+        GenreTile(m, (counts[m.title] ?: 0) > 0, size) { Moods.open(ctx, m); pages.open(Page.Mood(m)) }
     }
     Spacer(Modifier.height(12.dp))
 }
 
 /**
- * A genre as a tile: its name big in the pixel face on black in a hairline frame (as ink radio's kinds are), lit if it's
- * yours. As big as its longest word fits the tile's 96 dp across, at the phone's own text size (#1: on a phone set to
+ * One size for every genre tile in sight (a Reddit ask, 2026-11-23: each name as big as it fitted made the row uneven):
+ * as big as the longest word among them fits a tile's 96 dp across, at the phone's own text size (#1: on a phone set to
  * larger text, "alternative" broke as "alternati / ve"): a Silkscreen letter is about 0.68 of its size wide, 0.72 to be safe.
  */
 @Composable
-internal fun GenreTile(name: String, yours: Boolean, modifier: Modifier = Modifier.width(120.dp), onClick: () -> Unit) {
+internal fun genreSize(names: List<String>): androidx.compose.ui.unit.TextUnit {
     val scale = LocalDensity.current.fontScale
-    val size = remember(name, scale) {
-        val longest = name.split(' ').maxOf { it.length }.coerceAtLeast(1)
+    return remember(names, scale) {
+        val longest = names.flatMap { it.split(' ') }.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
         (96f / (longest * 0.72f) / scale).coerceIn(12f, 19f).sp
     }
-    Box(modifier.aspectRatio(1f).border(1.dp, if (yours) Ink.mid else Ink.line)
-        .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(12.dp)) {
-        BasicText(name.lowercase(), style = pixel(size, if (yours) Ink.ink else Ink.mid), maxLines = 4, overflow = TextOverflow.Ellipsis)
+}
+
+/**
+ * A mood or genre as a tile, as INK's moods are (2026-11-23, a Reddit ask: "a pixelated or dithered version of moods"):
+ * the cover of its first YouTube Music playlist in the dither ([GenreArt]; YouTube's own lists are always printed), its
+ * name on a black tab in the corner, lit if it's yours. Till its picture comes, a hairline frame on black.
+ */
+@Composable
+internal fun GenreTile(m: TubeMood, yours: Boolean, size: androidx.compose.ui.unit.TextUnit, modifier: Modifier = Modifier.width(120.dp), onClick: () -> Unit) {
+    val ctx = LocalContext.current
+    val art by produceState(GenreArt.kept(m.title), m.title) { if (value == null) value = GenreArt.of(ctx, m) }
+    Box(modifier.aspectRatio(1f).then(if (art == null) Modifier.border(1.dp, if (yours) Ink.mid else Ink.line) else Modifier)
+        .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)), contentAlignment = Alignment.BottomStart) {
+        art?.let { a -> Covered(remember(a) { faceSong("genre " + m.title, a) }, Modifier.fillMaxSize(), px = 400) }
+        BasicText(m.title.lowercase(), style = pixel(size, if (yours) Ink.ink else Ink.mid), maxLines = 3,
+            modifier = Modifier.background(Ink.black).padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 3.dp))
+    }
+}
+
+/**
+ * Each mood's and genre's picture: the cover of the first playlist on its YouTube Music page, read once a tile's in
+ * sight (two at a time) and kept on the phone by name; none found offline, asked again next time.
+ */
+object GenreArt {
+    private val known = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val asking = kotlinx.coroutines.sync.Semaphore(2)
+    @Volatile private var loaded = false
+    private fun file(c: Context) = File(c.cacheDir, "genre-art.json")
+
+    fun kept(title: String): String? = known[title]
+
+    suspend fun of(c: Context, m: TubeMood): String? = withContext(Dispatchers.IO) {
+        if (!loaded) {
+            runCatching { JSONObject(file(c).readText()).let { o -> o.keys().forEach { k -> known.putIfAbsent(k, o.getString(k)) } } }
+            loaded = true
+        }
+        known[m.title]?.let { return@withContext it }
+        asking.withPermit {
+            known[m.title]?.let { return@withPermit it }
+            val art = runCatching { YouTubeMusic.mood(m.params) }.getOrDefault(emptyList())
+                .firstNotNullOfOrNull { (_, lists) -> lists.firstNotNullOfOrNull { it.art } } ?: return@withPermit null
+            known[m.title] = art
+            runCatching { file(c).writeText(JSONObject(known as Map<*, *>).toString()) }
+            art
+        }
     }
 }
 

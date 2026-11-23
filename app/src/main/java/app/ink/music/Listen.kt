@@ -330,7 +330,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val videosAll by MusicVideos.clips.collectAsState()
     val videos = videosAll.unblocked { it.title to it.artist }
     LaunchedEffect(Unit) { MusicVideos.start(ctx) }
-    if (videos.isNotEmpty()) sections["videos"] = { NewVideosShelf(videos, pages) }
+    val songsOnly by SongsOnly.on.collectAsState()
+    if (videos.isNotEmpty() && !songsOnly) sections["videos"] = { NewVideosShelf(videos, pages) }
     // monday finds and friday drops: your two weekly lists from Spotify, in ink's words (Finds), each till the next
     val finds by Finds.weeks.collectAsState()
     finds[Finds.Kind.MONDAY]?.let { w -> sections["monday"] = { FindsShelf(Finds.Kind.MONDAY, w) } }

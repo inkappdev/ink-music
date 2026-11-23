@@ -188,6 +188,7 @@ class Main : ComponentActivity() {
         KeepLoved.start(this)
         KeepMost.start(this)
         SongsFrom.start(this)
+        SongsOnly.start(this)
         Pods.start(this)
         Order.start(this)
         Seeds.start(this)
@@ -643,8 +644,17 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     LaunchedEffect(rc.sort, albums) { if (rc.sort == Sort.COLOUR) Colours.fill(ctx, albums) }
     val hiddenAlbums by Library.hiddenAlbums.collectAsState()
     var showHiddenRecords by remember { mutableStateOf(false) }
-    val records = remember(albums, rc, seed, heard, colours) {
-        Sorts.order(albums, rc, seed, { it.id },
+    // where the records come from (this phone, your server, kept offline), as the songs tab's
+    val keptNow by Offline.kept.collectAsState()
+    val recordsFrom by SongsFrom.records.collectAsState()
+    val recordCounts = remember(albums, keptNow) {
+        albums.filter { it.songs.isNotEmpty() }.groupingBy { SongsFrom.of(it.songs.first()) }.eachCount() +
+            (albums.count { a -> a.songs.any { it.id in keptNow } }.takeIf { it > 0 }?.let { mapOf("kept" to it) } ?: emptyMap())
+    }
+    val records = remember(albums, rc, seed, heard, colours, recordsFrom, keptNow) {
+        val shown = if (recordsFrom == "all" || recordsFrom !in recordCounts) albums
+            else albums.filter { a -> if (recordsFrom == "kept") a.songs.any { it.id in keptNow } else a.songs.firstOrNull()?.let(SongsFrom::of) == recordsFrom }
+        Sorts.order(shown, rc, seed, { it.id },
             compareBy<Album>({ Library.sortName(it.artist) }, { it.year }, { Library.sortName(it.title) })) { a ->
             when (rc.sort) {
                 // a timeline: the oldest first
@@ -751,6 +761,7 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "sort") { SortRow("albums", Sorts.RECORDS) }
+                if (recordCounts.size > 1) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "filters") { RecordFilters(recordCounts) }
                 if (rc.sort == Sort.YEAR) {
                     // by year: the year big where each begins, a timeline down the page
                     var at = 0
@@ -2504,9 +2515,11 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
         value = ask?.let { Stations.search(ctx, it.first) }.orEmpty()
     }
     // youtube.com's own videos (the full build): songs never put on YouTube Music, apart from its songs; none it already gave
-    val videosAll by androidx.compose.runtime.produceState(emptyList<Song>(), ask) {
+    // (none, set to songs only: SongsOnly)
+    val songsOnly by SongsOnly.on.collectAsState()
+    val videosAll by androidx.compose.runtime.produceState(emptyList<Song>(), ask, songsOnly) {
         val text = ask?.first
-        value = if (!YouTubeMusic.available || text == null) emptyList() else tubeVideos(text)
+        value = if (!YouTubeMusic.available || text == null || songsOnly) emptyList() else tubeVideos(text)
     }
     // a YouTube video's id in what's typed ("[VDvX1hzGZN4]", as a file downloaded from YouTube is often named): that video
     val tubeId = if (pasted || !YouTubeMusic.available) null else Search.tubeId(raw)
@@ -3546,12 +3559,17 @@ object SongsFrom {
     val WORDS = listOf("all" to "everything", "phone" to "this ${Device.word}", "server" to "your server", "uploads" to "your uploads",
         "youtube" to "youtube", "kept" to "kept offline")
 
+    /** Where the albums tab's records come from, its own (2026-11-23, a Reddit ask: the songs tab's filter on albums). */
+    val records = kotlinx.coroutines.flow.MutableStateFlow("all")
+
     fun start(c: android.content.Context) {
         val p = c.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).also { prefs = it }
         chosen.value = p.getString("songs-from", null) ?: "all"
+        records.value = p.getString("records-from", null) ?: "all"
         genre.value = p.getString("songs-genre", null).orEmpty()
     }
     fun choose(f: String) { chosen.value = f; prefs?.edit()?.putString("songs-from", f)?.apply() }
+    fun chooseRecords(f: String) { records.value = f; prefs?.edit()?.putString("records-from", f)?.apply() }
     /** A genre shown ("": every genre). */
     fun setGenre(g: String) { genre.value = g; prefs?.edit()?.putString("songs-genre", g)?.apply() }
     fun of(s: Song) = when { s.tube -> if (YouTubeAccount.uploaded(s.id)) "uploads" else "youtube"; s.server -> "server"; else -> "phone" }
@@ -3568,19 +3586,32 @@ private fun SongFilters(counts: Map<String, Int>, genres: List<Pair<String, Int>
     val from by SongsFrom.chosen.collectAsState()
     val genre by SongsFrom.genre.collectAsState()
     val now = if (from in counts) from else "all"
-    val sources = SongsFrom.WORDS.filter { (k, _) -> k == "all" || k in counts }
     // the chosen genre always there, even with none of its songs tagged yet
     val allGenres = if (genre.isNotEmpty() && genres.none { it.first == genre }) genres + (genre to 0) else genres
     Row(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-        if (counts.size > 1) DropWord(sources.first { it.first == now }.second, now != "all",
-            listOf(Triple("everything", null, now == "all")) + sources.filter { it.first != "all" }.map { (k, w) -> Triple(w, counts[k], k == now) }) { i ->
-            SongsFrom.choose(if (i == 0) "all" else sources.filter { it.first != "all" }[i - 1].first)
-        }
+        if (counts.size > 1) FromWord(counts, now, SongsFrom::choose)
         if (allGenres.isNotEmpty()) DropWord(genre.ifEmpty { "every genre" }, genre.isNotEmpty(),
             listOf(Triple("every genre", null, genre.isEmpty())) + allGenres.map { (g, n) -> Triple(g, n.takeIf { it > 0 }, g == genre) }) { i ->
             SongsFrom.setGenre(if (i == 0) "" else allGenres[i - 1].first)
         }
     }
+}
+
+/** Where they come from, as a drop-down (everything, this phone, your server, ...), each with how many. */
+@Composable
+private fun FromWord(counts: Map<String, Int>, now: String, choose: (String) -> Unit) {
+    val sources = SongsFrom.WORDS.filter { (k, _) -> k != "all" && k in counts }
+    DropWord(SongsFrom.WORDS.first { it.first == now }.second, now != "all",
+        listOf(Triple("everything", null, now == "all")) + sources.map { (k, w) -> Triple(w, counts[k], k == now) }) { i ->
+        choose(if (i == 0) "all" else sources[i - 1].first)
+    }
+}
+
+/** The albums tab's filter under its orders: where the records come from, as the songs tab's (a record is from where its songs are). */
+@Composable
+private fun RecordFilters(counts: Map<String, Int>) {
+    val from by SongsFrom.records.collectAsState()
+    Row(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) { FromWord(counts, if (from in counts) from else "all", SongsFrom::chooseRecords) }
 }
 
 /**

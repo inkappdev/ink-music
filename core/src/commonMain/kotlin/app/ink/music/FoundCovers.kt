@@ -14,10 +14,19 @@ object FoundCovers {
     private val nameless = setOf("", "unknown", "unknown album", "unknown artist", "untitled")
 
     /** The cover's link for the record `album` by `artist`, or null for none (or none yet). Blocking. */
-    fun link(dir: File, album: String, artist: String, elsewhere: ((String, String) -> String?)? = null): String? {
+    fun link(dir: File, album: String, artist: String, elsewhere: ((String, String) -> String?)? = null): String? =
+        find(dir, album, artist, record = true, elsewhere)
+
+    /**
+     * The cover of the record a song is on, found by the song's own name: for a YouTube song that comes with only its
+     * video's picture (a Reddit ask, 2026-11-23: video thumbnails as covers), the studio art in its place. Blocking.
+     */
+    fun song(dir: File, title: String, artist: String): String? = find(dir, title, artist, record = false, null)
+
+    private fun find(dir: File, album: String, artist: String, record: Boolean, elsewhere: ((String, String) -> String?)?): String? {
         val a = album.trim(); val by = artist.trim()
         if (a.lowercase().trim('[', ']', '<', '>') in nameless || by.lowercase().trim('[', ']', '<', '>') in nameless) return null
-        val key = sha1("${a.lowercase()}|${by.lowercase()}".encodeToByteArray()).hex()
+        val key = (if (record) "" else "song-") + sha1("${a.lowercase()}|${by.lowercase()}".encodeToByteArray()).hex()
         val f = File(dir, "found-$key")
         if (f.exists()) {
             val kept = runCatching { f.readText() }.getOrDefault("")
@@ -30,7 +39,7 @@ object FoundCovers {
         try {
             // the catalogs, then the app's own last place (YouTube Music's record of that name: 2026-11-08, "make sure an
             // album always has art")
-            val url = Curation.cover(a, by, record = true) ?: elsewhere?.let { runCatching { it(a, by) }.getOrNull() }
+            val url = Curation.cover(a, by, record = record) ?: elsewhere?.let { runCatching { it(a, by) }.getOrNull() }
             if (url == null && !reachable()) return null
             runCatching { dir.mkdirs(); f.writeText(url.orEmpty()) }
             return url
