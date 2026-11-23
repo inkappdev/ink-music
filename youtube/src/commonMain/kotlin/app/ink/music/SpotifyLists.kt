@@ -30,6 +30,15 @@ object SpotifyLists {
 
     /** Every list's songs, taken in turn (a list each, so no one list fills a shelf); one that won't answer passed over. */
     fun picks(now: Long, log: (String) -> Unit = {}): List<Curation.Pick> {
+        val first = read(now, log)
+        if (first.isNotEmpty()) return first
+        // none answered at all (2026-11-23: the phone's network not up yet as the app started, every list "unable to
+        // resolve host", and INK went half a day without them): once more, a few seconds on
+        Thread.sleep(5_000)
+        return read(now, log)
+    }
+
+    private fun read(now: Long, log: (String) -> Unit): List<Curation.Pick> {
         val each = ALL.map { l ->
             runCatching {
                 if (!l.turn) list(l.id, l.from, l.max, now)
