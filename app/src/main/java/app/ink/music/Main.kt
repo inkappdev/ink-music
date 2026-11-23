@@ -192,6 +192,8 @@ class Main : ComponentActivity() {
         CuratorLists.start(this)
         intent?.getStringExtra("curatorKey")?.let { CuratorLists.setKey(this, it) }
         SongsOnly.start(this)
+        // copies of Spotify playlists brought up to date, once a day each, a moment after opening (InStep)
+        applicationContext.let { app -> kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { kotlinx.coroutines.delay(20_000); runCatching { InStep.catchUp(app) } } }
         Pods.start(this)
         Order.start(this)
         Seeds.start(this)
@@ -1473,8 +1475,9 @@ private fun LovedPage(pages: Pages) {
  * once (a second tap made a second playlist), then "open it".
  */
 @Composable
-internal fun KeepIt(name: String, found: List<Song>, pages: Pages) {
+internal fun KeepIt(name: String, found: List<Song>, pages: Pages, spotify: String? = null, songs: List<Import.Said> = emptyList()) {
     val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
     // where it's being made ("youtube", "server"), and once made, the page that opens it
     var making by remember(name, found) { mutableStateOf<String?>(null) }
     val made = remember(name, found) { androidx.compose.runtime.mutableStateMapOf<String, Page?>() }
@@ -1485,9 +1488,14 @@ internal fun KeepIt(name: String, found: List<Song>, pages: Pages) {
     fun Place(key: String, where: String, make: suspend () -> Pair<Boolean, Page?>) {
         Spacer(Modifier.height(10.dp))
         when {
-            made.containsKey(key) -> Row {
-                BasicText("made on $where", style = pixel(14.sp), modifier = Modifier.padding(end = 26.dp, top = 8.dp))
-                made[key]?.let { page -> Word("open it", pixel(14.sp), touch = 8.dp) { pages.open(page) } }
+            made.containsKey(key) -> Column {
+                Row {
+                    BasicText("made on $where", style = pixel(14.sp), modifier = Modifier.padding(end = 26.dp, top = 8.dp))
+                    made[key]?.let { page -> Word("open it", pixel(14.sp), touch = 8.dp) { pages.open(page) } }
+                }
+                // from Spotify, signed in: kept in step with it from now on (InStep), unless stopped
+                val target = when (val p = made[key]) { is Page.TubeList -> p.list.id; is Page.Playlist -> p.id; else -> null }
+                if (spotify != null && target != null) InStepLine(key, target, name)
             }
             making == key -> BasicText("making it on $where", style = pixel(14.sp, Ink.dim), modifier = Modifier.padding(top = 8.dp))
             else -> Word("make it on $where", pixel(14.sp, Ink.mid), touch = 8.dp) {
@@ -1495,7 +1503,11 @@ internal fun KeepIt(name: String, found: List<Song>, pages: Pages) {
                 making = key
                 scope.launch {
                     val (ok, opened) = make()
-                    if (ok) made[key] = opened
+                    if (ok) {
+                        made[key] = opened
+                        val target = when (opened) { is Page.TubeList -> opened.list.id; is Page.Playlist -> opened.id; else -> null }
+                        if (spotify != null && target != null) InStep.link(ctx, spotify, name, key, target, songs)
+                    }
                     making = null
                 }
             }
@@ -1514,6 +1526,36 @@ internal fun KeepIt(name: String, found: List<Song>, pages: Pages) {
         } else { said = "the server didn't take it"; false to null }
     }
     said?.let { Spacer(Modifier.height(10.dp)); BasicText(it, style = pixel(12.sp, Ink.mid)) }
+}
+
+/**
+ * Whether a copy of a Spotify playlist is kept in step with it (InStep): "in step with spotify" and stop; not yet, and
+ * your Spotify playlists have one of its name, "keep in step with spotify". Nothing signed out of Spotify.
+ */
+@Composable
+internal fun InStepLine(where: String, target: String, name: String) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { InStep.load(ctx) }
+    val links by InStep.links.collectAsState()
+    val link = links.firstOrNull { it.where == where && it.target == target }
+    var said by remember(target) { mutableStateOf<String?>(null) }
+    val theirs by androidx.compose.runtime.produceState<Import.Theirs?>(null, target, link) {
+        if (link == null && Spotify.signedIn()) value = runCatching { if (Spotify.fresh(ctx)) InStep.sameNamed(name) else null }.getOrNull()
+    }
+    when {
+        link != null -> Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            BasicText("in step with spotify: its new songs come here too", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.width(16.dp))
+            Word("stop", pixel(12.sp, Ink.mid), touch = 8.dp) { InStep.unlink(ctx, where, target) }
+        }
+        theirs != null -> Word("keep in step with spotify", pixel(13.sp, Ink.mid), Modifier.padding(top = 4.dp), touch = 8.dp) {
+            val t = theirs ?: return@Word
+            said = "reading it on spotify"
+            scope.launch { said = if (InStep.linkExisting(ctx, t, where, target)) null else "spotify didn't say. try again" }
+        }
+    }
+    said?.let { BasicText(it, style = pixel(12.sp, Ink.mid)) }
 }
 
 /** A playlist's page: its name big, play and shuffle, its songs in its order. */
@@ -1547,6 +1589,8 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
                 KeepOffline(all)
             }
             MixProgress(name)
+            // a copy of a Spotify playlist: kept in step with it (InStep)
+            if (mine) InStepLine("server", id, name)
             // deleting asks once more: the word says so, lit, for a moment
             if (mine) Word(if (sure) "delete it" else "delete", pixel(12.sp, if (sure) Ink.ink else Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
                 if (!sure) sure = true else scope.launch { if (Server.deletePlaylist(id)) pages.back() }
@@ -2111,10 +2155,12 @@ private fun ImportPage(pages: Pages) {
     var progress by remember { mutableStateOf(0) }
     var matched by remember { mutableStateOf<List<Song?>?>(null) }
     var said by remember { mutableStateOf<String?>(null) }
+    // the Spotify playlist it came from (signed in), so the copy made can be kept in step with it (InStep)
+    var fromSpotify by remember { mutableStateOf<String?>(null) }
     val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             val read = runCatching { Import.read(ctx, uri) }.getOrDefault(emptyList())
-            lists = read; chosen = read.singleOrNull(); matched = null
+            lists = read; chosen = read.singleOrNull(); matched = null; fromSpotify = null
             said = if (read.isEmpty()) "no playlist in that file: an exportify csv, or spotify's Playlist1.json" else null
         }
     }
@@ -2130,7 +2176,7 @@ private fun ImportPage(pages: Pages) {
             reading = 0
             val songs = Spotify.songs(w.id) { reading = it }
             reading = null; wanted = null
-            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = Import.Listed(w.name, songs); lists = null }
+            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = Import.Listed(w.name, songs); lists = null; fromSpotify = w.id }
         }
     }
     fun open(w: Import.Theirs) {
@@ -2140,7 +2186,7 @@ private fun ImportPage(pages: Pages) {
             reading = 0
             val songs = Spotify.songs(w.id) { reading = it }
             reading = null; wanted = null
-            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = Import.Listed(w.name, songs); lists = null }
+            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = Import.Listed(w.name, songs); lists = null; fromSpotify = w.id }
         } else Spotify.signIn(ctx)
     }
     LaunchedEffect(chosen) {
@@ -2207,7 +2253,7 @@ private fun ImportPage(pages: Pages) {
                     BasicText("${found.size} of ${c.songs.size} found   ${found.count { !it.tube }} yours", style = pixel(12.sp, Ink.mid))
                     Spacer(Modifier.height(16.dp))
                     Word("play it", pixel(14.sp), touch = 8.dp) { Playback.play(found, 0) }
-                    KeepIt(c.name, found, pages)
+                    KeepIt(c.name, found, pages, spotify = fromSpotify, songs = c.songs)
                     said?.let { Spacer(Modifier.height(10.dp)); BasicText(it, style = pixel(12.sp, Ink.mid)) }
                     Spacer(Modifier.height(14.dp))
                 }
@@ -2838,6 +2884,8 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
                     if (!sure) sure = true else scope.launch { if (YouTubeAccount.deletePlaylist(pl.id)) pages.back() }
                 }
             }
+            // a copy of a Spotify playlist: kept in step with it (InStep)
+            if (mine) InStepLine("youtube", pl.id, pl.name)
             Spacer(Modifier.height(14.dp))
         }}) {
         val all = songs.orEmpty()
