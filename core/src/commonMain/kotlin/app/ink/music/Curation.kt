@@ -368,9 +368,23 @@ object Curation {
      * (Pitchfork) doesn't fill the shelf; `from` is a pick's publication.
      */
     fun <T> fair(items: List<T>, from: (T) -> String): List<T> {
-        val each = items.groupBy(from).values.toList()
-        return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { n -> each.mapNotNull { it.getOrNull(n) } }
+        // ink's own lists (INK) every third, not one turn among fifteen (2026-11-23: they keep the shelves fresh)
+        val (ours, theirs) = items.partition { from(it) == INK }
+        val each = theirs.groupBy(from).values.toList()
+        val turns = (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { n -> each.mapNotNull { it.getOrNull(n) } }
+        if (ours.isEmpty()) return turns
+        val out = ArrayList<T>(items.size)
+        var o = 0; var t = 0
+        while (o < ours.size || t < turns.size) {
+            if (out.size % 3 == 2 && o < ours.size) out += ours[o++]
+            else if (t < turns.size) out += turns[t++]
+            else out += ours[o++]
+        }
+        return out
     }
+
+    /** INK's own picks, from the lists ink follows and passes on: shown as "ink curated", never by whose. */
+    const val INK = "ink curated"
 
     /**
      * The record of the day: one picked by people, from the last fortnight, the same all day; one more than one critic

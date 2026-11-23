@@ -9,7 +9,7 @@ package app.ink.music
 object SpotifyLists {
     const val EDITORS = "editors' picks"
     /** Lists ink follows and passes on as its own picks, not credited by name (2026-11-23): "ink curated". */
-    const val INK = "ink curated"
+    const val INK = Curation.INK
 
     /**
      * A list: its id, who it's from (shown with its songs), and how many of it to take: its first, or (`turn`, a list

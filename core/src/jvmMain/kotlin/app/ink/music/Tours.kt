@@ -96,10 +96,13 @@ object Tours {
         }.getOrDefault(emptyList())
     }
 
-    // the web player's queries for an artist found by name and their page; hashes read again from its scripts when stale
-    private const val SEARCH = "searchArtists"
+    // the web player's artist page (its query's hash read from the player's scripts, again when stale); the artist
+    // found by name through its song search (the player's own artist search is only loaded with its search page)
     private const val OVERVIEW = "queryArtistOverview"
     @Volatile private var hashes = HashMap<String, String>()
+    /** Told of what Spotify's answers look like (the phone's log), so the reading can be checked against them. */
+    @Volatile var trace: ((String) -> Unit)? = null
+    @Volatile private var traced = false
 
     private fun ask(operation: String, vars: JSONObject, pass: SpotifyCanvas.Pass): JSONObject {
         val hash = hashes[operation] ?: SpotifyCanvas.hashOf(operation, pass)?.also { hashes[operation] = it } ?: error("$operation: no hash")
@@ -111,36 +114,56 @@ object Tours {
         }
     }
 
-    /** The artist's Spotify uri, by the web player's search: the first by that very name. */
+    /** The artist's Spotify uri: the songs found by their name, the artist of that very name on them. */
     private fun spotifyArtist(artist: String, pass: SpotifyCanvas.Pass): String? {
-        val vars = JSONObject().put("searchTerm", artist).put("offset", 0).put("limit", 10).put("numberOfTopResults", 5).put("includeAudiobooks", false)
-        val items = ask(SEARCH, vars, pass).optJSONObject("data")?.optJSONObject("searchV2")?.optJSONObject("artists")?.optJSONArray("items") ?: return null
-        return (0 until items.length()).mapNotNull { items.optJSONObject(it)?.optJSONObject("data") }
-            .firstOrNull { sameArtist(it.optJSONObject("profile")?.optString("name").orEmpty(), artist) }?.optString("uri")?.takeIf { it.startsWith("spotify:artist:") }
+        val items = SpotifyCanvas.searchTracks(artist, pass).optJSONObject("data")?.optJSONObject("searchV2")?.optJSONObject("tracksV2")?.optJSONArray("items") ?: return null
+        for (i in 0 until items.length()) {
+            val artists = items.optJSONObject(i)?.optJSONObject("item")?.optJSONObject("data")?.optJSONObject("artists")?.optJSONArray("items") ?: continue
+            for (j in 0 until artists.length()) {
+                val a = artists.optJSONObject(j) ?: continue
+                if (sameArtist(a.optJSONObject("profile")?.optString("name").orEmpty(), artist)) a.optString("uri").takeIf { it.startsWith("spotify:artist:") }?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /** Every object under `o` kept under a key named `name`, wherever it sits. */
+    private fun under(o: Any?, name: String, out: MutableList<Any> = ArrayList()): List<Any> {
+        when (o) {
+            is JSONObject -> o.keys().forEach { k -> val v = o.opt(k); if (k == name && v != null) out += v; under(v, name, out) }
+            is JSONArray -> for (i in 0 until o.length()) under(o.opt(i), name, out)
+        }
+        return out
+    }
+
+    /** A date's first ten characters, from whatever the concert names it by. */
+    private fun dayOf(c: JSONObject): String? {
+        c.optJSONObject("date")?.let { d -> listOf("isoString", "startDateIsoString", "date").firstNotNullOfOrNull { d.optString(it).takeIf { s -> s.length >= 10 } }?.let { return it.take(10) } }
+        return listOf("startDateIsoString", "startDate", "date", "dateTime").firstNotNullOfOrNull { c.optString(it).takeIf { s -> s.length >= 10 && s[4] == '-' } }?.take(10)
     }
 
     /**
      * The artist's upcoming concerts on their Spotify page (the web player's own query, signed in), each with its venue,
-     * city and the ticket seller's page where it names one. Throws if Spotify couldn't be asked, so none isn't kept as
-     * none. Blocking.
+     * city and the ticket seller's page where it names one. Read wherever the page keeps them ("concerts"). Throws if
+     * Spotify couldn't be asked, so none isn't kept as none. Blocking.
      */
     fun spotify(artist: String, pass: SpotifyCanvas.Pass): List<Show> {
         val uri = spotifyArtist(artist, pass) ?: return emptyList()
-        val vars = JSONObject().put("uri", uri).put("locale", "").put("includePrerelease", false)
-        val root = ask(OVERVIEW, vars, pass)
-        val concerts = root.optJSONObject("data")?.optJSONObject("artistUnion")?.optJSONObject("goods")?.optJSONObject("events")
-            ?.optJSONObject("concerts")?.optJSONArray("items") ?: JSONArray()
-        return (0 until concerts.length()).mapNotNull { concerts.optJSONObject(it)?.let { c -> c.optJSONObject("data") ?: c } }.mapNotNull { c ->
-            val day = (c.optJSONObject("date")?.optString("isoString") ?: c.optString("startDate")).orEmpty().take(10).ifEmpty { return@mapNotNull null }
+        val root = ask(OVERVIEW, JSONObject().put("uri", uri).put("locale", "").put("includePrerelease", false), pass)
+        val items = under(root, "concerts").flatMap { c ->
+            val a = (c as? JSONObject)?.optJSONArray("items") ?: (c as? JSONArray) ?: return@flatMap emptyList<JSONObject>()
+            (0 until a.length()).mapNotNull { a.optJSONObject(it) }
+        }.map { it.optJSONObject("data") ?: it }
+        if (!traced && items.isNotEmpty()) { traced = true; trace?.invoke("a concert on spotify: " + items.first().toString().take(1500)) }
+        return items.mapNotNull { c ->
+            val day = dayOf(c) ?: return@mapNotNull null
             val venue = c.optJSONObject("venue")
-            val loc = venue?.optJSONObject("location")
-            val coord = loc?.optJSONObject("coordinates")
-            // the ticket seller's own page where it names one; else the concert's page
-            val partner = c.optJSONObject("offers")?.optJSONArray("items")?.optJSONObject(0)?.optString("url")
-                ?: c.optJSONArray("partnerLinks")?.optJSONObject(0)?.optString("url")
+            val loc = venue?.optJSONObject("location") ?: c.optJSONObject("location")
+            val coord = loc?.optJSONObject("coordinates") ?: venue?.optJSONObject("coordinates")
+            val partner = under(c, "url").firstNotNullOfOrNull { (it as? String)?.takeIf { u -> u.startsWith("http") && "spotify.com" !in u } }
             val id = c.optString("uri").substringAfterLast(':')
-            val url = partner?.takeIf { it.startsWith("http") } ?: if (id.isNotEmpty()) "https://open.spotify.com/concert/$id" else return@mapNotNull null
-            Show(artist, day, venue?.optString("name").orEmpty(), loc?.optString("name").orEmpty(), "", url,
+            val url = partner ?: if (id.isNotEmpty()) "https://open.spotify.com/concert/$id" else return@mapNotNull null
+            Show(artist, day, venue?.optString("name").orEmpty(), (loc?.optString("name") ?: venue?.optString("location")).orEmpty(), "", url,
                 coord?.optDouble("latitude")?.takeIf { !it.isNaN() }, coord?.optDouble("longitude")?.takeIf { !it.isNaN() })
         }
     }

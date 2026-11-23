@@ -71,13 +71,7 @@ object SpotifyCanvas {
      * a 429): the first with the same title and artist.
      */
     private fun track(title: String, artist: String, pass: Pass): String? {
-        val vars = JSONObject().put("searchTerm", "$title $artist").put("offset", 0).put("limit", 10).put("numberOfTopResults", 5)
-            .put("includeAudiobooks", false).put("includePreReleases", false)
-        val root = runCatching { ask("searchTracks", searchHash ?: SEARCH, vars, pass) }.getOrElse { e ->
-            if ("PersistedQuery" !in e.message.orEmpty()) throw e
-            searchHash = liveHash("searchTracks", pass) ?: throw e
-            ask("searchTracks", searchHash!!, vars, pass)
-        }
+        val root = searchTracks("$title $artist", pass)
         val items = root.optJSONObject("data")?.optJSONObject("searchV2")?.optJSONObject("tracksV2")?.optJSONArray("items") ?: return null
         val a = Search.fold(artist); val t = Search.fold(title.substringBefore(" (").substringBefore(" - "))
         for (i in 0 until items.length()) {
@@ -90,6 +84,17 @@ object SpotifyCanvas {
             if (same && (name == t || name.startsWith(t) || t.startsWith(name))) return d.optString("uri").takeIf { it.startsWith("spotify:track:") }
         }
         return null
+    }
+
+    /** The web player's song search, its answer as it comes (also how [Tours] finds an artist: by their songs). */
+    fun searchTracks(term: String, pass: Pass): JSONObject {
+        val vars = JSONObject().put("searchTerm", term).put("offset", 0).put("limit", 10).put("numberOfTopResults", 5)
+            .put("includeAudiobooks", false).put("includePreReleases", false)
+        return runCatching { ask("searchTracks", searchHash ?: SEARCH, vars, pass) }.getOrElse { e ->
+            if ("PersistedQuery" !in e.message.orEmpty()) throw e
+            searchHash = liveHash("searchTracks", pass) ?: throw e
+            ask("searchTracks", searchHash!!, vars, pass)
+        }
     }
 
     /** The song's canvas by the web player's own query; its hash read again from the player's scripts once stale. */

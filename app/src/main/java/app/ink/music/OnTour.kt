@@ -54,6 +54,7 @@ object OnTour {
         if (started) return
         started = true
         Tours.ticketmasterKey = BuildConfig.TICKETMASTER_KEY
+        Tours.trace = { android.util.Log.i("ink-tours", it) }
         place.value = runCatching { Tours.Place.of(org.json.JSONObject(placeFile(c).readText())) }.getOrNull()
         shows.value = runCatching { Tours.read(showsFile(c).readText()) }.getOrDefault(emptyList())
     }
