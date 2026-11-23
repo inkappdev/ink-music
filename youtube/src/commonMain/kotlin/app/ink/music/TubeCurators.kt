@@ -29,12 +29,33 @@ object TubeCurators {
         Curator(BROSALEIGH, "josaleigh pollett", 40) { _ -> listOf("weekly brosaleigh" to "weekly brosaleigh", "Josaleigh Pollett weekly brosaleigh" to "weekly brosaleigh") },
     )
 
+    /**
+     * Long public lists read by their id, a day's run of them (2026-11-23): Bronson's favorite songs (2,800, ink curated):
+     * the `newest` at its end (YouTube adds a song at a list's end) every day, and `each` more in turn through the rest.
+     */
+    private class Turn(val id: String, val from: String, val newest: Int, val each: Int)
+    private val TURNS = listOf(Turn("PLWvaRHtDFbf0", Curation.INK, 10, 20))
+
     /** Every curator's newest songs as picks (each list's order kept by a minute between each), the year as it is now. */
     fun picks(now: Long, year: Int): List<Curation.Pick> = ALL.flatMap { c ->
         runCatching { songs(c, year) }.getOrDefault(emptyList()).mapIndexed { i, (title, artist, art) ->
             val (bare, by) = clean(title, artist)
             Curation.Pick(false, bare, by, c.from, "", "", now - i * 60_000L, art)
         }
+    } + TURNS.flatMap { l -> runCatching { turn(l, now) }.getOrDefault(emptyList()) }
+
+    private fun turn(l: Turn, now: Long): List<Curation.Pick> {
+        val all = InnerTube().tracks("VL" + l.id, 5000).filter { it.seconds == 0 || it.seconds in 60..720 }
+            .map { t -> clean(t.title, t.artists.joinToString(", ")).let { (title, by) -> Triple(title, by, t.art) } }
+            .filter { (title, by, _) -> title.isNotBlank() && by.isNotBlank() }
+        if (all.isEmpty()) return emptyList()
+        val newest = all.takeLast(l.newest).reversed()
+        val rest = all.dropLast(l.newest)
+        val day = if (rest.size <= l.each) rest else {
+            val from = ((now / 86_400_000L) * l.each % rest.size).toInt()
+            (rest.drop(from) + rest.take(from)).take(l.each)
+        }
+        return (newest + day).mapIndexed { i, (title, by, art) -> Curation.Pick(false, title, by, l.from, "", "", now - i * 60_000L, art) }
     }
 
     private val VIDEO = Regex("""\s*[(\[][^)\]]*\b(official|video|audio|lyrics?|visuali[sz]er|music video|mv)\b[^)\]]*[)\]]\s*$""", RegexOption.IGNORE_CASE)
