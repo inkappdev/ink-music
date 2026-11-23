@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -89,7 +90,8 @@ fun RecordClubCard(records: List<Picks.Shown>, today: Picks.Shown?, pages: Pages
         val art by produceState(d.art, d) { value = Picks.coverFor(d.pick.title, d.pick.artist, true) ?: value }
         val face = remember(d, art) { if (art == d.art) d.face else d.copy(art = art).face }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            Box(Modifier.size(maxWidth * .62f).clickable(remember { MutableInteractionSource() }, indication = null) {
+            // as big as the record of the day's (2026-11-23: at 62% of the width it looked small under its heading)
+            Box(Modifier.size(headerSide(maxWidth)).clickable(remember { MutableInteractionSource() }, indication = null) {
                 scope.launch { Picks.record(d.pick)?.let { pages.open(Page.Tube(it)) } ?: run { said = "not on youtube music" } }
             }) { CoverOf(face, d.pick.title, Modifier.fillMaxSize()) }
         }
@@ -100,8 +102,10 @@ fun RecordClubCard(records: List<Picks.Shown>, today: Picks.Shown?, pages: Pages
             BasicText("“${d.pick.said}”".uppercase(), style = headline(15.sp).copy(lineHeight = 20.sp), maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp))
             BasicText("— ${d.pick.from}", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
         }
-        Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-            Word("play from the start", pixel(14.sp), touch = 8.dp) {
+        // the words on one line (by their baselines: play's room to tap had pushed it below the count), play's left edge
+        // under the title's (its tap room reaches out past it instead)
+        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            Word("play from the start", pixel(14.sp), Modifier.alignByBaseline().offset(x = (-4).dp), touch = 8.dp) {
                 val s = songs
                 if (!s.isNullOrEmpty()) Playback.play(s, 0) else scope.launch {
                     said = "finding it on youtube music"
@@ -110,8 +114,8 @@ fun RecordClubCard(records: List<Picks.Shown>, today: Picks.Shown?, pages: Pages
                 }
             }
             if (all > 0) {
-                if (heard >= all) BasicText("FINISHED IT", style = pixel(11.sp, Ink.black), modifier = Modifier.background(Ink.ink).padding(horizontal = 5.dp, vertical = 1.dp))
-                else BasicText("$heard of $all heard", style = pixel(13.sp, Ink.mid))
+                if (heard >= all) BasicText("FINISHED IT", style = pixel(11.sp, Ink.black), modifier = Modifier.alignByBaseline().background(Ink.ink).padding(horizontal = 5.dp, vertical = 1.dp))
+                else BasicText("$heard of $all heard", style = pixel(14.sp, Ink.mid), modifier = Modifier.alignByBaseline().offset(x = (-4).dp))
             }
         }
         said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
