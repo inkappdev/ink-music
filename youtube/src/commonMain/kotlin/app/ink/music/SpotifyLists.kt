@@ -8,18 +8,20 @@ package app.ink.music
  */
 object SpotifyLists {
     const val EDITORS = "editors' picks"
+    /** Lists ink follows and passes on as its own picks, not credited by name (2026-11-23): "ink curated". */
+    const val INK = "ink curated"
 
     /** A list: its id, who it's from (shown with its songs), and how many of it to take. */
     class Playlist(val id: String, val from: String, val max: Int)
 
     /** Spotify's editorial indie lists (Fresh Finds, Lorem, POLLEN, Indie Pop, All New Indie), "editors' picks"; then
      * the magazines' own: The Line of Best Fit's new music discovery (40 a week) and DIY's Neu Playlist (50); and
-     * antoniahelena's top ten (2026-11-23, Bronson's find: ten she's into, electronic and left-field pop). */
+     * antoniahelena's top ten (2026-11-23: ten she's into, electronic and left-field pop), shown as ink curated. */
     val ALL = listOf(
         Playlist("37i9dQZF1DWWjGdmeTyeJ6", EDITORS, 25), Playlist("37i9dQZF1DXdwmD5Q7Gxah", EDITORS, 25), Playlist("37i9dQZF1DWWBHeXOYZf74", EDITORS, 25),
         Playlist("37i9dQZF1DWWEcRhUVtL8n", EDITORS, 25), Playlist("37i9dQZF1DXdbXrPNafg9d", EDITORS, 25),
         Playlist("5359l8Co8qztllR0Mxk4Zv", "the line of best fit", 40), Playlist("29J24iEHulf3BGk7yzwGIH", "diy", 50),
-        Playlist("5k1KNpY2RJjt3UmY8EapvQ", "antoniahelena", 10),
+        Playlist("5k1KNpY2RJjt3UmY8EapvQ", INK, 10),
     )
 
     /** Every list's songs, taken in turn (a list each, so no one list fills a shelf); one that won't answer passed over. */

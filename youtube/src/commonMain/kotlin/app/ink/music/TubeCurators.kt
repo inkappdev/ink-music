@@ -7,14 +7,15 @@ package app.ink.music
  *   year's in early January). Some are their own uploads ("Artist - Song", alexrainbirdMusic the uploader), some
  *   two-hour compilations: the artist taken from the title, anything not a song's length left out.
  * - Josaleigh Pollett's weekly brosaleigh (2026-11-23, Bronson follows it): a dozen or so new indie songs a week, small
- *   bands mostly.
+ *   bands mostly. Shown as "ink curated", not by name.
  * Read from YouTube Music signed out, each list theirs (the uploader its subtitle's first words: copies share names).
  * Shared (the phone's full build, the computer); not affiliated with either.
  */
 object TubeCurators {
     const val TRIPLE_J = "triple j"
     const val RAINBIRD = "alexrainbird"
-    const val BROSALEIGH = "josaleigh pollett"
+    // shown as ink's own picks, not by name (2026-11-23)
+    const val BROSALEIGH = SpotifyLists.INK
 
     private class Curator(val from: String, val owner: String, val max: Int, val lists: (Int) -> List<Pair<String, String>>)
 
