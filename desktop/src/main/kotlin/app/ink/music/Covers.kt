@@ -111,8 +111,10 @@ object Covers {
     /** The size the grids ask for (an album's tile, CoverOf's px there). */
     const val GRID = 400
 
-    private suspend fun fetchOf(song: Song, px: Int): Cover? {
+    private suspend fun fetchOf(given: Song, px: Int): Cover? {
         return withContext(Dispatchers.IO) {
+            // a YouTube song with only its video's picture: the studio art of its record, where the catalogs have it
+            val song = studio(given)
             val t0 = System.nanoTime()
             val disk = song.art != null && (song.server || song.tube || song.episode) && onDisk(song.art, px)
             // its own (the server's, YouTube's, the feed's, the file's); else the catalogs by its record's name, for every
@@ -153,6 +155,18 @@ object Covers {
                 if (Log.on) Log.d("covers: ${song.album.take(24)} ready ${(System.nanoTime() - t0) / 1_000_000} ms")
             }
         }
+    }
+
+    /**
+     * A YouTube song that comes with only its video's frame (a music video's, a mix's or radio's songs) as the record it's
+     * on would look: its studio cover found by the song's name (iTunes, then Deezer), the link kept; none found, the frame
+     * as before (the phone's since 2026-11-23, a Reddit ask: "YT videos covers ... appear as thumbnail of the videos").
+     */
+    private fun studio(song: Song): Song {
+        val art = song.art ?: return song
+        if (!song.tube || face(song) || Local.on || !Regex("""^https?://i\d?\.ytimg\.com/vi(?:_webp)?/""").containsMatchIn(art)) return song
+        val found = runCatching { FoundCovers.song(File(Home.cache, "covers"), song.title, song.artist) }.getOrNull()
+        return if (found != null) song.copy(art = found) else song
     }
 
     /**

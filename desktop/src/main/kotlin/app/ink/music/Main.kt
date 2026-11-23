@@ -659,6 +659,11 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
         val counts = remember(pool, kept) {
             pool.groupingBy(SongsFrom::of).eachCount() + (pool.count { it.id in kept }.takeIf { it > 0 }?.let { mapOf("kept" to it) } ?: emptyMap())
         }
+        // the albums page's sources, as the songs page's (a record is from where its songs are; the phone's since 2026-11-23)
+        val recordCounts = remember(albums, kept) {
+            albums.filter { it.songs.isNotEmpty() }.groupingBy { SongsFrom.of(it.songs.first()) }.eachCount() +
+                (albums.count { a -> a.songs.any { it.id in kept } }.takeIf { it > 0 }?.let { mapOf("kept" to it) } ?: emptyMap())
+        }
         // the genres your songs are in (each artist's Last.fm tags, Genres), most first; tagged as the page is opened
         val tagged by GenrePicks.tagged.collectAsState()
         LaunchedEffect(tab, pool.size) { if (tab == "songs" && pool.isNotEmpty()) GenrePicks.tag(pool.map { it.artist }) }
@@ -680,6 +685,9 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
             if (tab == "songs" && (counts.size > 1 || genres.isNotEmpty() || folders.size > 1)) {
                 Box(Modifier.padding(horizontal = 20.dp).width(1.dp).height(14.dp).background(Ink.line))
                 FilterRow(counts, genres, folders, Modifier.weight(1f).padding(end = 20.dp))
+            } else if (tab == "albums" && recordCounts.size > 1) {
+                Box(Modifier.padding(horizontal = 20.dp).width(1.dp).height(14.dp).background(Ink.line))
+                RecordsFrom(recordCounts, Modifier.weight(1f).padding(end = 20.dp))
             } else Spacer(Modifier.weight(1f))
             // everything shuffled, at once, and music added from a folder, here where the music is (2026-11-11, a tester:
             // "importing songs shouldn't require users to navigate through the settings"; "add your songs, hit shuffle")
@@ -735,8 +743,11 @@ private fun LibraryPage(tab: String, words: Boolean, onPlace: (String) -> Unit, 
         // a new order starts at the top: each list made anew with it
         when (tab) {
             "albums" -> {
-                val records = remember(albums, rc, seed, heard, colours) {
-                    Sorts.order(albums, rc, seed, { it.id },
+                val recordsFrom by SongsFrom.records.collectAsState()
+                val records = remember(albums, rc, seed, heard, colours, recordsFrom, kept) {
+                    val shown = if (recordsFrom == "all" || recordsFrom !in recordCounts) albums
+                        else albums.filter { a -> if (recordsFrom == "kept") a.songs.any { it.id in kept } else a.songs.firstOrNull()?.let(SongsFrom::of) == recordsFrom }
+                    Sorts.order(shown, rc, seed, { it.id },
                         compareBy<Album>({ Library.sortName(it.artist) }, { it.year }, { Library.sortName(it.title) })) { a ->
                         when (rc.sort) {
                             // a timeline: the oldest first
@@ -2334,6 +2345,11 @@ object SongsFrom {
 
     fun choose(f: String) { chosen.value = f; runCatching { if (f == "all") file.delete() else file.writeText(f) } }
 
+    // the albums page's own choice of where they're from (kept apart from the songs page's)
+    private val recordsFile = java.io.File(Home.dir, "records-from")
+    val records = kotlinx.coroutines.flow.MutableStateFlow(runCatching { recordsFile.readText().trim() }.getOrDefault("").ifEmpty { "all" })
+    fun chooseRecords(f: String) { records.value = f; runCatching { if (f == "all") recordsFile.delete() else recordsFile.writeText(f) } }
+
     private val viewFile = java.io.File(Home.dir, "songs-grid")
     /** The songs as a grid of covers, not a list (kept). */
     val grid = kotlinx.coroutines.flow.MutableStateFlow(viewFile.exists())
@@ -2389,6 +2405,23 @@ private fun FilterRow(counts: Map<String, Int>, genres: List<Pair<String, Int>>,
             DropWord(if (folder.isEmpty()) "every folder" else short(folder).substringAfterLast('/'), folder.isNotEmpty(),
                 listOf(DropRow("every folder", null, folder.isEmpty()) { SongsFrom.folder.value = "" }) +
                     folders.map { (f, n) -> DropRow(short(f), n, f == folder) { SongsFrom.folder.value = f } })
+        }
+    }
+}
+
+/** The albums page's sources beside its order, as the songs page's are: lit is what's shown, each with how many. */
+@Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+private fun RecordsFrom(counts: Map<String, Int>, modifier: Modifier) {
+    val from by SongsFrom.records.collectAsState()
+    val now = if (from in counts) from else "all"
+    androidx.compose.foundation.layout.FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+        SongsFrom.WORDS.filter { (k, _) -> k == "all" || k in counts }.forEach { (k, word) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Word(word, pixel(13.sp, if (k == now) Ink.ink else Ink.dim), touch = 8.dp) { SongsFrom.chooseRecords(k) }
+                counts[k].takeIf { k != "all" }?.let { BasicText(" $it", style = pixel(12.sp, if (k == now) Ink.mid else Ink.dim)) }
+            }
         }
     }
 }
