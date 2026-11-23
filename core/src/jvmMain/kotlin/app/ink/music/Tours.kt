@@ -99,7 +99,9 @@ object Tours {
     // the web player's artist page (its query's hash read from the player's scripts, again when stale); the artist
     // found by name through its song search (the player's own artist search is only loaded with its search page)
     private const val OVERVIEW = "queryArtistOverview"
-    @Volatile private var hashes = HashMap<String, String>()
+    // its hash as the web player had it (2026-11-23): the phone's player doesn't always carry it in the scripts read
+    // (the canvas keeps its own so too); read afresh from them once Spotify says it's stale
+    @Volatile private var hashes = HashMap<String, String>(mapOf(OVERVIEW to "eafb1620d783ece118e72fbfede2b0064483e029d3c1aafafa1c2de0e25a89e7"))
     /** Told of what Spotify's answers look like (the phone's log), so the reading can be checked against them. */
     @Volatile var trace: ((String) -> Unit)? = null
     @Volatile private var traced = false

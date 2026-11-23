@@ -848,7 +848,7 @@ class PlayerService : MediaLibraryService() {
         main.post(dacSays)
         main.post { effects(true); equalize(); tell() }   // the session's there once onCreate is done
         val open = PendingIntent.getActivity(
-            this, 0, Intent(this, Main::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            this, 0, Intent(this, Home::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         exo = player

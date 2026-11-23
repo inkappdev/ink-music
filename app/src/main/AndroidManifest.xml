@@ -37,18 +37,14 @@
         <!-- singleTop, not singleTask: opened again from the home screen, the task comes back as it
              was (singleTask threw away the YouTube sign-in when Google's own prompt sent you home);
              a Main opened over it closes itself (Main.onCreate) -->
+        <!-- the screens (Home: Main as an activity of its own name, so ".Main" can be the default icon's alias below,
+             the name every home screen already has for ink music) -->
         <activity
-            android:name=".Main"
+            android:name=".Home"
             android:screenOrientation="portrait"
             android:exported="true"
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-                <!-- in a TV's row of apps -->
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
             <!-- a computer's pairing QR code read by the phone's own camera: inkhome.app/pair#<code>/<port>/<addresses>
                  (verified by the site's assetlinks.json, so it opens here, not in the browser) -->
             <intent-filter android:autoVerify="true">
@@ -69,6 +65,45 @@
         <!-- the player in its own process: the screens can be rebuilt (or crash) without a
              skip in the music -->
         <!-- a USB DAC plugged in: Android remembers ink music may use it (UsbAttach shows nothing) -->
+        <!-- ink music's icon, one of three (settings, the look; AppIcon turns one on, the others off): the words (the
+             default, as ".Main": a home screen's icon for it carries on), an ink drop in pixels, the drop in the dither -->
+        <activity-alias
+            android:name=".Main"
+            android:targetActivity=".Home"
+            android:icon="@mipmap/icon"
+            android:roundIcon="@mipmap/icon"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- in a TV's row of apps -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".MainDrop"
+            android:targetActivity=".Home"
+            android:icon="@mipmap/icon_drop"
+            android:roundIcon="@mipmap/icon_drop"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".MainDither"
+            android:targetActivity=".Home"
+            android:icon="@mipmap/icon_dither"
+            android:roundIcon="@mipmap/icon_dither"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".UsbAttach"
             android:exported="true"

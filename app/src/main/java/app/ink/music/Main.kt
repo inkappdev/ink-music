@@ -152,7 +152,10 @@ import androidx.lifecycle.lifecycleScope
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
-class Main : ComponentActivity() {
+/** The screens, by the name the manifest gives them: ".Main" is the default icon's alias to it (AppIcon). */
+class Home : Main()
+
+open class Main : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycle.addObserver(Sun(this))   // the dim words brighter in sunlight

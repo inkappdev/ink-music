@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ink music's icon, the drop choice (2026-11-23): an ink drop in solid pixels, as Silkscreen's letters are; the adaptive icon's foreground and monochrome -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#F1F0EC" android:pathData="M50.40,27.60h7.20v3.6h-7.20zM50.40,31.20h7.20v3.6h-7.20zM46.80,34.80h14.40v3.6h-14.40zM46.80,38.40h14.40v3.6h-14.40zM43.20,42.00h21.60v3.6h-21.60zM43.20,45.60h21.60v3.6h-21.60zM39.60,49.20h28.80v3.6h-28.80zM39.60,52.80h28.80v3.6h-28.80zM36.00,56.40h36.00v3.6h-36.00zM36.00,60.00h36.00v3.6h-36.00zM36.00,63.60h36.00v3.6h-36.00zM39.60,67.20h28.80v3.6h-28.80zM43.20,70.80h21.60v3.6h-21.60z" />
+</vector>

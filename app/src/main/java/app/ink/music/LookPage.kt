@@ -21,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -124,6 +126,13 @@ fun LookPage(pages: Pages) {
             SettingRow("MOTION", chosen, opened, "pages word by word, covers developing, the blur by the bars" +
                 if (Moves.phoneSaysLess(ctx)) "; this phone says less" else "") {
                 Pick(listOf(Moves.AUTO, Moves.FULL, Moves.LESS).map { it to (chosen == it) }) { Moves.set(ctx, listOf(Moves.AUTO, Moves.FULL, Moves.LESS)[it]) }
+            }
+            // the app's own icon on the home screen: the words, or an ink drop (AppIcon); not on a TV (its row has the banner)
+            if (!onTv()) {
+                var icon by remember { mutableStateOf(AppIcon.now(ctx)) }
+                SettingRow("ICON", AppIcon.CHOICES[icon].first, opened, "ink music on your home screen; it may take your launcher a moment") {
+                    Pick(AppIcon.CHOICES.mapIndexed { i, (word, _) -> word to (icon == i) }) { i -> icon = i; AppIcon.choose(ctx, i) }
+                }
             }
             RowsEnd()
         })

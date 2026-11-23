@@ -53,7 +53,7 @@ class Widget : AppWidgetProvider() {
             v.setOnClickPendingIntent(R.id.toggle, button(c, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
             v.setOnClickPendingIntent(R.id.next, button(c, KeyEvent.KEYCODE_MEDIA_NEXT))
             v.setOnClickPendingIntent(R.id.widget, PendingIntent.getActivity(
-                c, 0, Intent(c, Main::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                c, 0, Intent(c, Home::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             ))
             return v
