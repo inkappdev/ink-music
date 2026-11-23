@@ -49,7 +49,8 @@ object Picks {
             val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
             kept?.let { show(it) }
             // a day kept before it was checked against YouTube Music: read again now
-            readAt = kept?.takeIf { it.optBoolean("checked") }?.optLong("at") ?: 1L
+            // v9 (2026-11-23, as the phone's): the new curators and ink's own lists, read at once after the update
+            readAt = kept?.takeIf { it.optBoolean("checked") && it.optInt("v") >= 9 }?.optLong("at") ?: 1L
             // no quotes kept yet (2026-11-09, before what critics said was kept): the feeds read now, not in half a day
             if (!loadSaid()) readAt = 1L
             // the day's record kept without its cover (it wasn't among those asked): asked for now, not at the next read
@@ -109,7 +110,7 @@ object Picks {
         today.value = day
         readAt = System.currentTimeMillis()
         runCatching {
-            Home.write(file, JSONObject().put("at", readAt).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
+            Home.write(file, JSONObject().put("at", readAt).put("v", 9).put("checked", true).put("today", day?.let(::json)).put("records", JSONArray(records.value.map(::json)))
                 .put("songs", JSONArray(songs.value.map(::json))).toString())
         }
     }

@@ -114,7 +114,7 @@ fun Rail(place: String, onPlace: (String) -> Unit, onFind: () -> Unit, onSetting
         // made by ink, a small pixel heart after it; ink its own website (the quiet funnel, never a nag)
         Row(Modifier.rising(PLACES.size + 3), verticalAlignment = Alignment.CenterVertically) {
             BasicText("made by ", style = pixel(12.sp, Ink.dim))
-            Word("ink", pixel(12.sp, Ink.mid)) { browse("https://inkhome.app") }
+            Word("ink", pixel(12.sp, Ink.mid)) { browse("https://play.google.com/store/apps/details?id=app.ink.launcher") }
             Spacer(Modifier.width(6.dp))
             // it beats when clicked; seven clicks and hearts float up (an easter egg)
             InkHeart(Ink.dim)

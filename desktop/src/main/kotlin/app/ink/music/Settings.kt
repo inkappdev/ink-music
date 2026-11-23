@@ -1018,6 +1018,18 @@ private fun LookSetting(opened: Opened) {
     SettingRow("COVERS", print.word, opened, if (print == Print.CLEAR) "clear: every cover and photo as it is, no dither, tiles or blur" else "how mixes, lists and photos are drawn from their covers; clear for none") {
         Pick(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(Print.entries[it]) }
     }
+    // the app's icon: the words, or an ink drop (DeskIcon), each shown as it looks
+    val icon by DeskIcon.chosen.collectAsState()
+    SettingRow("ICON", DeskIcon.CHOICES[icon].first, opened, "on its windows, the taskbar and the dock while it runs") {
+        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            DeskIcon.CHOICES.forEachIndexed { i, (word, _) ->
+                Column(Modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt { DeskIcon.choose(i) })) {
+                    androidx.compose.foundation.Image(DeskIcon.painter(i), word, Modifier.size(64.dp).border(1.dp, if (icon == i) Ink.ink else Ink.line))
+                    BasicText(word, style = pixel(12.sp, if (icon == i) Ink.ink else Ink.mid), modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+        }
+    }
     val artistVideo by Moving.artistVideo.collectAsState()
     val artistDither by Moving.artistDither.collectAsState()
     val artistGrain by Moving.artistGrain.collectAsState()

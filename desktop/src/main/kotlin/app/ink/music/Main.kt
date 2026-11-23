@@ -172,10 +172,9 @@ fun main() {
     // ink's icon on every window Java makes, not Java's own (Duke): Windows' restart screen showed Duke beside ink music
     // (a PC, 2026-10-29); Swing's hidden owner of a window with none (the folder chooser's) and any other
     runCatching {
-        val icon = javax.imageio.ImageIO.read(Ink::class.java.getResource("/ink-music.png"))
-        javax.swing.JOptionPane.getRootFrame().iconImage = icon
+        DeskIcon.apply()
         java.awt.Toolkit.getDefaultToolkit().addAWTEventListener({ e ->
-            (e.source as? java.awt.Window)?.let { if (it.iconImages.isEmpty()) it.iconImages = listOf(icon) }
+            (e.source as? java.awt.Window)?.let { if (it.iconImages.isEmpty()) it.iconImages = listOf(DeskIcon.awt()) }
         }, java.awt.AWTEvent.WINDOW_EVENT_MASK)
     }
     application {
@@ -187,7 +186,7 @@ fun main() {
             onCloseRequest = { Tucked.close() },
             visible = !away,
             title = "ink music",
-            icon = inkIcon,
+            icon = DeskIcon.painter(DeskIcon.chosen.collectAsState().value),
             state = Placed.remember().also { Win.state = it },
         ) {
             // never dragged smaller than the rail, a page and the now column
@@ -245,11 +244,39 @@ fun main() {
 }
 
 /** Everything let go (the player, Now Playing, the wifi announcements) and the process ended, however it was quit. */
-/** ink's icon, for its windows' title bars and the taskbar. */
-val inkIcon by lazy {
-    androidx.compose.ui.graphics.painter.BitmapPainter(
-        org.jetbrains.skia.Image.makeFromEncoded(Ink::class.java.getResourceAsStream("/ink-music.png")!!.readBytes()).toComposeImageBitmap(),
-    )
+/** ink's icon, for its windows' title bars and the taskbar: the one chosen (DeskIcon). */
+val inkIcon get() = DeskIcon.painter(DeskIcon.chosen.value)
+
+/**
+ * ink music's icon, one of three (the phone's since 2026-11-23): the words, an ink drop in pixels, the drop in the dither;
+ * chosen in settings (the look), kept, and put on every window, the taskbar and the Dock while it runs (the installed app's
+ * own icon, in the Finder or the Start menu, stays the words).
+ */
+object DeskIcon {
+    val CHOICES = listOf("words" to "/ink-music.png", "drop" to "/ink-music-drop.png", "dithered" to "/ink-music-dither.png")
+    private val file get() = java.io.File(Home.dir, "icon")
+    val chosen = kotlinx.coroutines.flow.MutableStateFlow(runCatching { file.readText().trim().toInt() }.getOrDefault(0).coerceIn(0, CHOICES.size - 1))
+    private val painters = HashMap<Int, androidx.compose.ui.graphics.painter.BitmapPainter>()
+
+    private fun bytes(i: Int) = Ink::class.java.getResourceAsStream(CHOICES[i].second)!!.readBytes()
+    fun painter(i: Int) = painters.getOrPut(i) {
+        androidx.compose.ui.graphics.painter.BitmapPainter(org.jetbrains.skia.Image.makeFromEncoded(bytes(i)).toComposeImageBitmap())
+    }
+    fun awt(i: Int = chosen.value): java.awt.image.BufferedImage = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(bytes(i)))
+
+    fun choose(i: Int) {
+        chosen.value = i
+        runCatching { if (i == 0) file.delete() else file.writeText("$i") }
+        apply()
+    }
+
+    /** The chosen one on every window open now, Swing's hidden owner, and the Dock or taskbar. */
+    fun apply() = runCatching {
+        val img = awt()
+        java.awt.Window.getWindows().forEach { it.iconImages = listOf(img) }
+        javax.swing.JOptionPane.getRootFrame().iconImage = img
+        if (java.awt.Taskbar.isTaskbarSupported() && java.awt.Taskbar.getTaskbar().isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) java.awt.Taskbar.getTaskbar().iconImage = img
+    }
 }
 
 fun quit(): Nothing {
@@ -863,7 +890,7 @@ private fun PlaceMenu(tab: String, shown: Boolean, modifier: Modifier, onFold: (
             MenuPlace(PLACES.size + 2, shown) {
                 Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                     BasicText("made by ", style = pixel(12.sp, Ink.dim))
-                    Word("ink", pixel(12.sp, Ink.mid)) { browse("https://inkhome.app") }
+                    Word("ink", pixel(12.sp, Ink.mid)) { browse("https://play.google.com/store/apps/details?id=app.ink.launcher") }
                     Spacer(Modifier.width(6.dp))
                     InkHeart(Ink.dim)
                 }
