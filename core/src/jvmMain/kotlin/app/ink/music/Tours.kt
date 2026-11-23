@@ -165,9 +165,24 @@ object Tours {
             val partner = under(c, "url").firstNotNullOfOrNull { (it as? String)?.takeIf { u -> u.startsWith("http") && "spotify.com" !in u } }
             val id = c.optString("uri").substringAfterLast(':')
             val url = partner ?: if (id.isNotEmpty()) "https://open.spotify.com/concert/$id" else return@mapNotNull null
-            Show(artist, day, venue?.optString("name").orEmpty(), (loc?.optString("name") ?: venue?.optString("location")).orEmpty(), "", url,
+            // Spotify's ConcertV2 (2026-11-23): "location": {"city", "name" (the venue)}, no coordinates (placed after, by city)
+            val place = venue?.optString("name")?.takeIf { it.isNotBlank() } ?: loc?.optString("name").orEmpty()
+            val city = loc?.optString("city")?.takeIf { it.isNotBlank() } ?: (if (venue != null) loc?.optString("name") else null).orEmpty()
+            Show(artist, day, place, city, "", url,
                 coord?.optDouble("latitude")?.takeIf { !it.isNaN() }, coord?.optDouble("longitude")?.takeIf { !it.isNaN() })
         }
+    }
+
+    /**
+     * Shows with no place on the map (Spotify's give only a city) placed at their city's, each city looked up once
+     * (Open-Meteo's geocoding, the biggest of that name) and kept in `known` ("" for one not found).
+     */
+    fun placed(shows: List<Show>, known: MutableMap<String, String>): List<Show> = shows.map { s ->
+        if (s.lat != null || s.city.isBlank()) return@map s
+        val key = Search.fold(s.city)
+        val at = known.getOrPut(key) { cities(s.city).firstOrNull()?.let { "${it.lat},${it.lon}" }.orEmpty() }
+        val (la, lo) = at.split(",").takeIf { it.size == 2 } ?: return@map s
+        s.copy(lat = la.toDoubleOrNull(), lon = lo.toDoubleOrNull())
     }
 
     fun write(shows: List<Show>): String = JSONArray(shows.map { it.json() }).toString()

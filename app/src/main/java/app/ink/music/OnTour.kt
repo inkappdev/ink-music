@@ -77,13 +77,23 @@ object OnTour {
         try {
             val artists = withContext(Dispatchers.IO) { yours(c) }
             val pass = runCatching { Spotify.passFor(c) }.getOrNull()
-            val found = withContext(Dispatchers.IO) { read(artists, pass) }
+            val found = withContext(Dispatchers.IO) { placed(c, read(artists, pass)) }
             // nothing at all from anywhere (offline, turned away): the kept ones stay, asked again next time
             if (found.isEmpty() && shows.value.isNotEmpty()) return
             shows.value = found
             runCatching { f.writeText(Tours.write(found)) }
             android.util.Log.i("ink-tours", "${found.size} shows for ${artists.size} artists (spotify ${pass != null}, ticketmaster ${Tours.ticketmasterKey.isNotBlank()})")
         } finally { reading.value = false }
+    }
+
+    /** Shows with only a city put on the map by it, the cities looked up kept in files/tour-places.json. */
+    private fun placed(c: Context, shows: List<Tours.Show>): List<Tours.Show> {
+        val f = File(c.filesDir, "tour-places.json")
+        val known = runCatching { org.json.JSONObject(f.readText()).let { o -> o.keys().asSequence().associateWith { o.getString(it) }.toMutableMap() } }.getOrDefault(HashMap())
+        val out = Tours.placed(shows, known)
+        runCatching { f.writeText(org.json.JSONObject(known as Map<*, *>).toString()) }
+        android.util.Log.i("ink-tours", "${out.count { it.lat != null }} of ${out.size} shows placed, ${known.size} cities known")
+        return out
     }
 
     /** The artists you play most (your history's last year), the library's biggest after them; forty at most. */

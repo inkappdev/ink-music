@@ -18,6 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -131,7 +134,18 @@ fun LookPage(pages: Pages) {
             if (!onTv()) {
                 var icon by remember { mutableStateOf(AppIcon.now(ctx)) }
                 SettingRow("ICON", AppIcon.CHOICES[icon].first, opened, "ink music on your home screen; it may take your launcher a moment") {
-                    Pick(AppIcon.CHOICES.mapIndexed { i, (word, _) -> word to (icon == i) }) { i -> icon = i; AppIcon.choose(ctx, i) }
+                    // each as it looks: its picture on black in a hairline square (lit when chosen), its word under it
+                    androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(18.dp)) {
+                        AppIcon.CHOICES.forEachIndexed { i, (word, _) ->
+                            val on = icon == i
+                            androidx.compose.foundation.layout.Column(Modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
+                                onClick = felt { icon = i; AppIcon.choose(ctx, i) })) {
+                                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(AppIcon.PICTURES[i]), word,
+                                    Modifier.size(64.dp).background(Ink.black).border(1.dp, if (on) Ink.ink else Ink.line))
+                                androidx.compose.foundation.text.BasicText(word, style = pixel(12.sp, if (on) Ink.ink else Ink.mid), modifier = Modifier.padding(top = 6.dp))
+                            }
+                        }
+                    }
                 }
             }
             RowsEnd()
