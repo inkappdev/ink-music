@@ -3452,6 +3452,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
     val tubeLists by YouTubeAccount.playlists.collectAsState()
     val followed by FollowedLists.lists.collectAsState()
     val hidden by HiddenLists.ids.collectAsState()
+    var showHidden by remember { mutableStateOf(false) }
     val account by Server.account.collectAsState()
     val loved = remember(songs, lovedIds, lovedTube, liked) {
         (songs.filter { it.id in lovedIds } + lovedTube + liked).distinctBy { it.id }.sortedByDescending { Loved.lovedAt(it) ?: Long.MIN_VALUE }
@@ -3506,6 +3507,19 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
                 if (pl.art == null) Lettered(pl.name)
                 else if (Curation.tubeBranded(a.url, pl.said)) Covered(face, Modifier.fillMaxSize(), px = 400)
                 else CoverOf(face, pl.name, Modifier.fillMaxSize(), px = 480)
+            }
+        }
+        // the ones you've hidden, as the list view has them (2026-11-23: in the grid there was no way back to one): a dim
+        // word at the foot, then them, dim, once asked for
+        val hiddenLists = tubeLists.filter { it.id in hidden }
+        if (hiddenLists.isNotEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "hidden") {
+            Word(if (showHidden) "hide them again" else "${hiddenLists.size} hidden", pixel(12.sp, Ink.dim), Modifier.padding(vertical = 12.dp), touch = 8.dp) { showHidden = !showHidden }
+        }
+        if (showHidden) items(hiddenLists, key = { "yh" + it.id }) { pl ->
+            Box(Modifier.alpha(0.5f)) {
+                ListTile(pl.name, "hidden   youtube music", { pages.open(Page.TubeList(pl)) }) {
+                    if (pl.art == null) Lettered(pl.name) else CoverOf(remember(pl.id) { tubeFace(TubeAlbum("https://music.youtube.com/playlist?list=${pl.id}", pl.name, "", pl.art)) }, pl.name, Modifier.fillMaxSize(), px = 480)
+                }
             }
         }
     }
