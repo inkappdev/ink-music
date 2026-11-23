@@ -11,22 +11,37 @@ object SpotifyLists {
     /** Lists ink follows and passes on as its own picks, not credited by name (2026-11-23): "ink curated". */
     const val INK = "ink curated"
 
-    /** A list: its id, who it's from (shown with its songs), and how many of it to take. */
-    class Playlist(val id: String, val from: String, val max: Int)
+    /**
+     * A list: its id, who it's from (shown with its songs), and how many of it to take: its first, or (`turn`, a list
+     * that's an archive, not this week's) a different run of that many each day, through the whole list in turn.
+     */
+    class Playlist(val id: String, val from: String, val max: Int, val turn: Boolean = false)
 
     /** Spotify's editorial indie lists (Fresh Finds, Lorem, POLLEN, Indie Pop, All New Indie), "editors' picks"; then
      * the magazines' own: The Line of Best Fit's new music discovery (40 a week) and DIY's Neu Playlist (50); and
-     * antoniahelena's top ten (2026-11-23: ten she's into, electronic and left-field pop), shown as ink curated. */
+     * antoniahelena's top ten (2026-11-23: ten she's into, electronic and left-field pop) and her archive (a hundred,
+     * further back: twenty a day in turn), shown as ink curated. */
     val ALL = listOf(
         Playlist("37i9dQZF1DWWjGdmeTyeJ6", EDITORS, 25), Playlist("37i9dQZF1DXdwmD5Q7Gxah", EDITORS, 25), Playlist("37i9dQZF1DWWBHeXOYZf74", EDITORS, 25),
         Playlist("37i9dQZF1DWWEcRhUVtL8n", EDITORS, 25), Playlist("37i9dQZF1DXdbXrPNafg9d", EDITORS, 25),
         Playlist("5359l8Co8qztllR0Mxk4Zv", "the line of best fit", 40), Playlist("29J24iEHulf3BGk7yzwGIH", "diy", 50),
-        Playlist("5k1KNpY2RJjt3UmY8EapvQ", INK, 10),
+        Playlist("5k1KNpY2RJjt3UmY8EapvQ", INK, 10), Playlist("60qW3dUqraghlWMN0Saqh5", INK, 20, turn = true),
     )
 
     /** Every list's songs, taken in turn (a list each, so no one list fills a shelf); one that won't answer passed over. */
     fun picks(now: Long, log: (String) -> Unit = {}): List<Curation.Pick> {
-        val each = ALL.map { l -> runCatching { list(l.id, l.from, l.max, now) }.onFailure { log("spotify ${l.id}: $it") }.getOrDefault(emptyList()) }
+        val each = ALL.map { l ->
+            runCatching {
+                if (!l.turn) list(l.id, l.from, l.max, now)
+                else list(l.id, l.from, 500, now).let { all ->
+                    // today's run of it: the day's place along the list, wrapping round
+                    if (all.size <= l.max) all else {
+                        val from = ((now / 86_400_000L) * l.max % all.size).toInt()
+                        (all.drop(from) + all.take(from)).take(l.max)
+                    }
+                }
+            }.onFailure { log("spotify ${l.id}: $it") }.getOrDefault(emptyList())
+        }
         return (0 until (each.maxOfOrNull { it.size } ?: 0)).flatMap { i -> each.mapNotNull { it.getOrNull(i) } }.distinctBy { Curation.key(it) }
             .also { log("spotify: ${it.size} songs from ${each.count { l -> l.isNotEmpty() }} lists") }
     }
