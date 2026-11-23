@@ -140,26 +140,37 @@ val HEART = listOf(
     "...#...",
 )
 
-/** The heart's red, the desktop's: shown only a moment after loving, the one colour that isn't the art. */
+/**
+ * The heart's red (the desktop's): a loved song's heart is red for good (2026-11-23, Bronson: "can the heart stay red?
+ * and always show up red if liked"), the one colour on screen that isn't the art's, by his call.
+ */
 val HeartRed = Color(0xFFE8302A)
 
 /**
- * A song's heart, as on the desktop: 17% while not loved; loving it, red with a soft red glow for
- * two seconds, then ink (loved, the rest of the time). A tap loves or unloves, felt as a toggle.
+ * A song's heart: dim (35%) while not loved, red while it is (gold on its hundredth play). Loving it, a moment (2026-11-23,
+ * Bronson: "a nice animation"): it swells and settles, a soft red glow behind it, and a few small pixel hearts float up
+ * from it and fade (only the swell, with less motion). A tap loves or unloves, felt as a toggle.
  */
 @Composable
 fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     val loved by Loved.ids.collectAsState()
     val on = song != null && song.id in loved
     var lovedAt by remember { mutableLongStateOf(0L) }
-    var red by remember { androidx.compose.runtime.mutableStateOf(false) }
-    LaunchedEffect(lovedAt) { if (lovedAt > 0) { red = true; delay(2_000); red = false } }
-    LaunchedEffect(on) { if (!on) red = false }
+    val less by Moves.less.collectAsState()
     val colour by animateColorAsState(
-        when { red -> HeartRed; song != null && song.id in EggsNow.golden.collectAsState().value -> GOLD; on -> Ink.ink; else -> Ink.dim },
-        tween(if (red) Motion.FADE else Motion.ENTER, easing = Motion.expo), label = "heart",
+        when { song != null && song.id in EggsNow.golden.collectAsState().value -> GOLD; on -> HeartRed; else -> Ink.dim },
+        tween(Motion.ENTER, easing = Motion.expo), label = "heart",
     )
-    val glow by animateFloatAsState(if (red) .55f else 0f, tween(if (red) Motion.FADE else 600), label = "glow")
+    // the swell: up past itself and back, as a press springs
+    val swell = remember { androidx.compose.animation.core.Animatable(1f) }
+    // the rising hearts' way up (0 to 1) and the glow
+    val rise = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(lovedAt) {
+        if (lovedAt == 0L) return@LaunchedEffect
+        launch { swell.snapTo(.82f); swell.animateTo(1.32f, tween(140, easing = Motion.expo)); swell.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .38f, stiffness = 420f)) }
+        if (!less) { rise.snapTo(0f); rise.animateTo(1f, tween(900, easing = androidx.compose.animation.core.LinearOutSlowInEasing)) }
+    }
+    val glow = if (rise.value < 1f) (1f - rise.value) * .55f else 0f
     val haptic = LocalHapticFeedback.current
     Box(
         modifier.clickable(remember { MutableInteractionSource() }, indication = null) {
@@ -172,7 +183,21 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     ) {
         // the glow: the heart again, red and blurred, under it (Android 12's blur)
         if (glow > 0f && Build.VERSION.SDK_INT >= 31)
-            Box(Modifier.graphicsLayer { alpha = glow }.blur(cell, BlurredEdgeTreatment.Unbounded)) { Sprite(HEART, HeartRed, cell) }
-        Sprite(HEART, colour, cell)
+            Box(Modifier.graphicsLayer { alpha = glow; scaleX = swell.value; scaleY = swell.value }.blur(cell, BlurredEdgeTreatment.Unbounded)) { Sprite(HEART, HeartRed, cell) }
+        // the small hearts rising: five, each its own way up and a little to the side, smaller, fading as they go
+        if (rise.value < 1f) {
+            val p = rise.value
+            for (i in 0 until 5) {
+                val side = listOf(-1.6f, -.7f, .1f, .9f, 1.7f)[i]
+                val up = (.7f + i % 3 * .25f) * p
+                Box(Modifier.graphicsLayer {
+                    translationX = side * cell.toPx() * 4f * p
+                    translationY = -up * cell.toPx() * 16f
+                    alpha = (1f - p) * (if (i % 2 == 0) 1f else .75f)
+                    scaleX = .45f + i % 2 * .12f; scaleY = scaleX
+                }) { Sprite(HEART, HeartRed, cell) }
+            }
+        }
+        Box(Modifier.graphicsLayer { scaleX = swell.value; scaleY = swell.value }) { Sprite(HEART, colour, cell) }
     }
 }
