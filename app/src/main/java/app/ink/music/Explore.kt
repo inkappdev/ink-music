@@ -224,6 +224,28 @@ private fun Issue(records: List<Picks.Shown>, chart: List<IndieChart.Entry>, fri
     Column(Modifier.padding(horizontal = 20.dp).padding(top = 2.dp, bottom = 18.dp)) {
         BasicText("no. ${Moment.issue()}   $day", style = pixel(12.sp, Ink.mid))
         note?.let { BasicText(it, style = pixel(12.sp, Ink.ink).copy(lineHeight = 20.sp), modifier = Modifier.padding(top = 6.dp)) }
+        // one issue only, ever: a word about ink, the launcher (InkLauncher)
+        if (remember { InkLauncher.sayToday(ctx) }) Word("ink, the launcher in this look, is on google play >", pixel(12.sp, Ink.mid), Modifier.padding(top = 6.dp), touch = 6.dp) {
+            runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(InkLauncher.PLAY)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }
+    }
+}
+
+/**
+ * ink, the launcher (2026-11-23, on Google Play now): said in INK's issue on one day only, the first INK's opened after
+ * it's known, never again (files/ink-launcher-said keeps that day's issue); not to someone who has it.
+ */
+object InkLauncher {
+    const val PLAY = "https://play.google.com/store/apps/details?id=app.ink.launcher"
+
+    fun has(c: Context) = runCatching { c.packageManager.getPackageInfo("app.ink.launcher", 0); true }.getOrDefault(false)
+
+    fun sayToday(c: Context): Boolean {
+        if (has(c)) return false
+        val f = java.io.File(c.filesDir, "ink-launcher-said")
+        val today = Moment.issue().toString()
+        if (!f.exists()) { runCatching { f.writeText(today) }; return true }
+        return runCatching { f.readText().trim() }.getOrDefault("") == today
     }
 }
 

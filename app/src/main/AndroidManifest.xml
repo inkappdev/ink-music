@@ -21,6 +21,9 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
 
+    <!-- whether ink (the launcher) is installed: INK's one word about it isn't said to someone who has it -->
+    <queries><package android:name="app.ink.launcher" /></queries>
+
     <application
         android:label="ink music"
         android:icon="@mipmap/icon"

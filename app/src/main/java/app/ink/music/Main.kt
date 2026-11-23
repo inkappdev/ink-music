@@ -986,8 +986,9 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
             Row(Modifier.arrive(tabs.size + 4, menu).padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 val ctx = LocalContext.current
                 BasicText("made by ", style = pixel(12.sp, Ink.dim))
+                // ink is the launcher: its page on google play (2026-11-23, there now)
                 Word("ink", pixel(12.sp, Ink.mid), touch = 8.dp) {
-                    runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://inkhome.app")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(InkLauncher.PLAY)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 }
                 Spacer(Modifier.width(8.dp))
                 InkHeart(Ink.dim)
