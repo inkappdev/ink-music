@@ -1,0 +1,7 @@
+- YouTube songs show their record's cover, not a still from the video
+- New setting: songs only, no videos
+- Genres and moods each get a picture, their names all one size
+- Albums tab: filter by where they're from, like the songs tab
+- Quality says it plainly: on original, your server's FLAC stays FLAC
+- Your FLACs were always FLACs. Now they know it
+- Compliment a stranger's shoes, mean it
