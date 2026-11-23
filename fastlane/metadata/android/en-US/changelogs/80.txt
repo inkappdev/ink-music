@@ -1,10 +1,10 @@
-- Send from INK: the record of the day, ink weekly or any pick
-- On tour near you: set your city, see who's playing (Spotify sign-in for now)
+- Send from INK: record of the day, ink weekly, any pick
+- On tour near you: your artists' shows in your city
 - Two new icons, ink drops: settings, the look
-- Spotify imports stay in step with Spotify
+- Spotify imports stay in step
 - More ink curated picks, cleaner song names
-- On the computer: record club, Spotify imports, quality, hiding playlists
-- USB DAC: songs above its top rate play, not silent
+- Computer: record club, Spotify imports, quality, hide lists
+- USB DAC: songs over its top rate play, not silent
 - ink, our launcher, is on Google Play
 - Your DAC tried its best. Now it doesn't have to
 - Buy an extra ticket and take a friend who's never seen them live
