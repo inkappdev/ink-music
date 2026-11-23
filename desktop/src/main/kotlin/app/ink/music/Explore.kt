@@ -119,6 +119,8 @@ fun ExplorePage(open: (Page) -> Unit) {
             today?.let { d -> item(key = "today") { RecordOfTheDay(d, open) } }
             // the rest of the day's, under it (the phone's since 2026-11-07; here since 2026-11-18, Bronson asked)
             item(key = "of-the-day") { OfTheDay(songs) }
+            // record club: one record a week, start to finish (the phone's since 2026-11-18)
+            item(key = "club") { RecordClubCard(today, open) }
             if (air.isNotEmpty()) item(key = "air") { OnTheAir(air) }
             // live DJ sets beside what's on the air: the live things together (from listen, 2026-11-12)
             item(key = "live-sets") { LiveSetsShelf(open) }
