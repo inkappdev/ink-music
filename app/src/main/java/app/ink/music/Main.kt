@@ -188,6 +188,9 @@ class Main : ComponentActivity() {
         KeepLoved.start(this)
         KeepMost.start(this)
         SongsFrom.start(this)
+        // INK's whole lists through a Spotify sign-in; the curator's phone given its key by adb (CuratorLists)
+        CuratorLists.start(this)
+        intent?.getStringExtra("curatorKey")?.let { CuratorLists.setKey(this, it) }
         SongsOnly.start(this)
         Pods.start(this)
         Order.start(this)

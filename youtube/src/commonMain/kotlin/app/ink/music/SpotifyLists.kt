@@ -47,10 +47,27 @@ object SpotifyLists {
     }
 
     /**
-     * A whole list, every song (an archive of 700: the embed page shows only its first 100), from inkhome.app, which reads
-     * it with Spotify's API and keeps it 12 hours (functions/lists there); the embed page's 100 if the site won't say.
+     * A whole list read another way first, as (title, artist): the phone signed in to Spotify reads every song as
+     * Spotify's own player does; null where it can't (signed out, the computer).
      */
-    fun whole(id: String, from: String, now: Long): List<Curation.Pick> = runCatching {
+    @Volatile var reader: ((String) -> List<Pair<String, String>>?)? = null
+    /** Told of a whole list so read (the curator's phone sends it on to inkhome.app, for everyone). */
+    @Volatile var readWhole: ((String, List<Pair<String, String>>) -> Unit)? = null
+
+    /**
+     * A whole list, every song (an archive of 700: the embed page shows only its first 100): read with a Spotify
+     * sign-in where there is one ([reader]); else from inkhome.app, which keeps the whole list a signed-in phone sent it
+     * (functions/lists there); else the embed page's 100.
+     */
+    fun whole(id: String, from: String, now: Long): List<Curation.Pick> {
+        runCatching { reader?.invoke(id) }.getOrNull()?.filter { it.first.isNotBlank() && it.second.isNotBlank() }?.takeIf { it.size > 100 }?.let { all ->
+            runCatching { readWhole?.invoke(id, all) }
+            return all.map { (t, a) -> Curation.Pick(false, t.replace(Regex("\\s+-\\s+(From|Remaster).*$", RegexOption.IGNORE_CASE), ""), a, from, "", "", now, null) }
+        }
+        return fromSite(id, from, now)
+    }
+
+    private fun fromSite(id: String, from: String, now: Long): List<Curation.Pick> = runCatching {
         val r = http("https://inkhome.app/lists/$id.json", connectMs = 8_000, readMs = 15_000)
         if (r.code != 200) error("site ${r.code}")
         val a = JSONObject(r.text).getJSONArray("songs")
