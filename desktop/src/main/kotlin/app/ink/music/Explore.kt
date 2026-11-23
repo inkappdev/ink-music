@@ -252,6 +252,8 @@ private fun RecordOfTheDay(d: Picks.Shown, open: (Page) -> Unit) {
                     Word("play", pixel(14.sp), touch = 8.dp) { go(true) }
                     Word("its page", pixel(14.sp, Ink.mid), touch = 8.dp) { go(false) }
                     if (d.pick.link.isNotBlank()) Word("read it", pixel(14.sp, Ink.mid), touch = 8.dp) { browse(d.pick.link) }
+                    // its page on inkhome.app, copied to send (the phone's send, 2026-11-23)
+                    Word("copy link", pixel(14.sp, Ink.mid), touch = 8.dp) { scope.launch { said = if (SongLink.copyPick(d.pick.title, d.pick.artist, d.pick.record)) "link copied" else "no link found" } }
                 }
                 said?.let { BasicText(it, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp)) }
             }
@@ -436,7 +438,9 @@ private fun Electronic(all: List<Curation.Pick>, open: (Page) -> Unit, wide: Boo
 /** A record or song someone picked: its cover, its name, who picked it; a click opens the record or plays the song. */
 @Composable
 internal fun PickTile(s: Picks.Shown, open: (Page) -> Unit, from: List<Picks.Shown>? = null, why: String? = null) {
-    WithMenu({ listOf(listOf("artist" to { open(Page.Artist(s.pick.artist.substringBefore(", "))) }, "copy title" to { copyText("${s.pick.artist} - ${s.pick.title}") }),
+    val menuScope = androidx.compose.runtime.rememberCoroutineScope()
+    WithMenu({ listOf(listOf("artist" to { open(Page.Artist(s.pick.artist.substringBefore(", "))) }, "copy title" to { copyText("${s.pick.artist} - ${s.pick.title}") },
+        "copy link" to { menuScope.launch { SongLink.copyPick(s.pick.title, s.pick.artist, s.pick.record) } }),
         // never suggested again (Blocked)
         listOf("block artist" to { Blocked.blockArtist(s.pick.artist) })) }) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()

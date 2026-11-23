@@ -1,5 +1,6 @@
 package app.ink.music
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -135,6 +136,10 @@ private fun WeekWords(w: Weekly.Week, latest: Boolean, big: Boolean, onLatest: (
         Word("PLAY THE WEEK", headline(24.sp), touch = 8.dp) { Player.play(w.songs) }
         Word("shuffle", pixel(14.sp, Ink.mid), touch = 8.dp) { Player.play(w.songs.shuffled()) }
         MixWord("ink weekly", w.songs)
+        // the issue's page on inkhome.app, copied to send (the phone's send, 2026-11-23)
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        var copied by remember(w.week) { mutableStateOf(false) }
+        Word(if (copied) "link copied" else "copy link", pixel(14.sp, Ink.mid), touch = 8.dp) { scope.launch { SongLink.clip("https://inkhome.app/weekly/${w.week}"); copied = true } }
         BasicText("${w.songs.size} songs  ·  ${w.songs.sumOf { it.duration } / 60_000} min", style = pixel(12.sp, Ink.mid))
     }
     MixProgress("ink weekly")

@@ -65,6 +65,31 @@ object SongLink {
         }
     } }
 
+    /** A record's page on inkhome.app (the site finds it as a record: k=r), by its name and whose it is. */
+    fun record(title: String, artistAll: String): String? {
+        if (title.isBlank() || artistAll.isBlank()) return null
+        val artist = artistAll.substringBefore(", ")
+        val words = java.text.Normalizer.normalize("$artist $title", java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").lowercase()
+            .replace(Regex("\\s*[(\\[].*?[)\\]]"), "").replace(Regex("[^a-z0-9]+"), "-").trim('-').take(80).ifEmpty { "record" }
+        fun q(v: String) = java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20")
+        return "https://inkhome.app/song/$words?k=r&t=${q(title)}&a=${q(artist)}"
+    }
+
+    /** Text onto the clipboard. */
+    suspend fun clip(text: String) = withContext(Dispatchers.Main) {
+        java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(text), null)
+    }
+
+    /**
+     * Something INK picked, its link copied (the phone's send, 2026-11-23): a record as its page on inkhome.app, a song
+     * as its short link. Whether there was one.
+     */
+    suspend fun copyPick(title: String, artist: String, record: Boolean): Boolean {
+        val url = if (record) record(title, artist) else short(Song("pick:$artist/$title", "", title, artist, "", "", artist, 0, 1, 0, 0))
+        url ?: return false
+        clip(url); return true
+    }
+
     /** The link onto the clipboard; whether there was one. */
     suspend fun copy(s: Song): Boolean {
         val url = short(s) ?: return false
