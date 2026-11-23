@@ -768,6 +768,8 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
             else -> Server.playlist(id)
         }
     }
+    // a song found in it (ListFind)
+    var find by remember { mutableStateOf("") }
     val list = pageList()
     // a list of yours: files dropped on the window go into it (Dropped), and files can be added from a folder
     val mine = id.startsWith(HereLists.PREFIX)
@@ -830,13 +832,17 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                 Spacer(Modifier.height(14.dp))
             }
             val s = songs.orEmpty()
-            itemsIndexed(s, key = { i, x -> "$i" + x.id }) { i, x ->
+            // found in it: each song keeps its own place in the list (taking one out is by its place)
+            val shown = s.withIndex().filter { matches(it.value, find) }
+            val order = shown.map { it.value }
+            if (s.size > 8) item(key = "find") { androidx.compose.foundation.layout.Column(Modifier.padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, s.size, find) } }
+            itemsIndexed(shown, key = { _, (i, x) -> "$i" + x.id }) { k, (i, x) ->
                 SongRow(x, said = "${x.artist}  ·  ${x.album}".lowercase(), open = open, cover = covers,
                     onRemove = when {
                         id == KEPT -> ({ Offline.remove(listOf(x.id)) })
                         id.startsWith(HereLists.PREFIX) -> ({ HereLists.remove(id, i) })
                         else -> null
-                    }, order = s) { Player.play(s, i) }
+                    }, order = order) { Player.play(order, k) }
             }
         }}
     }
@@ -1007,4 +1013,34 @@ object HiddenLists {
         ids.value = if (hidden) ids.value + id else ids.value - id
         runCatching { file.writeText(org.json.JSONArray(ids.value.toList()).toString()) }
     }
+}
+
+/**
+ * Finding a song in a list (the phone's since 2026-11-23, asked on r/INKmusic): "find in it" opens a field; the list shows
+ * only the songs whose title, artist or record hold every word typed; "clear" brings them all back.
+ */
+@Composable
+fun ListFind(query: String, onQuery: (String) -> Unit) {
+    var open by remember { mutableStateOf(query.isNotEmpty()) }
+    androidx.compose.foundation.layout.Column(Modifier.width(420.dp)) {
+        if (!open) Word("find in it", pixel(13.sp, Ink.mid), touch = 8.dp) { open = true }
+        else {
+            Field("find in it", query, onQuery, "a song, an artist, a record") {}
+            Word("clear", pixel(12.sp, Ink.mid), touch = 6.dp) { onQuery(""); open = false }
+        }
+    }
+}
+
+/** The songs holding every word of `query` in their title, artist or record (folded); all for none. */
+fun matching(songs: List<Song>, query: String): List<Song> = songs.filter { matches(it, query) }
+
+fun matches(s: Song, query: String): Boolean {
+    val words = Search.fold(query).split(' ').filter { it.isNotEmpty() }
+    return words.isEmpty() || Search.fold("${s.title} ${s.artist} ${s.album}").let { hay -> words.all { it in hay } }
+}
+
+/** How many a narrowed list holds ("3 of 210"). */
+@Composable
+fun Narrowed(shown: Int, of: Int, query: String) {
+    if (query.isNotBlank()) BasicText(if (shown == 0) "none of $of" else "$shown of $of", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
 }

@@ -424,6 +424,8 @@ fun face(a: TubeAlbum) = Song(id = "yface", path = "", title = a.title, artist =
 @Composable
 fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
     val playlist = a.playlist
+    // a song found in a playlist (ListFind)
+    var find by remember { mutableStateOf("") }
     val covers by ListCovers.on.collectAsState()
     // as last read, at once, if it was ever read here; else the songs as each page comes. Read fresh every time, and
     // the fresh list put in once whole (a list grown or changed since). Its play words wait for it whole
@@ -514,8 +516,10 @@ fun TubeRecordPage(a: TubeAlbum, open: (Page) -> Unit, onClose: () -> Unit) {
             // the songs in their own box, never past what critics said under them (a record's, not a playlist's)
             androidx.compose.foundation.layout.Column(Modifier.weight(1f).fillMaxHeight()) {
                 LazyColumn(Modifier.weight(1f, fill = false).feather(list), list, contentPadding = PaddingValues(bottom = 16.dp)) {
-                    itemsIndexed(s, key = { _, x -> x.id }) { i, x ->
-                        SongRow(x, number = "${i + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase(), cover = playlist && covers, order = s) { Player.play(s, i) }
+                    val shown = if (playlist) matching(s, find) else s
+                    if (playlist && s.size > 8) item(key = "find") { androidx.compose.foundation.layout.Column(Modifier.padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, s.size, find) } }
+                    itemsIndexed(shown, key = { _, x -> x.id }) { i, x ->
+                        SongRow(x, number = if (find.isBlank()) "${i + 1}" else "${s.indexOf(x) + 1}", said = x.artist.takeIf { it != a.artist }?.lowercase(), cover = playlist && covers, order = shown) { Player.play(shown, i) }
                     }
                 }
                 if (!playlist) Critics(a.title, a.artist, across = true)
