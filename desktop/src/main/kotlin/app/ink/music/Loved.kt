@@ -146,14 +146,40 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     )
     // its soft red glow while it's red, as the phone's (2026-11-10): the heart again, red and blurred, under it
     val glow by androidx.compose.animation.core.animateFloatAsState(if (red) .55f else 0f, tween(if (red) Motion.FADE else 600), label = "glow")
+    // loving it, a moment (the phone's, 2026-11-23): it swells and settles on ink's curve, and small pixel hearts float up and fade
+    val swell = remember { androidx.compose.animation.core.Animatable(1f) }
+    val rise = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(lovedAt) {
+        if (lovedAt == 0L) return@LaunchedEffect
+        kotlinx.coroutines.coroutineScope {
+            launch { swell.snapTo(.85f); swell.animateTo(1.3f, tween(140, easing = Motion.expo)); swell.animateTo(1f, tween(260, easing = Motion.expo)) }
+            launch { rise.snapTo(0f); rise.animateTo(1f, tween(600, easing = Motion.expo)) }
+        }
+    }
     androidx.compose.foundation.layout.Box(modifier, contentAlignment = androidx.compose.ui.Alignment.Center) {
-        if (glow > 0f) androidx.compose.foundation.layout.Box(Modifier.graphicsLayer { alpha = glow }
+        if (glow > 0f) androidx.compose.foundation.layout.Box(Modifier.graphicsLayer { alpha = glow; scaleX = swell.value; scaleY = swell.value }
             .blur(cell, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded)) { Sprite(HEART, RED, cell) }
+        // the small hearts rising: five, each its own way up and a little to the side, smaller, fading as they go
+        if (rise.value < 1f) {
+            val p = rise.value
+            for (i in 0 until 5) {
+                val side = listOf(-1.6f, -.7f, .1f, .9f, 1.7f)[i]
+                val up = (.7f + i % 3 * .25f) * p
+                androidx.compose.foundation.layout.Box(Modifier.graphicsLayer {
+                    translationX = side * cell.toPx() * 4f * p
+                    translationY = -up * cell.toPx() * 16f
+                    alpha = (1f - p) * (if (i % 2 == 0) 1f else .75f)
+                    scaleX = .45f + i % 2 * .12f; scaleY = scaleX
+                }) { Sprite(HEART, RED, cell) }
+            }
+        }
+        androidx.compose.foundation.layout.Box(Modifier.graphicsLayer { scaleX = swell.value; scaleY = swell.value }) {
         Pixel(HEART, if (on) "unlove" else "love", colour, cell = cell) {
             val s = song ?: return@Pixel
             if (s.id !in loved) { lovedAt = System.currentTimeMillis(); said = "loved" } else said = "not loved"
             saidAt = System.currentTimeMillis()
             Loved.toggle(s)
+        }
         }
         said?.let { w ->
             androidx.compose.foundation.layout.Box(Modifier.align(androidx.compose.ui.Alignment.TopCenter).offset(y = -(cell * 9)).wrapContentWidth(unbounded = true)

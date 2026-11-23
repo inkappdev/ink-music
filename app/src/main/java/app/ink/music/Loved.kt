@@ -167,8 +167,10 @@ fun Heart(song: Song?, cell: Dp = 3.dp, modifier: Modifier = Modifier) {
     val rise = remember { androidx.compose.animation.core.Animatable(1f) }
     LaunchedEffect(lovedAt) {
         if (lovedAt == 0L) return@LaunchedEffect
-        launch { swell.snapTo(.82f); swell.animateTo(1.32f, tween(140, easing = Motion.expo)); swell.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = .38f, stiffness = 420f)) }
-        if (!less) { rise.snapTo(0f); rise.animateTo(1f, tween(900, easing = androidx.compose.animation.core.LinearOutSlowInEasing)) }
+        // ink's one curve, no bounce: up in 140 ms, back in 260 (MOTION's enter and exit)
+        launch { swell.snapTo(.85f); swell.animateTo(1.3f, tween(140, easing = Motion.expo)); swell.animateTo(1f, tween(260, easing = Motion.expo)) }
+        // the rising hearts a little longer, as the made-by-ink heart's (EggsUi)
+        if (!less) { rise.snapTo(0f); rise.animateTo(1f, tween(600, easing = Motion.expo)) }
     }
     val glow = if (rise.value < 1f) (1f - rise.value) * .55f else 0f
     val haptic = LocalHapticFeedback.current
