@@ -178,6 +178,10 @@ internal fun CityPicker(onChosen: () -> Unit = {}) {
         kotlinx.coroutines.delay(350)
         value = withContext(Dispatchers.IO) { Tours.cities(typed) }
     }
+    // the keyboard put away once the matches come (typing stopped a moment): it had covered them, 2026-11-23; a tap on the
+    // field brings it back
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(found) { if (found.isNotEmpty()) keyboard?.hide() }
     Column(Modifier.padding(horizontal = 20.dp)) {
         Field("city", typed, { typed = it }, "your city", androidx.compose.ui.text.input.KeyboardType.Text)
         found.forEach { c ->

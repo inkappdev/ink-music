@@ -1433,6 +1433,9 @@ private fun LovedPage(pages: Pages) {
         else all.sortedBy { Library.sortName(it.title) }
     }
     val mixKey = if (only) "liked" else "loved"
+    // a song found in it (ListFind)
+    var find by remember { mutableStateOf("") }
+    val shown = remember(theirs, find) { matching(theirs, find) }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
@@ -1469,7 +1472,8 @@ private fun LovedPage(pages: Pages) {
             MixProgress(mixKey)
             Spacer(Modifier.height(14.dp))
         }}
-        itemsIndexed(theirs, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, pages = pages, cover = covers) { Playback.play(theirs, i) } }}
+        if (theirs.size > 8) item(key = "find") { Column(Modifier.padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, theirs.size, find) } }
+        itemsIndexed(shown, key = { _, s -> s.id }) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, pages = pages, cover = covers) { Playback.play(shown, i) } }}
     } }
 }
 
@@ -1573,6 +1577,8 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
     val scope = rememberCoroutineScope()
     var sure by remember { mutableStateOf(false) }
     LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
+    // a song found in it (ListFind)
+    var find by remember { mutableStateOf("") }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> ListPageBody(frost, top, list, head = { Column(Modifier.cascade(0)) {
             BasicText(name.uppercase(), style = headline(if (Device.tv) 30.sp else 44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -1601,12 +1607,15 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
             Spacer(Modifier.height(14.dp))
         }}) {
         val all = songs.orEmpty()
+        // found in it: each song keeps its own place in the list (taking one out is by its place)
+        val shown = all.withIndex().filter { matches(it.value, find) }
+        if (all.size > 8) item(key = "find") { Column(Modifier.padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, all.size, find) } }
         // no keys: a playlist can hold one song twice
-        itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) {
+        itemsIndexed(shown) { k, (i, s) -> Box(Modifier.cascade(k + 1)) {
             SongRow(s, pages = pages, cover = covers, onRemove = if (mine) ({
                 songs = all.filterIndexed { j, _ -> j != i }    // gone at once; the server's answer reads it again
                 scope.launch { Server.removeFrom(id, i) }
-            }) else null) { Playback.play(all, i) }
+            }) else null) { Playback.play(shown.map { it.value }, k) }
         }}
     } }
 }
@@ -1967,6 +1976,9 @@ private fun KeptPage(pages: Pages) {
     val kept by Offline.kept.collectAsState()
     val songs = remember(kept) { kept.mapNotNull { Library.song(it) } + Offline.tubeSongs(ctx).filter { it.id in kept } }
         .let { l -> remember(l) { l.distinctBy { it.id }.sortedBy { Library.sortName(it.artist) + it.album + it.title } } }
+    // a song found in it (ListFind)
+    var find by remember { mutableStateOf("") }
+    val shown = remember(songs, find) { matching(songs, find) }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
@@ -1989,7 +2001,8 @@ private fun KeptPage(pages: Pages) {
                 Spacer(Modifier.height(10.dp))
             }
         }
-        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(songs, i) } } }
+        if (songs.size > 8) item(key = "find") { Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, songs.size, find) } }
+        itemsIndexed(shown, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(shown, i) } } }
     } }
 }
 
@@ -2851,6 +2864,8 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
         if (value == null) value = emptyList()
     }
     LaunchedEffect(songs?.firstOrNull()?.id) { Playback.warm(songs?.firstOrNull()) }
+    // a song found in it (ListFind)
+    var find by remember { mutableStateOf("") }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> ListPageBody(frost, top, list, head = { Column(Modifier.cascade(0)) {
             BasicText(pl.name.uppercase(), style = headline(if (Device.tv) 30.sp else 44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -2892,8 +2907,10 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
             Spacer(Modifier.height(14.dp))
         }}) {
         val all = songs.orEmpty()
+        val shown = matching(all, find)
+        if (all.size > 8) item(key = "find") { Column(Modifier.padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, all.size, find) } }
         // no keys: a playlist can hold one song twice
-        itemsIndexed(all) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, cover = covers) { Playback.play(all, i) } }}
+        itemsIndexed(shown) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, cover = covers) { Playback.play(shown, i) } }}
     } }
 }
 
@@ -3859,6 +3876,9 @@ private fun SmartPage(id: String, pages: Pages) {
     val songs = smartSongs(l)
     if (l == null) return
     val covers by ListCovers.on.collectAsState()
+    // a song found in it (ListFind)
+    var find by remember { mutableStateOf("") }
+    val shown = remember(songs, find) { matching(songs, find) }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> LazyColumn(
         state = list,
@@ -3885,7 +3905,8 @@ private fun SmartPage(id: String, pages: Pages) {
                 Spacer(Modifier.height(10.dp))
             }
         }
-        itemsIndexed(songs, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(songs, i) } } }
+        if (songs.size > 8) item(key = "find") { Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, songs.size, find) } }
+        itemsIndexed(shown, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(shown, i) } } }
     } }
 }
 
