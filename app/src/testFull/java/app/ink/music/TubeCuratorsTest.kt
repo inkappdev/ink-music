@@ -14,6 +14,7 @@ class TubeCuratorsTest {
         assertEquals("SO COOL" to "Stand Atlantic", c("Stand Atlantic - SO COOL (Official Video)", "Stand Atlantic"))
         assertEquals("Year Of The Snake" to "Nick Ward", c("Year Of The Snake", "Nick Ward"))
         assertEquals("Fantasy" to "Black Belt Eagle Scout", c("Fantasy", "Black Belt Eagle Scout"))
+        assertEquals("Streets of London" to "St. Catherine's Child", c("Streets of London", "St. Catherine's Child, TRO Essex Music Group"))
         // a song whose own name ends in a word like these stays whole
         assertEquals("Radio Video" to "System Of A Down", c("Radio Video", "System Of A Down").let { it })
     }

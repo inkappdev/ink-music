@@ -8,6 +8,7 @@ package app.ink.music
  *   two-hour compilations: the artist taken from the title, anything not a song's length left out.
  * - Josaleigh Pollett's weekly brosaleigh (2026-11-23, Bronson follows it): a dozen or so new indie songs a week, small
  *   bands mostly. Shown as "ink curated", not by name.
+ * - Indie Folk Central's Indie Folk Radar (2026-11-23): new indie folk as it comes out, no AI-made songs. Ink curated too.
  * Read from YouTube Music signed out, each list theirs (the uploader its subtitle's first words: copies share names).
  * Shared (the phone's full build, the computer); not affiliated with either.
  */
@@ -24,6 +25,7 @@ object TubeCurators {
         Curator(RAINBIRD, "alexrainbirdmusic", 100) { year ->
             listOf("alexrainbirdMusic New Indie Music $year" to "new indie music $year", "alexrainbirdMusic New Indie Music ${year - 1}" to "new indie music ${year - 1}")
         },
+        Curator(SpotifyLists.INK, "indie folk central", 40) { _ -> listOf("Indie Folk Radar New Indie Folk" to "indie folk radar", "Indie Folk Central indie folk radar" to "indie folk radar") },
         Curator(BROSALEIGH, "josaleigh pollett", 40) { _ -> listOf("weekly brosaleigh" to "weekly brosaleigh", "Josaleigh Pollett weekly brosaleigh" to "weekly brosaleigh") },
     )
 
@@ -60,6 +62,8 @@ object TubeCurators {
                 by = t.substring(0, at).trim(); t = t.substring(at + sep.length).trim()
             }
         }
+        // a publisher or label credited beside the artist ("St. Catherine's Child, TRO Essex Music Group"): left out
+        by.split(", ").filter { !LABEL.containsMatchIn(it) }.takeIf { it.isNotEmpty() }?.let { by = it.joinToString(", ") }
         val first = by.substringBefore(", ")
         t = SEPARATORS.firstNotNullOfOrNull { sep -> t.takeIf { it.startsWith(first + sep, ignoreCase = true) }?.substring(first.length + sep.length) } ?: t
         return t.trim() to by
