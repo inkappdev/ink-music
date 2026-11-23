@@ -66,11 +66,15 @@ object OnTour {
     /** The shows read again if they're a day old (or never read), the city chosen and a way to ask. */
     suspend fun freshen(now: Boolean = false) {
         start()
-        if (place.value == null || !askable() || reading.value) return
+        if (place.value == null || !askable()) return
         if (!now && showsFile.exists() && System.currentTimeMillis() - showsFile.lastModified() < DAY) return
-        reading.value = true
+        // one read at a time (the shelf and settings can both ask)
+        if (!reading.compareAndSet(false, true)) return
         try {
-            val found = withContext(Dispatchers.IO) { placed(read(yours(), SpotifyHanded.pass.value)) }
+            val (read, failed) = withContext(Dispatchers.IO) { read(yours(), SpotifyHanded.pass.value) }
+            // an artist Spotify wouldn't answer for keeps the shows it had (passes running out partway)
+            val kept = shows.value.filter { s -> Search.fold(s.artist) in failed }
+            val found = withContext(Dispatchers.IO) { placed(Tours.merge(read, kept)) }
             if (found.isEmpty() && shows.value.isNotEmpty()) return
             shows.value = found
             runCatching { showsFile.writeText(Tours.write(found)) }
@@ -88,12 +92,13 @@ object OnTour {
             .distinctBy { Search.fold(it) }.take(40)
     }
 
-    private suspend fun read(artists: List<String>, pass: SpotifyCanvas.Pass?): List<Tours.Show> = coroutineScope {
+    private suspend fun read(artists: List<String>, pass: SpotifyCanvas.Pass?): Pair<List<Tours.Show>, Set<String>> = coroutineScope {
         val gate = Semaphore(4)
+        val failed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         val each = artists.map { a ->
-            async { gate.withPermit { (pass?.let { p -> runCatching { Tours.spotify(a, p) }.getOrNull() }.orEmpty()) to Tours.ticketmaster(a) } }
+            async { gate.withPermit { (pass?.let { p -> runCatching { Tours.spotify(a, p) }.onFailure { failed += Search.fold(a) }.getOrNull() }.orEmpty()) to Tours.ticketmaster(a) } }
         }.awaitAll()
-        Tours.merge(each.flatMap { it.first }, each.flatMap { it.second })
+        Tours.merge(each.flatMap { it.first }, each.flatMap { it.second }) to failed
     }
 
     private fun placed(shows: List<Tours.Show>): List<Tours.Show> {

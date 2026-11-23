@@ -1478,7 +1478,7 @@ private fun LovedPage(pages: Pages) {
  * once (a second tap made a second playlist), then "open it".
  */
 @Composable
-internal fun KeepIt(name: String, found: List<Song>, pages: Pages, spotify: String? = null, songs: List<Import.Said> = emptyList()) {
+internal fun KeepIt(name: String, found: List<Song>, pages: Pages, spotify: String? = null, songs: List<SpotifyLibrary.Said> = emptyList()) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     // where it's being made ("youtube", "server"), and once made, the page that opens it
@@ -1543,7 +1543,7 @@ internal fun InStepLine(where: String, target: String, name: String) {
     val links by InStep.links.collectAsState()
     val link = links.firstOrNull { it.where == where && it.target == target }
     var said by remember(target) { mutableStateOf<String?>(null) }
-    val theirs by androidx.compose.runtime.produceState<Import.Theirs?>(null, target, link) {
+    val theirs by androidx.compose.runtime.produceState<SpotifyLibrary.Theirs?>(null, target, link) {
         if (link == null && Spotify.signedIn()) value = runCatching { if (Spotify.fresh(ctx)) InStep.sameNamed(name) else null }.getOrNull()
     }
     when {
@@ -2153,8 +2153,8 @@ private fun WeeklyPage(number: Int, pages: Pages) {
 private fun ImportPage(pages: Pages) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var lists by remember { mutableStateOf<List<Import.Listed>?>(null) }
-    var chosen by remember { mutableStateOf<Import.Listed?>(null) }
+    var lists by remember { mutableStateOf<List<SpotifyLibrary.Listed>?>(null) }
+    var chosen by remember { mutableStateOf<SpotifyLibrary.Listed?>(null) }
     var progress by remember { mutableStateOf(0) }
     var matched by remember { mutableStateOf<List<Song?>?>(null) }
     var said by remember { mutableStateOf<String?>(null) }
@@ -2169,8 +2169,8 @@ private fun ImportPage(pages: Pages) {
     }
     // signed in to Spotify: your playlists, read once the sign-in comes back; one tapped, its songs read in
     val spotifyAt by Spotify.at.collectAsState()
-    var theirs by remember { mutableStateOf<List<Import.Theirs>?>(null) }
-    var wanted by remember { mutableStateOf<Import.Theirs?>(null) }
+    var theirs by remember { mutableStateOf<List<SpotifyLibrary.Theirs>?>(null) }
+    var wanted by remember { mutableStateOf<SpotifyLibrary.Theirs?>(null) }
     var reading by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(spotifyAt) {
         if (!Spotify.ready()) return@LaunchedEffect
@@ -2179,17 +2179,17 @@ private fun ImportPage(pages: Pages) {
             reading = 0
             val songs = Spotify.songs(w.id) { reading = it }
             reading = null; wanted = null
-            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = Import.Listed(w.name, songs); lists = null; fromSpotify = w.id }
+            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = SpotifyLibrary.Listed(w.name, songs); lists = null; fromSpotify = w.id }
         }
     }
-    fun open(w: Import.Theirs) {
+    fun open(w: SpotifyLibrary.Theirs) {
         wanted = w; said = null
         // the passes last an hour: an older one signs in again (straight through), then reads it
         if (Spotify.ready()) scope.launch {
             reading = 0
             val songs = Spotify.songs(w.id) { reading = it }
             reading = null; wanted = null
-            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = Import.Listed(w.name, songs); lists = null; fromSpotify = w.id }
+            if (songs.isNullOrEmpty()) said = "spotify didn't give that one's songs" else { chosen = SpotifyLibrary.Listed(w.name, songs); lists = null; fromSpotify = w.id }
         } else Spotify.signIn(ctx)
     }
     LaunchedEffect(chosen) {

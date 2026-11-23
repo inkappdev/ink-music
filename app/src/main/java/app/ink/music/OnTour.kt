@@ -70,14 +70,19 @@ object OnTour {
     /** The shows read again if they're a day old (or never read), the city chosen and a way to ask there. */
     suspend fun freshen(c: Context, now: Boolean = false) {
         start(c)
-        if (place.value == null || !askable() || reading.value) return
+        if (place.value == null || !askable()) return
         val f = showsFile(c)
         if (!now && f.exists() && System.currentTimeMillis() - f.lastModified() < DAY) return
-        reading.value = true
+        // one read at a time (the shelf and settings can both ask)
+        if (!reading.compareAndSet(false, true)) return
         try {
             val artists = withContext(Dispatchers.IO) { yours(c) }
             val pass = runCatching { Spotify.passFor(c) }.getOrNull()
-            val found = withContext(Dispatchers.IO) { placed(c, read(artists, pass)) }
+            val (read, failed) = withContext(Dispatchers.IO) { read(artists, pass) }
+            // an artist Spotify wouldn't answer for keeps the shows it had (2026-11-23, a review: passes running out
+            // partway had the read's first artists replace everyone's)
+            val kept = shows.value.filter { s -> Search.fold(s.artist) in failed }
+            val found = withContext(Dispatchers.IO) { placed(c, Tours.merge(read, kept)) }
             // nothing at all from anywhere (offline, turned away): the kept ones stay, asked again next time
             if (found.isEmpty() && shows.value.isNotEmpty()) return
             shows.value = found
@@ -108,19 +113,20 @@ object OnTour {
             .distinctBy { Search.fold(it) }.take(40)
     }
 
-    /** Every artist's shows from each source, four artists at a time, put together. */
-    private suspend fun read(artists: List<String>, pass: SpotifyCanvas.Pass?): List<Tours.Show> = coroutineScope {
+    /** Every artist's shows from each source, four artists at a time, put together; and the artists Spotify failed for (folded). */
+    private suspend fun read(artists: List<String>, pass: SpotifyCanvas.Pass?): Pair<List<Tours.Show>, Set<String>> = coroutineScope {
         val gate = Semaphore(4)
+        val failed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         val each = artists.map { a ->
             async {
                 gate.withPermit {
-                    val theirs = pass?.let { p -> runCatching { Tours.spotify(a, p) }.onFailure { android.util.Log.w("ink-tours", "spotify $a: $it") }.getOrNull() }.orEmpty()
+                    val theirs = pass?.let { p -> runCatching { Tours.spotify(a, p) }.onFailure { failed += Search.fold(a); android.util.Log.w("ink-tours", "spotify $a: $it") }.getOrNull() }.orEmpty()
                     val tm = Tours.ticketmaster(a)
                     theirs to tm
                 }
             }
         }.awaitAll()
-        Tours.merge(each.flatMap { it.first }, each.flatMap { it.second })
+        Tours.merge(each.flatMap { it.first }, each.flatMap { it.second }) to failed
     }
 
     /** The shows near the city chosen, from today on. */

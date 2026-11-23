@@ -37,17 +37,20 @@ object Tours {
     @Volatile var ticketmasterKey = ""
 
     /** Cities by name, for choosing one: Open-Meteo's geocoding (free, no key), the biggest first. */
-    fun cities(name: String): List<Place> = runCatching {
+    fun cities(name: String): List<Place> = citiesOrNull(name) ?: emptyList()
+
+    /** As [cities], but null when it couldn't be asked (offline, turned away), told apart from none of that name. */
+    fun citiesOrNull(name: String): List<Place>? = runCatching {
         if (name.trim().length < 2) return emptyList()
         val r = http("https://geocoding-api.open-meteo.com/v1/search?name=${urlEncode(name.trim())}&count=8&language=en&format=json")
-        if (r.code != 200) return emptyList()
+        if (r.code != 200) return null
         val a = JSONObject(r.text).optJSONArray("results") ?: return emptyList()
         (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             val said = listOf(o.optString("name"), o.optString("admin1"), o.optString("country_code").uppercase())
                 .filter { it.isNotBlank() }.distinct().joinToString(", ")
             Place(said, o.getDouble("latitude"), o.getDouble("longitude"))
         }
-    }.getOrDefault(emptyList())
+    }.getOrNull()
 
     /** How far apart two places are, in km (the great circle). */
     fun km(aLat: Double, aLon: Double, bLat: Double, bLon: Double): Double {
@@ -101,7 +104,8 @@ object Tours {
     private const val OVERVIEW = "queryArtistOverview"
     // its hash as the web player had it (2026-11-23): the phone's player doesn't always carry it in the scripts read
     // (the canvas keeps its own so too); read afresh from them once Spotify says it's stale
-    @Volatile private var hashes = HashMap<String, String>(mapOf(OVERVIEW to "eafb1620d783ece118e72fbfede2b0064483e029d3c1aafafa1c2de0e25a89e7"))
+    // (asked from several artists at once: a map that's safe so)
+    private val hashes = java.util.concurrent.ConcurrentHashMap<String, String>(mapOf(OVERVIEW to "eafb1620d783ece118e72fbfede2b0064483e029d3c1aafafa1c2de0e25a89e7"))
     /** Told of what Spotify's answers look like (the phone's log), so the reading can be checked against them. */
     @Volatile var trace: ((String) -> Unit)? = null
     @Volatile private var traced = false
@@ -180,7 +184,9 @@ object Tours {
     fun placed(shows: List<Show>, known: MutableMap<String, String>): List<Show> = shows.map { s ->
         if (s.lat != null || s.city.isBlank()) return@map s
         val key = Search.fold(s.city)
-        val at = known.getOrPut(key) { cities(s.city).firstOrNull()?.let { "${it.lat},${it.lon}" }.orEmpty() }
+        // a lookup that couldn't be asked isn't kept as "none" (2026-11-23, a review: a flaky first read lost those
+        // cities' shows for good); asked again next time
+        val at = known[key] ?: (citiesOrNull(s.city) ?: return@map s).firstOrNull()?.let { "${it.lat},${it.lon}" }.orEmpty().also { known[key] = it }
         val (la, lo) = at.split(",").takeIf { it.size == 2 } ?: return@map s
         s.copy(lat = la.toDoubleOrNull(), lon = lo.toDoubleOrNull())
     }

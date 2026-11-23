@@ -73,7 +73,7 @@ object InStep {
     val links = MutableStateFlow<List<Link>>(emptyList())
     private const val DAY = 24 * 3600 * 1000L
     private val file get() = File(Home.dir, "in-step.json")
-    @Volatile private var running = false
+    private val running = java.util.concurrent.atomic.AtomicBoolean(false)
 
     init {
         links.value = runCatching {
@@ -116,27 +116,30 @@ object InStep {
     /** Every copy brought up to date, once a day each, with passes from the phone. */
     suspend fun catchUp() = withContext(Dispatchers.IO) {
         val pass = SpotifyHanded.pass.value ?: return@withContext
-        if (running) return@withContext
         val due = links.value.filter { System.currentTimeMillis() - it.at > DAY }
         if (due.isEmpty()) return@withContext
-        running = true
+        if (!running.compareAndSet(false, true)) return@withContext
         try {
             for (l in due) {
                 val songs = runCatching { SpotifyLibrary.songs(l.spotify, pass) }.getOrNull() ?: continue
                 val fresh = songs.filter { key(it.title, it.artist) !in l.known }
+                // songs found but not put in (offline, a sign-in lapsed): not taken as seen, so tried again next time
+                val missed = HashSet<String>()
                 if (fresh.isNotEmpty()) {
-                    val found = Import.match(fresh).filterNotNull()
-                    when (l.where) {
-                        "here" -> HereLists.add(l.target, found)
-                        "youtube" -> found.forEach { TubeAccount.addTo(TubeAlbum("${InnerTube.BASE}/playlist?list=${l.target}", l.name, "", null), it) }
-                        "server" -> found.forEach { Server.addTo(l.target, it) }
+                    val found = Import.match(fresh)
+                    if (l.where == "here") HereLists.add(l.target, found.filterNotNull())
+                    else found.forEachIndexed { i, s ->
+                        s ?: return@forEachIndexed
+                        val ok = if (l.where == "youtube") TubeAccount.addTo(TubeAlbum("${InnerTube.BASE}/playlist?list=${l.target}", l.name, "", null), s) else Server.addTo(l.target, s)
+                        if (!ok) missed += key(fresh[i].title, fresh[i].artist)
                     }
-                    Log.d("in step: ${l.name}, ${fresh.size} new on spotify, ${found.size} added to ${l.where}")
+                    Log.d("in step: ${l.name}, ${fresh.size} new on spotify, ${found.count { it != null }} found, ${missed.size} not put in")
                 }
-                links.value = links.value.map { if (it.where == l.where && it.target == l.target) it.copy(known = it.known + songs.map { s -> key(s.title, s.artist) }, at = System.currentTimeMillis()) else it }
+                val seen = songs.map { s -> key(s.title, s.artist) }.filter { it !in missed }
+                links.value = links.value.map { if (it.where == l.where && it.target == l.target) it.copy(known = it.known + seen, at = System.currentTimeMillis()) else it }
                 save()
             }
-        } finally { running = false }
+        } finally { running.set(false) }
     }
 }
 

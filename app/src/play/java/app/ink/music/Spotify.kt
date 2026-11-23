@@ -19,7 +19,7 @@ object Spotify {
     fun signInCookies(): String? = null
     fun takeSignIn(cookies: String) {}
     fun takePasses(json: String) {}
-    suspend fun playlists(): List<Import.Theirs>? = null
+    suspend fun playlists(): List<SpotifyLibrary.Theirs>? = null
     suspend fun fresh(c: Context): Boolean = false
-    suspend fun songs(id: String, got: (Int) -> Unit = {}): List<Import.Said>? = null
+    suspend fun songs(id: String, got: (Int) -> Unit = {}): List<SpotifyLibrary.Said>? = null
 }

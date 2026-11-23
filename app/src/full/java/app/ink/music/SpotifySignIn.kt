@@ -63,10 +63,7 @@ object Spotify {
     const val available = true
 
     // the web player's queries, by hash (BitChord's, 2026-10-30): its library, a playlist, your liked songs
-    private const val LIBRARY = "973e511ca44261fda7eebac8b653155e7caee3675abb4fb110cc1b8c78b091c3"
-    private const val PLAYLIST = "346811f856fb0b7e4f6c59f8ebea78dd081c6e2fb01b77c954b26259d5fc6763"
-    private const val LIKED = "087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240"
-    const val LIKED_ID = "liked"
+    const val LIKED_ID = SpotifyLibrary.LIKED_ID
 
     /**
      * The browser it says it is: the phone's own Chrome (the WebView's name, less its "wv"), as YouTube's sign-in does,
@@ -233,64 +230,16 @@ object Spotify {
         return url
     }
 
-    /** Your playlists, Liked Songs first; null when Spotify wouldn't say (signed out, or its queries changed). */
-    suspend fun playlists(): List<Import.Theirs>? = withContext(Dispatchers.IO) {
-        runCatching {
-            val out = mutableListOf(Import.Theirs(LIKED_ID, "liked songs", ""))
-            var offset = 0
-            while (true) {
-                val vars = JSONObject().put("filters", JSONArray().put("Playlists")).put("order", JSONObject.NULL).put("textFilter", "")
-                    .put("features", JSONArray(listOf("LIKED_SONGS", "YOUR_EPISODES_V2", "PRERELEASES", "EVENTS")))
-                    .put("limit", 50).put("offset", offset).put("flatten", true).put("expandedFolders", JSONArray())
-                    .put("folderUri", JSONObject.NULL).put("includeFoldersWhenFlattening", false)
-                val lib = ask("libraryV3", LIBRARY, vars).getJSONObject("data").getJSONObject("me").getJSONObject("libraryV3")
-                val items = lib.optJSONArray("items") ?: JSONArray()
-                for (i in 0 until items.length()) {
-                    val w = items.optJSONObject(i)?.optJSONObject("item") ?: continue
-                    val d = w.optJSONObject("data") ?: continue
-                    if (d.optString("__typename") != "Playlist") continue
-                    val name = d.optString("name").ifBlank { continue }
-                    val by = d.optJSONObject("ownerV2")?.optJSONObject("data")?.optString("name").orEmpty()
-                    out += Import.Theirs(w.optString("_uri").substringAfterLast(':'), name, by)
-                }
-                offset += items.length()
-                if (items.length() == 0 || offset >= lib.optInt("totalCount", offset)) break
-            }
-            out
-        }.onFailure { android.util.Log.w("ink-spotify", "library: $it") }.getOrNull()
+    /** Your playlists, liked songs first; null when Spotify wouldn't say (signed out, or its queries changed). */
+    suspend fun playlists(): List<SpotifyLibrary.Theirs>? = withContext(Dispatchers.IO) {
+        runCatching { SpotifyLibrary.playlists(pass() ?: error("not signed in")) }.onFailure { android.util.Log.w("ink-spotify", "library: $it") }.getOrNull()
     }
 
     /** A playlist's songs (or your liked ones), all of them, [got] told how many as each page comes. */
-    suspend fun songs(id: String, got: (Int) -> Unit = {}): List<Import.Said>? = withContext(Dispatchers.IO) {
-        runCatching {
-            val out = mutableListOf<Import.Said>()
-            var offset = 0
-            while (true) {
-                val (items, total) = if (id == LIKED_ID) {
-                    val t = ask("fetchLibraryTracks", LIKED, JSONObject().put("offset", offset).put("limit", 100))
-                        .getJSONObject("data").getJSONObject("me").getJSONObject("library").getJSONObject("tracks")
-                    (t.optJSONArray("items") ?: JSONArray()).let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optJSONObject("track")?.optJSONObject("data") } } to t.optInt("totalCount")
-                } else {
-                    val c = ask("fetchPlaylist", PLAYLIST, JSONObject().put("uri", "spotify:playlist:$id").put("offset", offset).put("limit", 100).put("enableWatchFeedEntrypoint", false))
-                        .getJSONObject("data").getJSONObject("playlistV2").getJSONObject("content")
-                    (c.optJSONArray("items") ?: JSONArray()).let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optJSONObject("itemV2")?.optJSONObject("data") } } to c.optInt("totalCount")
-                }
-                items.forEach { d ->
-                    val title = d.optString("name").ifBlank { return@forEach }
-                    val artists = d.optJSONObject("artists")?.optJSONArray("items")
-                    val artist = artists?.optJSONObject(0)?.optJSONObject("profile")?.optString("name").orEmpty()
-                    out += Import.Said(title, artist, d.optJSONObject("albumOfTrack")?.optString("name").orEmpty())
-                }
-                offset += 100
-                got(out.size)
-                if (items.isEmpty() || offset >= total) break
-            }
-            out
-        }.onFailure { android.util.Log.w("ink-spotify", "songs: $it") }.getOrNull()
+    suspend fun songs(id: String, got: (Int) -> Unit = {}): List<SpotifyLibrary.Said>? = withContext(Dispatchers.IO) {
+        runCatching { SpotifyLibrary.songs(id, pass() ?: error("not signed in"), got) }.onFailure { android.util.Log.w("ink-spotify", "songs: $it") }.getOrNull()
     }
 
-    private fun ask(operation: String, hash: String, vars: JSONObject): JSONObject =
-        SpotifyCanvas.ask(operation, hash, vars, pass() ?: error("not signed in"))
 }
 
 /**
