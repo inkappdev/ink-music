@@ -197,7 +197,7 @@ fun AllMoodsPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 fun ordered(xs: List<InnerTube.Mood>) = xs.sortedWith(compareByDescending<InnerTube.Mood> { counts[it.title] ?: 0 }.thenBy { Moods.rank(it.title) })
                 listOf("moods" to ordered(all.filter { !it.genre }), "genres" to ordered(all.filter { it.genre })).filter { it.second.isNotEmpty() }.forEach { (label, xs) ->
                     item(span = { GridItemSpan(maxLineSpan) }, key = "l-$label") { Label(label) }
-                    items(xs, key = { label + it.params }) { m -> GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(m); open(Page.Mood(m)) } }
+                    items(xs, key = { label + it.params }) { m -> GenreTile(m.title, (counts[m.title] ?: 0) > 0, m.params) { Moods.open(m); open(Page.Mood(m)) } }
                 }
             }
         }

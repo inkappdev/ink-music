@@ -514,6 +514,7 @@ private fun time(ms: Long): String { val s = ms / 1000; return "%d:%02d".format(
 /** An artist's music videos on their page, newest first: each frame wide, its song and how long ago. */
 @Composable
 fun ArtistVideos(name: String, browseId: String, open: (Page) -> Unit) {
+    if (SongsOnly.on.collectAsState().value) return
     val videos by produceState(emptyList<MusicVideos.Clip>(), name, browseId) {
         value = runCatching { MusicVideos.of(name, browseId) }.getOrDefault(emptyList())
     }
@@ -533,4 +534,15 @@ Column(Modifier.width(300.dp).clickable(remember { MutableInteractionSource() },
         }
         Spacer(Modifier.height(18.dp))
     }
+}
+
+/**
+ * Songs only (settings, youtube music's videos; the phone's since 2026-11-23, a Reddit ask: "a music only profile where
+ * videos do not get suggested"): no new videos on listen, none on an artist's page, none of youtube.com's videos in find.
+ * Live DJ sets stay. Kept in a file of its own.
+ */
+object SongsOnly {
+    private val file = java.io.File(Home.dir, "songs-only")
+    val on = kotlinx.coroutines.flow.MutableStateFlow(file.exists())
+    fun set(v: Boolean) { on.value = v; runCatching { if (v) file.writeText("") else file.delete() } }
 }

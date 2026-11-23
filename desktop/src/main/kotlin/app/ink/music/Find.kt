@@ -131,8 +131,10 @@ fun FindTab(open: (Page) -> Unit) {
         value = ask?.let { Stations.search(it.text) }.orEmpty()
     }
     // youtube.com's own videos (YouTube.videos): songs never put on YouTube Music, apart from its songs; none it already gave
-    val tubeVideosAll by androidx.compose.runtime.produceState(emptyList<Song>(), ask) {
-        value = ask?.let { tubeVideos(it.text) }.orEmpty()
+    // (none, set to songs only: SongsOnly)
+    val songsOnly by SongsOnly.on.collectAsState()
+    val tubeVideosAll by androidx.compose.runtime.produceState(emptyList<Song>(), ask, songsOnly) {
+        value = if (songsOnly) emptyList() else ask?.let { tubeVideos(it.text) }.orEmpty()
     }
     // a YouTube video's id in what's typed ("[VDvX1hzGZN4]", as a file downloaded from YouTube is often named): that video
     val tubeId = if (pasted) null else Search.tubeId(raw)

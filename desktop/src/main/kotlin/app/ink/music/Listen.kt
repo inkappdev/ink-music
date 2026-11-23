@@ -177,8 +177,8 @@ fun ListenPage(open: (Page) -> Unit) {
             // there's a taste to order them by
             if (!taste.empty && pickedForYou.isNotEmpty()) item(key = "for-you") { PickedForYou(pickedForYou, open) }
         }
-        shelf["videos"] = {
-            // their new music videos (MusicVideos.kt), shown once some are found
+        // their new music videos (MusicVideos.kt), shown once some are found; none set to songs only (SongsOnly)
+        if (!SongsOnly.on.value) shelf["videos"] = {
             item(key = "videos") { NewVideos(open) }
         }
         // your own music at a tempo (TempoMixes.yours), once there's enough of it: from INK (2026-11-12), made from yours

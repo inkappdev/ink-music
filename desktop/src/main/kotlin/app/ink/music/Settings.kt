@@ -108,6 +108,13 @@ fun SettingsPage(onClose: () -> Unit) {
                             SettingRow("YOUR SERVER", a?.name?.lowercase() ?: "sign in", opened) { ServerSetting() }
                             val stale by TubeAccount.stale.collectAsState()
                             SettingRow("YOUTUBE MUSIC", if (stale) "signed out" else who?.name?.lowercase() ?: "sign in", opened) { YouTubeSetting() }
+                            // youtube's music videos: shown, or songs only (SongsOnly)
+                            val songsOnly by SongsOnly.on.collectAsState()
+                            SettingRow("VIDEOS", if (songsOnly) "songs only" else "shown", opened) {
+                                BasicText("new music videos on listen and artists' pages, youtube's videos in find", style = pixel(12.sp, Ink.mid))
+                                Spacer(Modifier.height(10.dp))
+                                Pick(listOf("shown" to !songsOnly, "songs only" to songsOnly)) { SongsOnly.set(it == 1) }
+                            }
                             SettingRow("YOUR FILES", "$local ${if (local == 1) "song" else "songs"}", opened) { FilesSetting() }
                             RowsEnd()
                         }

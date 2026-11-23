@@ -43,6 +43,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.key
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.ui.Modifier
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * INK (explore and ink's own place, one since 2026-10-29), what isn't yours yet, picked by people: ink weekly
@@ -722,7 +724,7 @@ private fun Genres(all: List<InnerTube.Mood>, open: (Page) -> Unit) {
         Turned(grid) {
             androidx.compose.foundation.lazy.grid.LazyHorizontalGrid(androidx.compose.foundation.lazy.grid.GridCells.Fixed(2), Modifier.height(GENRE * 2 + 14.dp),
                 state = grid, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                items(genres, key = { it.params }) { m -> GenreTile(m.title, (counts[m.title] ?: 0) > 0) { Moods.open(m); open(Page.Mood(m)) } }
+                items(genres, key = { it.params }) { m -> GenreTile(m.title, (counts[m.title] ?: 0) > 0, m.params) { Moods.open(m); open(Page.Mood(m)) } }
             }
         }
     }
@@ -732,14 +734,44 @@ private val GENRE = 84.dp
 
 /** A genre as a tile: its name in a hairline frame (as the phone's), lit if it's yours, brighter under the mouse. */
 @Composable
-internal fun GenreTile(name: String, yours: Boolean, onClick: () -> Unit) {
+internal fun GenreTile(name: String, yours: Boolean, params: String? = null, onClick: () -> Unit) {
     WithMenu({ listOf(listOf("open" to onClick)) }) {
     val src = remember { MutableInteractionSource() }
     val over by src.collectIsHoveredAsState()
-    Box(Modifier.width(186.dp).height(GENRE).border(1.dp, if (yours || over) Ink.mid else Ink.line).hoverable(src)
-        .clickable(src, indication = null, onClick = felt(then = onClick)).padding(14.dp), contentAlignment = Alignment.BottomStart) {
-        BasicText(name.uppercase(), style = headline(17.sp, if (yours || over) Ink.ink else Ink.mid).copy(lineHeight = 19.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    // its picture: the cover of its first YouTube Music playlist in the dither (GenreArt; the phone's since 2026-11-23, a
+    // Reddit ask: "a pixelated or dithered version of moods"), its name on a black tab over it; a hairline till it comes
+    val art by produceState(GenreArt.kept(name), name, params) { if (value == null && params != null) value = GenreArt.of(name, params) }
+    Box(Modifier.width(186.dp).height(GENRE).then(if (art == null) Modifier.border(1.dp, if (yours || over) Ink.mid else Ink.line) else Modifier)
+        .hoverable(src).clickable(src, indication = null, onClick = felt(then = onClick)), contentAlignment = Alignment.BottomStart) {
+        art?.let { a -> Covered(remember(a) { faceSong("genre " + name, a) }, Modifier.matchParentSize(), px = 400) }
+        BasicText(name.uppercase(), style = headline(17.sp, if (yours || over) Ink.ink else Ink.mid).copy(lineHeight = 19.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(if (art == null) 14.dp else 0.dp).then(if (art != null) Modifier.background(Ink.black).padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 4.dp) else Modifier))
     }
+    }
+}
+
+/**
+ * Each mood's and genre's picture: the cover of the first playlist on its YouTube Music page, read once a tile's in sight
+ * (two at a time) and kept by name in the cache; none found (offline), asked again next time.
+ */
+object GenreArt {
+    private val known = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val asking = kotlinx.coroutines.sync.Semaphore(2)
+    private val file = java.io.File(Home.cache, "genre-art.json")
+    init { runCatching { org.json.JSONObject(file.readText()).let { o -> o.keys().forEach { k -> known[k] = o.getString(k) } } } }
+
+    fun kept(name: String): String? = known[name]
+
+    suspend fun of(name: String, params: String): String? = withContext(Dispatchers.IO) {
+        known[name]?.let { return@withContext it }
+        asking.withPermit {
+            known[name]?.let { return@withPermit it }
+            val art = runCatching { InnerTube().mood(params) }.getOrDefault(emptyList())
+                .firstNotNullOfOrNull { s -> s.items.firstNotNullOfOrNull { it.art } } ?: return@withPermit null
+            known[name] = art
+            runCatching { file.parentFile?.mkdirs(); file.writeText(org.json.JSONObject(known as Map<*, *>).toString()) }
+            art
+        }
     }
 }
 
