@@ -23,10 +23,17 @@ object CuratorLists {
         SpotifyLists.readWhole = { id, songs -> send(app, id, songs) }
     }
 
-    /** The curator's key, given by adb; blank takes it away. */
+    /**
+     * The curator's key, given by adb: taken only when it's the one the build knows by its SHA-256 (2026-11-23, a review:
+     * the screens take intents from any app, which could have set a junk key or cleared it). The key itself is never in
+     * the app.
+     */
     fun setKey(c: Context, key: String) {
-        runCatching { if (key.isBlank()) keyFile(c).delete() else keyFile(c).writeText(key.trim()) }
-        android.util.Log.i("ink-picks", "curator key ${if (key.isBlank()) "taken away" else "kept"}")
+        val want = BuildConfig.CURATOR_KEY_HASH
+        val got = java.security.MessageDigest.getInstance("SHA-256").digest(key.trim().toByteArray()).joinToString("") { "%02x".format(it) }
+        if (want.isBlank() || got != want) { android.util.Log.w("ink-picks", "curator key not taken"); return }
+        runCatching { keyFile(c).writeText(key.trim()) }
+        android.util.Log.i("ink-picks", "curator key kept")
     }
 
     /** A whole list sent to inkhome.app, with the key, once a day at most; no key, nothing sent. */

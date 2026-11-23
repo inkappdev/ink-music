@@ -30,6 +30,8 @@ android {
         buildConfigField("String", "LASTFM_SECRET", "\"${release?.getProperty("lastfmSecret").orEmpty()}\"")
         // Ticketmaster's Discovery API, for your artists on tour (OnTour); blank: not asked
         buildConfigField("String", "TICKETMASTER_KEY", "\"${release?.getProperty("ticketmasterKey").orEmpty()}\"")
+        // the curator key's SHA-256 (CuratorLists): only that key is taken from an intent; blank, none is
+        buildConfigField("String", "CURATOR_KEY_HASH", "\"${release?.getProperty("curatorKeyHash").orEmpty()}\"")
         // -Pfdroid: F-Droid's build, which F-Droid keeps up to date itself: no looking at GitHub for a new version
         buildConfigField("boolean", "UPDATER", "${!project.hasProperty("fdroid")}")
     }
