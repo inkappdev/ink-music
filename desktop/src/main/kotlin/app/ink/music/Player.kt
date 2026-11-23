@@ -379,7 +379,7 @@ object Player {
                     if (!url.startsWith("ytm://")) m.proceed(e.id)
                     // found on a thread of its own: the events (the clock, the line) go on meanwhile
                     else Thread {
-                        YouTube.stream("y" + url.removePrefix("ytm://"))?.let { m.set("stream-open-filename", it) }
+                        YouTube.stream("y" + url.removePrefix("ytm://"), small = Quality.chosen.value == Quality.SAVER)?.let { m.set("stream-open-filename", it) }
                         m.proceed(e.id)
                     }.start()
                 }
@@ -846,7 +846,7 @@ object Player {
     internal fun where(s: Song) = when {
         // kept on the computer: from there, no signal needed (Offline)
         Offline.file(s.id) != null -> Offline.file(s.id)!!.path
-        s.server -> Server.stream(s).orEmpty()
+        s.server -> Server.playing(s).orEmpty()
         s.tube -> "ytm://" + s.id.removePrefix("y")
         s.station -> s.path
         // an episode: its link (mpv reads it as it plays, and seeks in it)

@@ -186,6 +186,16 @@ object Server {
         if (mp3) url(it, "stream", "id" to s.id.removePrefix("n"), "format" to "mp3", "maxBitRate" to 320) else url(it, "stream", "id" to s.id.removePrefix("n"))
     }
 
+    /** Where a server song streams from for playing, as the quality asks (Quality): the file, mp3 320, or opus 96. */
+    fun playing(s: Song): String? = _account.value?.let {
+        val id = "id" to s.id.removePrefix("n")
+        when (Quality.chosen.value) {
+            Quality.HIGH -> url(it, "stream", id, "format" to "mp3", "maxBitRate" to 320, "estimateContentLength" to "true")
+            Quality.SAVER -> url(it, "stream", id, "format" to "opus", "maxBitRate" to 96, "estimateContentLength" to "true")
+            else -> url(it, "stream", id)
+        }
+    }
+
     /** A record's cover from the server, at about `px` a side, as the server sends it (a JPEG, a PNG); null if there's none. */
     /**
      * A record's cover at about `px`. A few at a time: Navidrome turns away covers asked for all at once ("429 Too
@@ -429,4 +439,18 @@ object Server {
     private fun record(name: String) = if (name == "[Unknown Album]") "" else name
 
     private fun md5(s: String) = MessageDigest.getInstance("MD5").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+}
+
+/**
+ * How good a stream is (the phone's since 2026-10-26, its two, wifi and mobile data, one here): original (the file as it
+ * is, YouTube's best), high (the server's mp3 320), or data saver (the server's opus 96, YouTube's smallest). Kept.
+ */
+object Quality {
+    const val ORIGINAL = 0
+    const val HIGH = 1
+    const val SAVER = 2
+    val WORDS = listOf("original", "high", "data saver")
+    private val file get() = java.io.File(Home.dir, "quality")
+    val chosen = kotlinx.coroutines.flow.MutableStateFlow(runCatching { file.readText().trim().toInt() }.getOrDefault(ORIGINAL).coerceIn(0, 2))
+    fun set(q: Int) { chosen.value = q; runCatching { if (q == ORIGINAL) file.delete() else file.writeText("$q") } }
 }

@@ -144,6 +144,13 @@ fun SettingsPage(onClose: () -> Unit) {
                                 if (sound.exclusive) "exact" else null, if (sound.even) "even volume" else "as recorded").joinToString(" · "), opened) { SoundSetting() }
                             SettingRow("TRANSITIONS", mode, opened) { TransitionsSetting() }
                             SettingRow("EQUALIZER", if (eq.on) eq.label.lowercase() else "off", opened) { EqualizerSetting() }
+                            // how good a stream is (Quality; the phone's since 2026-10-26, its wifi and data one here)
+                            val quality by Quality.chosen.collectAsState()
+                            SettingRow("QUALITY", Quality.WORDS[quality], opened) {
+                                BasicText("original, the file as it is: your server's flac stays flac; high, mp3 320; data saver, the smallest", style = pixel(12.sp, Ink.mid))
+                                Spacer(Modifier.height(10.dp))
+                                Pick(Quality.WORDS.mapIndexed { i, w -> w to (quality == i) }) { Quality.set(it) }
+                            }
                             val similar by Player.radioMode.collectAsState()
                             SettingRow("SIMILAR SONGS", if (Local.on) Radio.Mode.OFFLINE.word else similar.word, opened) { SimilarSetting() }
                             val blocked by Blocked.kept.collectAsState()
