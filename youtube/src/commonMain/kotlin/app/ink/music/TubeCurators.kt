@@ -29,17 +29,40 @@ object TubeCurators {
     /** Every curator's newest songs as picks (each list's order kept by a minute between each), the year as it is now. */
     fun picks(now: Long, year: Int): List<Curation.Pick> = ALL.flatMap { c ->
         runCatching { songs(c, year) }.getOrDefault(emptyList()).mapIndexed { i, (title, artist, art) ->
-            // a video's title as a song's: "(Official Video)", "[Visualizer]" and their like off its end
-            // and the artist's name off its front where the video's title has it ("Stand Atlantic - SO COOL")
-            val first = artist.substringBefore(", ")
-            val bare = title.replace(VIDEO, "").replace(VIDEO, "").trim().let { t ->
-                listOf(" - ", ", ", ": ").firstNotNullOfOrNull { sep -> t.takeIf { it.startsWith(first + sep, ignoreCase = true) }?.substring(first.length + sep.length) } ?: t
-            }.trim()
-            Curation.Pick(false, bare, artist, c.from, "", "", now - i * 60_000L, art)
+            val (bare, by) = clean(title, artist)
+            Curation.Pick(false, bare, by, c.from, "", "", now - i * 60_000L, art)
         }
     }
 
     private val VIDEO = Regex("""\s*[(\[][^)\]]*\b(official|video|audio|lyrics?|visuali[sz]er|music video|mv)\b[^)\]]*[)\]]\s*$""", RegexOption.IGNORE_CASE)
+    // the same words with no brackets round them, at the very end ("... FEAT. DRIZZZ VISUALISER")
+    // (only words that never end a song's own name: "Radio Video" stays)
+    private val VIDEO_BARE = Regex("""\s+[-|]?\s*(visuali[sz]er|official\s+(music\s+|lyric\s+)?video|music\s+video|lyric\s+video|official\s+audio)\s*$""", RegexOption.IGNORE_CASE)
+    // where a song's from, a note not its name ("(From Grand Theft Auto VI: The Album)")
+    private val FROM = Regex("""\s*[(\[]\s*from\s+[^)\]]*[)\]]""", RegexOption.IGNORE_CASE)
+    // an upload credited to its label, not its artist ("Atlantic Records"): the artist is in the title
+    private val LABEL = Regex("""\b(records|recordings|music group|entertainment|label|vevo|official)\b""", RegexOption.IGNORE_CASE)
+    private val SEPARATORS = listOf(" - ", " – ", " | ", ", ", ": ")
+
+    /**
+     * A video's title and credit as a song's (2026-11-23: triple j's list showed "BICEP | Gas", "... VISUALISER", Lana
+     * Del Rey's song by Atlantic Records): "(Official Video)", "[Visualizer]", a bare "visualiser" and "(From ...)" off
+     * its end; the artist's name off its front where the title has it ("Stand Atlantic - SO COOL", "BICEP | Gas"); and
+     * where a label's the one credited, the artist taken from the title ("Lana Del Rey - Crazy For You").
+     */
+    fun clean(title: String, artist: String): Pair<String, String> {
+        var t = title.replace(VIDEO, "").replace(VIDEO, "").replace(FROM, "").trim()
+        t = t.replace(VIDEO_BARE, "").trim()
+        var by = artist
+        if (LABEL.containsMatchIn(artist)) {
+            SEPARATORS.take(3).firstNotNullOfOrNull { sep -> t.indexOf(sep).takeIf { it > 0 }?.let { it to sep } }?.let { (at, sep) ->
+                by = t.substring(0, at).trim(); t = t.substring(at + sep.length).trim()
+            }
+        }
+        val first = by.substringBefore(", ")
+        t = SEPARATORS.firstNotNullOfOrNull { sep -> t.takeIf { it.startsWith(first + sep, ignoreCase = true) }?.substring(first.length + sep.length) } ?: t
+        return t.trim() to by
+    }
 
     private fun songs(c: Curator, year: Int): List<Triple<String, String, String?>> {
         val yt = InnerTube()
