@@ -18,6 +18,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,7 +141,8 @@ object OnTour {
 
 /**
  * INK's shelf of your artists playing near you: each show a ticket stub in a hairline (the day big, who, where), a tap on
- * it opens its tickets' page. None near, or no city yet: nothing (the city's chosen in settings).
+ * it opens its tickets' page. No city yet: the city asked for right here (2026-11-23, Bronson couldn't find it in
+ * settings, listening), once there's a way to read shows; a city with none near: nothing.
  */
 @Composable
 fun OnTourShelf() {
@@ -146,12 +150,42 @@ fun OnTourShelf() {
     LaunchedEffect(Unit) { OnTour.freshen(ctx) }
     val place by OnTour.place.collectAsState()
     val all by OnTour.shows.collectAsState()
-    val p = place ?: return
+    var choosing by remember { mutableStateOf(false) }
+    val p = place
+    if (p == null || choosing) {
+        if (!OnTour.askable()) return
+        Heading("on tour near you", "your artists' shows. your city?")
+        CityPicker { choosing = false }
+        Spacer(Modifier.height(8.dp))
+        return
+    }
     val near = remember(all, p) { OnTour.near(all, p) }
     if (near.isEmpty()) return
-    Heading("on tour near you", "your artists, around ${p.name.substringBefore(",").lowercase()}")
+    Heading("on tour near you", "your artists, around ${p.name.substringBefore(",").lowercase()}") {
+        Word("change city", pixel(12.sp, Ink.mid), touch = 8.dp) { choosing = true }
+    }
     Shelf(near) { s -> TourStub(s) { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } } }
     Spacer(Modifier.height(8.dp))
+}
+
+/** A city typed, the cities of that name found under it, one tapped: chosen, and the shows read for it at once. */
+@Composable
+internal fun CityPicker(onChosen: () -> Unit = {}) {
+    val ctx = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var typed by remember { mutableStateOf("") }
+    val found by androidx.compose.runtime.produceState(emptyList<Tours.Place>(), typed) {
+        kotlinx.coroutines.delay(350)
+        value = withContext(Dispatchers.IO) { Tours.cities(typed) }
+    }
+    Column(Modifier.padding(horizontal = 20.dp)) {
+        Field("city", typed, { typed = it }, "your city", androidx.compose.ui.text.input.KeyboardType.Text)
+        found.forEach { c ->
+            Word(c.name.lowercase(), pixel(14.sp), Modifier.padding(bottom = 6.dp), touch = 6.dp) {
+                OnTour.choose(ctx, c); typed = ""; onChosen(); scope.launch { OnTour.freshen(ctx, now = true) }
+            }
+        }
+    }
 }
 
 /** A show as a ticket stub: the weekday and the date big, the artist, the venue and the city; "tickets" at its foot. */
