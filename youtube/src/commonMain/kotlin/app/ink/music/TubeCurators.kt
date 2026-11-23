@@ -6,12 +6,15 @@ package app.ink.music
  * - alexrainbirdMusic's New Indie Music <year>: indie, folk and pop, kept newest first, the year's in its name (last
  *   year's in early January). Some are their own uploads ("Artist - Song", alexrainbirdMusic the uploader), some
  *   two-hour compilations: the artist taken from the title, anything not a song's length left out.
+ * - Josaleigh Pollett's weekly brosaleigh (2026-11-23, Bronson follows it): a dozen or so new indie songs a week, small
+ *   bands mostly.
  * Read from YouTube Music signed out, each list theirs (the uploader its subtitle's first words: copies share names).
  * Shared (the phone's full build, the computer); not affiliated with either.
  */
 object TubeCurators {
     const val TRIPLE_J = "triple j"
     const val RAINBIRD = "alexrainbird"
+    const val BROSALEIGH = "josaleigh pollett"
 
     private class Curator(val from: String, val owner: String, val max: Int, val lists: (Int) -> List<Pair<String, String>>)
 
@@ -20,6 +23,7 @@ object TubeCurators {
         Curator(RAINBIRD, "alexrainbirdmusic", 100) { year ->
             listOf("alexrainbirdMusic New Indie Music $year" to "new indie music $year", "alexrainbirdMusic New Indie Music ${year - 1}" to "new indie music ${year - 1}")
         },
+        Curator(BROSALEIGH, "josaleigh pollett", 40) { _ -> listOf("weekly brosaleigh" to "weekly brosaleigh", "Josaleigh Pollett weekly brosaleigh" to "weekly brosaleigh") },
     )
 
     /** Every curator's newest songs as picks (each list's order kept by a minute between each), the year as it is now. */

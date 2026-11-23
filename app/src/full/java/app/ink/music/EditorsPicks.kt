@@ -6,7 +6,7 @@ package app.ink.music
  * - Spotify's editorial indie playlists, and The Line of Best Fit's and DIY's own ([SpotifyLists]): song data from
  *   their public embed pages, nothing played from there.
  * - YouTube Music's own editors' lists for indie & alternative (its moods and genres page): the first of its shelves'.
- * - BIRP!'s monthly indie pop / rock playlist ([Birp]), shown as "birp!"; triple j's and alexrainbirdMusic's ([TubeCurators]).
+ * - BIRP!'s monthly indie pop / rock playlist ([Birp]), shown as "birp!"; triple j's, alexrainbirdMusic's and Josaleigh Pollett's weekly brosaleigh ([TubeCurators]).
  */
 object EditorsPicks {
     const val EDITORS = SpotifyLists.EDITORS
