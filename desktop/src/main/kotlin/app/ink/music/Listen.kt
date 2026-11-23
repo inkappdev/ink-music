@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -551,6 +552,8 @@ fun ListsPage(open: (Page) -> Unit) {
     val loved = lovedSongs()
     val keptIds by Offline.kept.collectAsState()
     val tubeListsNow by TubeAccount.playlists.collectAsState()
+    val hiddenIds by HiddenLists.ids.collectAsState()
+    val shownHidden by HiddenLists.shown.collectAsState()
     val followedNow by FollowedLists.lists.collectAsState()
     val hereLists by HereLists.all.collectAsState()
     LaunchedEffect(account) { Server.readPlaylists() }
@@ -603,15 +606,29 @@ fun ListsPage(open: (Page) -> Unit) {
                 }
             }
         }
-        // yours on YouTube Music (signed in from the phone)
-        val tubeLists = tubeListsNow
+        // yours on YouTube Music (signed in from the phone); the ones you've hidden after the rest, dim, once asked for
+        val tubeLists = tubeListsNow.filter { TubeAccount.listId(it) !in hiddenIds }
+        val hiddenLists = tubeListsNow.filter { TubeAccount.listId(it) in hiddenIds }
         if (tubeLists.isNotEmpty()) {
             item { Label("on youtube music") }
             items(tubeLists, key = { it.url }) { t ->
+                WithMenu({ listOf(listOf("open" to { open(Page.Tube(t)) }), listOf("hide" to { HiddenLists.set(TubeAccount.listId(t), true) })) }) {
                 androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Tube(t)) }).padding(vertical = 8.dp)) {
                     BasicText(t.title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     BasicText(t.artist.lowercase(), style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                }
+            }
+        }
+        if (hiddenLists.isNotEmpty()) item {
+            Word(if (shownHidden) "hide them again" else "${hiddenLists.size} hidden", pixel(12.sp, Ink.dim), Modifier.padding(vertical = 12.dp), touch = 8.dp) { HiddenLists.shown.value = !shownHidden }
+        }
+        if (shownHidden) items(hiddenLists, key = { "h" + it.url }) { t ->
+            WithMenu({ listOf(listOf("show in ink music" to { HiddenLists.set(TubeAccount.listId(t), false) })) }) {
+            androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().alpha(.5f).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Tube(t)) }).padding(vertical = 8.dp)) {
+                BasicText(t.title.uppercase(), style = headline(20.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                BasicText("hidden  ·  right-click to show it", style = pixel(12.sp, Ink.mid), maxLines = 1)
+            }
             }
         }
     }}
@@ -664,6 +681,8 @@ private fun ListsTiles(open: (Page) -> Unit) {
     val keptIds by Offline.kept.collectAsState()
     val kept by produceState(emptyList<Song>(), keptIds) { value = Offline.songs() }
     val tubeLists by TubeAccount.playlists.collectAsState()
+    val hiddenIds by HiddenLists.ids.collectAsState()
+    val shownHidden by HiddenLists.shown.collectAsState()
     val followed by FollowedLists.lists.collectAsState()
     val here by HereLists.all.collectAsState()
     val grid = pageGrid()
@@ -709,11 +728,24 @@ private fun ListsTiles(open: (Page) -> Unit) {
                 else CoverOf(face(t), t.title, Modifier.fillMaxSize(), px = 480)
             }
         }
-        gridItems(tubeLists, key = { it.url }) { t ->
-            ListTile(t.title, listOf("youtube music", t.artist.lowercase()).filter { it.isNotEmpty() }.joinToString("  ·  "), { open(Page.Tube(t)) }) {
+        gridItems(tubeLists.filter { TubeAccount.listId(it) !in hiddenIds }, key = { it.url }) { t ->
+            ListTile(t.title, listOf("youtube music", t.artist.lowercase()).filter { it.isNotEmpty() }.joinToString("  ·  "), { open(Page.Tube(t)) },
+                listOf(listOf("hide" to { HiddenLists.set(TubeAccount.listId(t), true) }))) {
                 if (t.art == null) Lettered(t.title)
                 else if (t.branded) Covered(face(t), Modifier.fillMaxSize(), px = 400)
                 else CoverOf(face(t), t.title, Modifier.fillMaxSize(), px = 480)
+            }
+        }
+        // the ones you've hidden, as the list view has them: a dim word at the foot, then them, dim, once asked for
+        val hiddenLists = tubeLists.filter { TubeAccount.listId(it) in hiddenIds }
+        if (hiddenLists.isNotEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "hidden") {
+            Word(if (shownHidden) "hide them again" else "${hiddenLists.size} hidden", pixel(12.sp, Ink.dim), Modifier.padding(vertical = 12.dp), touch = 8.dp) { HiddenLists.shown.value = !shownHidden }
+        }
+        if (shownHidden) gridItems(hiddenLists, key = { "h" + it.url }) { t ->
+            Box(Modifier.alpha(.5f)) {
+                ListTile(t.title, "hidden  ·  youtube music", { open(Page.Tube(t)) }, listOf(listOf("show in ink music" to { HiddenLists.set(TubeAccount.listId(t), false) }))) {
+                    if (t.art == null) Lettered(t.title) else CoverOf(face(t), t.title, Modifier.fillMaxSize(), px = 480)
+                }
             }
         }
     }
@@ -953,4 +985,21 @@ private fun Heartbeat(content: @Composable () -> Unit) {
     val scale by t.animateFloat(1f, 1f, androidx.compose.animation.core.infiniteRepeatable(
         androidx.compose.animation.core.keyframes { durationMillis = 1500; 1f at 0; 1.07f at 120; 1f at 250; 1.04f at 360; 1f at 520 }), label = "beat")
     Box(Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) { content() }
+}
+
+/**
+ * YouTube Music playlists you've hidden (the phone's since 2026-10-30, #1): out of ink music's lists, YouTube untouched;
+ * a right-click hides one, and at the lists' foot "N hidden" shows them, dim, to bring one back. Kept by the list's id.
+ */
+object HiddenLists {
+    private val file get() = java.io.File(Home.dir, "youtube-hidden.json")
+    val ids = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(
+        runCatching { org.json.JSONArray(file.readText()).let { a -> (0 until a.length()).map { a.getString(it) }.toSet() } }.getOrDefault(emptySet()))
+    /** The hidden ones shown at the foot just now (asked for). */
+    val shown = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    fun set(id: String, hidden: Boolean) {
+        ids.value = if (hidden) ids.value + id else ids.value - id
+        runCatching { file.writeText(org.json.JSONArray(ids.value.toList()).toString()) }
+    }
 }
