@@ -144,7 +144,6 @@ class Blend : BaseAudioProcessor() {
     // sample added back, dying away over ~2 ms
     private val lastOutC = DoubleArray(8); private val declick = DoubleArray(8); private var declicked = 0.0
     private var nudgeLeft = 0.0; private var nudgeStep = 0.0; private var nudged = 0
-    private var offsetNudged = false   // eased by its decode's known offset from the start: the 2 s look not taken again
     // the old song's own samples into its stretched ones: 30 ms, then 90 (2026-11-08: the join's step 7-11x the music's on
     // beats-matched blends against 2-4x on plain ones, "the tiniest hitch... little skip stutter")
     private val joinFrames get() = (rate * 90 / 1000).coerceAtLeast(1)
@@ -171,7 +170,7 @@ class Blend : BaseAudioProcessor() {
 
     // a mix made ready at the song change (the old song's last samples matched then, while they're here), begun at
     // the new song's flush at its start: Media3 flushes it first where the old one was, then at its start (2026-11-01)
-    private class Pending(val into: String, val tail: Tail, val at: Double, val offset: Double? = null)
+    private class Pending(val into: String, val tail: Tail, val at: Double)
 
     // the join made early (2026-11-01: a hitch where the old song's own stream gave way to its decode, the two not quite
     // alike for a lossy song): a quarter second before its cut, its decode lined up and faded in over its own samples in
@@ -205,7 +204,7 @@ class Blend : BaseAudioProcessor() {
                 val expected = (endedMs - t.startMs) * t.rate / 1000.0
                 // the decode already playing in place of the old song's own samples: on from just where it is
                 val found = if (early === t) earlyAt else align(t, expected, offsets[was])
-                pending = Pending(id, t, found, was?.let { offsets[it] })
+                pending = Pending(id, t, found)
                 android.util.Log.d("ink-crossfade", "blend: $was ended at ${endedMs / 1000.0}s, its end from frame ${found.toLong()} " +
                     if (early === t) "(its decode already playing)" else "(expected ${expected.toLong()}, match ${"%.2f".format(matched)}${if (early != null) "; the decode playing was another plan's" else ""})")
             } else if (t != null) {
@@ -236,7 +235,7 @@ class Blend : BaseAudioProcessor() {
             stretched = p.tail.stretched?.takeIf { it.into == id }
             ride = Math.pow(10.0, p.tail.rideDb / 20); rideStep = (1 - ride) / (fadeFrames + 4L * format.sampleRate)
             hop = (format.sampleRate / 100).coerceAtLeast(1); hopAt = 0; eNew = 0.0; eOld = 0.0; lpN = 0.0; lpO = 0.0
-            envNew.clear(); envOld.clear(); nudgeLeft = 0.0; nudgeStep = 0.0; nudged = 0; offsetNudged = false; rmsNew = 0.0; rmsOld = 0.0; rmsN = 0; jumpHead = 0.0; jumpSum = 0.0; jumpN = 0; mgLeast = 1.0
+            envNew.clear(); envOld.clear(); nudgeLeft = 0.0; nudgeStep = 0.0; nudged = 0; rmsNew = 0.0; rmsOld = 0.0; rmsN = 0; jumpHead = 0.0; jumpSum = 0.0; jumpN = 0; mgLeast = 1.0
             measuring = id + if (stretched != null) " (beats matched)" else ""
             filtering = p.tail.filter && !p.tail.cold
             lpNew.fill(0.0); lpNewK = lowPass(2_500.0, format.sampleRate)
@@ -257,15 +256,6 @@ class Blend : BaseAudioProcessor() {
                 // lined up with the old one's own samples there, sample by sample: the stretcher's output begins a little
                 // out of phase with its input, and the 30 ms join to it skipped (a glitch on beats-matched blends, 2026-11-08)
                 sAt = lineUp(st.pcm, p.tail.pcm, p.tail.channels, p.at, sAt)
-                // its decode's clock off from its stream's (2026-11-24: a YouTube song's end decoded 2219 frames late, the
-                // kicks 50 ms apart, "small hitch"): the plan's beats are on the decode's clock, the join on the stream's, so
-                // the old one eased back by as much over the blend's first 2.5 s or more (2% at most), into the plan's step
-                p.offset?.takeIf { kotlin.math.abs(it) * 1000 / p.tail.rate >= 8 && kotlin.math.abs(it) * 1000 / p.tail.rate < st.periodMs / 4 }?.let { off ->
-                    val secs = maxOf(2.5, kotlin.math.abs(off) * 1000 / p.tail.rate / 20.0)
-                    nudgeLeft = -off / st.speed; nudgeStep = nudgeLeft / (secs * format.sampleRate)
-                    nudged = (secs * 100).toInt(); offsetNudged = true
-                    android.util.Log.d("ink-crossfade", "blend: its decode ${"%.0f".format(off * 1000 / p.tail.rate)} ms off its stream: the old one eased into the plan's step over ${"%.1f".format(secs)}s")
-                }
                 lp = lowPass(150.0, format.sampleRate)
                 lowNew.fill(0.0); lowOld.fill(0.0)
             }
@@ -430,7 +420,7 @@ class Blend : BaseAudioProcessor() {
                 at += step
                 if (st != null) {
                     sAt += step
-                    if (mixed == 2L * rate && fadeFrames > 4L * rate && !offsetNudged) {
+                    if (mixed == 2L * rate && fadeFrames > 4L * rate) {
                         val (lag, sure) = kicksApart(12)
                         if (sure >= 2.5 && kotlin.math.abs(lag) in 2..12) {
                             nudged = envNew.size + (maxOf(2.5, kotlin.math.abs(lag) * 10 / 20.0) * 100).toInt()
