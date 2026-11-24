@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
  * they're written, else the same added as its query. It answers with the song's audio (a one-byte look says audio or
  * octet-stream), or with JSON giving the audio's link: {"url": "https://..."} or {"data": {"url": "https://..."}}, those
  * two shapes only, the link looked at the same way; all within 5 s. Or it's of the search-and-stream kind (Echo
- * Music's: its manifest.json says so), the song searched for there and its stream asked by its id ([searchProbe]).
+ * Music's: its manifest.json says so), the song searched for there and its stream asked by its id ([searchProbe]); an encrypted stream never.
  * Anything else, and the song plays from where it would have. Every new one starts
  * off: the song's title, artist, record and length go to that address only once you turn it on. Kept in
  * files/extensions.json (the screens write it, the player reads it: two processes, so a file, never prefs).
@@ -53,7 +53,57 @@ object Extensions {
             .map { Source(it.getString("url"), it.optString("name"), it.optBoolean("on", false)) }
     }.getOrDefault(emptyList())
 
-    fun start(ctx: Context) { _sources.value = load(file(ctx)) }
+    fun start(ctx: Context) {
+        _sources.value = load(file(ctx))
+        _said.value = readSaid(ctx)
+        named(ctx)
+    }
+
+    /**
+     * Those without a name take their manifest's ("Lossless", "Tido"), asked off the main thread; only the address's own
+     * manifest is asked, nothing of a song, so this is done for one still off too.
+     */
+    private fun named(ctx: Context) {
+        val unnamed = _sources.value.filter { it.name.isBlank() }
+        if (unnamed.isEmpty()) return
+        Thread {
+            val names = unnamed.mapNotNull { s -> manifestName(s.url)?.let { s.url to it } }.toMap()
+            if (names.isNotEmpty()) synchronized(this) {
+                save(ctx, _sources.value.map { s -> names[s.url]?.takeIf { s.name.isBlank() }?.let { s.copy(name = it) } ?: s })
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun manifestName(url: String): String? = runCatching {
+        if ('{' in url || '?' in url) return null
+        val r = ask(base(url) + "/manifest.json", System.currentTimeMillis() + TIMEOUT, ranged = false)
+        if (r.code != 200) return null
+        JSONObject(String(r.body, Charsets.UTF_8).trim()).optString("name").trim().take(40).ifBlank { null }
+    }.getOrNull()
+
+    // what each said last, for settings: written by the player (files/extensions-said.json), read by the screens
+    data class Said(val why: String, val at: Long, val found: Boolean)
+    private val _said = MutableStateFlow<Map<String, Said>>(emptyMap())
+    val said: StateFlow<Map<String, Said>> = _said
+    private fun saidFile(ctx: Context) = File(ctx.filesDir, "extensions-said.json")
+
+    private fun readSaid(ctx: Context): Map<String, Said> = runCatching {
+        val o = JSONObject(saidFile(ctx).readText())
+        o.keys().asSequence().associateWith { k -> o.getJSONObject(k).let { Said(it.optString("why"), it.optLong("at"), it.optBoolean("found")) } }
+    }.getOrDefault(emptyMap())
+
+    /** The screens read it again (settings open). */
+    fun refreshSaid(ctx: Context) { _said.value = readSaid(ctx) }
+
+    private val lastSaid = ConcurrentHashMap<String, Said>()
+    private fun tell(ctx: Context, url: String, p: Probe) {
+        lastSaid[url] = Said(p.why, System.currentTimeMillis(), p.answer == Answer.AUDIO)
+        runCatching {
+            val o = JSONObject()
+            lastSaid.forEach { (k, v) -> o.put(k, JSONObject().put("why", v.why).put("at", v.at).put("found", v.found)) }
+            val f = saidFile(ctx); val t = File(f.path + ".new"); t.writeText(o.toString()); t.renameTo(f)
+        }
+    }
 
     private fun save(ctx: Context, list: List<Source>) {
         val a = JSONArray()
@@ -73,6 +123,7 @@ object Extensions {
         val u = clean(url) ?: return false
         if (_sources.value.any { it.url == u }) return false
         save(ctx, _sources.value + Source(u, name.trim(), on = false))
+        named(ctx)
         return true
     }
 
@@ -153,14 +204,22 @@ object Extensions {
     private fun audio(r: Reply) = (r.code == 200 || r.code == 206) && (r.type.startsWith("audio/") || r.type == "application/octet-stream")
 
     /**
-     * The link in an extension's JSON answer, the only two shapes read: {"url": "https://..."}, or
-     * {"data": {"url": "https://..."}}. Nothing else is looked for (no manifests, base64 or DASH); http and https only.
+     * The link in an extension's JSON answer: a plain link named url, directUrl, streamUrl or mediaUrl, at the top or
+     * under "data". Nothing else is looked for (no manifests, base64 or DASH); http and https only.
      */
-    fun linkIn(body: String): String? = runCatching {
-        val o = JSONObject(body.trim())
-        (o.optString("url").ifBlank { null } ?: o.optJSONObject("data")?.optString("url")?.ifBlank { null })
-            ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
-    }.getOrNull()
+    fun linkIn(body: String): String? = runCatching { linkOf(JSONObject(body.trim())) }.getOrNull()
+
+    // the plain link's names, as addons give it (LastWave's client reads the same)
+    private val LINKS = listOf("url", "directUrl", "streamUrl", "streamURL", "mediaUrl")
+    private fun linkOf(o: JSONObject): String? =
+        (LINKS.firstNotNullOfOrNull { k -> o.optString(k).takeIf { isLink(it) } }
+            ?: o.optJSONObject("data")?.let { d -> LINKS.firstNotNullOfOrNull { k -> d.optString(k).takeIf { isLink(it) } } })
+    private fun isLink(s: String) = s.startsWith("https://") || s.startsWith("http://")
+
+    /** An answer saying its stream is encrypted (a DRM'd one, for an app to decrypt): never played. */
+    fun encrypted(body: String): Boolean = runCatching {
+        val o = JSONObject(body.trim()); o.optBoolean("encrypted") || o.optJSONObject("data")?.optBoolean("encrypted") == true
+    }.getOrDefault(false)
 
     /**
      * One byte asked of the address, all of it within the time: audio (or octet-stream) is the song's stream. Or a JSON
@@ -179,7 +238,9 @@ object Extensions {
         val body = if (r.code == 206) try { ask(target, until, ranged = false).body } catch (e: Exception) {
             return Probe(Answer.UNREACHABLE, "unreachable (${e.javaClass.simpleName})")
         } else r.body
-        val link = linkIn(String(body, Charsets.UTF_8)) ?: return Probe(Answer.NOTHING, "nothing for this song (json without a url)")
+        val text = String(body, Charsets.UTF_8)
+        if (encrypted(text)) return Probe(Answer.NOTHING, "nothing for this song (its stream is encrypted)")
+        val link = linkIn(text) ?: return Probe(Answer.NOTHING, "nothing for this song (json without a url)")
         val l = try { ask(link, until, ranged = true) } catch (e: Exception) { return Probe(Answer.NOTHING, "its link didn't answer (${e.javaClass.simpleName})") }
         return if (audio(l)) Probe(Answer.AUDIO, "playing from its link", link)
         else Probe(Answer.NOTHING, "its link wasn't audio (${if (l.code !in 200..299) "http ${l.code}" else l.type.ifEmpty { "no type" }})")
@@ -226,12 +287,18 @@ object Extensions {
      * What an address is: of the search-and-stream kind (Echo Music's extensions: its manifest.json says "resources"
      * holding "search" and "stream"), with the quality its manifest gives by default; or not, and asked as above.
      */
-    class Kind(val searches: Boolean, val quality: String? = null)
+    class Kind(val searches: Boolean, val quality: String? = null, val name: String = "")
     private val kinds = ConcurrentHashMap<String, Pair<Kind, Long>>()
     private val plain = Kind(false)
 
-    // the address as given, or its manifest's (as Echo Music's extensions hand theirs out: ".../manifest.json"), without it
-    private fun base(url: String) = url.trimEnd('/').removeSuffix("/manifest.json").trimEnd('/')
+    // the address as given, without an ending of the kind's own pasted with it: its manifest's (as Echo Music's
+    // extensions hand theirs out, ".../manifest.json"), or its search's or stream's
+    private val ENDINGS = listOf("/manifest.json", "/manifest", "/search", "/stream")
+    fun base(url: String): String {
+        var u = url.trim().substringBefore('#').substringBefore('?').trimEnd('/')
+        ENDINGS.firstOrNull { u.endsWith(it, ignoreCase = true) }?.let { u = u.dropLast(it.length).trimEnd('/') }
+        return u
+    }
 
     /** Read from a manifest.json: the search-and-stream kind, or [plain]. */
     fun kindIn(body: String): Kind = runCatching {
@@ -242,7 +309,7 @@ object Extensions {
         val settings = o.optJSONArray("settings")
         val quality = settings?.let { a -> (0 until a.length()).map { a.optJSONObject(it) }
             .firstOrNull { it?.optString("key") == "quality" }?.optString("default")?.ifBlank { null } }
-        Kind(true, quality)
+        Kind(true, quality, o.optString("name").trim().take(40))
     }.getOrDefault(plain)
 
     /** An address's kind, its manifest asked once an hour; an address with {placeholders} or a query is always plain. Null: it didn't answer. */
@@ -267,7 +334,9 @@ object Extensions {
      * The id of the song in a search's answer ({"tracks": [{"id", "title", "artist", "duration" (s)}]}): the same title
      * and one of its artists, and the same length within 6 s when both are known (closest first). Null: none is it.
      */
-    fun pick(body: String, t: Track): String? = runCatching {
+    fun pick(body: String, t: Track): String? = picked(body, t)?.optString("id")
+
+    private fun picked(body: String, t: Track): JSONObject? = runCatching {
         val tracks = JSONObject(body.trim()).optJSONArray("tracks") ?: return null
         val title = norm(t.title).ifEmpty { return null }
         val artists = t.artist.split(Regex(",|&| and | x | feat\\.? | ft\\.? | with ", RegexOption.IGNORE_CASE))
@@ -278,15 +347,15 @@ object Extensions {
             .filter { c -> val a = norm(c.optString("artist")); artists.isEmpty() && secs > 0 || artists.any { it in a || (a.length >= 2 && a in it) } }
             .map { it to (if (secs > 0 && it.optLong("duration") > 0) kotlin.math.abs(it.optLong("duration") - secs) else 0L) }
             .filter { it.second <= 6 }
-            .minByOrNull { it.second }?.first?.optString("id")
+            .minByOrNull { it.second }?.first
     }.getOrNull()
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     /**
      * A search-and-stream extension asked for the song, all within the time: {base}/search?q=title artist, the song
-     * picked from it ([pick]), {base}/stream/{id} (with its quality) giving {"url"} ([linkIn]), and that link looked at
-     * by one byte. Not connecting at all, the address is down; anything else, nothing for this song.
+     * picked from it ([pick]), its link from the result itself or else {base}/stream/{id} ([linkIn]; its quality, and
+     * stereo: atmos=none), never an encrypted one, and that link looked at by one byte. Not connecting at all, the address is down; anything else, nothing for this song.
      */
     fun searchProbe(url: String, kind: Kind, t: Track, timeout: Int = TIMEOUT): Probe {
         val until = System.currentTimeMillis() + timeout
@@ -296,13 +365,20 @@ object Extensions {
                 Probe(Answer.UNREACHABLE, "unreachable (${e.javaClass.simpleName})")
             else Probe(Answer.NOTHING, "$what didn't answer (${e.javaClass.simpleName})")
         val q = listOf(t.title, t.artist).filter { it.isNotBlank() }.joinToString(" ")
-        val s = try { ask("$b/search?q=${enc(q)}", until, ranged = false) } catch (e: Exception) { return failed(e, "its search") }
+        val s = try { ask("$b/search?q=${enc(q)}${kind.quality?.let { "&quality=${enc(it)}" } ?: ""}&atmos=none", until, ranged = false) } catch (e: Exception) { return failed(e, "its search") }
         if (s.code != 200) return Probe(Answer.NOTHING, "nothing for this song (search http ${s.code})")
-        val id = pick(String(s.body, Charsets.UTF_8), t) ?: return Probe(Answer.NOTHING, "nothing for this song (not in its search)")
-        val st = try { ask("$b/stream/${enc(id)}" + (kind.quality?.let { "?quality=${enc(it)}" } ?: ""), until, ranged = false) }
-            catch (e: Exception) { return failed(e, "its stream") }
-        if (st.code != 200) return Probe(Answer.NOTHING, "nothing for this song (stream http ${st.code})")
-        val link = linkIn(String(st.body, Charsets.UTF_8)) ?: return Probe(Answer.NOTHING, "nothing for this song (stream without a url)")
+        val hit = picked(String(s.body, Charsets.UTF_8), t) ?: return Probe(Answer.NOTHING, "nothing for this song (not in its search)")
+        // a search result may carry its stream's link itself: no stream asked for then
+        // (only a name that means the stream: a result's plain "url" may be its page on the service)
+        val link = listOf("streamURL", "streamUrl", "directUrl").firstNotNullOfOrNull { k -> hit.optString(k).takeIf { isLink(it) } }
+            ?.takeIf { !hit.optBoolean("encrypted") } ?: run {
+            val st = try { ask("$b/stream/${enc(hit.optString("id"))}?${kind.quality?.let { "quality=${enc(it)}&" } ?: ""}atmos=none", until, ranged = false) }
+                catch (e: Exception) { return failed(e, "its stream") }
+            if (st.code != 200) return Probe(Answer.NOTHING, "nothing for this song (stream http ${st.code})")
+            val text = String(st.body, Charsets.UTF_8)
+            if (encrypted(text)) return Probe(Answer.NOTHING, "nothing for this song (its stream is encrypted)")
+            linkIn(text) ?: return Probe(Answer.NOTHING, "nothing for this song (stream without a url)")
+        }
         val l = try { ask(link, until, ranged = true) } catch (e: Exception) { return Probe(Answer.NOTHING, "its link didn't answer (${e.javaClass.simpleName})") }
         return if (audio(l)) Probe(Answer.AUDIO, "playing from its search", link)
         else Probe(Answer.NOTHING, "its link wasn't audio (${if (l.code !in 200..299) "http ${l.code}" else l.type.ifEmpty { "no type" }})")
@@ -320,9 +396,10 @@ object Extensions {
                 else -> probe(target)
             }
             android.util.Log.d(LOG, "$host: ${p.why}")
+            tell(ctx, s.url, p)
             when (p.answer) {
                 Answer.AUDIO -> return Uri.parse(p.stream ?: target).also {
-                    found[key] = it to System.currentTimeMillis(); gave[key] = s.name.trim().ifEmpty { host }
+                    found[key] = it to System.currentTimeMillis(); gave[key] = s.name.trim().ifEmpty { kind?.name.orEmpty() }.ifEmpty { host }
                 }
                 Answer.NOTHING -> missed[s.url + "\n" + key] = System.currentTimeMillis()
                 Answer.UNREACHABLE -> down[s.url] = System.currentTimeMillis()

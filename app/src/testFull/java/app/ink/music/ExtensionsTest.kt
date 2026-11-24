@@ -48,10 +48,16 @@ class ExtensionsTest {
                 {"id":"cover","title":"Hey Jude","artist":"Someone Else","duration":431},
                 {"id":"it","title":"Hey Jude - Remastered 2015","artist":"The Beatles","duration":430}]}""")
             server.createContext("/echo/stream/") { x ->
-                val ok = x.requestURI.path.endsWith("/it") && x.requestURI.query == "quality=lossless"
+                val ok = x.requestURI.path.endsWith("/it") && x.requestURI.query == "quality=lossless&atmos=none"
                 val out = (if (ok) """{"url":"${audio()}","format":"flac"}""" else """{"error":"no"}""").toByteArray()
                 x.responseHeaders.add("Content-Type", "application/json"); x.sendResponseHeaders(if (ok) 200 else 404, out.size.toLong()); x.responseBody.use { it.write(out) }
             }
+            json("/direct", """{"directUrl": "${audio()}", "format": "flac"}""")
+            json("/locked", """{"url": "${audio()}", "encrypted": true}""")
+            // a search whose result carries its stream's link, and one whose stream is encrypted
+            json("/inline/search", """{"tracks":[{"id":"x","title":"Hey Jude","artist":"The Beatles","duration":431,"url":"http://127.0.0.1:1/page","streamURL":"${audio()}"}]}""")
+            json("/drm/search", """{"tracks":[{"id":"x","title":"Hey Jude","artist":"The Beatles","duration":431}]}""")
+            json("/drm/stream/x", """{"url":"${audio()}","encrypted":true}""")
             server.start()
         }
 
@@ -96,6 +102,16 @@ class ExtensionsTest {
     }
     @Test fun searchFromManifestAddress() = assertEquals(Extensions.Answer.AUDIO,
         Extensions.searchProbe("$base/echo/manifest.json", Extensions.Kind(true, "lossless"), song).answer)
+    @Test fun otherLinkNamesPlay() = linkPlays("/direct")
+    @Test fun encryptedNeverPlays() = assertEquals(Extensions.Answer.NOTHING, Extensions.probe("$base/locked").answer)
+    @Test fun searchResultsOwnLinkPlays() = Extensions.searchProbe("$base/inline", Extensions.Kind(true), song).let {
+        assertEquals(it.why, Extensions.Answer.AUDIO, it.answer); assertEquals("$base/audio", it.stream)
+    }
+    @Test fun encryptedStreamFallsBack() = assertEquals(Extensions.Answer.NOTHING,
+        Extensions.searchProbe("$base/drm", Extensions.Kind(true), song).answer)
+    @Test fun endingsTakenOff() = listOf("https://a.test/t/manifest.json", "https://a.test/t/manifest", "https://a.test/t/search",
+        "https://a.test/t/stream/", "https://a.test/t/").forEach { assertEquals(it, "https://a.test/t", Extensions.base(it)) }
+    @Test fun manifestNameKept() = assertEquals("Lossless", Extensions.kindIn("""{"name":"Lossless","resources":["search","stream"]}""").name)
     @Test fun searchWithoutItFallsBack() = assertEquals(Extensions.Answer.NOTHING,
         Extensions.searchProbe("$base/echo", Extensions.Kind(true, "lossless"), song.copy(title = "Let It Be")).answer)
     @Test fun searchRefusedIsDown() = assertEquals(Extensions.Answer.UNREACHABLE,

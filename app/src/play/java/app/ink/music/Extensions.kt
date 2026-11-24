@@ -23,4 +23,7 @@ object Extensions {
     fun answered(ctx: Context, key: String) = true
     fun stream(ctx: Context, key: String, t: Track): Uri? = null
     fun by(key: String): String? = null
+    data class Said(val why: String, val at: Long, val found: Boolean)
+    val said: StateFlow<Map<String, Said>> = MutableStateFlow(emptyMap())
+    fun refreshSaid(ctx: Context) {}
 }

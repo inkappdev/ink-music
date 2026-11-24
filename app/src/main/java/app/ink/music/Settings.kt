@@ -897,6 +897,21 @@ fun TvSettingsPage(pages: Pages) {
     } }
 }
 
+/** What an extension said last, in a few words, and how long ago ("found the last song · 2 min ago"). */
+private fun extensionSaid(x: Extensions.Said): String {
+    val why = x.why
+    val words = when {
+        x.found -> "found the last song"
+        why.startsWith("unreachable") -> "couldn't be reached"
+        why.contains("encrypted") -> "had the last song only encrypted"
+        why.contains("not in its search") -> "didn't have the last song"
+        Regex("http (\\d+)").find(why) != null -> "said no (${Regex("http (\\d+)").find(why)!!.groupValues[1]})"
+        else -> why.substringAfter("(").substringBefore(")").ifBlank { why }
+    }
+    val min = ((System.currentTimeMillis() - x.at) / 60_000).toInt()
+    return words + " · " + when { min < 1 -> "just now"; min < 60 -> "$min min ago"; min < 1440 -> "${min / 60} h ago"; else -> "${min / 1440} d ago" }
+}
+
 /**
  * Extensions (the full build's): each address, its name, on or off; a tap on one changes it, a hold takes it away.
  * A new one, or one whose address changed, starts off: nothing of a song goes to it till it's turned on.
@@ -910,6 +925,9 @@ private fun ExtensionsSetting() {
     var url by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var said by remember { mutableStateOf<String?>(null) }
+    // what each said last (the player writes it), read again while this is open
+    val last by Extensions.said.collectAsState()
+    LaunchedEffect(Unit) { while (true) { Extensions.refreshSaid(ctx); kotlinx.coroutines.delay(5_000) } }
     sources.forEach { s ->
         Column(Modifier.padding(bottom = 12.dp)) {
             Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
@@ -920,12 +938,14 @@ private fun ExtensionsSetting() {
                 onClick = felt { editing = s.url; url = s.url; name = s.name; said = null })) {
                 BasicText(s.name.ifBlank { Uri.parse(s.url).host.orEmpty() }.lowercase(), style = pixel(14.sp, if (editing == s.url) Ink.ink else Ink.mid))
                 BasicText(s.url, style = pixel(12.sp, Ink.mid), maxLines = 2)
+                if (s.on) last[s.url]?.let { BasicText(extensionSaid(it), style = pixel(12.sp, if (it.found) Ink.ink else Ink.mid)) }
             }
             Spacer(Modifier.height(4.dp))
             Pick(listOf("on" to s.on, "off" to !s.on)) { Extensions.turn(ctx, s.url, it == 0) }
         }
     }
-    BasicText(if (sources.isEmpty()) "an address, with {title} {artist} {album} {duration} {id} where the song goes, or they're added as its query. " +
+    BasicText(if (sources.isEmpty()) "an addon's link (its manifest.json, with search and stream: the song is searched for there), or an address " +
+        "with {title} {artist} {album} {duration} {id} where the song goes, or they're added as its query. " +
         "it answers with the song's audio, or json with its link: {\"url\": \"https://...\"} or {\"data\": {\"url\": \"https://...\"}}. " +
         "anything else, and the song plays from where it would have"
         else "a tap changes one, a hold takes it away. a new one starts off", style = pixel(12.sp, Ink.mid))
