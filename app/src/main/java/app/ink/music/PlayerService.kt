@@ -559,6 +559,30 @@ class PlayerService : MediaLibraryService() {
         waiting = cb
         runCatching { cm.registerDefaultNetworkCallback(cb) }.onFailure { waiting = null }
     }
+    /**
+     * A YouTube or server song's stream from an extension of yours (Extensions), or null to play it as it would have.
+     * The song itself is found in the queue by its address (the playing one first), asked of the main thread and
+     * waited for half a second at most: not found, no extension asked.
+     */
+    private fun extension(spec: androidx.media3.datasource.DataSpec, id: String): androidx.media3.datasource.DataSpec? {
+        if (!Extensions.anyOn(this)) return null
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var track: Extensions.Track? = null
+        main.post {
+            runCatching {
+                val p = session?.player ?: return@runCatching
+                fun of(i: MediaItem?) = i?.takeIf { (it.localConfiguration?.uri ?: it.requestMetadata.mediaUri) == spec.uri }
+                val i = of(p.currentMediaItem) ?: (0 until p.mediaItemCount).firstNotNullOfOrNull { of(p.getMediaItemAt(it)) }
+                if (i != null) track = Extensions.Track(i.mediaMetadata.title?.toString().orEmpty(), i.mediaMetadata.artist?.toString().orEmpty(),
+                    i.mediaMetadata.albumTitle?.toString().orEmpty(), i.mediaMetadata.durationMs ?: 0L, id)
+            }
+            latch.countDown()
+        }
+        latch.await(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        val t = track ?: return null
+        return Extensions.stream(this, spec.uri.toString(), t)?.let { spec.withUri(it) }
+    }
+
     /** Each song's stream format as the player read it (by media id): a song's comes in a little before it plays. */
     private val formats = java.util.concurrent.ConcurrentHashMap<String, androidx.media3.common.Format>()
 
@@ -609,12 +633,15 @@ class PlayerService : MediaLibraryService() {
                     // a YouTube song kept on the phone plays from there, no signal needed (Offline)
                     spec.uri.scheme == "ytm" && Offline.file(this, "y" + spec.uri.host) != null ->
                         spec.withUri(Uri.fromFile(Offline.file(this, "y" + spec.uri.host)!!)).also { android.util.Log.d("ink-offline", "kept: y${spec.uri.host}") }
-                    spec.uri.scheme == "ytm" -> spec.withUri(Uri.parse(
+                    // then an extension of yours, when one's on (the full build: Extensions): the song's audio, or JSON with
+                    // its link ({"url": ...} or {"data": {"url": ...}} only); else YouTube's own stream
+                    spec.uri.scheme == "ytm" -> extension(spec, spec.uri.host.orEmpty()) ?: spec.withUri(Uri.parse(
                         YouTubeMusic.stream("y" + spec.uri.host, false, small = quality() == Quality.SAVER)?.first
                             ?: throw java.io.IOException("no stream")))
-                    // a server song kept on the phone plays from there, no signal needed (Offline)
+                    // a server song kept on the phone plays from there, no signal needed (Offline); then an extension; then the server's
                     spec.uri.path?.endsWith("/rest/stream") == true -> spec.uri.getQueryParameter("id")?.let { Offline.file(this, "n$it") }
                         ?.let { android.util.Log.d("ink-offline", "kept: ${it.name}"); spec.withUri(Uri.fromFile(it)) }
+                        ?: extension(spec, spec.uri.getQueryParameter("id").orEmpty())
                         ?: spec.withUri(Quality.server(spec.uri, quality()))
                     // a podcast's episode kept on the phone plays from there (Offline: kept by its id, known by its link)
                     spec.uri.scheme?.startsWith("http") == true && Podcasts.idOf(spec.uri.toString())?.let { Offline.file(this, it) } != null ->

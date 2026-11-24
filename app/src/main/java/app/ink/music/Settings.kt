@@ -203,6 +203,16 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     }
                 }
 
+                // extensions: your own addresses a song's stream is asked of first (the full build's; each off till turned on)
+                if (Extensions.available) {
+                    remember { Extensions.start(ctx) }
+                    val ext by Extensions.sources.collectAsState()
+                    SettingRow("EXTENSIONS", if (ext.isEmpty()) "add one" else "${ext.count { it.on }} of ${ext.size} on", opened,
+                        "addresses of yours asked first for a youtube or server song's stream. one turned on gets each song's title, artist, record and length") {
+                        ExtensionsSetting()
+                    }
+                }
+
                 // your computer: paired, kept in step on the wifi (Sync)
                 if (onTv()) { RowsEnd(); Spacer(Modifier.height(30.dp)); TvPhoneSetting() }
                 else {
@@ -453,6 +463,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         "nothing of yours, to anyone but your own server. a song's artist and title go to lrclib for its lyrics" + (if (YouTubeMusic.available) " (and to youtube music when lrclib has none)" else "") + "; " +
                             (if (YouTubeMusic.available) "what you search for and the artists you pick go to youtube music (and, signed in there, your sign-in, to read your library, and the youtube songs you play, for your history there); " else "") +
                             "with listenbrainz or last.fm connected, what you play goes there. " +
+                            (if (Extensions.available) "with an extension turned on, each youtube or server song's title, artist, record and length go to the address you gave it. " else "") +
                             (if (Moving.available) "with moving covers on, the record playing goes to apple music, for its moving cover; " +
                                 "signed in to spotify, the song playing goes to spotify, for its canvas (and your playlists, when you bring one in). " else "") +
                             (if (YouTubeMusic.available) "with skip the talking on, the first four characters of a scrambled youtube video id go to sponsorblock, never the id itself. " else "") +
@@ -884,4 +895,52 @@ fun TvSettingsPage(pages: Pages) {
             }
         }
     } }
+}
+
+/**
+ * Extensions (the full build's): each address, its name, on or off; a tap on one changes it, a hold takes it away.
+ * A new one, or one whose address changed, starts off: nothing of a song goes to it till it's turned on.
+ */
+@Composable
+private fun ExtensionsSetting() {
+    val ctx = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val sources by Extensions.sources.collectAsState()
+    var editing by remember { mutableStateOf<String?>(null) }   // the address being changed, or null: adding
+    var url by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var said by remember { mutableStateOf<String?>(null) }
+    sources.forEach { s ->
+        Column(Modifier.padding(bottom = 12.dp)) {
+            Column(Modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    Extensions.remove(ctx, s.url); if (editing == s.url) { editing = null; url = ""; name = "" }
+                },
+                onClick = felt { editing = s.url; url = s.url; name = s.name; said = null })) {
+                BasicText(s.name.ifBlank { Uri.parse(s.url).host.orEmpty() }.lowercase(), style = pixel(14.sp, if (editing == s.url) Ink.ink else Ink.mid))
+                BasicText(s.url, style = pixel(12.sp, Ink.mid), maxLines = 2)
+            }
+            Spacer(Modifier.height(4.dp))
+            Pick(listOf("on" to s.on, "off" to !s.on)) { Extensions.turn(ctx, s.url, it == 0) }
+        }
+    }
+    BasicText(if (sources.isEmpty()) "an address, with {title} {artist} {album} {duration} {id} where the song goes, or they're added as its query. " +
+        "it answers with the song's audio, or json with its link: {\"url\": \"https://...\"} or {\"data\": {\"url\": \"https://...\"}}. " +
+        "anything else, and the song plays from where it would have"
+        else "a tap changes one, a hold takes it away. a new one starts off", style = pixel(12.sp, Ink.mid))
+    Spacer(Modifier.height(14.dp))
+    Field("address", url, { url = it; said = null }, "https://", KeyboardType.Uri)
+    Field("its name, if you like", name, { name = it }, "", KeyboardType.Text)
+    said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Word(if (editing == null) "ADD" else "SAVE", headline(40.sp, if (url.isBlank()) Ink.mid else Ink.ink), Modifier.padding(end = 26.dp), touch = 10.dp) {
+            if (url.isBlank()) return@Word
+            val old = editing
+            val ok = if (old == null) Extensions.add(ctx, url, name) else Extensions.edit(ctx, old, url, name)
+            if (ok) { editing = null; url = ""; name = "" }
+            else said = if (Extensions.clean(url) == null) "that isn't an http or https address" else "that address is here already"
+        }
+        if (editing != null) Word("leave it", pixel(14.sp, Ink.mid), touch = 8.dp) { editing = null; url = ""; name = ""; said = null }
+    }
 }
