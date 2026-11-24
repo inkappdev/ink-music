@@ -214,10 +214,28 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
             val d = aheadDir(dir); val f = File(d, fileOf(key)); val part = File(d, f.name + ".part")
             val t0 = System.currentTimeMillis()
             try {
-                val c = URL(link).openConnection() as HttpURLConnection
-                c.connectTimeout = 15_000; c.readTimeout = 30_000; c.instanceFollowRedirects = true
-                if (c.responseCode !in 200..299) { log("download ahead: http ${c.responseCode}"); return@execute }
-                c.inputStream.use { i -> part.outputStream().use { o -> i.copyTo(o, 64 * 1024) } }
+                // its whole length known from the first answer, and asked for again from where it got to when the host
+                // lets go early (2026-11-24: Lossless's closed some after 30 s, 1.5 MB of a 30 MB song kept as if whole:
+                // it played ten seconds and "skipped"); kept only once whole, else let go and the song streams
+                var total = -1L
+                part.delete()
+                for (attempt in 0 until 8) {
+                    if (System.currentTimeMillis() - t0 > 5 * 60_000L) break
+                    val got = part.length()
+                    val c = URL(link).openConnection() as HttpURLConnection
+                    c.connectTimeout = 15_000; c.readTimeout = 30_000; c.instanceFollowRedirects = true
+                    if (got > 0) c.setRequestProperty("Range", "bytes=$got-")
+                    val code = runCatching { c.responseCode }.getOrElse { -1 }
+                    if (code !in 200..299) { log("download ahead: http $code"); if (code in 400..499) break else continue }
+                    // asked from partway and given it whole: begun again
+                    val from = if (got > 0 && code == 200) { part.delete(); 0L } else got
+                    if (total < 0) total = c.getHeaderField("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
+                        ?: c.contentLengthLong.takeIf { it > 0 }?.plus(from) ?: -1L
+                    runCatching { c.inputStream.use { i -> java.io.FileOutputStream(part, true).use { o -> i.copyTo(o, 64 * 1024) } } }
+                    c.disconnect()
+                    if (total < 0 || part.length() >= total) break
+                }
+                if (total > 0 && part.length() < total) { log("download ahead: only ${part.length() / 1024} of ${total / 1024} KB, let go"); return@execute }
                 if (part.renameTo(f)) log("downloaded ahead: ${f.length() / 1024} KB in ${(System.currentTimeMillis() - t0) / 1000} s")
                 d.listFiles()?.filter { !it.name.endsWith(".part") }?.sortedByDescending { it.lastModified() }?.drop(4)?.forEach { it.delete() }
             } catch (e: Exception) {
