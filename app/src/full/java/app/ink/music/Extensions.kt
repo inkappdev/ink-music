@@ -17,8 +17,9 @@ import java.util.concurrent.ConcurrentHashMap
  * first. Each is an address with the song in it: {title} {artist} {album} {duration} (seconds) {id} filled in where
  * they're written, else the same added as its query. It answers with the song's audio (a one-byte look says audio or
  * octet-stream), or with JSON giving the audio's link: {"url": "https://..."} or {"data": {"url": "https://..."}}, those
- * two shapes only, the link looked at the same way; all within 5 s. Anything else, and the song plays from where it
- * would have. Every new one starts
+ * two shapes only, the link looked at the same way; all within 5 s. Or it's of the search-and-stream kind (Echo
+ * Music's: its manifest.json says so), the song searched for there and its stream asked by its id ([searchProbe]).
+ * Anything else, and the song plays from where it would have. Every new one starts
  * off: the song's title, artist, record and length go to that address only once you turn it on. Kept in
  * files/extensions.json (the screens write it, the player reads it: two processes, so a file, never prefs).
  */
@@ -110,7 +111,7 @@ object Extensions {
     private class Reply(val code: Int, val type: String, val body: ByteArray)
     private const val MOST = 64 * 1024
 
-    /** One ask of an address, by [until] at the latest (past it, the connection cut): a byte of it, or (unranged) up to 64 KB. */
+    /** One ask of an address, by [until] at the latest (past it, the connection cut): its headers, and unless they say audio, a byte of it, or (unranged) up to 64 KB. */
     private fun ask(url: String, until: Long, ranged: Boolean): Reply {
         val left = (until - System.currentTimeMillis()).toInt()
         if (left <= 0) throw java.net.SocketTimeoutException("too slow")
@@ -125,7 +126,10 @@ object Extensions {
             if (ranged) c.setRequestProperty("Range", "bytes=0-0")
             val code = c.responseCode
             val type = c.contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
-            val body = if (code in 200..299) runCatching { c.inputStream.use { readSome(it) } }.getOrDefault(ByteArray(0)) else ByteArray(0)
+            // audio said by its headers is answer enough: its byte not waited for (a stream's host may hold it back
+            // seconds while it fetches the song); anything else read, as it may be JSON with the link
+            val said = (code == 200 || code == 206) && (type.startsWith("audio/") || type == "application/octet-stream")
+            val body = if (code in 200..299 && !said) runCatching { c.inputStream.use { readSome(it) } }.getOrDefault(ByteArray(0)) else ByteArray(0)
             if (System.currentTimeMillis() >= until) throw java.net.SocketTimeoutException("too slow")
             return Reply(code, type, body)
         } finally {
@@ -181,7 +185,6 @@ object Extensions {
     fun address(url: String, t: Track): String {
         val fields = linkedMapOf("title" to t.title, "artist" to t.artist, "album" to t.album,
             "duration" to (t.durationMs / 1000).toString(), "id" to t.id)
-        fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
         return if (fields.keys.any { "{$it}" in url }) fields.entries.fold(url) { u, (k, v) -> u.replace("{$k}", enc(v)) }
         else url + (if ('?' in url) "&" else "?") + fields.entries.joinToString("&") { (k, v) -> "$k=${enc(v)}" }
     }
@@ -212,12 +215,104 @@ object Extensions {
         return current(ctx).filter { it.on }.all { recent(down, it.url) || recent(missed, it.url + "\n" + key) }
     }
 
+    // ---- the search-and-stream kind ----
+
+    /**
+     * What an address is: of the search-and-stream kind (Echo Music's extensions: its manifest.json says "resources"
+     * holding "search" and "stream"), with the quality its manifest gives by default; or not, and asked as above.
+     */
+    class Kind(val searches: Boolean, val quality: String? = null)
+    private val kinds = ConcurrentHashMap<String, Pair<Kind, Long>>()
+    private val plain = Kind(false)
+
+    private fun base(url: String) = url.trimEnd('/')
+
+    /** Read from a manifest.json: the search-and-stream kind, or [plain]. */
+    fun kindIn(body: String): Kind = runCatching {
+        val o = JSONObject(body.trim())
+        val res = o.optJSONArray("resources") ?: return plain
+        val has = (0 until res.length()).map { res.optString(it) }
+        if ("search" !in has || "stream" !in has) return plain
+        val settings = o.optJSONArray("settings")
+        val quality = settings?.let { a -> (0 until a.length()).map { a.optJSONObject(it) }
+            .firstOrNull { it?.optString("key") == "quality" }?.optString("default")?.ifBlank { null } }
+        Kind(true, quality)
+    }.getOrDefault(plain)
+
+    /** An address's kind, its manifest asked once an hour; an address with {placeholders} or a query is always plain. Null: it didn't answer. */
+    private fun kindOf(url: String): Kind? {
+        if ('{' in url || '?' in url) return plain
+        kinds[url]?.let { (k, at) -> if (System.currentTimeMillis() - at < 3_600_000L) return k }
+        val r = try { ask(base(url) + "/manifest.json", System.currentTimeMillis() + TIMEOUT, ranged = false) } catch (e: Exception) { return null }
+        val k = if (r.code == 200) kindIn(String(r.body, Charsets.UTF_8)) else plain
+        kinds[url] = k to System.currentTimeMillis()
+        return k
+    }
+
+    // a title or name as compared: no accents, case, (brackets), " - remastered" or "feat." parts, nor anything but letters and digits
+    private fun norm(s: String): String {
+        var x = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+        x = x.replace(Regex("[(\\[][^)\\]]*[)\\]]"), " ").substringBefore(" - ")
+        x = x.replace(Regex("\\s(feat\\.?|ft\\.?|featuring)\\s.*"), "")
+        return x.filter { it.isLetterOrDigit() }
+    }
+
+    /**
+     * The id of the song in a search's answer ({"tracks": [{"id", "title", "artist", "duration" (s)}]}): the same title
+     * and one of its artists, and the same length within 6 s when both are known (closest first). Null: none is it.
+     */
+    fun pick(body: String, t: Track): String? = runCatching {
+        val tracks = JSONObject(body.trim()).optJSONArray("tracks") ?: return null
+        val title = norm(t.title).ifEmpty { return null }
+        val artists = t.artist.split(Regex(",|&| and | x | feat\\.? | ft\\.? | with ", RegexOption.IGNORE_CASE))
+            .map { norm(it) }.filter { it.length >= 2 }
+        val secs = t.durationMs / 1000
+        (0 until tracks.length()).mapNotNull { tracks.optJSONObject(it) }
+            .filter { it.optString("id").isNotBlank() && norm(it.optString("title")) == title }
+            .filter { c -> val a = norm(c.optString("artist")); artists.isEmpty() && secs > 0 || artists.any { it in a || (a.length >= 2 && a in it) } }
+            .map { it to (if (secs > 0 && it.optLong("duration") > 0) kotlin.math.abs(it.optLong("duration") - secs) else 0L) }
+            .filter { it.second <= 6 }
+            .minByOrNull { it.second }?.first?.optString("id")
+    }.getOrNull()
+
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+    /**
+     * A search-and-stream extension asked for the song, all within the time: {base}/search?q=title artist, the song
+     * picked from it ([pick]), {base}/stream/{id} (with its quality) giving {"url"} ([linkIn]), and that link looked at
+     * by one byte. Not connecting at all, the address is down; anything else, nothing for this song.
+     */
+    fun searchProbe(url: String, kind: Kind, t: Track, timeout: Int = TIMEOUT): Probe {
+        val until = System.currentTimeMillis() + timeout
+        val b = base(url)
+        fun failed(e: Exception, what: String) =
+            if (e is java.net.ConnectException || e is java.net.UnknownHostException || e is java.net.NoRouteToHostException)
+                Probe(Answer.UNREACHABLE, "unreachable (${e.javaClass.simpleName})")
+            else Probe(Answer.NOTHING, "$what didn't answer (${e.javaClass.simpleName})")
+        val q = listOf(t.title, t.artist).filter { it.isNotBlank() }.joinToString(" ")
+        val s = try { ask("$b/search?q=${enc(q)}", until, ranged = false) } catch (e: Exception) { return failed(e, "its search") }
+        if (s.code != 200) return Probe(Answer.NOTHING, "nothing for this song (search http ${s.code})")
+        val id = pick(String(s.body, Charsets.UTF_8), t) ?: return Probe(Answer.NOTHING, "nothing for this song (not in its search)")
+        val st = try { ask("$b/stream/${enc(id)}" + (kind.quality?.let { "?quality=${enc(it)}" } ?: ""), until, ranged = false) }
+            catch (e: Exception) { return failed(e, "its stream") }
+        if (st.code != 200) return Probe(Answer.NOTHING, "nothing for this song (stream http ${st.code})")
+        val link = linkIn(String(st.body, Charsets.UTF_8)) ?: return Probe(Answer.NOTHING, "nothing for this song (stream without a url)")
+        val l = try { ask(link, until, ranged = true) } catch (e: Exception) { return Probe(Answer.NOTHING, "its link didn't answer (${e.javaClass.simpleName})") }
+        return if (audio(l)) Probe(Answer.AUDIO, "playing from its search", link)
+        else Probe(Answer.NOTHING, "its link wasn't audio (${if (l.code !in 200..299) "http ${l.code}" else l.type.ifEmpty { "no type" }})")
+    }
+
     private fun find(ctx: Context, key: String, t: Track): Uri? {
         for (s in current(ctx).filter { it.on }) {
             val host = runCatching { java.net.URI(s.url).host }.getOrNull().orEmpty()
             if (recent(down, s.url) || recent(missed, s.url + "\n" + key)) continue
+            val kind = kindOf(s.url)
             val target = address(s.url, t)
-            val p = probe(target)
+            val p = when {
+                kind == null -> Probe(Answer.UNREACHABLE, "unreachable (no manifest answer)")
+                kind.searches -> searchProbe(s.url, kind, t)
+                else -> probe(target)
+            }
             android.util.Log.d(LOG, "$host: ${p.why}")
             when (p.answer) {
                 Answer.AUDIO -> return Uri.parse(p.stream ?: target).also { found[key] = it to System.currentTimeMillis() }

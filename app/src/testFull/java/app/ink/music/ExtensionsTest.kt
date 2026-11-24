@@ -42,6 +42,16 @@ class ExtensionsTest {
             json("/nourl", """{"stream": "${audio()}"}""")
             json("/manifest", """{"data": {"manifest": "aHR0cHM6Ly9leGFtcGxlLnRlc3Q="}}""")
             json("/notlink", """{"url": "ftp://example.test/a.flac"}""")
+            // the search-and-stream kind, as Echo Music's extensions answer
+            json("/echo/manifest.json", """{"id":"x","resources":["search","stream"],"settings":[{"key":"quality","default":"lossless"}]}""")
+            json("/echo/search", """{"tracks":[{"id":"live","title":"Hey Jude (Live)","artist":"The Beatles","duration":500},
+                {"id":"cover","title":"Hey Jude","artist":"Someone Else","duration":431},
+                {"id":"it","title":"Hey Jude - Remastered 2015","artist":"The Beatles","duration":430}]}""")
+            server.createContext("/echo/stream/") { x ->
+                val ok = x.requestURI.path.endsWith("/it") && x.requestURI.query == "quality=lossless"
+                val out = (if (ok) """{"url":"${audio()}","format":"flac"}""" else """{"error":"no"}""").toByteArray()
+                x.responseHeaders.add("Content-Type", "application/json"); x.sendResponseHeaders(if (ok) 200 else 404, out.size.toLong()); x.responseBody.use { it.write(out) }
+            }
             server.start()
         }
 
@@ -75,4 +85,26 @@ class ExtensionsTest {
 
     @Test fun queryAddedOtherwise() = assertEquals("https://x.test/s?k=1&title=Hey%20Jude&artist=The%20Beatles&album=1%20%26%202&duration=431&id=abc",
         Extensions.address("https://x.test/s?k=1", song))
+
+    @Test fun manifestRead() = Extensions.kindIn("""{"resources":["search","stream"],"settings":[{"key":"quality","default":"lossless"}]}""").let {
+        assertEquals(true, it.searches); assertEquals("lossless", it.quality)
+    }
+    @Test fun otherManifestPlain() = assertEquals(false, Extensions.kindIn("""{"resources":["search"]}""").searches)
+
+    @Test fun searchPicksTheSong() = Extensions.searchProbe("$base/echo/", Extensions.Kind(true, "lossless"), song).let {
+        assertEquals(it.why, Extensions.Answer.AUDIO, it.answer); assertEquals("$base/audio", it.stream)
+    }
+    @Test fun searchWithoutItFallsBack() = assertEquals(Extensions.Answer.NOTHING,
+        Extensions.searchProbe("$base/echo", Extensions.Kind(true, "lossless"), song.copy(title = "Let It Be")).answer)
+    @Test fun searchRefusedIsDown() = assertEquals(Extensions.Answer.UNREACHABLE,
+        Extensions.searchProbe("http://127.0.0.1:1", Extensions.Kind(true), song).answer)
+
+    @Test fun pickWantsTitleArtistAndLength() {
+        val body = """{"tracks":[{"id":"a","title":"Holocene","artist":"Bon Iver","duration":337},{"id":"b","title":"Holocene","artist":"Bon Iver","duration":360}]}"""
+        assertEquals("a", Extensions.pick(body, Extensions.Track("Holocene", "Bon Iver", "", 336_000, "")))
+        assertEquals("b", Extensions.pick(body, Extensions.Track("Holocene", "Bon Iver, Someone", "", 359_000, "")))
+        assertEquals(null, Extensions.pick(body, Extensions.Track("Holocene", "Bon Iver", "", 200_000, "")))
+        assertEquals("a", Extensions.pick(body, Extensions.Track("Holocene", "bon iver", "", 0, "")))
+        assertEquals(null, Extensions.pick(body, Extensions.Track("Holocene", "Someone", "", 0, "")))
+    }
 }
