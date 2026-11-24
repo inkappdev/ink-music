@@ -13,6 +13,7 @@ data class Heard(
     val kbps: Int,            // 0: not known
     val from: String,         // "computer", "server", "youtube", "station"
     val gain: Float?,         // even volume's dB, null when the file has none
+    val via: String = "",     // the extension of yours it came from (its name), "" when none did
 ) {
     val lossless get() = codec in LOSSLESS
     val hires get() = lossless && (bits > 16 || rate > 48_000)

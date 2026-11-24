@@ -376,10 +376,19 @@ object Player {
                 }
                 is Mpv.Hook -> {
                     val url = m.get("stream-open-filename").orEmpty()
-                    if (!url.startsWith("ytm://")) m.proceed(e.id)
+                    // a YouTube or server song asked of your extensions first, when one's on (Extensions): from the first that has it
+                    val ext = if (Extensions.anyOn()) Extensions.songOf(url, _queue.value) else null
+                    if (!url.startsWith("ytm://") && ext == null) m.proceed(e.id)
                     // found on a thread of its own: the events (the clock, the line) go on meanwhile
                     else Thread {
-                        YouTube.stream("y" + url.removePrefix("ytm://"), small = Quality.chosen.value == Quality.SAVER)?.let { m.set("stream-open-filename", it) }
+                        val small = Quality.chosen.value == Quality.SAVER
+                        // YouTube's own looked up alongside while an extension's asked (not when its answer's known already)
+                        val own = if (url.startsWith("ytm://") && ext != null && !Extensions.answered(ext))
+                            java.util.concurrent.CompletableFuture.supplyAsync { YouTube.stream("y" + url.removePrefix("ytm://"), small = small) } else null
+                        val theirs = ext?.let { runCatching { Extensions.stream(it) }.getOrNull() }
+                        if (theirs != null) m.set("stream-open-filename", theirs)
+                        else if (url.startsWith("ytm://")) (if (own != null) runCatching { own.get() }.getOrNull() else YouTube.stream("y" + url.removePrefix("ytm://"), small = small))
+                            ?.let { m.set("stream-open-filename", it) }
                         m.proceed(e.id)
                     }.start()
                 }
@@ -432,6 +441,8 @@ object Player {
      */
     private fun hear(m: Mpv) {
         val s = _queue.value.getOrNull(index) ?: return
+        // the next song asked of your extensions now (when one's on), its answer kept for its start
+        Extensions.askAhead(_queue.value.getOrNull(index + 1))
         scope.launch {
             for (wait in listOf(400L, 2_600L)) {
                 kotlinx.coroutines.delay(wait)
@@ -454,6 +465,8 @@ object Player {
                     kbps = ((m.get("audio-bitrate")?.toDoubleOrNull() ?: 0.0) / 1000).toInt(),
                     from = when { s.server -> "server"; s.tube -> "youtube"; s.station -> "station"; else -> "computer" },
                     gain = gain,
+                    // an extension's stream: which of yours gave it (Extensions)
+                    via = Extensions.by(s),
                 )
             }
         }
@@ -970,7 +983,8 @@ object Player {
 
     private fun chain(): String {
         val parts = mutableListOf<String>()
-        // automix: the bass held back or handed across (highpass@bass), and the filter fade's top closing (lowpass@top)
+        // automix: the bass held back or handed across (highpass@bass), and the filter fade's top closing or, beats
+        // matched, the new one's opening (lowpass@top); both wide open outside a blend
         if (Crossfade.mode.value == Crossfade.AUTOMIX) { parts += "highpass@bass=f=10"; parts += "lowpass@top=f=20000" }
         val eq = Eq.state.value
         if (eq.on) parts += Eq.filters(eq.levels)

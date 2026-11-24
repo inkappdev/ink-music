@@ -115,6 +115,13 @@ fun SettingsPage(onClose: () -> Unit) {
                                 Spacer(Modifier.height(10.dp))
                                 Pick(listOf("shown" to !songsOnly, "songs only" to songsOnly)) { SongsOnly.set(it == 1) }
                             }
+                            // extensions: your own addresses a song's stream is asked of first (the phone's; each off till turned on)
+                            remember { Extensions.start() }
+                            val ext by Extensions.sources.collectAsState()
+                            SettingRow("EXTENSIONS", if (ext.isEmpty()) "add one" else "${ext.count { it.on }} of ${ext.size} on", opened,
+                                "addresses of yours asked first for a youtube or server song's stream. one turned on gets each song's title, artist, record and length") {
+                                ExtensionsSetting()
+                            }
                             SettingRow("YOUR FILES", "$local ${if (local == 1) "song" else "songs"}", opened) { FilesSetting() }
                             RowsEnd()
                         }

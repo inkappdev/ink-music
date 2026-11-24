@@ -332,7 +332,7 @@ fun rememberSignal(h: Heard?): HeardPath {
     // said as little as says it (2026-11-09: the band's steps read as sentences; "all the info, saying less")
     val ch = { n: Int -> when (n) { 1 -> "mono"; 2 -> "stereo"; else -> "$n channels" } }
     if (h != null) {
-        steps += "from" to when (h.from) {
+        steps += "from" to if (h.via.isNotEmpty()) "your extension, ${h.via.lowercase()}\nin place of ${if (h.from == "server") "your server" else "youtube music"}" else when (h.from) {
             "server" -> "your server"
             "youtube" -> "youtube music"
             "station" -> "the station"
@@ -344,7 +344,7 @@ fun rememberSignal(h: Heard?): HeardPath {
             h.kbps.takeIf { it > 0 }?.let { "%,d kbps".format(java.util.Locale.ROOT, it) },
         ).joinToString(" · ")
         val second = listOfNotNull(h.channels.takeIf { it > 0 }?.let(ch), if (h.hires) "hi-res lossless" else if (h.lossless) "lossless" else "lossy").joinToString(" · ")
-        steps += (if (h.from == "youtube" || h.from == "station") "the stream" else "the file") to "$first\n$second"
+        steps += (if (h.from == "youtube" || h.from == "station" || h.via.isNotEmpty()) "the stream" else "the file") to "$first\n$second"
     } else if (speaker != null && song != null) {
         steps += "from" to when { song.server -> "your server"; song.tube -> "youtube music"; song.station -> "the station"; else -> "this $computer" }
         song.quality.takeIf { it.isNotBlank() }?.let { steps += "the file" to it }
