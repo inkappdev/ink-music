@@ -159,7 +159,24 @@ object Picks {
         if (Local.on) return
         if (System.currentTimeMillis() - fridayAt < 12 * 3_600_000L) return
         fridayAt = System.currentTimeMillis()
+        startFresh()
         scope.launch { Curation.outThisFriday()?.let { friday.value = it } }
+    }
+
+    // ---- fresh releases (ListenBrainz) ----
+
+    /** The last two weeks' releases as ListenBrainz knows them (FreshReleases), for new from your artists; read with friday's. */
+    val fresh = MutableStateFlow<FreshReleases.Fresh?>(null)
+    @Volatile private var freshAt = 0L
+
+    /** Read again when it's half a day old (kept a day: mostly the kept ones); yours too with a ListenBrainz account. */
+    private fun startFresh() {
+        // local files only: not started (Local)
+        if (Local.on) return
+        if (System.currentTimeMillis() - freshAt < 12 * 3_600_000L) return
+        val cache = Home.cache; val token = Home.dir
+        freshAt = System.currentTimeMillis()
+        scope.launch { FreshReleases.read(cache, ListenBrainz.read(token)?.user)?.let { fresh.value = it } }
     }
 
     private val arts = java.util.concurrent.ConcurrentHashMap<String, java.util.Optional<String>>()
@@ -216,9 +233,14 @@ object Picks {
             val k = a.lowercase()
             known[k] = maxOf(known[k] ?: 0, (v * 10).toInt()); elsewhere.putIfAbsent(k, b.from)
         }
+        // the artists ListenBrainz found fresh releases for, from your listening there: yours, a little played
+        val fresh = fresh.value
+        fresh?.theirs?.forEach { known.putIfAbsent(it, 1) }
         listened.plays.forEach { (k, n) -> if (k.startsWith("a:")) { known[k.removePrefix("a:")] = n; elsewhere.remove(k.removePrefix("a:")) } }
         val friday = friday.value?.releases.orEmpty().map { Curation.Pick(true, it.title, it.artist, "out friday", "", it.link, 0, null) }
-        val all = friday + records.value.map { it.pick } + songs.value.map { it.pick } + electronic.value
+        val all = friday + records.value.map { it.pick } + songs.value.map { it.pick } + electronic.value +
+            // and ListenBrainz's fresh releases last: one already picked keeps its critic
+            fresh?.picks.orEmpty()
         return Curation.yours(all, known).take(16).map { y ->
             // short, to fit under a tile: "stereogum · 40 plays", "out friday · yours"
             Shown(y.pick, y.pick.art, listOf("${y.pick.from} · " + (elsewhere[y.artist.lowercase()]?.let { "from your $it" } ?: if (y.plays > 0) "${y.plays} plays" else "yours")))

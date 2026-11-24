@@ -86,11 +86,12 @@ fun NewReleasesPage(pages: Pages) {
     val friday by Picks.friday.collectAsState()
     val songs by Picks.songs.collectAsState()
     val electronic by Picks.electronic.collectAsState()
+    val freshReleases by Picks.fresh.collectAsState()
     val listened by Listened.now.collectAsState()
     val library by Library.songs.collectAsState()
     val brought by Fresh.brought.collectAsState()
     val taste by Fresh.taste.collectAsState()
-    val yours = remember(critics, songs, friday, electronic, listened, library, brought) { Picks.yours(listened, library, brought) }
+    val yours = remember(critics, songs, friday, electronic, freshReleases, listened, library, brought) { Picks.yours(listened, library, brought) }
         .unblocked { it.pick.title to it.pick.artist }
     val week = remember(friday) { friday?.releases.orEmpty() }.unblocked { it.title to it.artist }
     val refused = remember { Fresh.turnedDown(ctx) }

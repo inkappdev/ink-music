@@ -149,6 +149,8 @@ fun main() {
     Keys.start()
     LookFile.start()
     ListenBrainz.start(Home.dir)
+    // ListenBrainz's similar artists kept with the rest that may be fetched again (Similar.artists)
+    Similar.dir = File(Home.cache, "similar")
     LastFm.start(Home.dir)
     Listened.read()
     Loved.start()

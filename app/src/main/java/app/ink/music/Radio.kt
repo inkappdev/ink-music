@@ -165,6 +165,8 @@ object Radio {
      */
     fun related(c: Context, s: Seed): List<Song> {
         if (!s.id.startsWith("y")) Server.similar(c, s.id, s.title, s.artist).takeIf { it.isNotEmpty() }?.let { return it }
+        // where ListenBrainz's similar artists are kept (Similar.artists, beside Last.fm's)
+        if (Similar.dir == null) Similar.dir = java.io.File(c.cacheDir, "similar")
         runCatching { blended(s) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return it }
         return if (s.id.startsWith("y")) YouTubeMusic.related(s.id)
             else YouTubeMusic.find(s.title, s.artist)?.takeIf { s.ms <= 0 || it.duration <= 0 || kotlin.math.abs(it.duration - s.ms) <= maxOf(20_000L, s.ms * 12 / 100) }
@@ -189,7 +191,7 @@ object Radio {
         val fromTube = pool.submit<List<Song>> { tube?.let { YouTubeMusic.related(it) }.orEmpty() }
         val fromDeezer = pool.submit<List<Similar.Track>> { Similar.deezerRadio(artist) }
         val fromLastFm = pool.submit<List<Similar.Track>> {
-            Similar.lastFmArtists(artist, LastFm.key, 8).take(6).flatMap { (a, m) -> Similar.deezerTop(a, 2).map { it.copy(weight = m * it.weight) } }
+            Similar.artists(artist, LastFm.key, 8).take(6).flatMap { (a, m) -> Similar.deezerTop(a, 2).map { it.copy(weight = m * it.weight) } }
         }
         val yt = runCatching { fromTube.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
         val dz = runCatching { fromDeezer.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())

@@ -39,6 +39,23 @@ object Socials {
         return links
     }
 
+    /**
+     * MusicBrainz's id for `name`, found as for their places (a record of theirs, else the one artist of that name):
+     * ListenBrainz's similar artists ask by it (Similar.listenBrainzArtists). Kept a half year in `dir`; a miss, a week.
+     */
+    fun id(dir: File, name: String, records: List<String> = emptyList()): String? {
+        val who = name.trim()
+        if (who.isEmpty()) return null
+        val f = File(dir, "mbid-" + sha1(Curation.folded(who).encodeToByteArray()).hex())
+        if (f.exists()) {
+            val kept = runCatching { f.readText().trim() }.getOrDefault("")
+            if (nowMs() - f.lastModified() < (if (kept.isEmpty()) 7 else 180) * DAY) return kept.ifEmpty { null }
+        }
+        val id = runCatching { byRecord(who, records) ?: byName(who) }.getOrElse { return null }
+        runCatching { dir.mkdirs(); f.writeText(id.orEmpty()) }
+        return id
+    }
+
     private fun read(kept: String): List<Link> = kept.lines().mapNotNull { l ->
         val word = l.substringBefore(' ', ""); val url = l.substringAfter(' ', "")
         if (word.isEmpty() || url.isEmpty()) null else Link(word, url)

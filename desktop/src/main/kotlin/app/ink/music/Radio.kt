@@ -196,7 +196,7 @@ object Radio {
         val fromDeezer = pool.submit<List<Similar.Track>> { if (artist.isNotBlank()) Similar.deezerRadio(artist) else emptyList() }
         val fromLastFm = pool.submit<List<Similar.Track>> {
             if (artist.isBlank()) emptyList()
-            else Similar.lastFmArtists(artist, LastFm.key, 8).take(6).flatMap { (a, m) -> Similar.deezerTop(a, 2).map { it.copy(weight = m * it.weight) } }
+            else Similar.artists(artist, LastFm.key, 8).take(6).flatMap { (a, m) -> Similar.deezerTop(a, 2).map { it.copy(weight = m * it.weight) } }
         }
         val yt = runCatching { fromTube.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
         val dz = runCatching { fromDeezer.get(20, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList())
@@ -257,8 +257,8 @@ object Radio {
         val myTags = Genres.tags(s.artist)?.take(5).orEmpty().toSet()
         val myTempo = Tempos.kept(s.id)?.takeIf { it.bpm > 0 }?.bpm
         val folder = seed?.path?.let { java.io.File(it).parent }
-        // your artists Last.fm's listeners hear as near this one (only who's near is asked; what plays is all yours)
-        val kin = if (me.isNotEmpty() && me != "unknown" && !Local.on) runCatching { Similar.lastFmArtists(s.artist.substringBefore(", "), LastFm.key, 50) }
+        // your artists Last.fm's and ListenBrainz's listeners hear as near this one (only who's near is asked; what plays is all yours)
+        val kin = if (me.isNotEmpty() && me != "unknown" && !Local.on) runCatching { Similar.artists(s.artist.substringBefore(", "), LastFm.key, 50) }
             .getOrDefault(emptyList()).associate { who(it.first) to it.second } else emptyMap()
         val scored = all.map { x ->
             var score = 0.0

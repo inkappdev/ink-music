@@ -1848,6 +1848,11 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 Spacer(Modifier.height(22.dp))
             }
         }
+        // what they're playing on tour (setlist.fm's setlists: TheyrePlaying), the artist found as for their places
+        item(key = "setlists") {
+            val titles = remember(records, i) { records.map { it.title } + i?.albums.orEmpty().map { it.title } }
+            TheyrePlaying(i?.name?.ifBlank { null } ?: name, titles, i != null || !waiting)
+        }
         // their own places (Socials: Instagram, TikTok, Bandcamp, their site...), words that open them; read once the
         // page knows their records, which tell one of a shared name
         item(key = "socials") {

@@ -36,7 +36,7 @@ val writeKeys by tasks.registering {
     val version = project.version.toString()
     // which build this is (the Action's commit, else "here"), said at the foot of settings: builds of one version look alike to macOS
     val build = (System.getenv("GITHUB_SHA")?.take(7) ?: "here") + " " + LocalDate.now()
-    inputs.property("env", listOf(System.getenv("LASTFM_KEY").orEmpty(), System.getenv("LASTFM_SECRET").orEmpty()).joinToString())
+    inputs.property("env", listOf(System.getenv("LASTFM_KEY").orEmpty(), System.getenv("LASTFM_SECRET").orEmpty(), System.getenv("SETLIST_KEY").orEmpty()).joinToString())
     inputs.property("build", build)
     inputs.property("version", version)
     if (from.exists()) inputs.file(from)
@@ -48,7 +48,9 @@ val writeKeys by tasks.registering {
         val secret = System.getenv("LASTFM_SECRET") ?: p.getProperty("lastfmSecret").orEmpty()
         // Ticketmaster's Discovery API, for your artists on tour (OnTour), as the phone's
         val tm = System.getenv("TICKETMASTER_KEY") ?: p.getProperty("ticketmasterKey").orEmpty()
-        out.get().asFile.apply { parentFile.mkdirs() }.writeText("lastfmKey=$key\nlastfmSecret=$secret\nticketmasterKey=$tm\nversion=$version\nbuild=$build\n")
+        // setlist.fm's API, for what an artist on tour is playing, as the phone's
+        val setlist = System.getenv("SETLIST_KEY") ?: p.getProperty("setlistKey").orEmpty()
+        out.get().asFile.apply { parentFile.mkdirs() }.writeText("lastfmKey=$key\nlastfmSecret=$secret\nticketmasterKey=$tm\nsetlistKey=$setlist\nversion=$version\nbuild=$build\n")
     }
 }
 tasks.named("processResources") { dependsOn(writeKeys, copyEjs) }

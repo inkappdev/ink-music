@@ -271,6 +271,11 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                         } else Box(Modifier.widthIn(max = SONGS)) { chart(0, top) }
                     }
                 }
+                // what they're playing on tour (setlist.fm's setlists: TheyrePlaying), the artist found as for their places
+                item(key = "setlists") {
+                    val titles = remember(records, i) { records.map { it.title } + i?.albums.orEmpty().map { it.title } }
+                    TheyrePlaying(shown, titles, wide)
+                }
                 item(key = "rule") { rule() }
                 // their records, yours first: a shelf as the rest are (2026-11-09: not big, gone through)
                 // yours and YouTube's as one, the latest first, each with its year (2026-11-16, Bronson: "years of release

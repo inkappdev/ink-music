@@ -106,12 +106,13 @@ fun ListenPage(open: (Page) -> Unit) {
     val pickedSongs = Picks.songs.shown { it.pick.title to it.pick.artist }
     val friday by Picks.friday.collectAsState()
     val electronic by Picks.electronic.collectAsState()
+    val freshReleases by Picks.fresh.collectAsState()
     val brought by Fresh.brought.collectAsState()
     // monday finds and friday drops: your two weekly lists from Spotify, in ink's words (Finds), each till the next
     val finds by Finds.weeks.collectAsState()
     LaunchedEffect(Unit) { Finds.start() }
     var knowMeShut by remember { mutableStateOf(java.io.File(Home.dir, "know-me-shut").exists()) }
-    val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, heard, songs, brought) { Picks.yours(heard, songs, brought) }
+    val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, freshReleases, heard, songs, brought) { Picks.yours(heard, songs, brought) }
     val taste by Fresh.taste.collectAsState()
     val visit by Fresh.visit.collectAsState()
     val sinceAt by Fresh.since.collectAsState()
