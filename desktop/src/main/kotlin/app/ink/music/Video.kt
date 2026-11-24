@@ -127,15 +127,28 @@ class Video(url: String, private val wide: Int, private val high: Int = wide, fi
     fun pause(on: Boolean) { mpv.set("pause", if (on) "yes" else "no") }
     fun volume(v: Int) { mpv.set("volume", v.toString()) }
 
+    /**
+     * Let go, off the screen's thread (2026-11-24: called as a moving cover scrolled away, the frame thread's join (up
+     * to 500 ms), freeing mpv's renderer and closing mpv all ran there, a hitch for each cover passed): the frame
+     * thread told to stop at once, the rest done on a thread of its own, in the same order (the renderer is software,
+     * so any thread may free it once the frame thread's done with it).
+     */
     fun close() {
         alive = false
-        thread.join(500)
-        mpv.api.mpv_render_context_free(ctx)
-        // its frames left to the collector: one may still be on screen a moment (freed here, it crashed the JVM)
-        mpv.close()
+        closing.execute {
+            runCatching {
+                thread.join(2_000)
+                mpv.api.mpv_render_context_free(ctx)
+                // its frames left to the collector: one may still be on screen a moment (freed here, it crashed the JVM)
+                mpv.close()
+            }
+        }
     }
 
     companion object {
+        // videos let go one after another, never on the screen's thread
+        private val closing = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "ink-video-close").apply { isDaemon = true } }
+
         /**
          * One of Apple's versions of the clip: H.264 (every computer decodes it), the smallest at least `side` a side,
          * else the largest. ffmpeg given the whole list opens every version first (five seconds before a frame).
@@ -219,8 +232,19 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
         val h = if (crop) (constraints.maxHeight * k).toInt().coerceAtLeast(64) else w
         val one by produceState<String?>(null, url, w) { value = if (url.contains(".m3u8")) withContext(Dispatchers.IO) { Video.pick(url, w) } else url }
         val u = one ?: return@BoxWithConstraints
-        val video = remember(u, w, h) { runCatching { Video(u, w, h, fill = crop) }.onFailure { Log.d("moving: $it") }.getOrNull() } ?: return@BoxWithConstraints
-        DisposableEffect(video) { onDispose { video.close() } }
+        // started off the screen's thread (2026-11-24: mpv made and its renderer opened there, a hitch for each moving
+        // cover that came into view), and let go as it leaves, even one that finished starting after it had gone
+        val started by produceState<Video?>(null, u, w, h) {
+            var made: Video? = null
+            try {
+                made = withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                    runCatching { Video(u, w, h, fill = crop) }.onFailure { Log.d("moving: $it") }.getOrNull()
+                }
+                value = made
+                kotlinx.coroutines.awaitCancellation()
+            } finally { made?.close() }
+        }
+        val video = started ?: return@BoxWithConstraints
         val frame by video.frame.collectAsState()
         val speed by animateFloatAsState(if (playing) 1f else 0f, tween(1_000, easing = LinearEasing), label = "settle")
         LaunchedEffect(video) { snapshotFlow { speed }.collect { video.speed(it) } }
