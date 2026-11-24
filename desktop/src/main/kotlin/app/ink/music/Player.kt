@@ -270,9 +270,6 @@ object Player {
             "media-controls" to if (NowPlaying.ours) "no" else "yes", "input-media-keys" to if (NowPlaying.ours) "no" else "yes",
             "audio-client-name" to "ink music", "title" to "ink music",
             "ytdl" to "no", "cache" to "yes",
-            // a stream's connection let go mid-song (2026-11-24: an extension's host closing some after ~30 s) taken up
-            // again where it was, not heard as the song's end and the next one begun
-            "stream-lavf-o" to "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=4",
             "volume" to volume.value.toString(), "volume-max" to "100",
             "audio-device" to deviceNow().also { watchDevice() }, "audio-exclusive" to if (sound.value.exclusive) "yes" else "no",
             "loop-playlist" to if (repeat.value == 1) "inf" else "no", "loop-file" to if (repeat.value == 2) "inf" else "no",
