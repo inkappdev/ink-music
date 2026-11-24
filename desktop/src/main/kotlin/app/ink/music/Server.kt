@@ -304,6 +304,11 @@ object Server {
         call(a, "updatePlaylist", "playlistId" to playlist, "songIdToAdd" to (idOf(song) ?: return@change null))
     }
 
+    /** A playlist of yours there given a new name (2026-11-24, a tester: lists couldn't be renamed from a right click). */
+    suspend fun renamePlaylist(playlist: String, name: String): Boolean = change { a ->
+        call(a, "updatePlaylist", "playlistId" to playlist, "name" to name.trim().ifEmpty { return@change null })
+    }
+
     /** A change to the server's playlists: made, then the list read again (its counts); true if the server said ok. */
     private suspend fun change(ask: (Account) -> JSONObject?): Boolean = withContext(Dispatchers.IO) {
         val a = _account.value ?: return@withContext false

@@ -434,11 +434,32 @@ object Crossfade {
 
     // ---- each song's end measured: its last 25 s and first 20 s decoded apart (a third mpv, samples to a file) ----
 
+    /** The songs playing and next: the only ones worth measuring now, and never let go to make room. */
+    private fun near(): Set<String> {
+        val q = Player.queue.value; val i = Player.index()
+        return setOfNotNull(q.getOrNull(i)?.id, q.getOrNull(i + 1)?.id, q.getOrNull(0)?.id.takeIf { Player.repeat.value == 1 })
+    }
+
+    /** A song whose measuring came to nothing: how many times; tried again a little later, three times in all. */
+    private val missed = ConcurrentHashMap<String, Int>()
+
     private fun measure(s: Song) {
-        if (ends.size > 40) ends.keys.take(20).forEach { ends.remove(it); asked.remove(it) }
+        // room made from songs gone by, never the one playing or the next (2026-11-24, a tester: now and then no transition,
+        // the next one fine: twenty were let go as they came out of the map, the ones about to mix among them)
+        if (ends.size > 40) { val keep = near(); ends.keys.filter { it !in keep }.take(20).forEach { ends.remove(it); asked.remove(it) } }
         if (!asked.add(s.id)) return
         work.execute {
-            runCatching { ends(s) }.onFailure { Log.d("crossfade: ${s.title}: $it") }.getOrNull()?.let { ends[s.id] = it }
+            // skipped past while it waited its turn: not measured now (a run of skips had the next song measured too late)
+            if (s.id !in near()) { asked.remove(s.id); return@execute }
+            val found = runCatching { ends(s) }.onFailure { Log.d("crossfade: ${s.title}: $it") }.getOrNull()
+            if (found != null) { ends[s.id] = found; missed.remove(s.id) }
+            else {
+                // a stream not found in time, a decode cut off: tried again in 15 s, up to three times (it had been asked once for
+                // good, so that song never mixed in or out)
+                val n = (missed[s.id] ?: 0) + 1
+                missed[s.id] = n
+                if (n < 3) Thread { Thread.sleep(15_000); asked.remove(s.id) }.apply { isDaemon = true }.start()
+            }
             // automix: when it's sung, from its timed lyrics (the lyrics' own cache and sources: Vocals)
             if (mode.value == AUTOMIX && !s.station && !vocals.containsKey(s.id)) runCatching {
                 val lines = kotlinx.coroutines.runBlocking { Lyrics.of(s) }.orEmpty()

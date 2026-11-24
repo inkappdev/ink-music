@@ -62,6 +62,12 @@ object HereLists {
         save()
     }
 
+    /** Every song picked out of a list at once (a list holds each song once). */
+    fun removeAll(id: String, songs: Collection<String>) {
+        all.value = all.value.map { m -> if (m.id != id) m else m.copy(songs = m.songs.filter { it.id !in songs }) }
+        save()
+    }
+
     fun delete(id: String) { all.value = all.value.filter { it.id != id }; save() }
 
     /** A list's name changed (2026-11-17, a tester: lists couldn't be renamed). */

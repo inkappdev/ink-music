@@ -1123,7 +1123,7 @@ private fun Songs(songs: List<Song>, open: (Page) -> Unit) {
 fun SongRow(
     s: Song, number: String? = null, said: String? = null, open: ((Page) -> Unit)? = null,
     lit: Boolean? = null, dim: Boolean = false, onRemove: (() -> Unit)? = null, cover: Boolean = false,
-    glow: Color? = null, order: List<Song>? = null, onClick: () -> Unit,
+    glow: Color? = null, order: List<Song>? = null, onRemoveMany: ((List<Song>) -> Unit)? = null, onClick: () -> Unit,
 ) {
     val now by Player.now.collectAsState()
     val on = lit ?: (now?.song?.id == s.id)
@@ -1211,7 +1211,9 @@ fun SongRow(
         }
         // its options, in a menu where it was clicked (2026-11-09: they were a row of nine words under the song, too
         // much to read, wrapping in narrow places and pushing the list down)
-        if (options) SongMenu(s, open, onRemove, clickAt, playing = on) { options = false }
+        // one of several picked: the menu's for all of them (2026-11-24, a tester: a right click did the one clicked only)
+        if (options) SongMenu(s, open, onRemove, clickAt, playing = on,
+            many = pickedNow.takeIf { picked && it.size > 1 }.orEmpty(), onRemoveMany = onRemoveMany) { options = false }
     }
 }
 
@@ -1241,7 +1243,8 @@ fun copyText(text: String) {
  * its words following one after another; away by a click anywhere else, esc, or a word chosen. Kept inside the window.
  */
 @Composable
-internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?, at: androidx.compose.ui.geometry.Offset, playing: Boolean, onClose: () -> Unit) {
+internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?, at: androidx.compose.ui.geometry.Offset, playing: Boolean,
+                      many: List<Song> = emptyList(), onRemoveMany: ((List<Song>) -> Unit)? = null, onClose: () -> Unit) {
     val shown = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
     // the close plays out (a fade) before the menu goes; what was chosen is done as it starts
     fun close(then: () -> Unit = {}) { then(); shown.targetState = false }
@@ -1256,7 +1259,29 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var copying by remember { mutableStateOf<String?>(null) }
     val file = remember(s.id) { SongLink.file(s) }
-    val groups = listOf(
+    // songs picked, the one clicked among them: what the bar along the foot does (PickBar), here too, the picking let go after
+    val group = many.size > 1
+    val groups = if (group) listOf(
+        listOf(
+            "play them" to { Player.play(many, 0); Picking.clear() },
+            "play next" to { many.reversed().forEach { Player.playNext(it) }; Picking.clear() },
+            "add to queue" to { many.forEach { Player.add(it) }; Picking.clear() },
+        ),
+        listOfNotNull(
+            if (many.all { it.id in loved }) "unlove" to { many.forEach { Loved.toggle(it) }; Picking.clear() }
+            else ("love" to { many.filter { it.id !in loved }.forEach { Loved.toggle(it) }; Picking.clear() }).takeIf { many.any { !it.station && !it.episode } },
+            ("add to a playlist" to { go(Page.AddToMany(many)) }).takeIf { many.any { canAddToList(it) } },
+            many.filter { Offline.keepable(it) }.takeIf { it.isNotEmpty() }?.let { keep ->
+                if (keep.all { it.id in kept }) "not offline" to { Offline.remove(keep.map { it.id }); Picking.clear() }
+                else "keep offline" to { Offline.keep(keep.filter { it.id !in kept }); Picking.clear() }
+            },
+            "copy titles" to { copyText(many.joinToString("\n") { listOf(it.artist.substringBefore(", "), it.title).filter { t -> t.isNotBlank() }.joinToString(" - ") }); Picking.clear() },
+        ),
+        listOfNotNull(
+            ("block songs" to { many.filter { it.tube && !it.station && !it.episode }.forEach { Blocked.blockSong(it) }; Picking.clear() })
+                .takeIf { many.any { it.tube && !it.station && !it.episode } },
+        ),
+    ).filter { it.isNotEmpty() } else listOf(
         listOfNotNull(
             // this one picked, and then any others clicked: all of them at once from the bar along the foot (PickBar)
             ("play next" to { Player.playNext(s) }).takeIf { !playing },
@@ -1292,7 +1317,7 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
         ),
     ).filter { it.isNotEmpty() }
     // copy link, after the keeping kind (its own kind where that's empty): a song with a link (not a station's, an episode's)
-    val share = (copying ?: "copy link").takeIf { SongLink.long(s) != null }
+    val share = (copying ?: "copy link").takeIf { !group && SongLink.long(s) != null }
     val density = androidx.compose.ui.platform.LocalDensity.current
     val gap = with(density) { 6.dp.roundToPx() }
     androidx.compose.ui.window.Popup(
@@ -1323,6 +1348,7 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
                 // the song's cover colour (its progress line's), what a word lights in under the mouse
                 val accent = rememberCover(s, 300)?.accent ?: Ink.ink
                 var n = 0
+                if (group) BasicText("${many.size} picked", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 8.dp))
                 groups.forEachIndexed { g, words ->
                     if (g > 0) Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(Ink.line))
                     words.forEach { (word, act) -> MenuWord(word, Ink.ink, accent, n++) { close(act) } }
@@ -1338,7 +1364,11 @@ internal fun SongMenu(s: Song, open: ((Page) -> Unit)?, onRemove: (() -> Unit)?,
                         }
                     }
                 }
-                if (onRemove != null) {
+                if (group) onRemoveMany?.let { out ->
+                    Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(Ink.line))
+                    MenuWord("remove ${many.size}", Ink.mid, accent, n) { close { out(many); Picking.clear() } }
+                }
+                else if (onRemove != null) {
                     Box(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(1.dp).background(Ink.line))
                     MenuWord("remove", Ink.mid, accent, n) { close(onRemove) }
                 }

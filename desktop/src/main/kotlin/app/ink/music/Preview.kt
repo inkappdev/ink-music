@@ -16,6 +16,9 @@ object Preview {
     val CHOICES = listOf(10, 20, 30)
     @Volatile private var song: String? = null
     @Volatile private var from = 0L
+    /** The seek to the taste asked for: when, and how many times (a stream not ready yet can let a seek go). */
+    @Volatile private var askedAt = 0L
+    @Volatile private var asks = 0
     /** Where a song's next taste begins, chosen when it's first asked for (the transition into it and the player's
      *  seek agree on it) and let go once it plays: played again, it's from somewhere new (2026-11-18, the tester:
      *  a song gone back to began at the very same place, as if fixed to it). */
@@ -50,9 +53,17 @@ object Preview {
             song = s.id
             from = starts.remove(s.id) ?: fresh(duration)
             // come in by a transition, it's there already
-            if (ms < from - 1_000) Player.seek(from)
+            asks = 0
+            if (ms < from - 1_000) { Player.seek(from); askedAt = System.currentTimeMillis(); asks = 1 }
             return
         }
+        // the seek let go (2026-11-24, the tester: now and then a song played on from its start, preview as if off for
+        // it): asked again, a second apart, a few times; past that it's taken as the listener's own seek back
+        if (asks in 1..4 && ms < from - 1_000 && System.currentTimeMillis() - askedAt > 1_000) {
+            Player.seek(from); askedAt = System.currentTimeMillis(); asks++
+            return
+        }
+        if (ms >= from - 1_000) asks = 0
         // a transition hands over at the taste's end; a moment more given it before going on without one
         val grace = if (Crossfade.mode.value != Crossfade.OFF) 2_500L else 0L
         if (!paused && ms - from >= n * 1000L + grace) { song = "done:" + s.id; Player.next() }

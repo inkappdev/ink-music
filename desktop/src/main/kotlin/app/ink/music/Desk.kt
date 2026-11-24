@@ -303,6 +303,18 @@ fun MiniWindow() {
         androidx.compose.runtime.LaunchedEffect(k) { if (state.size != DpSize(440.dp * k, 128.dp * k)) state.size = DpSize(440.dp * k, 128.dp * k) }
         // the main window out of the way, once this one has shown and settled
         androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(350); Mini.away() }
+        // Windows: kept over every other window, asked again as it loses the focus and every few seconds (WinTop)
+        if (Home.windows) androidx.compose.runtime.DisposableEffect(window) {
+            val w = window
+            val lost = object : java.awt.event.WindowAdapter() {
+                override fun windowDeactivated(e: java.awt.event.WindowEvent) { javax.swing.SwingUtilities.invokeLater { WinTop.keep(w) } }
+            }
+            w.addWindowListener(lost)
+            onDispose { w.removeWindowListener(lost) }
+        }
+        if (Home.windows) androidx.compose.runtime.LaunchedEffect(Unit) {
+            while (true) { kotlinx.coroutines.delay(2_500); WinTop.keep(window) }
+        }
         // where it's dragged to, kept for next time (a moment after it stops)
         androidx.compose.runtime.LaunchedEffect(Unit) {
             androidx.compose.runtime.snapshotFlow { state.position }.collect { kotlinx.coroutines.delay(600); Mini.keep(it) }

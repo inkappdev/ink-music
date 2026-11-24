@@ -468,6 +468,8 @@ private fun duplicateAsYours(p: Server.Playlist) = kotlinx.coroutines.CoroutineS
 @Composable
 fun ListRow(p: Server.Playlist, said: String? = null, order: List<String>? = null, onClick: () -> Unit) {
     val here = p.id.startsWith(HereLists.PREFIX)
+    // a playlist of yours on your server: renamed there too (2026-11-24, a tester)
+    val served = !here && p.mine && Server.playlists.collectAsState().value.any { it.id == p.id }
     var renaming by remember(p.id) { mutableStateOf(false) }
     val picked by ListPicking.picked.collectAsState()
     val handled = remember { longArrayOf(0L) }
@@ -477,7 +479,7 @@ fun ListRow(p: Server.Playlist, said: String? = null, order: List<String>? = nul
             "rename" to { renaming = true },
             "duplicate" to { duplicateAsYours(p); Unit },
             "save as .inkmusic" to { HereLists.of(p.id)?.let { ListOut.save(it.name, "inkmusic", ListOut.inkmusic(it.name, it.songs)) }; Unit },
-        ) else listOf("duplicate as your list" to { duplicateAsYours(p); Unit }),
+        ) else listOfNotNull(("rename" to { renaming = true }).takeIf { served }, "duplicate as your list" to { duplicateAsYours(p); Unit }),
         if (here) listOf("delete list" to { HereLists.delete(p.id); ListPicking.picked.value -= p.id }) else emptyList(),
     ) }) {
     Column(Modifier.fillMaxWidth()
@@ -499,7 +501,7 @@ fun ListRow(p: Server.Playlist, said: String? = null, order: List<String>? = nul
             if (renaming || System.currentTimeMillis() - handled[0] < 400) return@felt
             ListPicking.clear(); onClick()
         }).padding(vertical = 8.dp)) {
-        if (renaming) RenameField(p.name, { HereLists.rename(p.id, it); renaming = false }) { renaming = false }
+        if (renaming) RenameField(p.name, { renameList(p.id, it); renaming = false }) { renaming = false }
         else BasicText(p.name.uppercase(), style = headline(20.sp, if (picked.isEmpty() || p.id in picked) Ink.ink else Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
         BasicText(said ?: ("${p.count} ${if (p.count == 1) "song" else "songs"}" + (if (p.mine) "" else "   shared with you") + (if (p.id in picked) "   picked" else "")),
             style = pixel(12.sp, Ink.mid))
@@ -507,9 +509,15 @@ fun ListRow(p: Server.Playlist, said: String? = null, order: List<String>? = nul
     }
 }
 
+/** A list of yours renamed: kept here, or on your server. */
+private fun renameList(id: String, name: String) {
+    if (id.startsWith(HereLists.PREFIX)) HereLists.rename(id, name)
+    else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { Server.renamePlaylist(id, name) }
+}
+
 /** A list's name typed over, in place: enter keeps it, esc (or nothing typed) leaves it as it was, a click away keeps it. */
 @Composable
-private fun RenameField(name: String, onDone: (String) -> Unit, onCancel: () -> Unit) {
+private fun RenameField(name: String, onDone: (String) -> Unit, size: androidx.compose.ui.unit.TextUnit = 20.sp, onCancel: () -> Unit) {
     var value by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(name, androidx.compose.ui.text.TextRange(0, name.length))) }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     var had by remember { mutableStateOf(false) }
@@ -518,7 +526,7 @@ private fun RenameField(name: String, onDone: (String) -> Unit, onCancel: () -> 
     fun done() { if (over) return; over = true; val n = value.text.trim(); if (n.isEmpty() || n == name) onCancel() else onDone(n) }
     fun cancel() { if (over) return; over = true; onCancel() }
     androidx.compose.foundation.text.BasicTextField(
-        value, { value = it }, singleLine = true, textStyle = headline(20.sp), cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink.ink),
+        value, { value = it }, singleLine = true, textStyle = headline(size), cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink.ink),
         modifier = Modifier.fillMaxWidth().focusRequester(focus).typing()
             .onFocusChanged { f -> if (f.isFocused) had = true else if (had) done() }
             .onPreviewKeyEvent { k ->
@@ -654,12 +662,16 @@ private fun ListsView(open: (Page) -> Unit) {
 
 /** A list as a tile: its art square, its name and what it holds under it. */
 @Composable
-private fun ListTile(name: String, said: String, onClick: () -> Unit, more: List<List<Pair<String, () -> Unit>>> = emptyList(), art: @Composable () -> Unit) {
-    WithMenu({ listOf(listOf("open" to onClick)) + more }) {
-    Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+private fun ListTile(name: String, said: String, onClick: () -> Unit, more: List<List<Pair<String, () -> Unit>>> = emptyList(),
+                     rename: ((String) -> Unit)? = null, art: @Composable () -> Unit) {
+    // a list of yours renamed from its right click, its name typed over under the art (2026-11-24, a tester: the grid had no rename)
+    var renaming by remember(name) { mutableStateOf(false) }
+    WithMenu({ listOf(listOf("open" to onClick) + listOfNotNull(("rename" to { renaming = true }).takeIf { rename != null })) + more }) {
+    Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { if (!renaming) onClick() })) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) { art() }
         Spacer(Modifier.height(8.dp))
-        UnderCover(name, said)
+        if (renaming && rename != null) RenameField(name, { rename(it); renaming = false }, 15.sp) { renaming = false }
+        else UnderCover(name, said)
     }
     }
 }
@@ -716,12 +728,17 @@ private fun ListsTiles(open: (Page) -> Unit) {
                 listOf("play" to { playList(m.id); Unit }, "shuffle" to { playList(m.id, shuffle = true); Unit }),
                 listOf("duplicate" to { duplicateAsYours(p); Unit }, "save as .inkmusic" to { ListOut.save(m.name, "inkmusic", ListOut.inkmusic(m.name, m.songs)) }),
                 listOf("delete list" to { HereLists.delete(m.id) }),
-            )) {
+            ), rename = { renameList(m.id, it) }) {
                 if (m.songs.isEmpty()) Lettered(m.name) else Mosaic(m.songs, m.id)
             }
         }
+        // a new one by name, as the list view has it (2026-11-24, a tester: only the list view had it)
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "new") {
+            NewList { name -> val m = HereLists.make(name, emptyList()); open(Page.List(m.id, m.name)) }
+        }
         gridItems(lists, key = { it.id }) { p ->
-            ListTile(p.name, "${p.count} ${if (p.count == 1) "song" else "songs"}", { open(Page.List(p.id, p.name)) }) {
+            ListTile(p.name, "${p.count} ${if (p.count == 1) "song" else "songs"}", { open(Page.List(p.id, p.name)) },
+                rename = if (p.mine) ({ renameList(p.id, it) }) else null) {
                 // the server's own art for it (Navidrome's mosaic of its songs), by a song-shaped stand-in
                 val face = remember(p.id, p.art) { p.art?.let { Song("npl" + p.id, "", p.name, "", p.name, "npl" + p.id, "", 0, 1, 0, 0, art = it) } }
                 if (face != null) CoverOf(face, p.name, Modifier.fillMaxSize(), px = 480) else Lettered(p.name)
@@ -847,7 +864,12 @@ fun ListPage(id: String, name: String, open: (Page) -> Unit, onClose: () -> Unit
                         id == KEPT -> ({ Offline.remove(listOf(x.id)) })
                         id.startsWith(HereLists.PREFIX) -> ({ HereLists.remove(id, i) })
                         else -> null
-                    }, order = order) { Player.play(order, k) }
+                    }, order = order,
+                    onRemoveMany = when {
+                        id == KEPT -> ({ many -> Offline.remove(many.map { it.id }) })
+                        id.startsWith(HereLists.PREFIX) -> ({ many -> HereLists.removeAll(id, many.map { it.id }) })
+                        else -> null
+                    }) { Player.play(order, k) }
             }
         }}
     }
