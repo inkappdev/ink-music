@@ -197,7 +197,8 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
     // this one plays, a few kept (the oldest let go), and played from the file
     /** Where the songs downloaded ahead go (a cache the system may clear: the phone's cache folder); unset, beside the list. */
     @Volatile var aheadIn: File? = null
-    private fun aheadDir(dir: File) = File(aheadIn ?: dir, "extensions-ahead").apply { mkdirs() }
+    // (a new folder's name, 2026-11-24: the one before it may hold songs cut short, kept before they were checked whole)
+    private fun aheadDir(dir: File) = File(aheadIn ?: dir, "extensions-whole").apply { mkdirs() }
     private fun fileOf(key: String) = java.security.MessageDigest.getInstance("SHA-1").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
     private fun kept(dir: File, key: String): File? = File(aheadDir(dir), fileOf(key)).takeIf { it.isFile && it.length() > 0 }
     private val downloading = ConcurrentHashMap.newKeySet<String>()
