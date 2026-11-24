@@ -22,4 +22,5 @@ object Extensions {
     fun anyOn(ctx: Context) = false
     fun answered(ctx: Context, key: String) = true
     fun stream(ctx: Context, key: String, t: Track): Uri? = null
+    fun by(key: String): String? = null
 }

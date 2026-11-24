@@ -1228,13 +1228,13 @@ private fun SignalPath(n: Now, onClose: () -> Unit) {
     val acts = HashMap<String, Pair<String, () -> Unit>>()
     val steps = mutableListOf<Pair<String, String>>()
     if (h != null) {
-        steps += "from" to (when (h.from) {
+        steps += "from" to (if (h.via.isNotEmpty()) "your extension, ${h.via.lowercase()}\nin place of ${if (h.from == "server") "your server" else "youtube music"}" else when (h.from) {
             "server" -> if (h.made.isEmpty()) "your server, the file as it is" else "your server, made ${h.made} for you"
             "youtube" -> "youtube music, its ${h.made.ifEmpty { "best" }} stream"
             "station" -> "the station's stream"
             else -> "this ${Device.word}, the file as it is"
         } + (h.quality.takeIf { it >= 0 }?.let { "\n${Quality.words[it]} on ${if (h.metered) "mobile data" else "wifi"}" } ?: ""))
-        steps += (if (h.from == "youtube" || h.from == "station") "the stream" else "the file") to listOfNotNull(
+        steps += (if (h.from == "youtube" || h.from == "station" || h.via.isNotEmpty()) "the stream" else "the file") to listOfNotNull(
             h.codec, h.bits.takeIf { it > 0 }?.let { "$it bit" }, h.rate.takeIf { it > 0 }?.let(k),
             h.channels.takeIf { it > 0 }?.let { when (it) { 1 -> "mono"; 2 -> "stereo"; else -> "$it channels" } },
             h.kbps.takeIf { it > 0 }?.let { "%,d kbps".format(java.util.Locale.ROOT, it) },

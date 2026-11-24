@@ -97,6 +97,11 @@ object Extensions {
     private val missed = ConcurrentHashMap<String, Long>()
     // a song's stream found, kept for its seeks (each opens it again, and must get the same one)
     private val found = ConcurrentHashMap<String, Pair<Uri, Long>>()
+    // and which of yours gave it: its name, else its address's host (said in the player's signal path)
+    private val gave = ConcurrentHashMap<String, String>()
+
+    /** The extension a song's playing stream came from (its name, else its host), or null when none did. */
+    fun by(key: String): String? = gave[key]?.takeIf { found[key] != null }
 
     private fun recent(m: ConcurrentHashMap<String, Long>, key: String): Boolean {
         val at = m[key] ?: return false
@@ -195,7 +200,7 @@ object Extensions {
      */
     fun stream(ctx: Context, key: String, t: Track): Uri? {
         found[key]?.let { (u, at) -> if (System.currentTimeMillis() - at < 3_600_000L) return u else found.remove(key) }
-        if (found.size > 500) found.clear()
+        if (found.size > 500) { found.clear(); gave.clear() }
         // one ask a song at a time: the song's start joins the look already begun for it (asked ahead, as the one
         // before it played), rather than asking again
         val mine = java.util.concurrent.CompletableFuture<Uri?>()
@@ -316,7 +321,9 @@ object Extensions {
             }
             android.util.Log.d(LOG, "$host: ${p.why}")
             when (p.answer) {
-                Answer.AUDIO -> return Uri.parse(p.stream ?: target).also { found[key] = it to System.currentTimeMillis() }
+                Answer.AUDIO -> return Uri.parse(p.stream ?: target).also {
+                    found[key] = it to System.currentTimeMillis(); gave[key] = s.name.trim().ifEmpty { host }
+                }
                 Answer.NOTHING -> missed[s.url + "\n" + key] = System.currentTimeMillis()
                 Answer.UNREACHABLE -> down[s.url] = System.currentTimeMillis()
             }

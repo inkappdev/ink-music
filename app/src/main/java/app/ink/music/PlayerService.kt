@@ -295,12 +295,15 @@ class PlayerService : MediaLibraryService() {
             id.startsWith("n") -> "server"
             else -> "phone"
         }
-        val made = when (from) {
+        // an extension's stream: none of the server's or YouTube's making, its own bitrate as read
+        val via = Extensions.by(uri).orEmpty()
+        val made = if (via.isNotEmpty()) "" else when (from) {
             "server" -> when (c?.quality) { Quality.HIGH -> "mp3 320"; Quality.SAVER -> "opus 96"; else -> "" }
             "youtube" -> if (c?.quality == Quality.SAVER) "smallest" else "best"
             else -> ""
         }
         val kbps = when {
+            via.isNotEmpty() -> (f.averageBitrate.takeIf { it > 0 } ?: f.bitrate).takeIf { it > 0 }?.div(1000) ?: 0
             from == "youtube" -> YouTubeMusic.kbps(id, c?.quality == Quality.SAVER)
             made == "mp3 320" -> 320
             made == "opus 96" -> 96
@@ -309,7 +312,7 @@ class PlayerService : MediaLibraryService() {
         return Heard(
             id = id, codec = Heard.codecOf(f.sampleMimeType), bits = Heard.bitsOf(f), rate = f.sampleRate.coerceAtLeast(0),
             channels = f.channelCount.coerceAtLeast(0), kbps = kbps, from = from, made = made,
-            quality = if (from == "server" || from == "youtube") c?.quality ?: -1 else -1, metered = c?.metered == true,
+            quality = if (via.isEmpty() && (from == "server" || from == "youtube")) c?.quality ?: -1 else -1, metered = c?.metered == true,
             gain = levelling?.takeIf { it.on }?.db,
             decoder = decoder, outBits = dac?.second?.alt?.bits ?: outBits, outRate = dac?.second?.rate ?: outRate,
             device = dac?.first?.name?.lowercase() ?: out.first, kind = if (dac != null) "usb" else out.second, mixer = Exact.mixer(this),
@@ -317,6 +320,7 @@ class PlayerService : MediaLibraryService() {
             exact = exactSaid,
             slot = dac?.second?.alt?.bits ?: 0, clock = dac?.second?.clock() ?: 0.0,
             dropouts = dac?.second?.underruns() ?: Exclusive.underrunsNow.takeIf { Exclusive.rate > 0 } ?: 0, exclusive = Exclusive.rate,
+            via = via,
         )
     }
 
