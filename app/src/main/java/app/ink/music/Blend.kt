@@ -25,6 +25,24 @@ import kotlin.math.sin
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 class Blend : BaseAudioProcessor() {
+    companion object {
+        /**
+         * Each song's gain at `k` (0 to 1) through a blend, new then old; the planner reads the same (Crossfade's vocal check).
+         * Beats matched (after LastWave's automix, 2026-11-24): both up, then the swap, then out: the new one full by the
+         * middle, the old one full till it, falling after on a quarter cosine (the keeper holds their sum within 1 dB).
+         * Cold (an ending with no fade of its own): the old one held nearly to its end (1 - k^4), the new one rising under
+         * it, so its last hit isn't faded. Else equal power. A quiet intro coming in (`hold`): the old one held up longer,
+         * the new one rising sooner.
+         */
+        fun gains(k: Double, hold: Double, matched: Boolean, cold: Boolean): Pair<Double, Double> {
+            if (k >= 1) return 1.0 to 0.0
+            if (cold) return sin(k * PI / 2) to (1 - k * k * k * k)
+            val kOld = if (hold > 0) ((k - .8 * hold) / (1 - .8 * hold)).coerceIn(0.0, 1.0) else k
+            val kNew = if (hold > 0) (k / (1 - .5 * hold)).coerceIn(0.0, 1.0) else k
+            if (matched) return sin((2 * kNew).coerceAtMost(1.0) * PI / 2) to (if (kOld < .5) 1.0 else cos((2 * kOld - 1) * PI / 2))
+            return sin(kNew * PI / 2) to cos(kOld * PI / 2)
+        }
+    }
     /** A song's end as decoded apart: its samples (interleaved floats) from `startMs`, where its stream is cut, the fade's length. */
     class Tail(val startMs: Long, val rate: Int, val channels: Int, val pcm: FloatArray, val cutMs: Long, val fadeMs: Long, val stretched: Stretched? = null,
         /** Not beats matched, in automix: the filter fade (the old one sinking under a low-pass, the new one opening from a high-pass). */
@@ -32,7 +50,9 @@ class Blend : BaseAudioProcessor() {
         /** The new song's intro quiet over this share of the blend: the old one held up longer, the new one in sooner. */
         val hold: Double = 0.0,
         /** The new song ridden in this many dB under its own (louder than the old end it comes in over), up to it after. */
-        val rideDb: Double = 0.0)
+        val rideDb: Double = 0.0,
+        /** The old song ends cold (its last hit full, no fade of its own): held at full nearly to its end, the new one under it. */
+        val cold: Boolean = false)
 
     /**
      * The end stretched to the next song's tempo (beats matched; Crossfade): for that song only, its samples from
@@ -137,6 +157,9 @@ class Blend : BaseAudioProcessor() {
     private var filtering = false
     private var lpOldK = DoubleArray(5); private var hpNewK = DoubleArray(5)
     private val lpOld = DoubleArray(8 * 4); private val hpNew = DoubleArray(8 * 4)
+    // beats matched (after LastWave's, 2026-11-24): the new one comes in on its mids, its top held under a low-pass that
+    // opens from 2.5 kHz to the full range by the middle (its lows held out till the swap, as before)
+    private var lpNewK = DoubleArray(5); private val lpNew = DoubleArray(8 * 4)
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
@@ -214,7 +237,8 @@ class Blend : BaseAudioProcessor() {
             hop = (format.sampleRate / 100).coerceAtLeast(1); hopAt = 0; eNew = 0.0; eOld = 0.0; lpN = 0.0; lpO = 0.0
             envNew.clear(); envOld.clear(); nudgeLeft = 0.0; nudgeStep = 0.0; nudged = 0; rmsNew = 0.0; rmsOld = 0.0; rmsN = 0; jumpHead = 0.0; jumpSum = 0.0; jumpN = 0; mgLeast = 1.0
             measuring = id + if (stretched != null) " (beats matched)" else ""
-            filtering = p.tail.filter
+            filtering = p.tail.filter && !p.tail.cold
+            lpNew.fill(0.0); lpNewK = lowPass(2_500.0, format.sampleRate)
             if (filtering) {
                 lp = lowPass(150.0, format.sampleRate)
                 lowNew.fill(0.0); lowOld.fill(0.0); lpOld.fill(0.0); hpNew.fill(0.0)
@@ -328,11 +352,7 @@ class Blend : BaseAudioProcessor() {
                 // together and add up louder (3 dB at the middle, "noticeably louder during mix", 2026-11-08): half way to
                 // equal gain, about level either way
                 // a quiet intro coming in: the old one held at full over most of it, the new one rising sooner
-                val h = t.hold
-                val kOld = if (h > 0) ((k - .8 * h) / (1 - .8 * h)).coerceIn(0.0, 1.0) else k
-                val kNew = if (h > 0) (k / (1 - .5 * h)).coerceIn(0.0, 1.0) else k
-                val gNew = if (k >= 1) 1.0 else if (st != null) (sin(kNew * PI / 2) + kNew) / 2 else sin(kNew * PI / 2)
-                val gOld = if (k >= 1) 0.0 else if (st != null) (cos(kOld * PI / 2) + 1 - kOld) / 2 else cos(kOld * PI / 2)
+                val (gNew, gOld) = gains(k, t.hold, st != null, t.cold)
                 // the bass across the middle tenth (beats matched, or the filter fade): the new one's lows in, the old one's out
                 // over a tenth of the blend, half a second at least (a short blend's tenth was a sudden drop of the low end)
                 val swapW = maxOf(.1, rate * .5 / fadeFrames)
@@ -343,6 +363,8 @@ class Blend : BaseAudioProcessor() {
                     val open = (1 - k / .5).coerceIn(0.0, 1.0)   // the new one's high-pass, 160 Hz down to 20 by the middle
                     hpNewK = highPass(20.0 * Math.pow(8.0, open), rate)
                 }
+                if (st != null && mixed % 64 == 0L)
+                    lpNewK = lowPass((2_500.0 * Math.pow(8.0, (k / .5).coerceIn(0.0, 1.0))).coerceAtMost(rate * .45), rate)
                 val join = if (st != null) (mixed.toDouble() / joinFrames).coerceAtMost(1.0) else 0.0
                 var eo = 0.0; var en = 0.0; var es = 0.0
                 for (c in 0 until ch) {
@@ -357,6 +379,7 @@ class Blend : BaseAudioProcessor() {
                     if (c == 0) parts?.let { pt -> for (v in doubleArrayOf(s, old)) { val q = (v * 32768).toInt().coerceIn(-32768, 32767); pt.write(q and 0xff); pt.write((q shr 8) and 0xff) } }
                     if (st != null) {
                         if (c < 8) {
+                            s = biquad(lpNewK, lpNew, c, s)
                             val ln = filter(lowNew, c, s); s = (s - ln) + ln * swap
                             val lo = filter(lowOld, c, old); old = (old - lo) + lo * (1 - swap)
                         }

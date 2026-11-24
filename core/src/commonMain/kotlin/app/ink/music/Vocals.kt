@@ -41,4 +41,40 @@ object Vocals {
         for ((a0, a1) in a) for ((b0, b1) in b) both += (minOf(a1, b1) - maxOf(a0, b0)).coerceAtLeast(0.0)
         return both.toLong()
     }
+
+    /**
+     * A blend as heard (after LastWave's VocalCheck, 2026-11-24): `clash` the ms both are singing while both are up (each
+     * at 0.35 or more, through the blend's own gains), `cutsLine` the old one falling under half in the middle of one
+     * of its lines, `hidesEntry` a line of the new one starting while it's still under half. `cost` weighs them.
+     */
+    data class Check(val clash: Long, val cutsLine: Boolean, val hidesEntry: Boolean) {
+        val cost get() = clash / 1000.0 * 4 + (if (cutsLine) 6 else 0) + (if (hidesEntry) 4 else 0)
+        val clean get() = clash <= MOST && !cutsLine && !hidesEntry
+    }
+
+    /**
+     * [Check] of a blend: the old song from `outAt` (its time) at `speed`, the new one from `inAt`, over `fade` ms,
+     * `gains(k)` each one's gain (new, old) at k through it; looked at in 128 steps.
+     */
+    fun check(old: List<LongRange>, outAt: Double, speed: Double, new: List<LongRange>, inAt: Double, fade: Long,
+              gains: (Double) -> Pair<Double, Double>): Check {
+        val n = 128
+        val dt = fade.toDouble() / n
+        var clash = 0.0; var cuts = false; var hides = false
+        var oldWas = 1.0
+        fun sings(spans: List<LongRange>, t: Double) = spans.any { t >= it.first && t <= it.last }
+        for (i in 0 until n) {
+            val t = (i + .5) * dt
+            val (gn, go) = gains((i + .5) / n)
+            val so = sings(old, outAt + t * speed); val sn = sings(new, inAt + t)
+            if (so && sn && gn >= .35 && go >= .35) clash += dt
+            if (so && oldWas >= .5 && go < .5) cuts = true
+            oldWas = go
+        }
+        for (r in new) {
+            val t = r.first - inAt
+            if (t in 0.0..fade.toDouble() && gains(t / fade).first < .5) hides = true
+        }
+        return Check(clash.toLong(), cuts, hides)
+    }
 }

@@ -69,6 +69,8 @@ class Crossfade(
         val peak: Double = 0.0,     // its loudest sample heard (of its start and end decoded), 0..1
         val lufs: Double? = null,   // its loudness, measured from its start and end (gated as BS.1770 gates; no K-weighting)
         val headLow: FloatArray = FloatArray(0),   // its start's bass (under ~150 Hz), its energy each 10 ms from 0: its kicks
+        val cold: Boolean = false,       // it ends cold: its last second within 6 dB of its usual, no fade of its own
+        val startsCold: Boolean = false, // it starts cold: full within half a second of its first sound
     )
 
     /** A beat-matched handover: the old song's beat it lands on, the new one's beat it comes in on, its tempo there. */
@@ -126,6 +128,7 @@ class Crossfade(
 
     companion object {
         const val FADE = 6_000L
+        const val COLD = 2_000L        // a cold ending's blend; both cold, half a second (LastWave's)
         /** How far ahead a playing song's cut must be: what's decoded and buffered for the sound mustn't have passed it. */
         const val AHEAD = 8_000L
         /** How clearly the kicks must line up (the best lag over the best a tenth of a beat away) for a plan to move its cut. */
@@ -588,7 +591,7 @@ class Crossfade(
         if (pcm == null || all == null) return why(id, "begun on, its end couldn't be kept: it ends at its cut")
         val pcmEnd = pcm.start + all.size / pcm.channels * 1000L / pcm.rate
         if (pcm.start > p[0] || pcmEnd < p[0] + p[1]) return why(id, "begun on, its end decoded doesn't hold the cut")
-        b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, p[0], p[1], filter = mode(c) == AUTOMIX)
+        b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, p[0], p[1], filter = mode(c) == AUTOMIX && !e.cold, cold = e.cold)
         android.util.Log.d("ink-crossfade", "$id: its end ready to mix in at ${p[0] / 1000.0}s")
     }
 
@@ -645,21 +648,49 @@ class Crossfade(
             main.post {
                 planning -= id
                 if (id in cutSongs && !again) return@post
-                val at = m?.cut ?: e.handover
+                val planned = m?.cut ?: e.handover
                 // next still, or playing now (skipped to while it was planned, or the song begun on) with its cut far
                 // enough ahead that what's decoded hasn't passed it
                 val next = exo.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { exo.getMediaItemAt(it).mediaId } == id
-                val now = !next && exo.currentMediaItem?.mediaId == id && exo.currentPosition < at - AHEAD
+                val now = !next && exo.currentMediaItem?.mediaId == id && exo.currentPosition < planned - AHEAD
                 if (!next && !now) return@post
                 // not beats matched: the filter fade (Blend), and a short one when their keys clash (both sure)
                 val clash = Key.clash(e.tailKey, ends[following.mediaId]?.headKey)
-                val fade = m?.fade ?: (e.lastSound - at).coerceIn(2_000, 12_000).let { if (clash) it.coerceAtMost(5_000) else it }
+                val nx = ends[following.mediaId]
+                // ending cold: the old one held to its last 2 s (half a second when the new one starts cold too)
+                val cold = m == null && e.cold
+                var at = planned
+                var fade = m?.fade ?: if (cold) (if (nx?.startsCold == true) 500L else COLD).also { at = e.lastSound - it }
+                    else (e.lastSound - at).coerceIn(2_000, 12_000).let { if (clash) it.coerceAtMost(5_000) else it }
+                // no voice over another in a plain blend either (automix; after LastWave's): of its handover and the end
+                // of a line it's in the middle of (3 s of fade kept), and the fade shortened a second at a time (2 s at
+                // least), the plan that clashes least; both singing over it still, 4 s at most
+                val vo = vocals[id]; val vn = vocals[following.mediaId]
+                if (m == null && !cold && !vo.isNullOrEmpty() && !vn.isNullOrEmpty()) {
+                    val hold0 = ((nx?.fullAt ?: 0L).toDouble() / fade).coerceIn(0.0, .7)
+                    fun check(a: Long, f: Long) = Vocals.check(vo, a.toDouble(), 1.0, vn, 0.0, f) { k -> Blend.gains(k, hold0, false, false) }
+                    val lineEnd = vo.firstOrNull { at in it }?.last?.plus(100)?.takeIf { it <= e.lastSound - 3_000 }
+                    val tries = listOfNotNull(at, lineEnd).flatMap { a ->
+                        val most = (e.lastSound - a).coerceIn(2_000, fade)
+                        generateSequence(most) { it - 1_000 }.takeWhile { it >= 2_000 }.map { a to it }.toList()
+                    }.filter { (a, f) -> pcm.start <= a && pcmEnd >= a + f }
+                    val was = check(at, fade)
+                    if (!was.clean) {
+                        val best = tries.minByOrNull { (a, f) -> check(a, f).cost + (fade - f) / 4_000.0 }
+                        if (best != null) {
+                            val bc = check(best.first, best.second)
+                            at = best.first; fade = if (bc.clash > Vocals.MOST) best.second.coerceAtMost(4_000) else best.second
+                            android.util.Log.d("ink-crossfade", "vocals (plain): ${was.clash} ms both singing${if (was.cutsLine) ", a line cut" else ""}${if (was.hidesEntry) ", its first line hidden" else ""}; " +
+                                "out at ${at / 1000.0}s over ${fade / 1000.0}s instead (${bc.clash} ms)")
+                        }
+                    }
+                }
                 if (pcm.start > at || pcmEnd < at + fade) return@post why(id, "its end decoded (${pcm.start / 1000.0}s to ${pcmEnd / 1000.0}s) doesn't hold the cut at ${at / 1000.0}s and its ${fade / 1000.0}s fade")
-                val hold = m?.hold ?: ((ends[following.mediaId]?.fullAt ?: 0L).toDouble() / fade).coerceIn(0.0, .7)
+                val hold = if (cold) 0.0 else m?.hold ?: ((ends[following.mediaId]?.fullAt ?: 0L).toDouble() / fade).coerceIn(0.0, .7)
                 val ride = ride(e, ends[following.mediaId], id, following.mediaId, at, fade)
                 b.tails[id] = Blend.Tail(pcm.start, pcm.rate, pcm.channels, all, at, fade,
-                    m?.let { Blend.Stretched(following.mediaId, it.stretched, it.from, it.speed, it.period) }, filter = (m == null || m.clash) && mode(c) == AUTOMIX,
-                    hold = hold, rideDb = ride)
+                    m?.let { Blend.Stretched(following.mediaId, it.stretched, it.from, it.speed, it.period) }, filter = (m == null || m.clash) && mode(c) == AUTOMIX && !cold,
+                    hold = hold, rideDb = ride, cold = cold)
                 cutSongs[id] = item
                 // cut for now: and if the one after it was measured meanwhile (the planning waited behind its measuring on
                 // the same thread, so it nearly always is), planned again at once (2026-11-08: none ever was, no beats matched)
@@ -668,6 +699,7 @@ class Crossfade(
                 if (next) swap(exo.nextMediaItemIndex, clipped) else inPlace(exo.currentMediaItemIndex, clipped)
                 android.util.Log.d("ink-crossfade", "$id cut at ${at / 1000.0}s of ${e.duration / 1000.0}s, its end to be mixed in over ${fade / 1000.0}s" +
                     (if (now) " (as it plays)" else "") + (if (waiting && next) " (for now: the one after it still being measured)" else "") +
+                    (if (cold) ", ending cold: held to its last ${fade / 1000.0}s" else "") +
                     (if (hold > .05) ", the new one's intro quiet: the old one held over ${"%.0f".format(hold * 100)}%" else "") +
                     (if (ride < -.5) ", the new one ridden in ${"%.1f".format(ride)} dB" else "") +
                     (m?.let { ", beats matched into ${following.mediaId}: its end at ${"%.3f".format(it.speed)}x (${"%.1f".format(60_000 / it.period)} bpm), the bass handed across${if (it.clash) ", the old one filtered (keys clash)" else ""}" }
@@ -763,13 +795,31 @@ class Crossfade(
         var fade = kotlin.math.min((if (fit) 24 else 16) * b.period, (e.lastSound - cut) / speed).toLong().coerceIn(4_000, if (fit) 20_000 else 14_000)
             // never more than two fifths of either song (a short one isn't half a blend)
             .let { f -> listOf(e.duration, next.duration).filter { it > 0 }.minOrNull()?.let { d -> f.coerceAtMost((d * 2 / 5).coerceAtLeast(4_000)) } ?: f }
+        // the new one's drop landing as the old one leaves (after LastWave's automix, 2026-11-24): a bar of its start where
+        // it rises (its next two bars 2 dB or more over the two before), two bars or more after bar one, the blend's
+        // end put there when it falls within the blend's bounds (the new one comes in from its start: its time is the
+        // blend's)
+        val bounds = 4_000.0..kotlin.math.min(if (fit) 20_000.0 else 14_000.0, (e.lastSound - cut) / speed)
+        val drop = b.bars.withIndex().firstOrNull { (j, br) ->
+            j >= 2 && j + 1 < b.bars.size && br.at >= b0 + 2 * bar && br.at in bounds &&
+                (b.bars[j].loud + b.bars[j + 1].loud) >= 1.26f * (b.bars[j - 1].loud + b.bars[j - 2].loud)
+        }?.value?.at
+        if (drop != null && b.sure >= Tempos.LOOSE) {
+            android.util.Log.d("ink-crossfade", "plan: the new one rises at ${"%.2f".format(drop / 1000)}s: the blend ends there (${fade / 1000.0}s as it was)")
+            fade = drop.toLong()
+        }
         // no voice over another (Vocals, after LastWave's automix): singing in both at once for more than a third of a
         // second, the blend made shorter a bar at a time (four seconds at least), else out a bar or two earlier or later,
         // the first plan that keeps them apart; none does, the plan as it was
         val vo = vocals[oldId]; val vn = vocals[newId]
         if (!vo.isNullOrEmpty() && !vn.isNullOrEmpty()) {
-            val was = Vocals.overlap(vo, a0, speed, vn, b0, fade)
-            if (was > Vocals.MOST) {
+            // through the blend's own gains (both up, each at 0.35 or more), a line cut or one hidden counted too
+            val hold0 = ((next.fullAt - b0) / fade).coerceIn(0.0, .7)
+            // (the blend runs from the cut and the new one's start: out at `o`, the old one's time there is o - speed * b0)
+            fun check(o: Double, f: Long) = Vocals.check(vo, o - speed * b0, speed, vn, 0.0, f) { k -> Blend.gains(k, hold0, true, false) }
+            val wasCheck = check(a0, fade)
+            val was = wasCheck.clash
+            if (!wasCheck.clean) {
                 val step = (4 * b.period).toLong()
                 val tries = buildList {
                     var f = fade - step
@@ -780,7 +830,8 @@ class Crossfade(
                     val f2 = kotlin.math.min(f.toDouble(), (e.lastSound - c2) / speed).toLong()
                     (o to f2).takeIf { o <= latest + 1 && c2 >= pcm.start + 500 && o >= a.first && f2 >= 4_000 }
                 }
-                val safe = tries.firstOrNull { (o, f) -> Vocals.overlap(vo, o, speed, vn, b0, f) <= Vocals.MOST }
+                val safe = tries.firstOrNull { (o, f) -> check(o, f).clean }
+                    ?: tries.minByOrNull { (o, f) -> check(o, f).cost }?.takeIf { (o, f) -> check(o, f).cost < wasCheck.cost }
                 android.util.Log.d("ink-crossfade", "vocals: ${was} ms of both singing as planned; " +
                     (safe?.let { (o, f) -> "out at ${"%.2f".format(o / 1000)}s over ${f / 1000.0}s instead" } ?: "no plan keeps them apart"))
                 if (safe != null) { cut = (safe.first - speed * b0).toLong(); fade = safe.second }
@@ -1077,7 +1128,17 @@ class Crossfade(
             val from = (sec.indices).firstOrNull { i -> (i until sec.size).all { sec[it] < body - 4 } } ?: return@run null
             if (sec.last() > body - 10 || sec.size - from < 60) null else endPcm.start + from * window
         }
-        val handover = listOfNotNull(lastSound - FADE, quiet?.minus(1_000), fading?.minus(500)).minOrNull()!!.coerceAtLeast(dur - 25_000)
+        // a cold ending (after LastWave's automix, 2026-11-24): its last second within 6 dB of its usual (the loud tenth
+        // of the end's seconds), so it stops on a full hit, a chord or a shout; handed over 2 s before its sound ends, its
+        // last hit heard whole (a 6 s fade had sunk it under the next song)
+        val cold = lastIdx >= 200 && fading == null && run {
+            val pw = end.map { Math.pow(10.0, it / 10.0) }
+            val sec = (0..lastIdx - 19).map { i -> 10 * log10((i until i + 20).sumOf { pw[it] } / 20 + 1e-12) }
+            val usual = sec.sorted()[(sec.size * .9).toInt().coerceAtMost(sec.size - 1)]
+            sec.last() >= usual - 6
+        }
+        val handover = (if (cold) lastSound - COLD else listOfNotNull(lastSound - FADE, quiet?.minus(1_000), fading?.minus(500)).minOrNull()!!)
+            .coerceAtLeast(dur - 25_000)
         val firstSound = headPcm?.let { levels(it) }?.indexOfFirst { it > -50f }?.takeIf { it > 0 }?.let { it * window }?.takeIf { it >= 400 } ?: 0L
         val tail = beats(endPcm); val head = headPcm?.let { beats(it) }
         val tailKey = Key.find(endPcm.mono, endPcm.rate); val headKey = headPcm?.let { Key.find(it.mono, it.rate) }
@@ -1090,7 +1151,8 @@ class Crossfade(
             val usual = sec.sorted()[(sec.size * .9).toInt().coerceAtMost(sec.size - 1)]
             (sec.indexOfFirst { it >= usual - 6 }.coerceAtLeast(0) * 50L)
         } ?: 0L
-        android.util.Log.d("ink-crossfade", "$id: ${dur / 1000}s, measured in ${SystemClock.uptimeMillis() - t0} ms, sound to ${lastSound / 1000.0}s, quiet from ${quiet?.div(1000.0)}, ${fading?.let { "fading out from ${it / 1000.0}s, " } ?: ""}hand over at ${handover / 1000.0}s, starts ${firstSound}ms in; " +
+        val startsCold = headPcm != null && firstSound < 500 && fullAt <= firstSound + 500
+        android.util.Log.d("ink-crossfade", "$id: ${if (cold) "ends cold, " else ""}${if (startsCold) "starts cold, " else ""}${dur / 1000}s, measured in ${SystemClock.uptimeMillis() - t0} ms, sound to ${lastSound / 1000.0}s, quiet from ${quiet?.div(1000.0)}, ${fading?.let { "fading out from ${it / 1000.0}s, " } ?: ""}hand over at ${handover / 1000.0}s, starts ${firstSound}ms in; " +
             "beat at its end ${tail?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}, at its start ${head?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}")
         android.util.Log.d("ink-crossfade", "$id: key at its end ${tailKey?.let { "${it.camelot} (%.2f sure)".format(it.sure) }}, at its start ${headKey?.let { "${it.camelot} (%.2f sure)".format(it.sure) }}" +
             "; bar one at ${tail?.downbeat?.let { "%.2fs".format(it / 1000) }}, the last bars ${tail?.bars?.takeLast(8)?.joinToString(" ") { "%.1f".format(it.loud) }}")
@@ -1099,7 +1161,7 @@ class Crossfade(
         return Ends(lastSound, handover, firstSound, tail, head, kept.takeIf { !deep || !Exact.inUse(c) }, dur, tailKey, headKey,
             headPcm?.let { levels(it).toFloatArray() } ?: FloatArray(0), end.toFloatArray(), endPcm.start, fullAt, fading,
             listOfNotNull(headPcm, endPcm).maxOf { p -> (p.all ?: p.mono).maxOf { kotlin.math.abs(it) }.toDouble() }, lufs,
-            headPcm?.let { lows(it.mono, 1, it.rate) } ?: FloatArray(0))
+            headPcm?.let { lows(it.mono, 1, it.rate) } ?: FloatArray(0), cold, startsCold)
     }
 
     /** A stretch of a song decoded: where it begins (ms), its samples made mono, their rate. */
