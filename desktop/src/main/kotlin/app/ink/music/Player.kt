@@ -127,6 +127,14 @@ object Player {
     /** The song stopped on when the output wouldn't open, or -1: play starts it again. */
     @Volatile private var stoppedAt = -1
 
+    /**
+     * Whether the output's asked for alone. Exact on Linux through PipeWire isn't: its rates follow the song instead
+     * (PipeWireRates), and asked alone while another app played through the same DAC (2026-11-24: a Firefox tab),
+     * PipeWire refused it and ink music's output never opened: no sound, songs stuck or run through. Only an ALSA
+     * device chosen by name is had alone on Linux.
+     */
+    private fun alone(s: Sound) = s.exclusive && (!Home.linux || s.device.startsWith("alsa/"))
+
     fun sound(to: Sound) {
         val was = sound.value
         // chosen again: tried as chosen
@@ -136,7 +144,7 @@ object Player {
         if (to.exclusive && !was.exclusive) Crossfade.settle()
         decks.forEach { m ->
             if (to.device != was.device) m.set("audio-device", to.device)
-            if (to.exclusive != was.exclusive) { m.set("audio-exclusive", if (to.exclusive) "yes" else "no"); m.command("ao-reload") }
+            if (alone(to) != alone(was)) { m.set("audio-exclusive", if (alone(to)) "yes" else "no"); m.command("ao-reload") }
             if (to.tagged != was.tagged) m.set("replaygain", if (to.tagged) "album" else "no")
         }
         if (to.measured != was.measured || to.target != was.target || to.exclusive != was.exclusive) rechain()
@@ -271,7 +279,7 @@ object Player {
             "audio-client-name" to "ink music", "title" to "ink music",
             "ytdl" to "no", "cache" to "yes",
             "volume" to volume.value.toString(), "volume-max" to "100",
-            "audio-device" to deviceNow().also { watchDevice() }, "audio-exclusive" to if (sound.value.exclusive) "yes" else "no",
+            "audio-device" to deviceNow().also { watchDevice() }, "audio-exclusive" to if (alone(sound.value)) "yes" else "no",
             "loop-playlist" to if (repeat.value == 1) "inf" else "no", "loop-file" to if (repeat.value == 2) "inf" else "no",
             // the equalizer, automix's bass (ffmpeg's filters, steered as they change)
             "af" to chain(),
