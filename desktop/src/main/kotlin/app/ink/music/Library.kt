@@ -263,6 +263,7 @@ object Library {
 /** Where ink music keeps its own files: ~/Library/Application Support/ink music (a Mac), ~/.local/share/ink-music. */
 object Home {
     val mac = System.getProperty("os.name").lowercase().startsWith("mac")
+    val linux = System.getProperty("os.name").lowercase().startsWith("linux")
     val windows = System.getProperty("os.name").lowercase().startsWith("windows")
     val dir: File = (when {
         mac -> File(System.getProperty("user.home"), "Library/Application Support/ink music")
