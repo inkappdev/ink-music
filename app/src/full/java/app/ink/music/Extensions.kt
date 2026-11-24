@@ -225,7 +225,8 @@ object Extensions {
     private val kinds = ConcurrentHashMap<String, Pair<Kind, Long>>()
     private val plain = Kind(false)
 
-    private fun base(url: String) = url.trimEnd('/')
+    // the address as given, or its manifest's (as Echo Music's extensions hand theirs out: ".../manifest.json"), without it
+    private fun base(url: String) = url.trimEnd('/').removeSuffix("/manifest.json").trimEnd('/')
 
     /** Read from a manifest.json: the search-and-stream kind, or [plain]. */
     fun kindIn(body: String): Kind = runCatching {

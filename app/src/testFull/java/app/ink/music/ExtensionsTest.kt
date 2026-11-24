@@ -94,6 +94,8 @@ class ExtensionsTest {
     @Test fun searchPicksTheSong() = Extensions.searchProbe("$base/echo/", Extensions.Kind(true, "lossless"), song).let {
         assertEquals(it.why, Extensions.Answer.AUDIO, it.answer); assertEquals("$base/audio", it.stream)
     }
+    @Test fun searchFromManifestAddress() = assertEquals(Extensions.Answer.AUDIO,
+        Extensions.searchProbe("$base/echo/manifest.json", Extensions.Kind(true, "lossless"), song).answer)
     @Test fun searchWithoutItFallsBack() = assertEquals(Extensions.Answer.NOTHING,
         Extensions.searchProbe("$base/echo", Extensions.Kind(true, "lossless"), song.copy(title = "Let It Be")).answer)
     @Test fun searchRefusedIsDown() = assertEquals(Extensions.Answer.UNREACHABLE,
