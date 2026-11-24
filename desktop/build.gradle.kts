@@ -94,8 +94,11 @@ compose.desktop {
         // memory kept down (2026-11-10, a Reddit report: near 1 GB): ink's live heap is ~45 MB, but Java took a 64th of
         // the RAM to start (520 MB here) and could grow to a quarter (8 GB), so its garbage sat uncollected. Started
         // small, kept under 768 MB, and what's idle handed back to the system every 20 s; repeated strings shared
+        // and a collection asked for (2026-11-24: Skiko's FrameWatcher calls System.gc() every 30 s while frames are
+        // drawn, to free Skia's native memory) done alongside the app, not as a full stop: a 20-30 ms hitch every 30 s
         jvmArgs += listOf("-Xms64m", "-Xmx768m", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=20000",
-            "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=30", "-XX:+UseStringDeduplication")
+            "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=30", "-XX:+UseStringDeduplication",
+            "-XX:+ExplicitGCInvokesConcurrent")
         nativeDistributions {
             // each made on its own system (the Action's): the Mac's dmg, Windows' msi, Linux's deb and rpm
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
