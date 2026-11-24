@@ -573,8 +573,7 @@ class PlayerService : MediaLibraryService() {
                 val p = session?.player ?: return@runCatching
                 fun of(i: MediaItem?) = i?.takeIf { (it.localConfiguration?.uri ?: it.requestMetadata.mediaUri) == spec.uri }
                 val i = of(p.currentMediaItem) ?: (0 until p.mediaItemCount).firstNotNullOfOrNull { of(p.getMediaItemAt(it)) }
-                if (i != null) track = Extensions.Track(i.mediaMetadata.title?.toString().orEmpty(), i.mediaMetadata.artist?.toString().orEmpty(),
-                    i.mediaMetadata.albumTitle?.toString().orEmpty(), i.mediaMetadata.durationMs ?: 0L, id)
+                if (i != null) track = trackOf(i, id)
             }
             latch.countDown()
         }
@@ -582,6 +581,20 @@ class PlayerService : MediaLibraryService() {
         val t = track ?: return null
         return Extensions.stream(this, spec.uri.toString(), t)?.let { spec.withUri(it) }
     }
+
+    private fun trackOf(i: MediaItem, id: String) = Extensions.Track(i.mediaMetadata.title?.toString().orEmpty(), i.mediaMetadata.artist?.toString().orEmpty(),
+        i.mediaMetadata.albumTitle?.toString().orEmpty(), i.mediaMetadata.durationMs ?: 0L, id)
+
+    /** The song's id when an extension would be asked for it (a YouTube or server song not kept here), else null. */
+    private fun extensionFor(uri: Uri): String? = when {
+        uri.scheme == "ytm" -> uri.host?.takeIf { Offline.file(this, "y$it") == null }
+        uri.path?.endsWith("/rest/stream") == true -> uri.getQueryParameter("id")?.takeIf { Offline.file(this, "n$it") == null }
+        else -> null
+    }
+    // YouTube's own stream looked up while an extension's asked (each its own thread: the loader waits on both)
+    private val alongside = java.util.concurrent.Executors.newCachedThreadPool { Thread(it, "ink-alongside").apply { isDaemon = true } }
+    /** The next song asked of the extensions while this one plays, so it starts at once (its own thread: a slow one holds up nothing else). */
+    private val extAhead = oneThread("ink-ext-ahead")
 
     /** Each song's stream format as the player read it (by media id): a song's comes in a little before it plays. */
     private val formats = java.util.concurrent.ConcurrentHashMap<String, androidx.media3.common.Format>()
@@ -635,9 +648,15 @@ class PlayerService : MediaLibraryService() {
                         spec.withUri(Uri.fromFile(Offline.file(this, "y" + spec.uri.host)!!)).also { android.util.Log.d("ink-offline", "kept: y${spec.uri.host}") }
                     // then an extension of yours, when one's on (the full build: Extensions): the song's audio, or JSON with
                     // its link ({"url": ...} or {"data": {"url": ...}} only); else YouTube's own stream
-                    spec.uri.scheme == "ytm" -> extension(spec, spec.uri.host.orEmpty()) ?: spec.withUri(Uri.parse(
-                        YouTubeMusic.stream("y" + spec.uri.host, false, small = quality() == Quality.SAVER)?.first
-                            ?: throw java.io.IOException("no stream")))
+                    // YouTube's own looked up alongside while an extension's asked, so a song the extension hasn't costs no
+                    // extra wait (not when its answer's known already: asked ahead, or none of them has it)
+                    spec.uri.scheme == "ytm" -> {
+                        val small = quality() == Quality.SAVER
+                        val own = if (Extensions.anyOn(this) && !Extensions.answered(this, spec.uri.toString())) alongside.submit<String?> { YouTubeMusic.stream("y" + spec.uri.host, false, small = small)?.first } else null
+                        extension(spec, spec.uri.host.orEmpty()) ?: spec.withUri(Uri.parse(
+                            (if (own != null) runCatching { own.get() }.getOrNull() else YouTubeMusic.stream("y" + spec.uri.host, false, small = small)?.first)
+                                ?: throw java.io.IOException("no stream")))
+                    }
                     // a server song kept on the phone plays from there, no signal needed (Offline); then an extension; then the server's
                     spec.uri.path?.endsWith("/rest/stream") == true -> spec.uri.getQueryParameter("id")?.let { Offline.file(this, "n$it") }
                         ?.let { android.util.Log.d("ink-offline", "kept: ${it.name}"); spec.withUri(Uri.fromFile(it)) }
@@ -821,6 +840,11 @@ class PlayerService : MediaLibraryService() {
                     val i = p.nextMediaItemIndex
                     val next = if (i == C.INDEX_UNSET) null else p.getMediaItemAt(i).localConfiguration?.uri
                     if (next?.scheme == "ytm") ahead.execute { YouTubeMusic.stream("y" + next.host, false, small = Quality.now(this@PlayerService) == Quality.SAVER) }
+                    // and asked of the extensions now too (when one's on), its answer kept for its start
+                    if (next != null && Extensions.anyOn(this@PlayerService)) extensionFor(next)?.let { id ->
+                        val t = trackOf(p.getMediaItemAt(i), id)
+                        extAhead.execute { Extensions.stream(this@PlayerService, next.toString(), t) }
+                    }
                 }
                 if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
                     told = null; startedAt = System.currentTimeMillis(); nowSaid = null; tubeTold = null

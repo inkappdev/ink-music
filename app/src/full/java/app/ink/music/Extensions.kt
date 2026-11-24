@@ -193,6 +193,26 @@ object Extensions {
     fun stream(ctx: Context, key: String, t: Track): Uri? {
         found[key]?.let { (u, at) -> if (System.currentTimeMillis() - at < 3_600_000L) return u else found.remove(key) }
         if (found.size > 500) found.clear()
+        // one ask a song at a time: the song's start joins the look already begun for it (asked ahead, as the one
+        // before it played), rather than asking again
+        val mine = java.util.concurrent.CompletableFuture<Uri?>()
+        val theirs = asking.putIfAbsent(key, mine)
+        if (theirs != null) return runCatching { theirs.get(TIMEOUT * 3L, java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull()
+        try { mine.complete(find(ctx, key, t)) } catch (e: Throwable) { mine.complete(null) } finally { asking.remove(key) }
+        return mine.getNow(null)
+    }
+    private val asking = ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Uri?>>()
+
+    /**
+     * Whether a song's answer is known without asking anyone: its stream kept, or every extension on is down or has
+     * said it hasn't this song. The player looks up YouTube's own stream alongside only when it isn't.
+     */
+    fun answered(ctx: Context, key: String): Boolean {
+        found[key]?.let { (_, at) -> if (System.currentTimeMillis() - at < 3_600_000L) return true }
+        return current(ctx).filter { it.on }.all { recent(down, it.url) || recent(missed, it.url + "\n" + key) }
+    }
+
+    private fun find(ctx: Context, key: String, t: Track): Uri? {
         for (s in current(ctx).filter { it.on }) {
             val host = runCatching { java.net.URI(s.url).host }.getOrNull().orEmpty()
             if (recent(down, s.url) || recent(missed, s.url + "\n" + key)) continue
