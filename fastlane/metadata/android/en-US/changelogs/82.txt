@@ -1,0 +1,8 @@
+- Extensions: play songs from your own addons, lossless ones too
+- Extensions download the next song ahead, so lossless never waits
+- Computer: one click to play exact to your DAC, each song at its own rate
+- Automix: cold endings play out, drops land as the old song leaves
+- Automix keeps two singers from talking over each other
+- Linux: control ink from your desktop's media keys and widgets
+- Our DAC finally gets to hear what we hear
+- Text the friend who sent you that song years ago
