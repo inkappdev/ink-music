@@ -55,7 +55,13 @@ object Player {
      * loud songs down and quiet ones up, untagged or not), each song's loudness measured as it plays (EBU R128,
      * ffmpeg's loudnorm) and brought to `target` LUFS: -18 quieter, -14 as streaming services play, -11 louder.
      */
-    data class Sound(val device: String = "auto", val exclusive: Boolean = false, val even: Boolean = true, val measured: Boolean = false, val target: Int = -14)
+    data class Sound(val device: String = "auto", val exclusive: Boolean = false, val even: Boolean = true, val measured: Boolean = false, val target: Int = -14) {
+        /**
+         * The level evened by the tags, as mpv's replaygain. Not while exact (alone, 2026-11-24: "anyone using a dac ...
+         * at full quality"): exact leaves every sample as it is, so even volume, measured and the equalizer rest.
+         */
+        val tagged get() = even && !measured && !exclusive
+    }
     private val soundFile = File(Home.dir, "sound.json")
     val sound = MutableStateFlow(runCatching { JSONObject(soundFile.readText()).let {
         Sound(it.optString("device", "auto"), it.optBoolean("exclusive"), it.optBoolean("even", true), it.optBoolean("measured"), it.optInt("target", -14))
@@ -131,9 +137,10 @@ object Player {
         decks.forEach { m ->
             if (to.device != was.device) m.set("audio-device", to.device)
             if (to.exclusive != was.exclusive) { m.set("audio-exclusive", if (to.exclusive) "yes" else "no"); m.command("ao-reload") }
-            if (to.even != was.even || to.measured != was.measured) m.set("replaygain", if (to.even && !to.measured) "album" else "no")
+            if (to.tagged != was.tagged) m.set("replaygain", if (to.tagged) "album" else "no")
         }
-        if (to.measured != was.measured || to.target != was.target) rechain()
+        if (to.measured != was.measured || to.target != was.target || to.exclusive != was.exclusive) rechain()
+        if (to.exclusive != was.exclusive) PipeWireRates.follow(to.exclusive)
         scope.launch { runCatching { Home.write(soundFile, JSONObject().put("device", to.device).put("exclusive", to.exclusive).put("even", to.even)
             .put("measured", to.measured).put("target", to.target).toString()) } }
     }
@@ -213,6 +220,8 @@ object Player {
     }
 
     fun start() {
+        // exact chosen before: PipeWire told again (its settings as it runs don't outlast its restart, nor ours)
+        if (sound.value.exclusive) PipeWireRates.follow(true)
         mpv = try {
             deck(main = true)
         } catch (e: Throwable) {
@@ -253,7 +262,7 @@ object Player {
             "vid" to "no", "audio-display" to "no", "terminal" to "no", "idle" to "yes",
             "gapless-audio" to "yes",
             // even volume from the files' own tags: a record's level, a song's when it has none
-            "replaygain" to if (sound.value.even && !sound.value.measured) "album" else "no", "replaygain-clip" to "no",
+            "replaygain" to if (sound.value.tagged) "album" else "no", "replaygain-clip" to "no",
             // a song with no gain anywhere: about where most of a library sits (the phone's, ReplayGain's -18 LUFS
             // from today's masters), so an untagged song isn't the odd loud one out
             "replaygain-fallback" to UNTAGGED.toString(),
@@ -983,6 +992,8 @@ object Player {
 
     private fun chain(): String {
         val parts = mutableListOf<String>()
+        // exact: nothing between the file and the output (automix rests then too: one deck)
+        if (sound.value.exclusive) return ""
         // automix: the bass held back or handed across (highpass@bass), and the filter fade's top closing or, beats
         // matched, the new one's opening (lowpass@top); both wide open outside a blend
         if (Crossfade.mode.value == Crossfade.AUTOMIX) { parts += "highpass@bass=f=10"; parts += "lowpass@top=f=20000" }
@@ -1030,5 +1041,44 @@ object Player {
             if (!l.isAlive) m.close()
         }
         mpv = null; spareDeck = null
+    }
+}
+
+
+/**
+ * Exact on Linux (2026-11-24): PipeWire runs every output at one rate (48 kHz unless told otherwise) and resamples the
+ * rest, so a 44.1 kHz song reached a USB DAC as 48. Exact lets PipeWire follow each song's own rate: its allowed rates
+ * set wide while exact is on (pw-metadata, PipeWire's own settings as it runs; nothing written, gone at its restart),
+ * so with ink music the only thing playing, the DAC is clocked at the song's rate. What they were is put back after.
+ * Its float mix leaves 16 and 24-bit samples as they are, the volume at 100.
+ */
+object PipeWireRates {
+    private const val WIDE = "[ 44100 48000 88200 96000 176400 192000 352800 384000 ]"
+    @Volatile private var was: String? = null
+    private val hooked = java.util.concurrent.atomic.AtomicBoolean(false)
+    /** Following each song's rate now (exact on, PipeWire there and told). */
+    @Volatile var following = false; private set
+
+    private fun meta(vararg a: String): String? = runCatching {
+        val p = ProcessBuilder(listOf("pw-metadata", "-n", "settings", "0") + a).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()
+        if (p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0) out else null
+    }.getOrNull()
+
+    fun follow(on: Boolean) {
+        if (!Home.linux) return
+        Thread {
+            if (on) {
+                val now = meta("clock.allowed-rates")?.let { Regex("value:'([^']*)'").find(it)?.groupValues?.get(1) } ?: return@Thread
+                if (was == null) was = now
+                following = meta("clock.allowed-rates", WIDE) != null
+                Log.d("output: pipewire follows each song's rate (was $now)")
+                // put back as ink music quits
+                if (hooked.compareAndSet(false, true)) Runtime.getRuntime().addShutdownHook(Thread { was?.let { meta("clock.allowed-rates", it) } })
+            } else {
+                was?.let { meta("clock.allowed-rates", it) }
+                was = null; following = false
+            }
+        }.apply { isDaemon = true }.start()
     }
 }

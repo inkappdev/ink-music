@@ -580,6 +580,12 @@ fun browse(url: String) {
     runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }
 }
 
+/** An output that's a DAC by its name: USB audio, or a maker of them (a computer's own outputs say speakers, hdmi, analog). */
+internal fun looksLikeDac(name: String): Boolean = Regex(
+    "usb|\\bdac\\b|fiio|topping|schiit|\\bifi\\b|ifi audio|dragonfly|moondrop|khadas|smsl|cayin|hiby|ibasso|astell|\\bchord\\b|" +
+        "\\brme\\b|focusrite|scarlett|\\bmotu\\b|audient|steinberg|apogee|cambridge audio|denafrips|gustard|\\bjds\\b|questyle|shanling|tempotec|xduoo",
+    RegexOption.IGNORE_CASE).containsMatchIn(name)
+
 /**
  * Where the sound goes: each output there is (lit is chosen; "this mac's choice" follows what the Mac's set to), and
  * alone or shared. Alone (exclusive), nothing else plays through it and a Mac sets it to the file's own sample rate.
@@ -589,8 +595,17 @@ private fun SoundSetting() {
     val sound by Player.sound.collectAsState()
     val outputs = remember { Player.outputs() }
     SettingHead("SOUND")
-    BasicText("where it plays, and whether it has it alone", style = pixel(12.sp, Ink.mid))
+    BasicText("where it plays, and whether it reaches it exact", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
+    // a dac plugged in and not played exact (2026-11-24: full quality made easy for anyone with one): said, one word to it
+    val dac = outputs.firstOrNull { (name, said) -> name != "auto" && looksLikeDac(said.ifEmpty { name }) }
+    if (dac != null && !(sound.exclusive && sound.device == dac.first)) {
+        BasicText("${dac.second.lowercase().ifEmpty { "a dac" }} looks like a dac. exact sends it every song at its own rate, untouched",
+            style = pixel(12.sp, Ink.ink))
+        Word("PLAY EXACT", headline(28.sp), Modifier.padding(top = 6.dp, bottom = 14.dp), touch = 10.dp) {
+            Player.sound(sound.copy(device = dac.first, exclusive = true))
+        }
+    }
     outputs.forEach { (name, said) ->
         val label = if (name == "auto") "the ${if (Home.mac) "mac" else "computer"}'s choice" else said.lowercase().ifEmpty { name }
         Word(label, pixel(14.sp, if (sound.device == name) Ink.ink else Ink.dim), touch = 6.dp) { Player.sound(sound.copy(device = name)) }
@@ -600,11 +615,13 @@ private fun SoundSetting() {
         Word("shared", pixel(14.sp, if (!sound.exclusive) Ink.ink else Ink.dim), androidx.compose.ui.Modifier.padding(end = 26.dp), touch = 8.dp) {
             Player.sound(sound.copy(exclusive = false))
         }
-        Word("alone", pixel(14.sp, if (sound.exclusive) Ink.ink else Ink.dim), touch = 8.dp) { Player.sound(sound.copy(exclusive = true)) }
+        Word("exact", pixel(14.sp, if (sound.exclusive) Ink.ink else Ink.dim), touch = 8.dp) { Player.sound(sound.copy(exclusive = true)) }
     }
     Spacer(Modifier.height(6.dp))
     BasicText(
-        if (sound.exclusive) "nothing else plays through it meanwhile; it runs at each file's own sample rate"
+        if (sound.exclusive) (if (Home.linux) "each song at its own rate (pipewire follows it while ink music's the only thing playing), "
+            else "nothing else plays through it meanwhile; each song at its own rate, ") +
+            "nothing changed on the way: even volume, the equalizer and automix rest. keep the volume at 100 and turn it down on the dac"
         else "mixed with everything else the ${if (Home.mac) "mac" else "computer"} plays, at its own sample rate",
         style = pixel(12.sp, Ink.mid),
     )

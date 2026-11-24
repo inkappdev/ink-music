@@ -350,7 +350,8 @@ fun rememberSignal(h: Heard?): HeardPath {
         song.quality.takeIf { it.isNotBlank() }?.let { steps += "the file" to it }
     }
     val o = out
-    val alone = sound.exclusive && o != null && (o.ao.startsWith("coreaudio") || o.ao == "wasapi" || o.ao == "alsa")
+    val alone = sound.exclusive && o != null && (o.ao.startsWith("coreaudio") || o.ao == "wasapi" || o.ao == "alsa" ||
+        (o.ao == "pipewire" && PipeWireRates.following))
     if (speaker != null) {
         val sp = speaker!!
         steps += "sent" to sp.name.lowercase() + (quality.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") + when {
@@ -371,14 +372,15 @@ fun rememberSignal(h: Heard?): HeardPath {
     } else if (h != null) {
         if (o != null && o.decoder.isNotEmpty())
             steps += "decoded" to "ffmpeg ${o.decoder.substringBefore(' ').lowercase()}" + (o.decoded.takeIf { it.isNotEmpty() }?.let { " · ${bitsOf(it)}" } ?: "")
-        steps += "even volume" to (if (!sound.even) "off" else when (val g = h.gain) {
+        steps += "even volume" to (if (sound.exclusive) "resting · exact" else if (!sound.even) "off" else when (val g = h.gain) {
             null -> "no tags"
             Player.UNTAGGED -> "%+.1f db · a guess, no tags".format(java.util.Locale.ROOT, g)
             0f -> "0 db"
             else -> "%+.1f db".format(java.util.Locale.ROOT, g)
         })
-        acts["even volume"] = (if (sound.even) "turn off" else "turn on") to { Player.sound(sound.copy(even = !sound.even)) }
-        if (eq.on) {
+        if (!sound.exclusive) acts["even volume"] = (if (sound.even) "turn off" else "turn on") to { Player.sound(sound.copy(even = !sound.even)) }
+        if (eq.on && sound.exclusive) steps += "equalizer" to "resting · exact"
+        else if (eq.on) {
             steps += "equalizer" to eq.label + if (eq.shaping) "" else " · flat"
             acts["equalizer"] = "turn off" to { Eq.set(eq.copy(on = false)) }
         }
@@ -394,14 +396,15 @@ fun rememberSignal(h: Heard?): HeardPath {
             val sys = system(o.ao)
             steps += sys to when {
                 o.ao == "null" -> "silent"
+                alone && o.ao == "pipewire" -> "at the song's own rate · ${k(o.rate)}"
                 alone -> "ink's alone · ${k(o.rate)}"
-                sound.exclusive && (o.ao == "pipewire" || o.ao == "pulse") -> "shared · it can't be alone"
+                sound.exclusive && (o.ao == "pipewire" || o.ao == "pulse") -> "shared · resampled where it differs"
                 o.ao.startsWith("coreaudio") || o.ao == "wasapi" -> "shared · at its own rate"
                 else -> "shared · resampled where it differs"
             }
             // the word only where the system can give the output to one app (pipewire and pulse can't), or to undo it
-            if (sound.exclusive || o.ao.startsWith("coreaudio") || o.ao == "wasapi" || o.ao == "alsa")
-                acts[sys] = (if (sound.exclusive) "share it" else "have it alone") to { Player.sound(sound.copy(exclusive = !sound.exclusive)) }
+            if (sound.exclusive || o.ao.startsWith("coreaudio") || o.ao == "wasapi" || o.ao == "alsa" || o.ao == "pipewire")
+                acts[sys] = (if (sound.exclusive) "share it" else "play it exact") to { Player.sound(sound.copy(exclusive = !sound.exclusive)) }
         }
         steps += "your ears" to (o?.device?.takeIf { it.isNotEmpty() }?.lowercase() ?: "the $computer's output")
     }
