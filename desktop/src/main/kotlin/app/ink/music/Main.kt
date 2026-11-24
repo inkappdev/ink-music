@@ -276,6 +276,37 @@ object DeskIcon {
         java.awt.Window.getWindows().forEach { it.iconImages = listOf(img) }
         javax.swing.JOptionPane.getRootFrame().iconImage = img
         if (java.awt.Taskbar.isTaskbarSupported() && java.awt.Taskbar.getTaskbar().isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) java.awt.Taskbar.getTaskbar().iconImage = img
+        if (Home.linux) linuxEntry(chosen.value)
+    }
+
+    /**
+     * Linux: a Wayland dock or taskbar (Plasma, GNOME) ignores a window's own icon and draws the .desktop file's, so the
+     * one chosen never showed there (2026-11-23, Bronson on Plasma). A copy of the installed entry in the user's
+     * applications folder (it wins over /usr and /usr/local) names the chosen picture, kept beside ink's things; the words
+     * take the copy away. Written fresh each start, so a newer install's entry and picture come through.
+     */
+    private fun linuxEntry(i: Int) = runCatching {
+        val name = "ink-music-ink_music.desktop"
+        val apps = java.io.File(System.getenv("XDG_DATA_HOME") ?: (System.getProperty("user.home") + "/.local/share"), "applications")
+        val mine = java.io.File(apps, name)
+        val ours = "# ink music: the icon chosen in its settings (choosing the words takes this copy away)"
+        if (i == 0) {
+            if (mine.isFile && mine.readText().contains(ours)) mine.delete()
+            return@runCatching
+        }
+        val installed = listOf("/usr/local/share/applications", "/usr/share/applications", "/opt/ink-music/lib")
+            .map { java.io.File(it, name) }.firstOrNull { it.isFile } ?: return@runCatching
+        val png = java.io.File(Home.dir, "icon-${CHOICES[i].first}.png")
+        val b = bytes(i)
+        if (!png.isFile || !png.readBytes().contentEquals(b)) png.writeBytes(b)
+        val text = installed.readLines().joinToString("\n", prefix = "$ours\n", postfix = "\n") {
+            if (it.startsWith("Icon=")) "Icon=${png.absolutePath}" else it
+        }
+        if (mine.isFile && mine.readText() == text) return@runCatching
+        apps.mkdirs()
+        val tmp = java.io.File(apps, ".$name.tmp")
+        tmp.writeText(text)
+        tmp.renameTo(mine)
     }
 }
 
