@@ -107,6 +107,9 @@ fun ListenPage(open: (Page) -> Unit) {
     val friday by Picks.friday.collectAsState()
     val electronic by Picks.electronic.collectAsState()
     val brought by Fresh.brought.collectAsState()
+    // monday finds and friday drops: your two weekly lists from Spotify, in ink's words (Finds), each till the next
+    val finds by Finds.weeks.collectAsState()
+    LaunchedEffect(Unit) { Finds.start() }
     var knowMeShut by remember { mutableStateOf(java.io.File(Home.dir, "know-me-shut").exists()) }
     val fromYours = remember(pickedRecords, pickedSongs, friday, electronic, heard, songs, brought) { Picks.yours(heard, songs, brought) }
     val taste by Fresh.taste.collectAsState()
@@ -173,6 +176,8 @@ fun ListenPage(open: (Page) -> Unit) {
         shelf["fromYours"] = {
             if (fromYours.isNotEmpty()) item { NewFromYours(fromYours, open) }
         }
+        finds[Finds.Kind.MONDAY]?.let { w -> shelf["monday"] = { item(key = "monday") { FindsShelf(Finds.Kind.MONDAY, w) } } }
+        finds[Finds.Kind.FRIDAY]?.let { w -> shelf["friday"] = { item(key = "friday") { FindsShelf(Finds.Kind.FRIDAY, w) } } }
         shelf["forYou"] = {
             // picked for you: the critics' records and songs in your order, seven near and three a stretch (Fresh), once
             // there's a taste to order them by
@@ -349,7 +354,7 @@ private fun SinceYouWereHere(since: Long, lines: List<NewLine>) {
 
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment); the phone's keys, where shared. */
 // listen is you, INK is the world (2026-11-12, Bronson): live sets and ink radio are INK's; your mix is here
-val LISTEN_SHELVES = listOf("fromYours", "forYou", "videos", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "yourMix", "because",
+val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "forYou", "videos", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "yourMix", "because",
     "newToYou", "jumpBack", "forgotten", "newest", "lists")
 
 /**
@@ -1043,4 +1048,23 @@ fun matches(s: Song, query: String): Boolean {
 @Composable
 fun Narrowed(shown: Int, of: Int, query: String) {
     if (query.isNotBlank()) BasicText(if (shown == 0) "none of $of" else "$shown of $of", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
+}
+
+/** A week's monday finds or friday drops (the phone's FindsShelf): its name, when it came out, play all, then its songs. */
+@Composable
+private fun FindsShelf(k: Finds.Kind, w: Finds.Week) {
+    Column {
+        Section(k.title.uppercase(), "${k.line}. this one ${Finds.dated(k, w)}") {
+            Word("play all", pixel(14.sp), touch = 8.dp) { Player.play(w.songs) }
+        }
+        Shelf(w.songs.size, 150.dp) { each ->
+            itemsIndexed(w.songs, key = { _, s -> s.id }) { i, s ->
+                Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(w.songs, i) })) {
+                    CoverOf(s, s.album.ifEmpty { s.title }, Modifier.width(each).aspectRatio(1f), px = 320)
+                    Spacer(Modifier.height(8.dp))
+                    UnderCover(s.title, s.artist)
+                }
+            }
+        }
+    }
 }

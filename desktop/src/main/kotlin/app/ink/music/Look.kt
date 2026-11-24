@@ -104,6 +104,9 @@ internal object LookFile {
     fun start() {
         MotionCover.dir = Home.cache
         SpotifyHanded.start()
+        // monday finds and friday drops, read when the phone's passes come (Finds); the desktop's automix line (DesktopMix)
+        Finds.start()
+        DesktopMix.start()
         // copies of Spotify playlists brought up to date, once a day each, when the phone's passes come (InStep)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { SpotifyHanded.pass.collect { if (it != null) runCatching { InStep.catchUp() } } }
         val o = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
