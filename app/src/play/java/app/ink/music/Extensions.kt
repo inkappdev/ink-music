@@ -21,7 +21,9 @@ object Extensions {
     fun remove(ctx: Context, url: String) {}
     fun anyOn(ctx: Context) = false
     fun answered(ctx: Context, key: String) = true
-    fun stream(ctx: Context, key: String, t: Track): Uri? = null
+    fun stream(ctx: Context, key: String, t: Track, level: Int = 0): Uri? = null
+    fun keepAhead(ctx: Context, key: String) {}
+    val lossless: StateFlow<Set<String>> = MutableStateFlow(emptySet())
     fun by(key: String): String? = null
     data class Said(val why: String, val at: Long, val found: Boolean)
     val said: StateFlow<Map<String, Said>> = MutableStateFlow(emptyMap())

@@ -11,6 +11,8 @@ object Extensions {
 
     val sources get() = core.sources
     val said get() = core.said
+    /** Those that send lossless by default (their manifest says): settings says what they use in data. */
+    val lossless get() = core.lossless
 
     @Volatile private var started = false
     fun start() { if (!started) { started = true; core.start(Home.dir) } }
@@ -34,7 +36,8 @@ object Extensions {
      */
     fun stream(s: Song): String? {
         if (!asks(s) || !anyOn()) return null
-        return core.stream(Home.dir, s.id, YourExtensions.Track(s.title, s.artist, s.album, s.duration, s.id.drop(1)))
+        // at the quality chosen (its "high" or "low" where the extension has them; original, its own default)
+        return core.stream(Home.dir, s.id, YourExtensions.Track(s.title, s.artist, s.album, s.duration, s.id.drop(1)), Quality.chosen.value)
     }
 
     /** Whether the song's answer is known without asking anyone (kept, or none on has it): YouTube's own not looked up alongside then. */
@@ -56,5 +59,7 @@ object Extensions {
 
     // the next song asked ahead while one plays, so it starts at once (its own thread: a slow one holds up nothing else)
     private val ahead = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "ink-ext-ahead").apply { isDaemon = true } }
-    fun askAhead(s: Song?) { if (s != null && asks(s) && Offline.file(s.id) == null && anyOn()) ahead.execute { runCatching { stream(s) } } }
+    // and, found, downloaded whole while this one plays (an extension's host may send a song no faster than it plays:
+    // Lossless's did, 2026-11-24, and it buffered), so it plays from the file
+    fun askAhead(s: Song?) { if (s != null && asks(s) && Offline.file(s.id) == null && anyOn()) ahead.execute { runCatching { if (stream(s) != null) core.keepAhead(Home.dir, s.id) } } }
 }

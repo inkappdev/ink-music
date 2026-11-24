@@ -112,6 +112,31 @@ class ExtensionsTest {
     @Test fun endingsTakenOff() = listOf("https://a.test/t/manifest.json", "https://a.test/t/manifest", "https://a.test/t/search",
         "https://a.test/t/stream/", "https://a.test/t/").forEach { assertEquals(it, "https://a.test/t", Extensions.base(it)) }
     @Test fun manifestNameKept() = assertEquals("Lossless", Extensions.kindIn("""{"name":"Lossless","resources":["search","stream"]}""").name)
+    private val echo = """{"name":"Lossless","resources":["search","stream"],"settings":[{"key":"quality","default":"lossless",
+        "options":[{"label":"Lossless","value":"lossless"},{"label":"High","value":"high"},{"label":"Low","value":"low"}]}]}"""
+    private val tido = """{"resources":["search","stream"],"settings":[{"key":"quality","default":"HIRES",
+        "options":[{"value":"HIRES"},{"value":"MAX"},{"value":"LOSSLESS"},{"value":"HIGH"},{"value":"LOW"}]}]}"""
+
+    @Test fun qualityFollowsTheNetwork() {
+        val k = Extensions.kindIn(echo)
+        assertEquals(listOf("lossless", "high", "low"), k.options)
+        assertEquals("lossless", k.at(0).quality); assertEquals("high", k.at(1).quality); assertEquals("low", k.at(2).quality)
+        val t = Extensions.kindIn(tido)
+        assertEquals("HIRES", t.at(0).quality); assertEquals("HIGH", t.at(1).quality); assertEquals("LOW", t.at(2).quality)
+        // none to choose: its own default
+        assertEquals("lossless", Extensions.kindIn("""{"resources":["search","stream"],"settings":[{"key":"quality","default":"lossless"}]}""").at(2).quality)
+    }
+
+    @Test fun losslessKnown() {
+        assertEquals(true, Extensions.kindIn(echo).lossless); assertEquals(true, Extensions.kindIn(tido).lossless)
+        assertEquals(false, Extensions.kindIn("""{"resources":["search","stream"],"settings":[{"key":"quality","default":"high"}]}""").lossless)
+    }
+
+    @Test fun losslessPassedOverWhenSmallerChosen() {
+        assertEquals(true, Extensions.losslessIn("""{"url":"https://x.test/a","format":"flac","quality":"LOSSLESS"}"""))
+        assertEquals(false, Extensions.losslessIn("""{"url":"https://x.test/a","format":"mp3","quality":"HIGH"}"""))
+    }
+
     @Test fun searchWithoutItFallsBack() = assertEquals(Extensions.Answer.NOTHING,
         Extensions.searchProbe("$base/echo", Extensions.Kind(true, "lossless"), song.copy(title = "Let It Be")).answer)
     @Test fun searchRefusedIsDown() = assertEquals(Extensions.Answer.UNREACHABLE,

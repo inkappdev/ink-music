@@ -583,7 +583,7 @@ class PlayerService : MediaLibraryService() {
         }
         latch.await(500, java.util.concurrent.TimeUnit.MILLISECONDS)
         val t = track ?: return null
-        return Extensions.stream(this, spec.uri.toString(), t)?.let { spec.withUri(it) }
+        return Extensions.stream(this, spec.uri.toString(), t, Quality.now(this))?.let { spec.withUri(it) }
     }
 
     private fun trackOf(i: MediaItem, id: String) = Extensions.Track(i.mediaMetadata.title?.toString().orEmpty(), i.mediaMetadata.artist?.toString().orEmpty(),
@@ -847,7 +847,13 @@ class PlayerService : MediaLibraryService() {
                     // and asked of the extensions now too (when one's on), its answer kept for its start
                     if (next != null && Extensions.anyOn(this@PlayerService)) extensionFor(next)?.let { id ->
                         val t = trackOf(p.getMediaItemAt(i), id)
-                        extAhead.execute { Extensions.stream(this@PlayerService, next.toString(), t) }
+                        extAhead.execute {
+                            val c = this@PlayerService
+                            // at the network's quality; found, downloaded whole while this one plays (an extension's host
+                            // may send a song no faster than it plays): on wifi, or on mobile data chosen as original
+                            if (Extensions.stream(c, next.toString(), t, Quality.now(c)) != null && (!Quality.metered(c) || Quality.now(c) == Quality.ORIGINAL))
+                                Extensions.keepAhead(c, next.toString())
+                        }
                     }
                 }
                 if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {

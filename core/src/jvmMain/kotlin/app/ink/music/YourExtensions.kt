@@ -52,25 +52,32 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
     }
 
     /**
-     * Those without a name take their manifest's ("Lossless", "Tido"), asked off the main thread; only the address's own
-     * manifest is asked, nothing of a song, so this is done for one still off too.
+     * Each one's manifest read (off the main thread; only the address's own, nothing of a song, so for one still off
+     * too): those without a name take its ("Lossless", "Tido"), and those that send lossless by default are known
+     * ([lossless], for settings' note on the data they use).
      */
     private fun named(dir: File) {
-        val unnamed = _sources.value.filter { it.name.isBlank() }
-        if (unnamed.isEmpty()) return
+        val all = _sources.value
+        if (all.isEmpty()) return
         Thread {
-            val names = unnamed.mapNotNull { s -> manifestName(s.url)?.let { s.url to it } }.toMap()
+            val kinds = all.mapNotNull { s -> manifestOf(s.url)?.let { s.url to it } }.toMap()
+            _lossless.value = kinds.filterValues { it.lossless }.keys
+            val names = all.filter { it.name.isBlank() }.mapNotNull { s -> kinds[s.url]?.name?.ifBlank { null }?.let { s.url to it } }.toMap()
             if (names.isNotEmpty()) synchronized(this) {
                 save(dir, _sources.value.map { s -> names[s.url]?.takeIf { s.name.isBlank() }?.let { s.copy(name = it) } ?: s })
             }
         }.apply { isDaemon = true }.start()
     }
 
-    private fun manifestName(url: String): String? = runCatching {
+    private val _lossless = MutableStateFlow<Set<String>>(emptySet())
+    /** The addresses whose manifest says they send lossless by default (read as settings opens). */
+    val lossless: StateFlow<Set<String>> = _lossless
+
+    private fun manifestOf(url: String): Kind? = runCatching {
         if ('{' in url || '?' in url) return null
         val r = ask(base(url) + "/manifest.json", System.currentTimeMillis() + TIMEOUT, ranged = false)
         if (r.code != 200) return null
-        JSONObject(String(r.body, Charsets.UTF_8).trim()).optString("name").trim().take(40).ifBlank { null }
+        kindIn(String(r.body, Charsets.UTF_8)).takeIf { it.searches || it.name.isNotEmpty() }
     }.getOrNull()
 
     // what each said last, for settings: written by the player, read by the screens
@@ -157,7 +164,11 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
      * the player's loading thread: it waits at most 5 s an address. [key] is the song as the player knows it (its
      * address on the phone, its id on the computer): the same key, the same stream for an hour.
      */
-    fun stream(dir: File, key: String, t: Track): String? {
+    fun stream(dir: File, key: String, t: Track, level: Int = 0): String? {
+        // downloaded ahead (keepAhead): played from here, nothing waited on
+        kept(dir, key)?.let { return "file://" + it.absolutePath }
+        // (found at another quality than the network's now, asked again)
+        if (foundAt[key] != null && foundAt[key] != level) found.remove(key)
         found[key]?.let { (u, at) -> if (System.currentTimeMillis() - at < 3_600_000L) return u else found.remove(key) }
         if (found.size > 500) { found.clear(); gave.clear() }
         // one ask a song at a time: the song's start joins the look already begun for it (asked ahead, as the one
@@ -165,7 +176,7 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
         val mine = java.util.concurrent.CompletableFuture<String?>()
         val theirs = asking.putIfAbsent(key, mine)
         if (theirs != null) return runCatching { theirs.get(TIMEOUT * 3L, java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull()
-        try { mine.complete(find(dir, key, t)) } catch (e: Throwable) { mine.complete(null) } finally { asking.remove(key) }
+        try { mine.complete(find(dir, key, t, level)) } catch (e: Throwable) { mine.complete(null) } finally { asking.remove(key) }
         return mine.getNow(null)
     }
     private val asking = ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<String?>>()
@@ -177,6 +188,44 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
     fun answered(dir: File, key: String): Boolean {
         found[key]?.let { (_, at) -> if (System.currentTimeMillis() - at < 3_600_000L) return true }
         return current(dir).filter { it.on }.all { recent(down, it.url) || recent(missed, it.url + "\n" + key) }
+    }
+
+    // ---- a song downloaded ahead ----
+
+    // an extension's host may fetch a song from its own source as it's asked (Lossless's: its parts not fetched yet came
+    // at about the speed they play, 2026-11-24, and the song buffered): the next one found is downloaded whole while
+    // this one plays, a few kept (the oldest let go), and played from the file
+    /** Where the songs downloaded ahead go (a cache the system may clear: the phone's cache folder); unset, beside the list. */
+    @Volatile var aheadIn: File? = null
+    private fun aheadDir(dir: File) = File(aheadIn ?: dir, "extensions-ahead").apply { mkdirs() }
+    private fun fileOf(key: String) = java.security.MessageDigest.getInstance("SHA-1").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
+    private fun kept(dir: File, key: String): File? = File(aheadDir(dir), fileOf(key)).takeIf { it.isFile && it.length() > 0 }
+    private val downloading = ConcurrentHashMap.newKeySet<String>()
+    private val downloads = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "ink-ext-download").apply { isDaemon = true } }
+
+    /**
+     * The song's stream, found by an extension already ([stream]), downloaded whole into a file of its own, apart from
+     * the player (one at a time); four kept. Only where the player chose to (on wifi, or as it was told it may).
+     */
+    fun keepAhead(dir: File, key: String) {
+        val link = found[key]?.first ?: return
+        if (kept(dir, key) != null || !downloading.add(key)) return
+        downloads.execute {
+            val d = aheadDir(dir); val f = File(d, fileOf(key)); val part = File(d, f.name + ".part")
+            val t0 = System.currentTimeMillis()
+            try {
+                val c = URL(link).openConnection() as HttpURLConnection
+                c.connectTimeout = 15_000; c.readTimeout = 30_000; c.instanceFollowRedirects = true
+                if (c.responseCode !in 200..299) { log("download ahead: http ${c.responseCode}"); return@execute }
+                c.inputStream.use { i -> part.outputStream().use { o -> i.copyTo(o, 64 * 1024) } }
+                if (part.renameTo(f)) log("downloaded ahead: ${f.length() / 1024} KB in ${(System.currentTimeMillis() - t0) / 1000} s")
+                d.listFiles()?.filter { !it.name.endsWith(".part") }?.sortedByDescending { it.lastModified() }?.drop(4)?.forEach { it.delete() }
+            } catch (e: Exception) {
+                log("download ahead: ${e.javaClass.simpleName}")
+            } finally {
+                part.delete(); downloading.remove(key)
+            }
+        }
     }
 
     private val kinds = ConcurrentHashMap<String, Pair<Kind, Long>>()
@@ -191,7 +240,9 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
         return k
     }
 
-    private fun find(dir: File, key: String, t: Track): String? {
+    private val foundAt = ConcurrentHashMap<String, Int>()
+
+    private fun find(dir: File, key: String, t: Track, level: Int): String? {
         for (s in current(dir).filter { it.on }) {
             val host = runCatching { java.net.URI(s.url).host }.getOrNull().orEmpty()
             if (recent(down, s.url) || recent(missed, s.url + "\n" + key)) continue
@@ -199,14 +250,14 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
             val target = address(s.url, t)
             val p = when {
                 kind == null -> Probe(Answer.UNREACHABLE, "unreachable (no manifest answer)")
-                kind.searches -> searchProbe(s.url, kind, t)
+                kind.searches -> searchProbe(s.url, kind.at(level), t)
                 else -> probe(target)
             }
             log("$host: ${p.why}")
             tell(dir, s.url, p)
             when (p.answer) {
                 Answer.AUDIO -> return (p.stream ?: target).also {
-                    found[key] = it to System.currentTimeMillis(); gave[key] = s.name.trim().ifEmpty { kind?.name.orEmpty() }.ifEmpty { host }
+                    found[key] = it to System.currentTimeMillis(); foundAt[key] = level; gave[key] = s.name.trim().ifEmpty { kind?.name.orEmpty() }.ifEmpty { host }
                 }
                 Answer.NOTHING -> missed[s.url + "\n" + key] = System.currentTimeMillis()
                 Answer.UNREACHABLE -> down[s.url] = System.currentTimeMillis()
@@ -219,7 +270,24 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
      * What an address is: of the search-and-stream kind (Echo Music's extensions: its manifest.json says "resources"
      * holding "search" and "stream"), with the quality its manifest gives by default; or not, and asked as above.
      */
-    class Kind(val searches: Boolean, val quality: String? = null, val name: String = "")
+    class Kind(val searches: Boolean, val quality: String? = null, val name: String = "",
+               /** Its quality setting's choices, as its manifest names them ("lossless", "high", "low"; "HIRES", "LOSSLESS"...). */
+               val options: List<String> = emptyList(),
+               /** Asked for less than original (the network's quality): a lossless answer anyway is passed over. */
+               val small: Boolean = false) {
+        /** It sends lossless by default (its default quality says so). */
+        val lossless get() = quality?.lowercase()?.let { q -> listOf("lossless", "hires", "hi-res", "max", "flac", "24").any { it in q } } == true
+
+        /**
+         * The quality to ask for at the app's own choice for the network it's on (0 original, 1 high, 2 data saver, as
+         * both apps' Quality): original its default; high its "high" if it has one; data saver its "low", else "high".
+         */
+        fun at(level: Int): Kind {
+            fun named(w: String) = options.firstOrNull { it.equals(w, true) }
+            val q = when (level) { 1 -> named("high"); 2 -> named("low") ?: named("high"); else -> null } ?: quality
+            return Kind(searches, q, name, options, small = level > 0)
+        }
+    }
 
     // what's the same for everyone: the asking and the reading of answers, plain Java, so tested on the JVM
     companion object {
@@ -293,6 +361,13 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
         private fun isLink(s: String) = s.startsWith("https://") || s.startsWith("http://")
 
         /** An answer saying its stream is encrypted (a DRM'd one, for an app to decrypt): never played. */
+        /** An answer saying its stream is lossless ("format": "flac"/"alac"/"wav", or a quality saying lossless or hi-res). */
+        fun losslessIn(body: String): Boolean = runCatching {
+            val o = JSONObject(body.trim()).let { it.optJSONObject("data") ?: it }
+            o.optString("format").lowercase() in setOf("flac", "alac", "wav") ||
+                listOf("quality", "audioQuality").any { k -> o.optString(k).lowercase().let { q -> "lossless" in q || "hi_res" in q || "hires" in q } }
+        }.getOrDefault(false)
+
         fun encrypted(body: String): Boolean = runCatching {
             val o = JSONObject(body.trim()); o.optBoolean("encrypted") || o.optJSONObject("data")?.optBoolean("encrypted") == true
         }.getOrDefault(false)
@@ -346,9 +421,10 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
             val has = (0 until res.length()).map { res.optString(it) }
             if ("search" !in has || "stream" !in has) return plain
             val settings = o.optJSONArray("settings")
-            val quality = settings?.let { a -> (0 until a.length()).map { a.optJSONObject(it) }
-                .firstOrNull { it?.optString("key") == "quality" }?.optString("default")?.ifBlank { null } }
-            Kind(true, quality, o.optString("name").trim().take(40))
+            val setting = settings?.let { a -> (0 until a.length()).map { a.optJSONObject(it) }.firstOrNull { it?.optString("key") == "quality" } }
+            val quality = setting?.optString("default")?.ifBlank { null }
+            val options = setting?.optJSONArray("options")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("value")?.ifBlank { null } } }.orEmpty()
+            Kind(true, quality, o.optString("name").trim().take(40), options)
         }.getOrDefault(plain)
 
         // a title or name as compared: no accents, case, (brackets), " - remastered" or "feat." parts, nor anything but letters and digits
@@ -400,12 +476,15 @@ class YourExtensions(private val log: (String) -> Unit = {}) {
             // a search result may carry its stream's link itself: no stream asked for then
             // (only a name that means the stream: a result's plain "url" may be its page on the service)
             val link = listOf("streamURL", "streamUrl", "directUrl").firstNotNullOfOrNull { k -> hit.optString(k).takeIf { isLink(it) } }
-                ?.takeIf { !hit.optBoolean("encrypted") } ?: run {
+                ?.takeIf { !hit.optBoolean("encrypted") && !(kind.small && losslessIn(hit.toString())) } ?: run {
                 val st = try { ask("$b/stream/${enc(hit.optString("id"))}?${kind.quality?.let { "quality=${enc(it)}&" } ?: ""}atmos=none", until, ranged = false) }
                     catch (e: Exception) { return failed(e, "its stream") }
                 if (st.code != 200) return Probe(Answer.NOTHING, "nothing for this song (stream http ${st.code})")
                 val text = String(st.body, Charsets.UTF_8)
                 if (encrypted(text)) return Probe(Answer.NOTHING, "nothing for this song (its stream is encrypted)")
+                // a smaller quality asked for, and lossless sent anyway (Lossless's sends nothing else, 2026-11-24): passed
+                // over, so the song plays from where it would have at the quality chosen, not a gigabyte an hour
+                if (kind.small && losslessIn(text)) return Probe(Answer.NOTHING, "nothing for this song (only lossless, a smaller quality chosen)")
                 linkIn(text) ?: return Probe(Answer.NOTHING, "nothing for this song (stream without a url)")
             }
             val l = try { ask(link, until, ranged = true) } catch (e: Exception) { return Probe(Answer.NOTHING, "its link didn't answer (${e.javaClass.simpleName})") }

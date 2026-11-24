@@ -927,6 +927,7 @@ private fun ExtensionsSetting() {
     var said by remember { mutableStateOf<String?>(null) }
     // what each said last (the player writes it), read again while this is open
     val last by Extensions.said.collectAsState()
+    val lossless by Extensions.lossless.collectAsState()
     LaunchedEffect(Unit) { while (true) { Extensions.refreshSaid(ctx); kotlinx.coroutines.delay(5_000) } }
     sources.forEach { s ->
         Column(Modifier.padding(bottom = 12.dp)) {
@@ -938,6 +939,8 @@ private fun ExtensionsSetting() {
                 onClick = felt { editing = s.url; url = s.url; name = s.name; said = null })) {
                 BasicText(s.name.ifBlank { Uri.parse(s.url).host.orEmpty() }.lowercase(), style = pixel(14.sp, if (editing == s.url) Ink.ink else Ink.mid))
                 BasicText(s.url, style = pixel(12.sp, Ink.mid), maxLines = 2)
+                // a lossless one: what it uses (2026-11-24: ~35 MB a five-minute song), so a phone's plan isn't a surprise
+                if (s.url in lossless) BasicText("lossless: about 30 to 40 mb a song, a gb or more an hour. on mobile data it sends what your quality there says", style = pixel(12.sp, Ink.mid))
                 if (s.on) last[s.url]?.let { BasicText(extensionSaid(it), style = pixel(12.sp, if (it.found) Ink.ink else Ink.mid)) }
             }
             Spacer(Modifier.height(4.dp))

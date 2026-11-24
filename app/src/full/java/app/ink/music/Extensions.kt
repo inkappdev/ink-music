@@ -21,10 +21,13 @@ object Extensions {
     typealias Kind = YourExtensions.Kind
 
     private val core = YourExtensions { android.util.Log.d("ink-extension", it) }
-    private fun dir(ctx: Context) = ctx.filesDir
+    // the list and what each said in files/; the songs downloaded ahead in the cache (the system may clear it)
+    private fun dir(ctx: Context) = ctx.filesDir.also { if (core.aheadIn == null) core.aheadIn = ctx.cacheDir }
 
     val sources: StateFlow<List<Source>> = core.sources
     val said: StateFlow<Map<String, Said>> = core.said
+    /** Those that send lossless by default (their manifest says): settings says what they use in data. */
+    val lossless: StateFlow<Set<String>> = core.lossless
 
     fun start(ctx: Context) = core.start(dir(ctx))
     fun refreshSaid(ctx: Context) = core.refreshSaid(dir(ctx))
@@ -38,13 +41,17 @@ object Extensions {
     fun by(key: String): String? = core.by(key)
 
     /** The song's stream from the first extension on that has it, or null; run on the player's loading thread (5 s an address at most). */
-    fun stream(ctx: Context, key: String, t: Track): Uri? = core.stream(dir(ctx), key, t)?.let(Uri::parse)
+    fun stream(ctx: Context, key: String, t: Track, level: Int = 0): Uri? = core.stream(dir(ctx), key, t, level)?.let(Uri::parse)
+
+    /** The song, found already, downloaded whole while another plays (its host may send it no faster than it plays). */
+    fun keepAhead(ctx: Context, key: String) = core.keepAhead(dir(ctx), key)
 
     // what's the same everywhere, here as it was (the tests ask it)
     fun probe(target: String, timeout: Int = 5_000) = YourExtensions.probe(target, timeout)
     fun searchProbe(url: String, kind: Kind, t: Track, timeout: Int = 5_000) = YourExtensions.searchProbe(url, kind, t, timeout)
     fun linkIn(body: String) = YourExtensions.linkIn(body)
     fun encrypted(body: String) = YourExtensions.encrypted(body)
+    fun losslessIn(body: String) = YourExtensions.losslessIn(body)
     fun address(url: String, t: Track) = YourExtensions.address(url, t)
     fun base(url: String) = YourExtensions.base(url)
     fun kindIn(body: String) = YourExtensions.kindIn(body)
