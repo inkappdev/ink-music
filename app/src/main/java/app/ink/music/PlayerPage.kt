@@ -1786,7 +1786,9 @@ private fun TopRow(start: @Composable () -> Unit, middle: @Composable () -> Unit
     androidx.compose.ui.layout.Layout({ Box { start() }; Box { middle() }; Box { right() }; Box { end() } }, modifier) { ms, c ->
         val loose = c.copy(minWidth = 0, minHeight = 0)
         val (a, m, r, e) = ms.map { it.measure(loose) }
-        val w = c.maxWidth
+        // measured with no edge (Fit asks how wide it would be, to know whether to shrink it): as wide as its parts and
+        // a gap between each; an unbounded width laid out as is crashed the player as it opened (2026-11-24)
+        val w = if (c.hasBoundedWidth) c.maxWidth else a.width + m.width + r.width + e.width + 3 * 16.dp.roundToPx()
         val h = maxOf(a.height, m.height, r.height, e.height)
         layout(w, h) {
             val mx = (w - m.width) / 2
