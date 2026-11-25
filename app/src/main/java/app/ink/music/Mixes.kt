@@ -62,7 +62,8 @@ object Mixes {
     fun yoursSize(): Int = Library.songs.value.size + YouTubeAccount.liked.value.size + Loved.tube.value.size +
         Listened.now.value.plays.count { !it.key.startsWith("a:") }
 
-    private suspend fun pool(c: Context): List<Song> {
+    /** Your songs, as "your music" mixes them (your signature gathers from it too). */
+    internal suspend fun pool(c: Context): List<Song> {
         val out = LinkedHashMap<String, Song>()
         val names = HashSet<String>()
         fun add(s: Song?) { if (s == null || s.station || s.episode || s.id in out) return; val k = Radio.key(s.title, s.artist); if (names.add(k)) out[s.id] = s }

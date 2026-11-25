@@ -82,19 +82,21 @@ object History {
             if (!on && since != 0L) { played += now - since; since = 0L }
         }
 
-        /** A new song (or none): the last one written down if it was heard. */
-        fun song(next: androidx.media3.common.MediaItem?, moving: Boolean) {
+        /** A new song (or none): the last one written down if it was heard. True when it was left in its first seconds (a skip). */
+        fun song(next: androidx.media3.common.MediaItem?, moving: Boolean): Boolean {
             playing(false)
+            var skip = false
             // a podcast's episode isn't music you heard: not in your year, your orders or what's made for you
             item?.takeUnless { it.mediaId.startsWith("e") }?.let { i ->
                 val md = i.mediaMetadata
                 add(c, Heard(started, i.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(),
                     md.albumTitle?.toString().orEmpty(), md.extras?.getString(Levelling.RECORD).orEmpty(), played))
                 // moved on from in its first seconds (to another song, not stopped): a skip
-                if (next != null && played in 2_000 until ENOUGH) skipped(c, started, i.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(), played)
+                if (next != null && played in 2_000 until ENOUGH) { skipped(c, started, i.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(), played); skip = true }
             }
             item = next; played = 0L; started = 0L
             if (moving) playing(true)
+            return skip
         }
     }
 }

@@ -481,6 +481,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (YouTubeMusic.available && LastFm.available && brought.isEmpty() && heard.size < 40 && !knowMeShut)
             item(key = "know-me") { Column(Modifier.cascade(1).padding(horizontal = 20.dp).padding(bottom = 14.dp)) { KnowMeCard { knowMeShut = true } } }
         if (sinceLines.isNotEmpty()) item(key = "since") { Column(Modifier.cascade(1).moving(this)) { SinceYouWereHere(since, sinceLines) } }
+        // your signature: one endless station made from you, steered as it plays (#16)
+        if (!Device.tv) item(key = "signature") { Column(Modifier.cascade(1)) { SignatureCard() } }
         // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
         if (!Device.tv) item(key = "dialedIn") { Column(Modifier.cascade(1).padding(bottom = 10.dp)) { DialedInSheet(heard, ::songOf, pages) } }
         // three ways in, small: charts, new releases, moods & genres (2026-11-17, Bronson)
@@ -533,7 +535,7 @@ private fun fit(word: String) = (112f / (word.substringBefore(' ').length * .55f
 
 /** Seven bars of pixels, still at rest, rising and falling while the radio plays. */
 @Composable
-private fun Bars(moving: Boolean, colour: androidx.compose.ui.graphics.Color, modifier: Modifier) {
+internal fun Bars(moving: Boolean, colour: androidx.compose.ui.graphics.Color, modifier: Modifier) {
     val rest = listOf(2, 4, 3, 5, 2, 4, 3)
     val t = rememberInfiniteTransition(label = "bars")
     val beat by t.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "beat")

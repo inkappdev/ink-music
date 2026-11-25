@@ -427,6 +427,13 @@ class PlayerService : MediaLibraryService() {
             .distinctBy { it.mediaId }.take(2)
         val seeds = listOf(seed(last)) + chosen.map(::seed)
         val firstId = p.getMediaItemAt(0).mediaId
+        // your signature's queue (YourSignature): it chooses what comes, from what it's heard so far
+        val signature = YourSignature.on(this, firstId)
+        if (signature && signatureHeld) return
+        val signatureNow = p.currentMediaItemIndex
+        val signatureQueue = if (!signature) emptyList() else (0 until p.mediaItemCount).map { p.getMediaItemAt(it) }.map {
+            YourSignature.Queued(it.mediaId, it.mediaMetadata.title?.toString().orEmpty(), it.mediaMetadata.artist?.toString().orEmpty(), it.mediaMetadata.durationMs ?: 0L)
+        }
         // the screens told, for the queue's rows developing under its last song till they come
         finding = seed(last).artist.substringBefore(", ").ifBlank { "this" }; tell()
         val began = System.currentTimeMillis()
@@ -434,7 +441,8 @@ class PlayerService : MediaLibraryService() {
             // a mix's queue (its first song the mix's): radio keeps to its tempo
             val tempo = Mixes.keeping(this, firstId)
             // just your music: only your server's own similar songs follow (nothing asked of youtube or the rest)
-            val more = if (JustYours.read(this)) runCatching { yoursAfter(seeds, queued) }.getOrDefault(emptyList())
+            val more = if (signature) runCatching { YourSignature.more(this, signatureQueue, signatureNow, queued) }.onFailure { android.util.Log.d("ink-signature", "more: $it") }.getOrDefault(emptyList())
+                else if (JustYours.read(this)) runCatching { yoursAfter(seeds, queued) }.getOrDefault(emptyList())
                 else runCatching { Radio.after(this, seeds, queued, tempo, synchronized(fromRadio) { fromRadio.toSet() }) }.getOrDefault(emptyList())
             android.util.Log.d("ink-radio", "after ${seeds.joinToString(" + ") { it.title + " - " + it.artist }}: ${more.size} in ${System.currentTimeMillis() - began} ms (${more.joinToString { it.title + " - " + it.artist }})")
             main.post { finding = null; tell() }
@@ -448,6 +456,20 @@ class PlayerService : MediaLibraryService() {
                 if (ended) { p.seekTo(p.mediaItemCount - more.size, 0); p.prepare(); p.play() }
             }
         }
+    }
+
+    /**
+     * Your signature, steered: its songs waiting after the next one taken off, and more found at once (YourSignature.more reads
+     * what you've just done). Posted, never inside a listener's dispatch (a queue changed there crashed Media3, 2026-11-20).
+     */
+    private var signatureHeld = false
+    private fun signatureAgain(p: Player) {
+        signatureHeld = false
+        if (p.mediaItemCount == 0 || !YourSignature.on(this, p.getMediaItemAt(0).mediaId)) return
+        val keep = p.currentMediaItemIndex + 1
+        if (p.mediaItemCount > keep + 1) p.removeMediaItems(keep + 1, p.mediaItemCount)
+        radioFrom = null
+        topUp(p)
     }
 
     /** Sleep's end: the music eases out over 6 s, pauses, and its volume is put back for next time. */
@@ -892,7 +914,10 @@ class PlayerService : MediaLibraryService() {
                     Widget.show(this@PlayerService, p.currentMediaItem?.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(), p.playWhenReady)
                 }
                 // the song before written down for your year, if it was heard
-                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) clock?.song(p.currentMediaItem, p.isPlaying)
+                // a song left at once in your signature: what it has waiting found again with that in mind
+                // (the top-up below held till then, so it isn't asked twice)
+                if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) && clock?.song(p.currentMediaItem, p.isPlaying) == true &&
+                    p.mediaItemCount > 0 && YourSignature.on(this@PlayerService, p.getMediaItemAt(0).mediaId)) { signatureHeld = true; main.post { signatureAgain(p) } }
                 // a new song, its tags read, the songs round it changed (a record in order or not)
                 if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TRACKS_CHANGED, Player.EVENT_TIMELINE_CHANGED,
                         Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED, Player.EVENT_AUDIO_SESSION_ID)) levelling?.apply()
@@ -998,7 +1023,7 @@ class PlayerService : MediaLibraryService() {
                     MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                         .setAvailableSessionCommands(
                             MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(SessionCommand(SLEEP, Bundle.EMPTY))
-                                .add(SessionCommand(LEVEL, Bundle.EMPTY)).add(SessionCommand(RADIO, Bundle.EMPTY))
+                                .add(SessionCommand(LEVEL, Bundle.EMPTY)).add(SessionCommand(RADIO, Bundle.EMPTY)).add(SessionCommand(SIGNATURE, Bundle.EMPTY))
                                 .add(SessionCommand(WARM, Bundle.EMPTY)).add(SessionCommand(EQ, Bundle.EMPTY))
                                 .add(SessionCommand(CAST, Bundle.EMPTY)).build(),
                         )
@@ -1044,6 +1069,7 @@ class PlayerService : MediaLibraryService() {
                         // the switch is the file's (Levelled), written by the screens before this
                         levelling?.on = levelWanted()
                     }
+                    if (customCommand.customAction == SIGNATURE) signatureAgain(session.player)
                     if (customCommand.customAction == RADIO) {
                         radio = args.getBoolean(RADIO, true)
                         prefs.edit().putBoolean("radio", radio).apply()
@@ -1085,6 +1111,8 @@ class PlayerService : MediaLibraryService() {
         /** In an item's request extras: it was asked to play next (for [Shuffle]). */
         const val NEXT = "app.ink.music.NEXT"
         const val RADIO = "app.ink.music.RADIO"
+        /** Your signature's dials turned: its waiting songs found again (YourSignature). */
+        const val SIGNATURE = "app.ink.music.SIGNATURE"
         const val FINDING = "finding"
         /** Radio asks for more while fewer than this many songs are left after the one playing. */
         private const val AHEAD = 3
