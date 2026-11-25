@@ -1,4 +1,5 @@
 - YouTube songs start fast again when you're not signed in
+- YouTube playlists open when you're not signed in
 - A song that stalls now tries another way within seconds
 - Crossfades come back for YouTube songs
 - Lyrics keep their place between songs, no cover flashing up
