@@ -354,10 +354,33 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     if (withLyrics && (lyric != null || notes != null)) {
                         if (notes != null) NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
-                        else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp)) { folded = !folded }
-                        // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
-                        Scrubber(line, accent, scrub, line = 2.dp, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
-                        Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster)
+                        else if (lyric != null && fold) {
+                            // folded (#11): the cover big along the top (half the height at most), the lines under it in
+                            // what's left, sized to it; a tap on the cover or the names brings the controls back, never a
+                            // page opened (2026-11-24, Bronson: "the album art needs to fill the screen more")
+                            BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.TopCenter) {
+                                val room = minOf(maxWidth, coverCap(), (this@BoxWithConstraints.maxHeight * .5f))
+                                Column(Modifier.width(room)) {
+                                    Scrubber(line, accent, scrub, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
+                                    Box {
+                                        androidx.compose.runtime.CompositionLocalProvider(LocalCoverRoom provides room) {
+                                            Song(n, dir, small = false, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster)
+                                        }
+                                        Box(Modifier.matchParentSize().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { folded = false }))
+                                    }
+                                }
+                            }
+                            LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp, bottom = 12.dp)) { folded = !folded }
+                        } else if (lyric != null) {
+                            LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp)) { folded = !folded }
+                            // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
+                            Scrubber(line, accent, scrub, line = 2.dp, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
+                            Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster)
+                        }
+                        if (notes != null) {
+                            Scrubber(line, accent, scrub, line = 2.dp, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
+                            Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster)
+                        }
                     } else {
                         // the cover as big as the width allows, unless the song's words under it would then run
                         // under the controls (Android's own display size, a short phone): then it gives up just
