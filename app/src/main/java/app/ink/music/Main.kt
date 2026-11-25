@@ -166,7 +166,6 @@ open class Main : ComponentActivity() {
         // DOT MATRIX, if it's been turned on: the hand set before anything's drawn
         DotMatrix.start(this)
         ArtistLook.start(this)
-        DotsOver.start(this)
         // a computer's QR code read by the camera: kept before anything, so even a Main closing itself below hands it on
         Computers.take(intent)
         // opened again (the home screen, the notification) over ink music's own screens: those stay
@@ -1795,6 +1794,7 @@ internal fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                     when {
                         extra == "tiles" -> Dithered(still, Modifier.fillMaxSize(), print0 = Print.TILES, own = true, chosen = true)
                         extra == "dots" -> DotPrint(still, Modifier.fillMaxSize())
+                        extra == "soft dots" -> DotPrint(still, Modifier.fillMaxSize(), soft = true)
                         xray -> Xrayed(still, Modifier.fillMaxSize())
                         grain -> Grainy(still, Modifier.fillMaxSize())
                         dithered -> Dithered(still, Modifier.fillMaxSize(), own = true, chosen = true)
@@ -1803,7 +1803,11 @@ internal fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                     val c = rememberCover(still, 1080)
                     val accent = c?.accent ?: Ink.ink
                     // in the grain look their clip moves under the grain, out of focus (the player's blur)
-                    ArtistVideo(i.name.ifBlank { name }, accent, when { xray -> Look.XRAY; grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }, Modifier.fillMaxSize())
+                    // the video in the same look as the photo under it (2026-11-25: tiles and dots had played it plain over them)
+                    ArtistVideo(i.name.ifBlank { name }, accent, when (extra) {
+                        "tiles" -> Look.PIXELS; "dots" -> Look.DOTS; "soft dots" -> Look.SOFTDOTS
+                        else -> when { xray -> Look.XRAY; grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }
+                    }, Modifier.fillMaxSize())
                     if (grain) FilmGrain(Modifier.fillMaxSize(), moving = true)
                     // as it is (or in the grain), a light photo held down so the name on it reads (nameDim)
                     if (!dithered && !xray && c != null) {
@@ -2445,6 +2449,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print0: Print = Pr
     if (print == Print.GRAIN) return Grainy(photo, modifier, px)
     // dots: a halftone drawn as circles (DotPrint); x-ray: inside out in its colour
     if (print == Print.DOTS) return DotPrint(photo, modifier, px)
+    if (print == Print.SOFTDOTS) return DotPrint(photo, modifier, px, soft = true)
     if (print == Print.XRAY) return Xrayed(photo, modifier, px)
     // clear: the cover as it is
     if (print == Print.CLEAR) return AsItIs(photo, modifier, px)
@@ -2518,6 +2523,7 @@ fun ArtistPhoto(photo: Song, modifier: Modifier) {
     when (ArtistLook.extra.collectAsState().value) {
         "tiles" -> return Dithered(photo, modifier, print0 = Print.TILES, own = true, chosen = true)
         "dots" -> return DotPrint(photo, modifier)
+        "soft dots" -> return DotPrint(photo, modifier, soft = true)
     }
     val xray by Moving.artistXray.collectAsState()
     val grain = Moving.artistGrain.collectAsState().value && !xray

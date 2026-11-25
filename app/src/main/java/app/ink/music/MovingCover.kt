@@ -54,7 +54,7 @@ object Moving {
 
     /** The effects a cover takes (blur would hide it; plain is as it is). */
     // every look but black (2026-11-25: every look for every place)
-    val coverLooks = listOf(Look.DITHER, Look.PIXELS, Look.DOTS, Look.BLUR, Look.XRAY)
+    val coverLooks = listOf(Look.DITHER, Look.PIXELS, Look.DOTS, Look.SOFTDOTS, Look.BLUR, Look.XRAY)
     /** The effects a canvas takes. */
     val canvasLooks = listOf(Look.BLUR, Look.PIXELS, Look.DITHER, Look.XRAY)
 
@@ -272,9 +272,7 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
     }
     // the shaders are Android 13's: before it, as it is (and blur too: Android 12's own blur)
     val drawn = shape?.takeIf { Build.VERSION.SDK_INT >= 33 || (it == Look.BLUR && Build.VERSION.SDK_INT >= 31) }
-    // dots over a canvas (the look page's "dots over": what's behind the player), over any look but dots itself
-    val overOn by DotsOver.on.collectAsState()
-    val dotted = overOn && crop && Build.VERSION.SDK_INT >= 33 && drawn != Look.DOTS
+
     val come by animateFloatAsState(if (shown) 1f else 0f, if (less) snap() else tween(if (drawn == Look.DITHER) 1_400 else 600), label = "come")
     val density = LocalDensity.current.density
     var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
@@ -290,14 +288,10 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
                 tv.setTransform(android.graphics.Matrix().apply { setScale(vw * k / size.width, vh * k / size.height, size.width / 2f, size.height / 2f) })
             }
             if (Build.VERSION.SDK_INT >= 31) tv.setRenderEffect(when {
-                // dots over the blur or the x-ray (they make the dots calmer, or one colour); in place of dither and pixels
                 drawn == Look.DOTS -> Shaders.dots(density, come)
-                dotted -> Shaders.dots(density, come)?.let { d ->
-                    when (drawn) {
-                        Look.BLUR -> RenderEffect.createChainEffect(d, RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP))
-                        null, Look.AS_IS, Look.PLAIN -> d
-                        else -> Shaders.effect(drawn, accent, density, come, size.width.toFloat())?.let { RenderEffect.createChainEffect(d, it) } ?: d
-                    }
+                // soft dots: the blur, then the dots over it
+                drawn == Look.SOFTDOTS -> Shaders.dots(density, come)?.let { d ->
+                    RenderEffect.createChainEffect(d, RenderEffect.createBlurEffect(24 * density, 24 * density, android.graphics.Shader.TileMode.CLAMP))
                 }
                 drawn == Look.BLUR -> android.graphics.RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP)
                 drawn != null -> Shaders.effect(drawn, accent, density, come, size.width.toFloat())

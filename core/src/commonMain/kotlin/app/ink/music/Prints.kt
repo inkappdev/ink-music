@@ -21,6 +21,8 @@ enum class Print(val word: String) {
     DOTS("dots"),
     // the picture inside out in its own colour (Xray's; 2026-11-25, every look for every place; the phone's only)
     XRAY("x-ray"),
+    // the dots over the picture blurred first (2026-11-25; the phone's only)
+    SOFTDOTS("soft dots"),
 }
 
 /** The looks' pixels, from a cover drawn `n` x `n` (ARGB, smoothly scaled), one dot a pixel; `frames` steps of it developing. */

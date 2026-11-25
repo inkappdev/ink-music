@@ -89,7 +89,7 @@ fun numeral(style: androidx.compose.ui.text.TextStyle) =
  * develops as the other prints do, the brightest dots first, over 900 ms (at once with less motion).
  */
 @androidx.compose.runtime.Composable
-fun DotPrint(photo: Song, modifier: androidx.compose.ui.Modifier, px: Int = 1080) {
+fun DotPrint(photo: Song, modifier: androidx.compose.ui.Modifier, px: Int = 1080, soft: Boolean = false) {
     val cover = rememberCover(photo, px)
     val density = androidx.compose.ui.platform.LocalDensity.current
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.background(androidx.compose.ui.graphics.Color.Black)) {
@@ -98,13 +98,15 @@ fun DotPrint(photo: Song, modifier: androidx.compose.ui.Modifier, px: Int = 1080
         val step = (minOf(w, h) / 26f).coerceIn(with(density) { 3.dp.toPx() }, with(density) { 7.dp.toPx() })
         val cols = (w / step).toInt().coerceAtLeast(1); val rows = (h / step).toInt().coerceAtLeast(1)
         // each dot's colour and lightness, read off the cover drawn a pixel a dot
-        val grid by androidx.compose.runtime.produceState<Pair<IntArray, FloatArray>?>(null, cover, cols, rows) {
+        val grid by androidx.compose.runtime.produceState<Pair<IntArray, FloatArray>?>(null, cover, cols, rows, soft) {
             val c = cover ?: return@produceState
             value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                 val src = c.image.asAndroidBitmap().let { if (it.config == android.graphics.Bitmap.Config.HARDWARE) it.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else it }
                 // cropped to fill, as the cover would be
                 val side = minOf(src.width, src.height)
-                val cut = android.graphics.Bitmap.createBitmap(src, (src.width - side) / 2, (src.height - side) / 2, side, side)
+                val cut0 = android.graphics.Bitmap.createBitmap(src, (src.width - side) / 2, (src.height - side) / 2, side, side)
+                // soft dots: the picture through the lens's blur first
+                val cut = if (soft) Grain.lens(cut0) else cut0
                 val s = maxOf(cols, rows)
                 val small = android.graphics.Bitmap.createScaledBitmap(cut, s, s, true)
                 val colour = IntArray(cols * rows); val light = FloatArray(cols * rows)
@@ -178,15 +180,4 @@ fun DotListCover(songs: List<Song>, name: String) {
             maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(10.dp))
     }
-}
-
-/**
- * Dots over what's behind the player (the look page, under PICTURES; 2026-11-25): a halftone laid over the backdrop's
- * look, still or a canvas, as DOT MATRIX once did by itself. Off at first; a file, as the player and screens both read.
- */
-object DotsOver {
-    val on = MutableStateFlow(false)
-    private fun file(c: Context) = File(c.applicationContext.filesDir, "dots-over")
-    fun start(c: Context) { on.value = file(c).exists() }
-    fun set(c: Context, value: Boolean) { runCatching { if (value) file(c).createNewFile() else file(c).delete() }; on.value = value }
 }

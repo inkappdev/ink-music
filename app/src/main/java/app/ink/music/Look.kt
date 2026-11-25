@@ -28,6 +28,8 @@ enum class Look(val word: String, val alpha: Float, val crisp: Boolean) {
     XRAY("x-ray", .4f, false),
     // a halftone of round dots in the cover's own colours (2026-11-25: every look for every place)
     DOTS("dots", .45f, false),
+    // the blur, then dots: soft round dots in its colours (2026-11-25, Bronson: the one stack he liked, made a look)
+    SOFTDOTS("soft dots", .5f, false),
     // the cover (or a song's canvas) itself, no effect, held to half over the black so the words over it read
     AS_IS("clear", .5f, false),
     PLAIN("plain", 0f, false),
@@ -71,6 +73,7 @@ object Looks {
             Look.DITHER -> dither(src, dots(shown, density), accent.toArgb())
             Look.XRAY -> xray(src, accent.toArgb())
             Look.DOTS -> halftone(src, (shown / (7 * density)).roundToInt().coerceIn(12, 90))
+            Look.SOFTDOTS -> halftone(Grain.lens(src), (shown / (7 * density)).roundToInt().coerceIn(12, 90))
             Look.AS_IS -> src
             Look.PLAIN -> null
         }

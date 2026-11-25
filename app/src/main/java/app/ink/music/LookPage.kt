@@ -86,13 +86,6 @@ fun LookPage(pages: Pages) {
             // is drawn, the looks down its side, a lit square a column (LooksGrid); then the rest in four short groups
             Group("PICTURES", "one look for each place a picture is drawn")
             LooksGrid()
-            // dots laid over what's behind the player, whatever its look (Android 13 and up)
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                val over by DotsOver.on.collectAsState()
-                SettingRow("DOTS OVER", if (over) "on" else "off", opened, "round dots laid over what's behind the player, in any look") {
-                    Pick(listOf("on" to over, "off" to !over)) { DotsOver.set(ctx, it == 0) }
-                }
-            }
             Group("THE PLAYER")
             // the giant names running across: moving, or still where they are
             val marquee by Marquees.on.collectAsState()
@@ -264,16 +257,16 @@ private fun LooksGrid() {
     val dithered by Moving.artistDither.collectAsState()
     val grain by Moving.artistGrain.collectAsState()
     val xray by Moving.artistXray.collectAsState()
-    val looks = listOf("as it is", "dither", "tiles", "dots", "blur", "x-ray", "black")
+    val looks = listOf("as it is", "dither", "tiles", "dots", "soft dots", "blur", "x-ray", "black")
     // each place: which look it's in, and what each look it can take does
     class Place(val head: String, val on: String, val can: Map<String, () -> Unit>)
     val artistExtra by ArtistLook.extra.collectAsState()
     // every look for every place (2026-11-25, Bronson), but black: only behind the player
-    fun lookWord(l: Look?) = when (l) { null, Look.AS_IS -> "as it is"; Look.DITHER -> "dither"; Look.PIXELS -> "tiles"; Look.DOTS -> "dots"; Look.BLUR -> "blur"; Look.XRAY -> "x-ray"; Look.PLAIN -> "black" }
-    val asLook = mapOf("dither" to Look.DITHER, "tiles" to Look.PIXELS, "dots" to Look.DOTS, "blur" to Look.BLUR, "x-ray" to Look.XRAY)
-    val asPrint = mapOf("as it is" to Print.CLEAR, "dither" to Print.DITHER, "tiles" to Print.TILES, "dots" to Print.DOTS, "blur" to Print.GRAIN, "x-ray" to Print.XRAY)
+    fun lookWord(l: Look?) = when (l) { null, Look.AS_IS -> "as it is"; Look.DITHER -> "dither"; Look.PIXELS -> "tiles"; Look.DOTS -> "dots"; Look.SOFTDOTS -> "soft dots"; Look.BLUR -> "blur"; Look.XRAY -> "x-ray"; Look.PLAIN -> "black" }
+    val asLook = mapOf("dither" to Look.DITHER, "tiles" to Look.PIXELS, "dots" to Look.DOTS, "soft dots" to Look.SOFTDOTS, "blur" to Look.BLUR, "x-ray" to Look.XRAY)
+    val asPrint = mapOf("as it is" to Print.CLEAR, "dither" to Print.DITHER, "tiles" to Print.TILES, "dots" to Print.DOTS, "soft dots" to Print.SOFTDOTS, "blur" to Print.GRAIN, "x-ray" to Print.XRAY)
     fun artist(word: String) {
-        ArtistLook.set(ctx, if (word == "tiles" || word == "dots") word else "")
+        ArtistLook.set(ctx, if (word == "tiles" || word == "dots" || word == "soft dots") word else "")
         Moving.set(ctx, artistDither = word == "dither", artistGrain = word == "blur", artistXray = word == "x-ray")
     }
     val places = listOf(
@@ -283,7 +276,7 @@ private fun LooksGrid() {
             (listOf("as it is" to { Looks.set(ctx, Look.AS_IS) }) + asLook.map { (w, l) -> w to { Looks.set(ctx, l) } } + listOf("black" to { Looks.set(ctx, Look.PLAIN) })).toMap()),
         Place("mixes,\nlists", asPrint.entries.firstOrNull { it.value == print }?.key ?: "tiles", asPrint.mapValues { (_, p) -> { CoverPrint.set(ctx, p) } }),
         Place("artist\npages", if (artistExtra.isNotEmpty()) artistExtra else if (xray) "x-ray" else if (grain) "blur" else if (dithered) "dither" else "as it is",
-            listOf("as it is", "dither", "tiles", "dots", "blur", "x-ray").associateWith { w -> { artist(w) } }),
+            listOf("as it is", "dither", "tiles", "dots", "soft dots", "blur", "x-ray").associateWith { w -> { artist(w) } }),
     )
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {

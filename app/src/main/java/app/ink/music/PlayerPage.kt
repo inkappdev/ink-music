@@ -690,10 +690,9 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
 @Composable
 private fun Backdrop(cover: Cover?, n: Now) {
     val chosen by Looks.on.collectAsState()
-    // dots over it (the look page's "dots over", Android 13's shaders), over any look but black or dots itself
     val look = chosen
-    val over by DotsOver.on.collectAsState()
-    val dots = over && android.os.Build.VERSION.SDK_INT >= 33 && look != Look.PLAIN && look != Look.DOTS
+    // dots of its own (the dots looks): no film grain over them
+    val dots = look == Look.DOTS || look == Look.SOFTDOTS
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current.density
         // the square cover cropped to fill the page: shown at the page's longer side
@@ -714,14 +713,14 @@ private fun Backdrop(cover: Cover?, n: Now) {
             LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
             // the blur's film grain under the same fade, so it's as faint as the picture (over black at full it glittered)
             val density = LocalDensity.current.density
-            val dotted = remember(dots, density) { if (dots) dotsEffect(density)?.asComposeRenderEffect() else null }
+            val dotted: androidx.compose.ui.graphics.RenderEffect? = null
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 Image(
                     img, null, Modifier.fillMaxSize().graphicsLayer { renderEffect = dotted },
                     contentScale = ContentScale.Crop,
                     filterQuality = if (shape.crisp) FilterQuality.None else FilterQuality.Low,
                 )
-                if (shape == Look.BLUR && dotted == null) FilmGrain(Modifier.fillMaxSize())
+                if (shape == Look.BLUR) FilmGrain(Modifier.fillMaxSize())
             }
         }
         // the song's spotify canvas in its place, moving, in the same look (signed in to spotify: settings, the look)
