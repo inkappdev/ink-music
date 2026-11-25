@@ -2549,9 +2549,7 @@ fun DropWord(label: String, lit: Boolean, rows: List<DropRow>, size: androidx.co
             Sprite(PLACES_DOWN, if (!lit && !down) Ink.dim else Ink.ink, 2.dp, Modifier.graphicsLayer { rotationZ = turn })
         }
     }
-    // shown only while it's open: closed, it goes at once (2026-11-24: on Linux, the closing animation left a sliver of
-    // the list behind beside the next word, "s" and an arrow, that answered nothing)
-    if (down) androidx.compose.ui.window.Popup(
+    if (open.currentState || open.targetState) androidx.compose.ui.window.Popup(
         offset = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.unit.IntOffset(0, 30.dp.roundToPx()) },
         onDismissRequest = { down = false; shut[0] = System.currentTimeMillis() },
         properties = androidx.compose.ui.window.PopupProperties(focusable = true),
