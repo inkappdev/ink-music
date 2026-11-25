@@ -24,8 +24,30 @@ object FrequencyMix {
      */
     data class Dials(val tuned: Double = .5, val mood: String = "")
 
-    /** Where the needle is, in words. */
-    fun said(t: Double) = when { t < .2 -> "mostly yours"; t < .42 -> "yours, and some new"; t < .58 -> "both"; t < .8 -> "new, and some yours"; else -> "mostly new" }
+    /** Where the needle is, in nine steps: its words, and what they mean. */
+    private val steps = listOf(
+        "all yours" to "only the songs you know",
+        "mostly yours" to "the songs you know, and a few next to them",
+        "yours, opening up" to "your songs, with their neighbors coming in",
+        "yours first" to "your songs first, new ones mixed in",
+        "both" to "half yours, half new to you",
+        "leaning new" to "more new than yours, still close to home",
+        "new, some yours" to "mostly new to you, some of yours to keep it close",
+        "mostly new" to "new artists, near what you love",
+        "all new" to "almost all new: artists you haven't heard yet",
+    )
+    fun said(t: Double) = steps[(t.coerceIn(0.0, 1.0) * steps.size).toInt().coerceAtMost(steps.size - 1)].first
+    fun meaning(t: Double) = steps[(t.coerceIn(0.0, 1.0) * steps.size).toInt().coerceAtMost(steps.size - 1)].second
+
+    /**
+     * The needle as a frequency (2026-11-25, Bronson: finer than five steps): 20 Hz at all yours to 20 kHz at all new,
+     * on a log scale as hearing is, so every place on it reads as its own; its number and unit ("612", "Hz"; "1.4", "kHz").
+     */
+    fun hz(t: Double): Pair<String, String> {
+        val f = 20 * kotlin.math.exp(t.coerceIn(0.0, 1.0) * kotlin.math.ln(1000.0))
+        return if (f < 1000) kotlin.math.round(f).toInt().toString() to "Hz"
+            else (if (f < 10_000) (kotlin.math.round(f / 100) / 10.0).toString() else kotlin.math.round(f / 1000).toInt().toString()) to "kHz"
+    }
 
     const val YOURS = "yours"; const val NEAR = "near"; const val FAR = "far"; const val MOOD = "mood"
     val LANES = listOf(YOURS, NEAR, FAR, MOOD)

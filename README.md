@@ -236,7 +236,7 @@ the computer, with what the two share in `core/`.
   [shinchiro](https://github.com/shinchiro/mpv-winbuild-cmake)), [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform)
   (Apache-2.0), [JNA](https://github.com/java-native-access/jna) (Apache-2.0), [JmDNS](https://github.com/jmdns/jmdns)
   (Apache-2.0) and [jaudiotagger](https://bitbucket.org/ijabz/jaudiotagger) (LGPL-2.1).
-- Archivo Black and Silkscreen, both under the SIL Open Font License.
+- Archivo Black and Silkscreen; and Doto, Space Grotesk and Space Mono for FREQUENCY on listen (after Nothing's dot matrix, a deliberate exception to the two): all under the SIL Open Font License.
 - INK's picks from the publications and DJs who make them: Pitchfork, Stereogum, Bandcamp Daily, NPR,
   NME, the Quietus, Aquarium Drunkard, Gorilla vs. Bear, Dusted, Stereofox, The FADER and more. Go read them.
 - [Meld](https://github.com/FrancescoGrazioso/Meld) (GPL-3.0), for the ideas of choosing a song's YouTube version and

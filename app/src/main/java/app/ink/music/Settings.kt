@@ -486,7 +486,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     Spacer(Modifier.height(26.dp))
                     BasicText("FREE, AND OPEN", style = headline(20.sp))
                     Spacer(Modifier.height(6.dp))
-                    BasicText("gpl-3.0. the fonts are archivo black and silkscreen (sil open font license). lyrics from lrclib.net.", style = pixel(12.sp, Ink.mid))
+                    BasicText("gpl-3.0. the fonts are archivo black and silkscreen, and doto, space grotesk and space mono for frequency (sil open font license). lyrics from lrclib.net.", style = pixel(12.sp, Ink.mid))
                     // a coffee, offered once and quietly; not in the play build (Google Play allows no outside donation links)
                     if (BuildConfig.FLAVOR == "full") {
                         Spacer(Modifier.height(10.dp))
