@@ -16,6 +16,9 @@ enum class Print(val word: String) {
     // the cover as it is, no print, nothing developing (2026-11-17, a tester took tiles, the default, for covers gone
     // pixelated and slow since 2.1.18)
     CLEAR("clear"),
+    // the cover as a halftone of round dots, each its patch's own colour, as large as that patch is light (2026-11-25,
+    // DOT MATRIX's print, its default there; the phone's only: the computer keeps the four)
+    DOTS("dots"),
 }
 
 /** The looks' pixels, from a cover drawn `n` x `n` (ARGB, smoothly scaled), one dot a pixel; `frames` steps of it developing. */

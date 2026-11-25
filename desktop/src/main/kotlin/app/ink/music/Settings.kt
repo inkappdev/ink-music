@@ -1048,7 +1048,8 @@ private fun LookSetting(opened: Opened) {
     // how mixes and lists are drawn from their covers
     val print by CoverPrint.on.collectAsState()
     SettingRow("COVERS", print.word, opened, if (print == Print.CLEAR) "clear: every cover and photo as it is, no dither, tiles or blur" else "how mixes, lists and photos are drawn from their covers; clear for none") {
-        Pick(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(Print.entries[it]) }
+        val prints = Print.entries - Print.DOTS   // dots are the phone's (DOT MATRIX's)
+        Pick(prints.map { it.word to (it == print) }) { CoverPrint.set(prints[it]) }
     }
     // the app's icon: the words, or an ink drop (DeskIcon), each shown as it looks
     val icon by DeskIcon.chosen.collectAsState()

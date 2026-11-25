@@ -8,6 +8,11 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.unit.dp
 
 /**
  * DOT MATRIX (2026-11-25, Bronson: an easter egg turning the whole app to the dot matrix FREQUENCY is drawn in, "best of
@@ -75,3 +80,62 @@ fun androidx.compose.ui.graphics.drawscope.DrawScope.cellBar(color: androidx.com
 /** A number shown big: in Doto's dots in DOT MATRIX, as it was otherwise. */
 fun numeral(style: androidx.compose.ui.text.TextStyle) =
     if (Hand.dots) style.copy(fontFamily = DotMatrix.Doto, letterSpacing = androidx.compose.ui.unit.TextUnit(-.02f, androidx.compose.ui.unit.TextUnitType.Em)) else style
+
+/**
+ * The dots print (Print.DOTS): the picture as a halftone, a grid of round dots (about 26 across, 3 to 7 dp apart), each its patch's average
+ * colour (lifted a little, so a dark cover still shows its colour) and as wide as the patch is light, on black. It
+ * develops as the other prints do, the brightest dots first, over 900 ms (at once with less motion).
+ */
+@androidx.compose.runtime.Composable
+fun DotPrint(photo: Song, modifier: androidx.compose.ui.Modifier, px: Int = 1080) {
+    val cover = rememberCover(photo, px)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.background(androidx.compose.ui.graphics.Color.Black)) {
+        val w = with(density) { maxWidth.toPx() }; val h = with(density) { maxHeight.toPx() }
+        // about 26 dots across, 3 to 7 dp apart: a small tile still reads, a big one keeps big dots
+        val step = (minOf(w, h) / 26f).coerceIn(with(density) { 3.dp.toPx() }, with(density) { 7.dp.toPx() })
+        val cols = (w / step).toInt().coerceAtLeast(1); val rows = (h / step).toInt().coerceAtLeast(1)
+        // each dot's colour and lightness, read off the cover drawn a pixel a dot
+        val grid by androidx.compose.runtime.produceState<Pair<IntArray, FloatArray>?>(null, cover, cols, rows) {
+            val c = cover ?: return@produceState
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val src = c.image.asAndroidBitmap().let { if (it.config == android.graphics.Bitmap.Config.HARDWARE) it.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else it }
+                // cropped to fill, as the cover would be
+                val side = minOf(src.width, src.height)
+                val cut = android.graphics.Bitmap.createBitmap(src, (src.width - side) / 2, (src.height - side) / 2, side, side)
+                val s = maxOf(cols, rows)
+                val small = android.graphics.Bitmap.createScaledBitmap(cut, s, s, true)
+                val colour = IntArray(cols * rows); val light = FloatArray(cols * rows)
+                val ox = (s - cols) / 2; val oy = (s - rows) / 2
+                for (y in 0 until rows) for (x in 0 until cols) {
+                    val p = small.getPixel(x + ox, y + oy)
+                    val r = p shr 16 and 255; val g = p shr 8 and 255; val b = p and 255
+                    val l = (r * 299 + g * 587 + b * 114) / 255_000f
+                    val k = if (l < .35f) 1.35f else 1f
+                    colour[y * cols + x] = (255 shl 24) or ((r * k).toInt().coerceAtMost(255) shl 16) or ((g * k).toInt().coerceAtMost(255) shl 8) or (b * k).toInt().coerceAtMost(255)
+                    light[y * cols + x] = l
+                }
+                colour to light
+            }
+        }
+        val shown = androidx.compose.runtime.remember(grid) { androidx.compose.animation.core.Animatable(0f) }
+        androidx.compose.runtime.LaunchedEffect(grid) {
+            if (grid != null) { if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, androidx.compose.animation.core.tween(900, easing = Motion.expo)) }
+        }
+        grid?.let { (colour, light) ->
+            androidx.compose.foundation.Canvas(androidx.compose.ui.Modifier.fillMaxSize()) {
+                val dx = size.width / cols; val dy = size.height / rows
+                val max = minOf(dx, dy) * .48f
+                val t = shown.value
+                for (y in 0 until rows) for (x in 0 until cols) {
+                    val i = y * cols + x
+                    val l = light[i]
+                    // the brightest first: a dot appears once the developing has passed its darkness
+                    if (1f - l > t * 1.1f) continue
+                    val r = max * (.18f + .82f * kotlin.math.sqrt(l))
+                    drawCircle(androidx.compose.ui.graphics.Color(colour[i]), r, androidx.compose.ui.geometry.Offset((x + .5f) * dx, (y + .5f) * dy))
+                }
+            }
+        }
+    }
+}

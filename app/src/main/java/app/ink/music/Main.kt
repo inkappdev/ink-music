@@ -2428,13 +2428,18 @@ fun pullQuote(about: String): Pair<String?, String> = Bio.pullQuote(about)
  * in the look chosen for them ([Covered]).
  */
 @Composable
-fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Print.DITHER, own: Boolean = false) {
+fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print0: Print = Print.DITHER, own: Boolean = false) {
+    // DOT MATRIX: the dither and the tiles in dots everywhere (a special's grid and an artist page's dithered photo too),
+    // but 1-bit mode, an easter egg of its own
+    val print = if (Hand.dots && !OneBit.on.value && (print0 == Print.DITHER || print0 == Print.TILES)) Print.DOTS else print0
     // covers set to clear (settings, the look; 2026-11-17, Bronson: for whoever wants no dither, tiles or blur at all):
     // the picture as it is, wherever a print was only the look's; not where a setting of its own chose it (`own`: 1-bit
     // mode, an artist page's dithered)
     if (!own && CoverPrint.on.collectAsState().value == Print.CLEAR) return AsItIs(photo, modifier, px)
     // the grain look is a picture, not dots: drawn apart
     if (print == Print.GRAIN) return Grainy(photo, modifier, px)
+    // dots: a halftone drawn as circles (DotPrint)
+    if (print == Print.DOTS) return DotPrint(photo, modifier, px)
     // clear: the cover as it is
     if (print == Print.CLEAR) return AsItIs(photo, modifier, px)
     val cover = rememberCover(photo, px)
@@ -2466,7 +2471,9 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
 
 /** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither, tiles or grain. */
 @Composable
-fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value)
+fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px,
+    // DOT MATRIX: dots, unless covers are set to clear
+    CoverPrint.on.collectAsState().value.let { if (Hand.dots && it != Print.CLEAR) Print.DOTS else it })
 
 /**
  * An artist's photo as an x-ray in its own accent ([Xray]), developing in from black as covers do; black till it's
