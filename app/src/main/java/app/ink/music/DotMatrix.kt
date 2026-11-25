@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.unit.dp
@@ -137,5 +138,43 @@ fun DotPrint(photo: Song, modifier: androidx.compose.ui.Modifier, px: Int = 1080
                 }
             }
         }
+    }
+}
+
+/**
+ * A list's cover in DOT MATRIX (2026-11-25): a field of round dots over its top, in the colours of its first four
+ * records (each cover's accent, one a ring; none, ink), their sizes rippling out from a corner, the pattern and corner
+ * seeded by the list's name so a list always looks itself; under it, on black, its name in Doto.
+ */
+@androidx.compose.runtime.Composable
+fun DotListCover(songs: List<Song>, name: String) {
+    val four = androidx.compose.runtime.remember(songs) { songs.distinctBy { it.albumId }.take(4) }
+    // each record's colour (the same four calls each time, so the composition holds still)
+    val accents = (0 until 4).mapNotNull { i -> four.getOrNull(i)?.let { rememberCover(it, 120)?.accent } }
+    val colours = accents.ifEmpty { listOf(Ink.ink) }
+    val seed = name.hashCode()
+    androidx.compose.foundation.layout.BoxWithConstraints(androidx.compose.ui.Modifier.fillMaxSize().background(Ink.black)) {
+        val side = maxWidth
+        androidx.compose.foundation.Canvas(androidx.compose.ui.Modifier.fillMaxSize()) {
+            val cols = 14; val rows = 9
+            val step = size.width / cols
+            val rnd = java.util.Random(seed.toLong())
+            // the ripple's centre: one of the top corners, or the middle of the top, by the name
+            val cx = listOf(0f, cols / 2f, cols.toFloat())[Math.floorMod(seed, 3)]; val cy = 0f
+            val waves = 2.2f + rnd.nextFloat() * 1.6f
+            for (y in 0 until rows) for (x in 0 until cols) {
+                val d = kotlin.math.hypot(x + .5f - cx, y + .5f - cy) / cols
+                val wave = (kotlin.math.sin(d * waves * 6.283f) + 1f) / 2f
+                val fade = 1f - y.toFloat() / rows * .55f
+                val r = step * .44f * (.25f + .75f * wave) * fade
+                // one colour a ring, so the ripple reads
+                val c = colours[Math.floorMod((d * waves * 2f).toInt(), colours.size)]
+                drawCircle(c, r, androidx.compose.ui.geometry.Offset((x + .5f) * step, (y + .5f) * step))
+            }
+        }
+        val size = with(androidx.compose.ui.platform.LocalDensity.current) { (side * .16f).toSp() }
+        androidx.compose.foundation.text.BasicText(name.uppercase(), style = androidx.compose.ui.text.TextStyle(fontFamily = DotMatrix.Doto, fontSize = size, lineHeight = size * 1.05f, color = Ink.ink),
+            maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(10.dp))
     }
 }

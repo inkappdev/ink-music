@@ -3555,6 +3555,8 @@ internal fun ListTile(name: String, said: String, onClick: () -> Unit, heart: Bo
 /** A list's art from its songs: four of its records' covers, two by two; fewer records, the first; none, its name. */
 @Composable
 internal fun Mosaic(songs: List<Song>, name: String) {
+    // DOT MATRIX: its own cover, the name in Doto over its records' colours in dots
+    if (Hand.dots) return DotListCover(songs, name)
     val four = remember(songs) { songs.distinctBy { it.albumId }.take(4) }
     when {
         four.size == 4 -> Column(Modifier.fillMaxSize()) {
@@ -3667,6 +3669,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
  */
 @Composable
 internal fun Lettered(name: String) {
+    if (Hand.dots) return DotListCover(emptyList(), name)
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
         val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * .15f).toSp() }
         BasicText(name.uppercase(), style = headline(size).copy(lineHeight = size * 1.02f), maxLines = 4, overflow = TextOverflow.Ellipsis,
@@ -3683,10 +3686,14 @@ private fun YearArt(minutes: Long) {
     val now = remember { java.time.LocalDate.now() }
     val gone = (now.dayOfYear - 1f) / now.lengthOfYear()
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
-        Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line)) { Box(Modifier.fillMaxWidth(gone).fillMaxSize().background(Ink.ink)) }
+        // how far the year's gone: a line, or in DOT MATRIX a row of dots
+        if (Hand.dots) androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(3.dp)) {
+            val r = size.height / 2; var x = r
+            while (x < size.width) { drawCircle(if (x / size.width <= gone) Ink.ink else Ink.line, r, androidx.compose.ui.geometry.Offset(x, r)); x += r * 4.4f }
+        } else Box(Modifier.fillMaxWidth().height(2.dp).background(Ink.line)) { Box(Modifier.fillMaxWidth(gone).fillMaxSize().background(Ink.ink)) }
         val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * .3f).toSp() }
         Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-            BasicText("${now.year}", style = headline(size).copy(lineHeight = size), maxLines = 1)
+            BasicText("${now.year}", style = numeral(headline(size).copy(lineHeight = size)), maxLines = 1)
         }
     }
 }
