@@ -81,8 +81,11 @@ fun headline(size: TextUnit, color: Color = Ink.ink) = TextStyle(
     letterSpacing = (-0.02).em, lineHeight = 0.95.em, lineHeightStyle = tight,
 )
 
-fun pixel(size: TextUnit, color: Color = Ink.ink) = TextStyle(
-    fontFamily = Hand.small ?: Pixel, fontSize = readable(size), color = color, lineHeight = 1.4.em,
+fun pixel(size: TextUnit, color: Color = Ink.ink) = Hand.small?.let { face ->
+    // another hand's small words (DOT MATRIX's Space Mono) need no step up, only the 12 sp floor, and sit a little closer
+    TextStyle(fontFamily = face, fontSize = if (size.value < 12f) 12.sp else size, color = color, lineHeight = 1.3.em)
+} ?: TextStyle(
+    fontFamily = Pixel, fontSize = readable(size), color = color, lineHeight = 1.4.em,
 )
 
 /**

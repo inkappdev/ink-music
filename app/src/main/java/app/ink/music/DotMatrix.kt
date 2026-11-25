@@ -21,6 +21,8 @@ object DotMatrix {
     val Doto = FontFamily(Font(R.font.doto, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800), FontVariation.Setting("ROND", 100f))))
     val Grotesk = FontFamily(Font(R.font.space_grotesk, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))))
     val Mono = FontFamily(Font(R.font.space_mono))
+    /** The headlines' weight: Bold, to stand where Archivo Black did (Medium read thin and small, 2026-11-25). */
+    val GroteskBold = FontFamily(Font(R.font.space_grotesk, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))))
 
     /** On, and found (shown in settings once it's been found). */
     val on = MutableStateFlow(false)
@@ -37,7 +39,7 @@ object DotMatrix {
     }
 
     private fun apply() {
-        Hand.headline = if (on.value) Grotesk else null
+        Hand.headline = if (on.value) GroteskBold else null
         Hand.small = if (on.value) Mono else null
         // the player's giant name in Doto's dots: DOT MATRIX's one moment of surprise
         Hand.display = if (on.value) Doto else null
