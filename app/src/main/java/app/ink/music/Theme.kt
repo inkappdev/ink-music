@@ -71,6 +71,8 @@ private val tight = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeight
 object Hand {
     @Volatile var headline: FontFamily? = null
     @Volatile var small: FontFamily? = null
+    /** For the few huge words (the player's giant name): null, the headline's. */
+    @Volatile var display: FontFamily? = null
     @Volatile var dots = false
 }
 

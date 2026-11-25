@@ -17,7 +17,8 @@ import java.io.File
  * the look, has it to turn on and off. Kept as files ("dot-matrix" on, "dot-matrix-found"), so both processes read it.
  */
 object DotMatrix {
-    val Doto = FontFamily(Font(R.font.doto, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))))
+    // Doto's dots made round (its ROND axis, 0 square to 100 round), as every other dot here is
+    val Doto = FontFamily(Font(R.font.doto, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800), FontVariation.Setting("ROND", 100f))))
     val Grotesk = FontFamily(Font(R.font.space_grotesk, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))))
     val Mono = FontFamily(Font(R.font.space_mono))
 
@@ -38,6 +39,8 @@ object DotMatrix {
     private fun apply() {
         Hand.headline = if (on.value) Grotesk else null
         Hand.small = if (on.value) Mono else null
+        // the player's giant name in Doto's dots: DOT MATRIX's one moment of surprise
+        Hand.display = if (on.value) Doto else null
         Hand.dots = on.value
     }
 

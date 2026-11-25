@@ -413,7 +413,7 @@ private fun Sounded(y: Year, shown: Boolean) {
         }
         Spacer(Modifier.height(18.dp))
         @Composable fun part(i: Int, color: Color, word: String, share: Float, said: String) = Row(Modifier.padding(vertical = 5.dp).coming(i, shown), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(10.dp).background(color))
+            Box(Modifier.size(10.dp).background(color, if (Hand.dots) androidx.compose.foundation.shape.CircleShape else androidx.compose.ui.graphics.RectangleShape))
             Spacer(Modifier.width(12.dp))
             BasicText(word, style = pixel(13.sp), modifier = Modifier.width(110.dp))
             BasicText("${Math.round(share * 100)}%", style = pixel(13.sp), modifier = Modifier.width(56.dp))

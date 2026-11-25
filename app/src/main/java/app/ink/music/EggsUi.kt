@@ -98,5 +98,5 @@ fun InkHeart(colour: Color) {
 
 /** ink's pixel heart (the love button's), drawn at `at`, `cell` a dot. */
 fun DrawScope.heart(at: Offset, cell: Float, colour: Color) {
-    HEART.forEachIndexed { r, row -> row.forEachIndexed { c, ch -> if (ch == '#') drawRect(colour, Offset(at.x + c * cell, at.y + r * cell), Size(cell, cell)) } }
+    HEART.forEachIndexed { r, row -> row.forEachIndexed { c, ch -> if (ch == '#') cell(colour, Offset(at.x + c * cell, at.y + r * cell), Size(cell, cell)) } }
 }

@@ -4140,7 +4140,7 @@ private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, p
         fun Small(word: String, i: Int, onClick: () -> Unit) {
             var on by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(6.dp).background(if (on) Ink.ink else Ink.black))
+                Box(Modifier.size(6.dp).background(if (on) Ink.ink else Ink.black, if (Hand.dots) androidx.compose.foundation.shape.CircleShape else androidx.compose.ui.graphics.RectangleShape))
                 Spacer(Modifier.width(8.dp))
                 Word(word, pixel(15.sp, if (on) Ink.ink else Ink.mid), Modifier.railItem(i).onFocusChanged { on = it.isFocused }, touch = 6.dp, onClick = onClick)
             }
