@@ -288,6 +288,12 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         Crossfade.CROSSFADE -> "the end of each song fades out under the start of the next, a few seconds of both"
                         else -> "as a dj would: their beats lined up, keys minded, a long or quiet ending let go early"
                     }, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp))
+                    // a record played in order: as made (its songs running into each other), or mixed as a list's are (#14)
+                    if (cross) {
+                        var records by remember { mutableStateOf(Crossfade.records(ctx)) }
+                        PickLabel("a record played in order")
+                        Pick(listOf("as made" to !records, "mixed too" to records)) { records = it == 1; Crossfade.records(ctx, records) }
+                    }
                     var wifi by remember { mutableStateOf(Tempos.wifiOnly(ctx)) }
                     PickLabel("reading tempos, half a megabyte a song")
                     Pick(listOf("on wifi only" to wifi, "anywhere" to !wifi)) { wifi = it == 0; Tempos.wifiOnly(ctx, wifi) }

@@ -60,6 +60,16 @@ fun TransitionsSetting() {
             BasicText(said, style = pixel(12.sp, if (mode == m) Ink.mid else Ink.dim))
         }
     }
+    // a record played in order: as made (its songs running into each other), or mixed as a list's are (#14)
+    if (mode != Crossfade.OFF) {
+        val records by Crossfade.records.collectAsState()
+        BasicText("a record played in order", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.padding(bottom = 12.dp)) {
+            Word("as made", pixel(14.sp, if (!records) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Crossfade.records(false) }
+            Word("mixed too", pixel(14.sp, if (records) Ink.ink else Ink.dim), touch = 8.dp) { Crossfade.records(true) }
+        }
+    }
     if (mode != Crossfade.OFF && sound.exclusive) {
         BasicText("resting now: the output's had alone (sound, above)", style = pixel(12.sp, Ink.ink))
         Spacer(Modifier.height(8.dp))

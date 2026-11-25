@@ -46,6 +46,14 @@ object Crossfade {
     fun set(m: String) { lent.delete(); use(m) }
 
     /**
+     * A record played in order mixed too (2026-11-25, #14: a listener's albums never blended, only lists and mixes did);
+     * off, as till then, its songs run into each other as made.
+     */
+    private val recordsFile = File(Home.dir, "crossfade-records")
+    val records = MutableStateFlow(recordsFile.exists())
+    fun records(on: Boolean) { runCatching { if (on) recordsFile.createNewFile() else recordsFile.delete() }; records.value = on }
+
+    /**
      * A mix's automix, lent (2026-11-17, a tester: a mix had turned theirs to automix for good): what was chosen kept
      * aside, and given back when something else is played ([giveBack]), or chosen again by hand. Kept as a file, so a
      * mix the app was quit in still gives it back.
@@ -223,7 +231,7 @@ object Crossfade {
         // a record played in order (the queue that record alone): its songs run into each other as they were made. Not
         // a list that only happens to hold a record's songs in turn (2026-11-15, a tester: no fades after shuffle was
         // turned off mid-song, more so with files: the queue's own order back, your library's songs a record at a time)
-        if (s.albumId.isNotEmpty() && s.albumId == n.albumId && nextAt == i + 1 && n.track > s.track &&
+        if (!records.value && s.albumId.isNotEmpty() && s.albumId == n.albumId && nextAt == i + 1 && n.track > s.track &&
             Player.queue.value.all { it.albumId == s.albumId }) return false
         val d = Player.length().takeIf { it > 0 } ?: s.duration
         return d > FADE * 3 && (n.duration == 0L || n.duration > FADE * 3)

@@ -187,6 +187,12 @@ class Crossfade(
         /** How sure a beat must be to be matched (Beat's z-score). */
         const val SURE = Beat.SURE
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
+        /**
+         * A record played in order mixed too (2026-11-25, #14: a listener's albums never blended, only lists and mixes did);
+         * off, as till then, its songs run into each other as made. A file, read by both processes.
+         */
+        fun records(c: Context) = File(c.filesDir, "crossfade-records").exists()
+        fun records(c: Context, on: Boolean) { runCatching { File(c.filesDir, "crossfade-records").let { if (on) it.createNewFile() else it.delete() } } }
         /** A song that can be cut for a blend (not a station, not an episode). */
         fun cuttable(id: String) = id.isNotEmpty() && !id.startsWith("e") && !id.startsWith("s")
         const val SAID = "crossfade-said"
@@ -301,11 +307,14 @@ class Crossfade(
         return exo.duration != C.TIME_UNSET && exo.duration > FADE * 3
     }
 
-    /** Whether every song in the queue is from this record (a record played, not a list holding its songs). */
-    private fun oneRecord(record: String) =
+    /**
+     * Whether every song in the queue is from this record (a record played, not a list holding its songs), and records
+     * are kept as made: with records mixed too ([records]) none is, and a record's songs blend as any others.
+     */
+    private fun oneRecord(record: String) = !records(c) &&
         (0 until exo.mediaItemCount).all { exo.getMediaItemAt(it).mediaMetadata.extras?.getString(Levelling.RECORD) == record }
 
-    private fun oneRecord(record: String, items: List<MediaItem>) = items.all { it.mediaMetadata.extras?.getString(Levelling.RECORD) == record }
+    private fun oneRecord(record: String, items: List<MediaItem>) = !records(c) && items.all { it.mediaMetadata.extras?.getString(Levelling.RECORD) == record }
 
     private fun look() {
         // a song cut short for the blend: its end is mixed in the player's own sound (Blend), not the two-player way
@@ -629,7 +638,7 @@ class Crossfade(
         val following = exo.getMediaItemAt(f)
         if (following.mediaId.startsWith("e") || following.mediaId.startsWith("s")) return why(id, "a station or an episode after it")
         val record = item.mediaMetadata.extras?.getString(Levelling.RECORD).orEmpty()
-        if (record.isNotEmpty() && record == following.mediaMetadata.extras?.getString(Levelling.RECORD) && f == n + 1 && oneRecord(record)) return why(id, "a record in order")
+        if (record.isNotEmpty() && record == following.mediaMetadata.extras?.getString(Levelling.RECORD) && f == n + 1 && oneRecord(record)) return why(id, "a record in order, kept as made (records: mixed too, in settings)")
         // the beats matched, where both are sure and their tempos near: worked out (and the end stretched) apart
         val pcmEnd = pcm.start + all.size / pcm.channels * 1000L / pcm.rate
         if (id in planning) return
