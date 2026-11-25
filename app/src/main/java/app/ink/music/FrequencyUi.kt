@@ -68,10 +68,24 @@ fun FrequencyCard() {
                     change.consume(); tuned = (change.position.x / size.width).coerceIn(0f, 1f)
                 }
             })
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            BasicText("yours", style = pixel(12.sp, Ink.mid)); BasicText("near", style = pixel(12.sp, Ink.mid)); BasicText("new", style = pixel(12.sp, Ink.mid))
+        // the mix as it is where the needle sits, live while it's dragged: each zone's share, big, in its own colour
+        val mix = remember(tuned) { FrequencyMix.shares(FrequencyMix.Dials(tuned.toDouble())) }
+        val pct = remember(mix) {
+            val y = Math.round(mix.getValue(FrequencyMix.YOURS) * 100).toInt(); val n = Math.round(mix.getValue(FrequencyMix.NEAR) * 100).toInt()
+            Triple(y, n, 100 - y - n)
         }
-        BasicText(FrequencyMix.said(tuned.toDouble()), style = pixel(14.sp, Ink.ink), modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            listOf(Triple("yours", pct.first, Ink.ink), Triple("near", pct.second, Ink.mid), Triple("new", pct.third, if (on) newColour else Ink.mid))
+                .forEachIndexed { i, (word, n, colour) ->
+                    Column(Modifier.weight(1f), horizontalAlignment = when (i) { 0 -> Alignment.Start; 1 -> Alignment.CenterHorizontally; else -> Alignment.End }) {
+                        BasicText("$n", style = headline(30.sp, colour))
+                        BasicText(word, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 2.dp))
+                    }
+                }
+        }
+        // where it's tuned, in words, big; and what that means
+        BasicText(FrequencyMix.said(tuned.toDouble()).uppercase(), style = headline(30.sp), modifier = Modifier.padding(top = 22.dp))
+        BasicText(meaning(tuned.toDouble()), style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
         // a mood's picked on the moods page (ink's twelve, each playing this in it): here only said, and put away in a tap
         InkMoods.ALL.firstOrNull { it.key == d.mood }?.let { m ->
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
@@ -123,4 +137,13 @@ private fun Spectrum(tuned: Float, moving: Boolean, newColour: Color, modifier: 
             drawRect(Ink.ink, Offset(nx - 6.dp.toPx(), 0f), Size(12.dp.toPx(), 6.dp.toPx()))
         }
     }
+}
+
+/** What a place on the needle means, said plainly under it. */
+private fun meaning(t: Double) = when {
+    t < .2 -> "the songs you know, and a few next to them"
+    t < .42 -> "your songs first, new ones mixed in"
+    t < .58 -> "half yours, half new to you"
+    t < .8 -> "mostly new to you, some of yours to keep it close"
+    else -> "almost all new: artists you haven't heard yet"
 }
