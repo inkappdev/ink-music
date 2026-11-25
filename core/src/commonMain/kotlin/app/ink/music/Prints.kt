@@ -19,6 +19,8 @@ enum class Print(val word: String) {
     // the cover as a halftone of round dots, each its patch's own colour, as large as that patch is light (2026-11-25,
     // DOT MATRIX's print, its default there; the phone's only: the computer keeps the four)
     DOTS("dots"),
+    // the picture inside out in its own colour (Xray's; 2026-11-25, every look for every place; the phone's only)
+    XRAY("x-ray"),
 }
 
 /** The looks' pixels, from a cover drawn `n` x `n` (ARGB, smoothly scaled), one dot a pixel; `frames` steps of it developing. */

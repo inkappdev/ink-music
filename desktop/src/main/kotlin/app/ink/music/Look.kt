@@ -114,7 +114,7 @@ internal object LookFile {
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true),
             o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true), o.optBoolean("artistGrain", false), o.optBoolean("artistXray", false))
         Marquees.put(o.optBoolean("marquee", true))
-        CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") && it != Print.DOTS } ?: Print.TILES)
+        CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") && it != Print.DOTS && it != Print.XRAY } ?: Print.TILES)
         ListCovers.put(o.optBoolean("listCovers", false))
         ListsGrid.put(o.optBoolean("listsGrid", false))
     }

@@ -59,8 +59,12 @@ fun LookPage(pages: Pages) {
         fun turn(to: Int) { if (many && pager.currentPage != to) scope.launch { pager.animateScrollToPage(to, animationSpec = androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) } }
         // the player in small: what's chosen shows here at once
         val preview: @Composable ColumnScope.(Modifier) -> Unit = { size ->
-            androidx.compose.foundation.pager.HorizontalPager(pager, size, beyondViewportPageCount = 0) { page ->
-                PlayerPreview(page, Modifier.fillMaxSize())
+            // now playing and its artist's page side by side (2026-11-25, Bronson): each look shows where it's used
+            Row(size, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.weight(1f).fillMaxHeight(), beyondViewportPageCount = 0) { page ->
+                    PlayerPreview(page, Modifier.fillMaxSize())
+                }
+                ArtistPreview(Modifier.weight(1f).fillMaxHeight())
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -175,7 +179,7 @@ fun LookPage(pages: Pages) {
             title()
             Spacer(Modifier.height(14.dp))
             // short (2026-11-25, Bronson: tall for no reason): the cover and what's behind it are all it needs to show
-            preview(Modifier.fillMaxWidth().height(tall * .24f))
+            preview(Modifier.fillMaxWidth().height(tall * .3f))
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 14.dp, bottom = LocalFoot.current + 40.dp)) {
                 sections()
@@ -236,8 +240,8 @@ private fun Group(name: String, line: String? = null) {
 
 /**
  * PICTURES (2026-11-25): the four places a picture is drawn across the top (the player's cover, behind it, mixes and
- * lists, artist pages), one set of looks down the side, a lit square for each place's (a round dot in DOT MATRIX); a
- * look a place can't take a faint point. A tap chooses, and the preview above shows it.
+ * lists, artist pages), one set of looks down the side, a lit square for each place's (a round dot in DOT MATRIX); every
+ * look for every place but black, behind the player alone (a faint point elsewhere). A tap chooses, the preview shows it.
  */
 @Composable
 private fun LooksGrid() {
@@ -251,20 +255,23 @@ private fun LooksGrid() {
     val looks = listOf("as it is", "dither", "tiles", "dots", "blur", "x-ray", "black")
     // each place: which look it's in, and what each look it can take does
     class Place(val head: String, val on: String, val can: Map<String, () -> Unit>)
+    val artistExtra by ArtistLook.extra.collectAsState()
+    // every look for every place (2026-11-25, Bronson), but black: only behind the player
+    fun lookWord(l: Look?) = when (l) { null, Look.AS_IS -> "as it is"; Look.DITHER -> "dither"; Look.PIXELS -> "tiles"; Look.DOTS -> "dots"; Look.BLUR -> "blur"; Look.XRAY -> "x-ray"; Look.PLAIN -> "black" }
+    val asLook = mapOf("dither" to Look.DITHER, "tiles" to Look.PIXELS, "dots" to Look.DOTS, "blur" to Look.BLUR, "x-ray" to Look.XRAY)
+    val asPrint = mapOf("as it is" to Print.CLEAR, "dither" to Print.DITHER, "tiles" to Print.TILES, "dots" to Print.DOTS, "blur" to Print.GRAIN, "x-ray" to Print.XRAY)
+    fun artist(word: String) {
+        ArtistLook.set(ctx, if (word == "tiles" || word == "dots") word else "")
+        Moving.set(ctx, artistDither = word == "dither", artistGrain = word == "blur", artistXray = word == "x-ray")
+    }
     val places = listOf(
-        Place("the\ncover", when (cover) { Look.DITHER -> "dither"; Look.PIXELS -> "tiles"; else -> "as it is" }, mapOf(
-            "as it is" to { Moving.set(ctx, cover = null) }, "dither" to { Moving.set(ctx, cover = Look.DITHER) }, "tiles" to { Moving.set(ctx, cover = Look.PIXELS) })),
-        Place("behind\nit", when (behind) { Look.AS_IS -> "as it is"; Look.DITHER -> "dither"; Look.PIXELS -> "tiles"; Look.BLUR -> "blur"; Look.XRAY -> "x-ray"; Look.PLAIN -> "black" }, mapOf(
-            "as it is" to { Looks.set(ctx, Look.AS_IS) }, "dither" to { Looks.set(ctx, Look.DITHER) }, "tiles" to { Looks.set(ctx, Look.PIXELS) },
-            "blur" to { Looks.set(ctx, Look.BLUR) }, "x-ray" to { Looks.set(ctx, Look.XRAY) }, "black" to { Looks.set(ctx, Look.PLAIN) })),
-        Place("mixes,\nlists", when (print) { Print.CLEAR -> "as it is"; Print.DITHER -> "dither"; Print.TILES -> "tiles"; Print.DOTS -> "dots"; Print.GRAIN -> "blur" }, mapOf(
-            "as it is" to { CoverPrint.set(ctx, Print.CLEAR) }, "dither" to { CoverPrint.set(ctx, Print.DITHER) }, "tiles" to { CoverPrint.set(ctx, Print.TILES) },
-            "dots" to { CoverPrint.set(ctx, Print.DOTS) }, "blur" to { CoverPrint.set(ctx, Print.GRAIN) })),
-        Place("artist\npages", if (xray) "x-ray" else if (grain) "blur" else if (dithered) "dither" else "as it is", mapOf(
-            "as it is" to { Moving.set(ctx, artistDither = false, artistGrain = false, artistXray = false) },
-            "dither" to { Moving.set(ctx, artistDither = true, artistGrain = false, artistXray = false) },
-            "blur" to { Moving.set(ctx, artistDither = false, artistGrain = true, artistXray = false) },
-            "x-ray" to { Moving.set(ctx, artistDither = false, artistGrain = false, artistXray = true) })),
+        Place("the\ncover", lookWord(cover),
+            (listOf("as it is" to { Moving.set(ctx, cover = null) }) + asLook.map { (w, l) -> w to { Moving.set(ctx, cover = l) } }).toMap()),
+        Place("behind\nit", lookWord(behind),
+            (listOf("as it is" to { Looks.set(ctx, Look.AS_IS) }) + asLook.map { (w, l) -> w to { Looks.set(ctx, l) } } + listOf("black" to { Looks.set(ctx, Look.PLAIN) })).toMap()),
+        Place("mixes,\nlists", asPrint.entries.firstOrNull { it.value == print }?.key ?: "tiles", asPrint.mapValues { (_, p) -> { CoverPrint.set(ctx, p) } }),
+        Place("artist\npages", if (artistExtra.isNotEmpty()) artistExtra else if (xray) "x-ray" else if (grain) "blur" else if (dithered) "dither" else "as it is",
+            listOf("as it is", "dither", "tiles", "dots", "blur", "x-ray").associateWith { w -> { artist(w) } }),
     )
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
@@ -287,6 +294,42 @@ private fun LooksGrid() {
                             else -> Box(Modifier.size(12.dp).border(1.dp, Ink.dim, shape))
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The artist page in small, beside the player in the look's preview (2026-11-25): the playing (or last) song's artist,
+ * their photo in the artist pages' look, their name over its foot as their page has it, a phone's shape in a hairline.
+ */
+@Composable
+private fun ArtistPreview(modifier: Modifier) {
+    val now by Playback.now.collectAsState()
+    val ctx = LocalContext.current
+    val artist by androidx.compose.runtime.produceState(now?.artist?.substringBefore(", ").orEmpty(), now?.artist) {
+        if (value.isEmpty()) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            History.read(ctx).lastOrNull()?.artist?.substringBefore(", ").orEmpty()
+        }
+    }
+    val info by androidx.compose.runtime.remember(artist) { if (artist.isEmpty()) kotlinx.coroutines.flow.flowOf(null) else YouTubeAccount.artist(artist) }.collectAsState(null)
+    val photo = info?.photo
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier, contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
+        val full = ctx.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
+        val k = minOf(maxWidth / full.first, maxHeight / full.second, 1f)
+        val w = full.first * k
+        Column(Modifier.size(w, full.second * k).border(1.dp, Ink.line).background(Ink.black)) {
+            Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = androidx.compose.ui.Alignment.BottomStart) {
+                if (photo != null) ArtistPhoto(remember(photo) { photoSong(artist, photo) }, Modifier.fillMaxSize())
+                BasicText(artist.uppercase(), style = headline((w.value / 7).sp), maxLines = 2, modifier = Modifier.padding(w / 20))
+            }
+            // their top songs under it, as their page has them
+            Column(Modifier.padding(w / 20)) {
+                BasicText(if (artist.isEmpty()) "play something" else "top songs", style = pixel(12.sp, Ink.mid))
+                info?.top?.take(5)?.forEach { t ->
+                    BasicText(t.title.uppercase(), style = headline((w.value / 16).sp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = w / 28))
                 }
             }
         }

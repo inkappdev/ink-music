@@ -26,6 +26,8 @@ enum class Look(val word: String, val alpha: Float, val crisp: Boolean) {
     DITHER("dither", .4f, true),
     // the cover inside out in its own colour, as film is (Xray; 2026-11-18, Bronson: the artist pages' look, the canvas's too)
     XRAY("x-ray", .4f, false),
+    // a halftone of round dots in the cover's own colours (2026-11-25: every look for every place)
+    DOTS("dots", .45f, false),
     // the cover (or a song's canvas) itself, no effect, held to half over the black so the words over it read
     AS_IS("clear", .5f, false),
     PLAIN("plain", 0f, false),
@@ -68,6 +70,7 @@ object Looks {
             Look.PIXELS -> pixels(src, (shown / (18 * density)).roundToInt().coerceIn(4, 80))
             Look.DITHER -> dither(src, dots(shown, density), accent.toArgb())
             Look.XRAY -> xray(src, accent.toArgb())
+            Look.DOTS -> halftone(src, (shown / (7 * density)).roundToInt().coerceIn(12, 90))
             Look.AS_IS -> src
             Look.PLAIN -> null
         }
@@ -88,6 +91,28 @@ object Looks {
             Prints.tiles(px, dots, frames).map { Bitmap.createBitmap(it, dots, dots, Bitmap.Config.ARGB_8888) }
         }
     } catch (e: Exception) { null }
+
+    /**
+     * The dots: `n` cells a side, each a round dot in its cell's own colour (a dark one lifted a little), as wide as the
+     * cell is light, on black; 12 px a cell, drawn up smoothly.
+     */
+    private fun halftone(src: Bitmap, n: Int): Bitmap {
+        val small = Bitmap.createScaledBitmap(src, n, n, true)
+        val c = 12
+        val out = Bitmap.createBitmap(n * c, n * c, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        canvas.drawColor(0xFF000000.toInt())
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        for (y in 0 until n) for (x in 0 until n) {
+            val p = small.getPixel(x, y)
+            val r = p shr 16 and 255; val g = p shr 8 and 255; val b = p and 255
+            val l = (r * 299 + g * 587 + b * 114) / 255_000f
+            val k = if (l < .35f) 1.35f else 1f
+            paint.color = (255 shl 24) or ((r * k).toInt().coerceAtMost(255) shl 16) or ((g * k).toInt().coerceAtMost(255) shl 8) or (b * k).toInt().coerceAtMost(255)
+            canvas.drawCircle((x + .5f) * c, (y + .5f) * c, c * .48f * (.18f + .82f * kotlin.math.sqrt(l)), paint)
+        }
+        return out
+    }
 
     /** Shrunk to `n` px and box-blurred `passes` times each way (three: drawn back up, a colour field). */
     private fun soft(src: Bitmap, n: Int, r: Int, passes: Int = 3): Bitmap {

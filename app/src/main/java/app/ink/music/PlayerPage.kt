@@ -692,7 +692,7 @@ private fun Backdrop(cover: Cover?, n: Now) {
     val chosen by Looks.on.collectAsState()
     // DOT MATRIX (Android 13's shaders): dots over the blur, the x-ray or the clear cover; in place of dither and pixels
     val dots = Hand.dots && android.os.Build.VERSION.SDK_INT >= 33
-    val look = if (dots && (chosen == Look.DITHER || chosen == Look.PIXELS)) Look.AS_IS else chosen
+    val look = if (dots && (chosen == Look.DITHER || chosen == Look.PIXELS || chosen == Look.DOTS)) Look.AS_IS else chosen
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current.density
         // the square cover cropped to fill the page: shown at the page's longer side
@@ -1639,8 +1639,8 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
         ?: shown?.let { s -> Now(s, s.title, s.artist, s.album.ifBlank { pick.album }, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1) }
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         val full = LocalContext.current.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
-        // only its top shown: the cover and the title (under them are the player's own controls, the same whatever's chosen)
-        val top = if (Device.tv) full.second else full.second * .92f
+        // the whole screen, top to foot, as the player is (2026-11-25: its top only had left black above and no controls)
+        val top = full.second
         val k = minOf(maxWidth / full.first, maxHeight / top, 1f)
         val d = LocalDensity.current
         Box(Modifier.size(full.first * k, top * k).clipToBounds().border(1.dp, Ink.line)) {
@@ -1664,18 +1664,33 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
                             }
                         }
                         Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.fillMaxWidth(), size = 72.sp)
-                    } else Column(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 110.dp)) {
+                    } else Column(Modifier.fillMaxSize().padding(top = 44.dp)) {
+                        // laid out as the player is (2026-11-25): its top row, the cover, the song, the controls and their
+                        // words, the giant name at the foot; the controls drawn, not working (it's a picture of it)
                         val side = minOf(full.first - 40.dp, 420.dp)
-                        Sleeve(n, side, Modifier)
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            BasicText("no fades", style = pixel(SMALL, Ink.dim)); Sprite(CLOSE, SAID, 2.dp); BasicText("sleep", style = pixel(SMALL, SAID))
+                        }
+                        Spacer(Modifier.height(44.dp))
+                        Box(Modifier.padding(horizontal = 20.dp)) { Sleeve(n, side, Modifier) }
+                        Spacer(Modifier.height(16.dp))
+                        Column(Modifier.padding(horizontal = 20.dp)) {
+                            BasicText(n.title.uppercase(), style = headline(32.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(8.dp))
+                            BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Sprite(SHUFFLE, OFF, 3.dp); Sprite(BACK, Ink.ink, 4.dp); Sprite(PLAY, Ink.ink, 4.dp); Sprite(NEXT, Ink.ink, 4.dp); Sprite(REPEAT, OFF, 3.dp)
+                        }
+                        Spacer(Modifier.height(36.dp))
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            listOf("up next", "lyrics", "playlist", "stop").forEach { BasicText(it, style = pixel(SMALL, SAID)) }
+                        }
                         Spacer(Modifier.height(20.dp))
-                        BasicText(n.title.uppercase(), style = headline(32.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(8.dp))
-                        BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
-                        // the giant name, under the title here (the player's controls between them left out), edge to edge,
-                        // moving or still as set
-                        Spacer(Modifier.height(28.dp))
                         Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.requiredWidth(full.first),
                             size = 150.sp * PlayerRoom.nameScale(PlayerRoom.name.collectAsState().value))
+                        Spacer(Modifier.height(24.dp))
                     }
                 }
             }

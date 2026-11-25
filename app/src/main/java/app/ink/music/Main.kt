@@ -165,6 +165,7 @@ open class Main : ComponentActivity() {
         Moves.start(this)
         // DOT MATRIX, if it's been turned on: the hand set before anything's drawn
         DotMatrix.start(this)
+        ArtistLook.start(this)
         // a computer's QR code read by the camera: kept before anything, so even a Main closing itself below hands it on
         Computers.take(intent)
         // opened again (the home screen, the notification) over ink music's own screens: those stay
@@ -1789,7 +1790,10 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 val dithered = Moving.artistDither.collectAsState().value && !grain && !xray
                 if (photo != null) Box(Modifier.size(side).align(Alignment.Center)) {
                     val still = remember(photo) { photoSong(name, photo) }
+                    val extra by ArtistLook.extra.collectAsState()
                     when {
+                        extra == "tiles" -> Dithered(still, Modifier.fillMaxSize(), print0 = Print.TILES, own = true)
+                        extra == "dots" -> DotPrint(still, Modifier.fillMaxSize())
                         xray -> Xrayed(still, Modifier.fillMaxSize())
                         grain -> Grainy(still, Modifier.fillMaxSize())
                         dithered -> Dithered(still, Modifier.fillMaxSize(), own = true)
@@ -2438,8 +2442,9 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print0: Print = Pr
     if (!own && CoverPrint.on.collectAsState().value == Print.CLEAR) return AsItIs(photo, modifier, px)
     // the grain look is a picture, not dots: drawn apart
     if (print == Print.GRAIN) return Grainy(photo, modifier, px)
-    // dots: a halftone drawn as circles (DotPrint)
+    // dots: a halftone drawn as circles (DotPrint); x-ray: inside out in its colour
     if (print == Print.DOTS) return DotPrint(photo, modifier, px)
+    if (print == Print.XRAY) return Xrayed(photo, modifier, px)
     // clear: the cover as it is
     if (print == Print.CLEAR) return AsItIs(photo, modifier, px)
     val cover = rememberCover(photo, px)
@@ -2510,6 +2515,11 @@ private fun Xrayed(photo: Song, modifier: Modifier, px: Int = 1080) {
  */
 @Composable
 fun ArtistPhoto(photo: Song, modifier: Modifier) {
+    // tiles and dots (2026-11-25), kept apart from the three flags
+    when (ArtistLook.extra.collectAsState().value) {
+        "tiles" -> return Dithered(photo, modifier, print0 = Print.TILES, own = true)
+        "dots" -> return DotPrint(photo, modifier)
+    }
     val xray by Moving.artistXray.collectAsState()
     val grain = Moving.artistGrain.collectAsState().value && !xray
     val dithered = Moving.artistDither.collectAsState().value && !grain && !xray
@@ -4165,4 +4175,15 @@ private fun TvRail(tabs: List<String>, tab: String, onPlace: (String) -> Unit, p
         // (your year not on a TV, 2026-11-10: a phone's thing, read up close)
         Small("settings", at, onSettings)
     }
+}
+
+/**
+ * An artist page's photo in tiles or dots (2026-11-25, every look for every place): kept apart from Moving's three flags
+ * (dither, blur, x-ray), in its own file; empty, the flags say.
+ */
+object ArtistLook {
+    val extra = kotlinx.coroutines.flow.MutableStateFlow("")
+    private fun file(c: android.content.Context) = java.io.File(c.filesDir, "artist-look")
+    fun start(c: android.content.Context) { extra.value = runCatching { file(c).readText().trim() }.getOrDefault("") }
+    fun set(c: android.content.Context, look: String) { extra.value = look; runCatching { if (look.isEmpty()) file(c).delete() else file(c).writeText(look) } }
 }
