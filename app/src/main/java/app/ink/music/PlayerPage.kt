@@ -735,6 +735,11 @@ private fun Backdrop(cover: Cover?, n: Now) {
         // ink's fine grain over the other looks (not dither's, nor as it is; the blur has its own)
         // (not on a TV: a blend across the whole screen, again each time anything over it moves)
         if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN && look != Look.BLUR && !Device.tv && !dots) Grain()
+        // a dark vignette down from the top, so the top row reads over any background (2026-11-25, Bronson's call: an
+        // exception to "no gradients" and "never a fade to black", which once turned it down; "no fades" was unreadable
+        // over dots); not with black behind
+        if (look != Look.PLAIN && (canvasShown || drawn != null)) Box(Modifier.fillMaxWidth().fillMaxHeight(.22f).background(
+            androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(alpha = .85f), Color.Black.copy(alpha = .45f), Color.Transparent))))
     }
 }
 
