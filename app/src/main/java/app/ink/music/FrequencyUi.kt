@@ -6,8 +6,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,7 +18,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,7 +37,6 @@ import androidx.compose.ui.unit.sp
  * for new). The bars move while it plays. Under it the moods (the hour's three, "more" all twelve), and PLAY big.
  * Just your music, or the play build: no moods (their songs are found on YouTube Music).
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FrequencyCard() {
     val ctx = LocalContext.current
@@ -55,8 +51,6 @@ fun FrequencyCard() {
     // the needle while it's moved (kept to the dials once let go: each turn finds its songs again)
     var tuned by remember(d.tuned) { mutableFloatStateOf(d.tuned.toFloat()) }
     val newColour = rememberCover(if (on) now?.song else null, 200)?.accent ?: Ink.dim
-    var all by remember { mutableStateOf(false) }
-    val moods = remember(d.mood, all) { if (all) InkMoods.ALL else (InkMoods.now() + InkMoods.ALL.filter { it.key == d.mood }).distinctBy { it.key } }
     fun let(t: Float) { YourFrequency.turn(ctx, d.copy(tuned = t.toDouble().coerceIn(0.0, 1.0))) }
 
     Column(Modifier.padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 18.dp)) {
@@ -78,16 +72,11 @@ fun FrequencyCard() {
             BasicText("yours", style = pixel(12.sp, Ink.mid)); BasicText("near", style = pixel(12.sp, Ink.mid)); BasicText("new", style = pixel(12.sp, Ink.mid))
         }
         BasicText(FrequencyMix.said(tuned.toDouble()), style = pixel(14.sp, Ink.ink), modifier = Modifier.padding(top = 8.dp))
-        if (!JustYours.on && YouTubeMusic.available) {
-            Spacer(Modifier.height(14.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Word("any mood", pixel(14.sp, if (d.mood.isEmpty()) Ink.ink else Ink.dim), touch = 8.dp) { YourFrequency.turn(ctx, d.copy(mood = "")) }
-                moods.forEach { m ->
-                    Word(m.name, pixel(14.sp, if (d.mood == m.key) Ink.ink else Ink.dim), touch = 8.dp) {
-                        YourFrequency.turn(ctx, d.copy(mood = if (d.mood == m.key) "" else m.key))
-                    }
-                }
-                Word(if (all) "fewer" else "more", pixel(14.sp, Ink.mid), touch = 8.dp) { all = !all }
+        // a mood's picked on the moods page (ink's twelve, each playing this in it): here only said, and put away in a tap
+        InkMoods.ALL.firstOrNull { it.key == d.mood }?.let { m ->
+            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                BasicText("in ${m.name}", style = pixel(14.sp, Ink.mid))
+                Word("off", pixel(14.sp, Ink.mid), touch = 8.dp) { YourFrequency.turn(ctx, d.copy(mood = "")) }
             }
         }
         Spacer(Modifier.height(10.dp))
