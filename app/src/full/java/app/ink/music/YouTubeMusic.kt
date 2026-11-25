@@ -166,34 +166,28 @@ object YouTubeMusic {
 
     /**
      * A song's stream found. Signed in: the stream YouTube Music's web player gets as you (Premium: its 256k AAC; your
-     * uploads); if it hasn't answered in 2 s, NewPipe's (signed out) asked alongside, and whichever answers first plays
-     * (2026-11-11: a slow moment for YouTube shouldn't be a silent one here); if it fails, NewPipe's. A speaker
-     * gets NewPipe's (it fetches the link itself, from its own address). Where NewPipe has none, signed in again, whatever
-     * was refused before and for a speaker too (its m4a): your uploads to YouTube Music are private, their stream given only
-     * to you (2026-11-17), so that's their one way (a speaker on your wifi shares your address).
+     * uploads); signed out, NewPipe's. Each way given a few seconds (2 s signed in, 3 s NewPipe) before the next is
+     * asked alongside, and one that fails hands on at once; whichever answers first plays (2026-11-11: a slow moment for
+     * YouTube shouldn't be a silent one here). The ways after it: NewPipe's (signed in), then YouTube's visionOS app's
+     * (2026-11-25, as the computer's: signed out, NewPipe was the one way, and a tester's songs took 15-30 s or never
+     * started on five phones while the computer, with this way, played at once). A speaker gets NewPipe's (it fetches
+     * the link itself, from its own address). Where none has it, signed in again, whatever was refused before and for
+     * a speaker too (its m4a): your uploads to YouTube Music are private, their stream given only to you (2026-11-17),
+     * so that's their one way (a speaker on your wifi shares your address).
      */
     private fun find(id: String, key: String, forSpeaker: Boolean, small: Boolean): Pair<String, String>? {
         init()
         val t0 = System.currentTimeMillis()
         val pipe = java.util.concurrent.Callable { pipeStream(id, forSpeaker, small) }
+        val vision = java.util.concurrent.Callable { visionStream(id) }
         val signedOk = SIGNED && !forSpeaker && id !in refusedSongs && refusedSongs.size < 3
         val t = if (signedOk) app?.let { YouTubeAccount.signed(it) } else null
-        val got: Triple<String, String, Int>? = if (t == null) pipe.call() else {
-            val done = java.util.concurrent.ExecutorCompletionService<Triple<String, String, Int>?>(race)
-            done.submit { signedStream(t, id, small) }
-            var running = 1
-            var first = runCatching { done.poll(2_000, java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull()
-                ?.let { running--; runCatching { it.get() }.getOrNull() }
-            // slow, or it failed: NewPipe's asked (alongside, if the signed one's still going)
-            if (first == null) {
-                if (running == 1) android.util.Log.d("ink-youtube", "find $id: signed slow after ${System.currentTimeMillis() - t0} ms, newpipe alongside")
-                done.submit(pipe); running++
-                while (first == null && running > 0) {
-                    first = runCatching { done.poll(30, java.util.concurrent.TimeUnit.SECONDS)?.get() }.getOrNull(); running--
-                }
-            }
-            first
+        val ways = buildList<Pair<String, java.util.concurrent.Callable<Triple<String, String, Int>?>>> {
+            if (t != null) add("signed" to java.util.concurrent.Callable { signedStream(t, id, small) })
+            add("newpipe" to pipe)
+            if (!forSpeaker) add("visionos" to vision)
         }
+        val got = firstOf(id, ways, t0)
         val (url, mime, kbps) = got
             ?: (if (SIGNED && (forSpeaker || !signedOk)) app?.let { YouTubeAccount.signed(it) }?.let { signedStream(it, id, small, aac = forSpeaker) } else null)
             ?: return null
@@ -201,6 +195,52 @@ object YouTubeMusic {
         rates[key] = kbps
         streams[key] = Triple(url, mime, System.currentTimeMillis() + 4 * 3_600_000L)
         return url to mime
+    }
+
+    /**
+     * The ways to a song asked in turn, each given its few seconds (2 s signed in, 3 s the others) before the next is
+     * asked alongside, the next at once when one fails; the first answer wins, the rest left to finish on their own.
+     */
+    private fun firstOf(id: String, ways: List<Pair<String, java.util.concurrent.Callable<Triple<String, String, Int>?>>>, t0: Long): Triple<String, String, Int>? {
+        val done = java.util.concurrent.ExecutorCompletionService<Triple<String, String, Int>?>(race)
+        var next = 0; var running = 0
+        while (true) {
+            if (running == 0) {
+                if (next >= ways.size) return null
+                done.submit(ways[next++].second); running++
+            }
+            val wait = if (ways[next - 1].first == "signed") 2_000L else 3_000L
+            val f = runCatching { done.poll(if (next < ways.size) wait else 30_000L, java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull()
+            if (f == null) {
+                // slow: the next way asked alongside (or, the last one going, given up on)
+                if (next >= ways.size) return null
+                android.util.Log.d("ink-youtube", "find $id: ${ways[next - 1].first} slow after ${System.currentTimeMillis() - t0} ms, ${ways[next].first} alongside")
+                done.submit(ways[next++].second); running++
+                continue
+            }
+            running--
+            runCatching { f.get() }.getOrNull()?.let { return it }
+            // that one failed: the next asked now, not after the wait
+            if (next < ways.size) { done.submit(ways[next++].second); running++ }
+        }
+    }
+
+    // the computer's other way, the phone's too: no JavaScript (the visionOS way needs none), one song at a time
+    // (two at once, the player's and automix's reading, turned one away on the computer)
+    private val tubeStream by lazy {
+        val none = object : TubeJs {
+            override fun solve(playerUrl: String, playerCode: String, sig: String?, n: String?): Pair<String?, String?>? = null
+            override fun poToken(id: String): String? = null
+        }
+        TubeStream(none, java.io.File(app?.cacheDir ?: java.io.File(System.getProperty("java.io.tmpdir") ?: "/tmp"), "tube-stream").apply { mkdirs() })
+            .apply { log = { android.util.Log.d("ink-youtube", "tubestream: $it") } }
+    }
+
+    /** A song's stream as YouTube's visionOS app asks for it (blocking): its link tried at its start and middle first. */
+    private fun visionStream(id: String): Triple<String, String, Int>? {
+        val s = synchronized(tubeStream) { runCatching { tubeStream.stream(id.removePrefix("y")) }.getOrNull() } ?: return null
+        android.util.Log.d("ink-youtube", "stream $id the other way (${s.how})")
+        return Triple(s.url, s.mime, s.kbps)
     }
 
     /** NewPipe's stream, signed out (blocking). */

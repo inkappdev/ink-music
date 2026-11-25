@@ -653,7 +653,8 @@ class PlayerService : MediaLibraryService() {
         // a YouTube Music song plays from "ytm://<id>": its stream found as it starts (the full build only);
         // a Navidrome song's stream as the quality asks for the network it starts on (Quality)
         val sources = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
-            androidx.media3.datasource.ResolvingDataSource.Factory(androidx.media3.datasource.DefaultDataSource.Factory(this)) { spec ->
+            // YouTube's audio asked for in pieces (Chunked: googlevideo slows or turns away an open-ended range)
+            androidx.media3.datasource.ResolvingDataSource.Factory(Chunked.Factory(androidx.media3.datasource.DefaultDataSource.Factory(this))) { spec ->
                 // chosen once a song: a seek opens it again partway, and must get the same stream
                 fun quality(): Int {
                     val key = spec.uri.toString()

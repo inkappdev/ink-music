@@ -32,15 +32,28 @@ object Pipe {
     /** Told why a song's stream couldn't be read (the computer's log): it had been dropped without a word. */
     @Volatile var failed: ((vid: String, why: Throwable) -> Unit)? = null
 
-    /** A song's stream, read without the videos YouTube sets beside it (a half-megabyte, two thirds of the wait). */
+    /**
+     * A song's stream, read without the videos YouTube sets beside it (a half-megabyte, two thirds of the wait). Each of
+     * its asks cut off at [Fetch.STREAM_DEADLINE], and the whole tried once more if it fails (2026-11-25, a tester's
+     * songs taking 15-30 s to start on five phones, or never: one ask that stalls, on a connection the far end had
+     * quietly dropped, had held the song till the 20 s read timeout; a second try, on a new connection, comes at once,
+     * as BitChord measured).
+     */
     fun streamInfo(vid: String): StreamInfo? {
         init()
-        Fetch.lean.set(true)
+        Fetch.lean.set(true); Fetch.deadline.set(Fetch.STREAM_DEADLINE)
         return try {
-            runCatching { StreamInfo.getInfo(org.schabi.newpipe.extractor.ServiceList.YouTube, "https://www.youtube.com/watch?v=$vid") }
-                .onFailure { e -> runCatching { failed?.invoke(vid, e) } }.getOrNull()
+            var last: Throwable? = null
+            repeat(2) { attempt ->
+                val t0 = System.currentTimeMillis()
+                runCatching { StreamInfo.getInfo(org.schabi.newpipe.extractor.ServiceList.YouTube, "https://www.youtube.com/watch?v=$vid") }
+                    .onSuccess { return it }
+                    .onFailure { e -> last = e; log("newpipe $vid: try ${attempt + 1} failed in ${System.currentTimeMillis() - t0} ms: ${e.javaClass.simpleName}") }
+            }
+            last?.let { e -> runCatching { failed?.invoke(vid, e) } }
+            null
         }
-        finally { Fetch.lean.set(false) }
+        finally { Fetch.lean.set(false); Fetch.deadline.set(0L) }
     }
 
     /**
@@ -128,24 +141,40 @@ object Pipe {
         val lean: ThreadLocal<Boolean> = ThreadLocal.withInitial { false }
         private val EMPTY = """{"responseContext":{},"contents":{},"lean":"${" ".repeat(64)}"}"""   // NewPipe refuses a short answer
 
+        /** On this thread, each ask cut off this many ms after it begins (0: only the timeouts). */
+        val deadline: ThreadLocal<Long> = ThreadLocal.withInitial { 0L }
+        /**
+         * A song's stream's asks: a healthy one lands in well under a second, the player's code (a few megabytes, once a
+         * version) in two or three on a phone; past this it's a stalled connection, and a new try is quicker than waiting.
+         */
+        const val STREAM_DEADLINE = 8_000L
+        // cuts a connection at its deadline (a read timeout is per read: an answer that trickles never ends)
+        private val watchdog = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "ink-pipe-deadline").apply { isDaemon = true } }
+
         override fun execute(request: Request): Response {
             if (lean.get() == true && request.url().contains("/youtubei/v1/next")) return Response(200, "OK", emptyMap(), EMPTY, request.url())
             // just your music (the phone's): YouTube never asked
             if (HeldBack.held(request.url())) throw java.io.IOException("held back")
             val c = URL(request.url()).openConnection() as HttpURLConnection
             c.requestMethod = request.httpMethod()
-            c.connectTimeout = 15_000; c.readTimeout = 20_000
+            // the player's code given longer: a few megabytes, on a slow line, and every song waits on it till it's read once
+            val limit = deadline.get().let { if (it > 0 && request.url().substringBefore('?').endsWith(".js")) it * 3 else it }
+            if (limit > 0) { c.connectTimeout = 5_000; c.readTimeout = 5_000 } else { c.connectTimeout = 15_000; c.readTimeout = 20_000 }
             c.setRequestProperty("User-Agent", UA)
             request.headers().forEach { (k, vs) -> vs.forEachIndexed { i, v -> if (i == 0) c.setRequestProperty(k, v) else c.addRequestProperty(k, v) } }
-            request.dataToSend()?.let { data -> c.doOutput = true; c.outputStream.use { it.write(data) } }
+            val cut = if (limit > 0) watchdog.schedule({ c.disconnect() }, limit, java.util.concurrent.TimeUnit.MILLISECONDS) else null
             val t0 = System.nanoTime()
             try {
+                request.dataToSend()?.let { data -> c.doOutput = true; c.outputStream.use { it.write(data) } }
                 val code = c.responseCode
                 if (code == 429) throw ReCaptchaException("rate limited", request.url())
                 val body = (if (code >= 400) c.errorStream else c.inputStream)?.bufferedReader()?.use { it.readText() }
                 log("newpipe ${(System.nanoTime() - t0) / 1_000_000} ms, ${(body?.length ?: 0) / 1024} kB ${request.url().substringBefore('?').takeLast(40)}")
                 return Response(code, c.responseMessage, c.headerFields.filterKeys { it != null }, body, c.url.toString())
-            } finally { c.disconnect() }
+            } catch (e: java.io.IOException) {
+                if (cut != null && cut.isDone) throw java.io.IOException("cut off after $limit ms: ${request.url().substringBefore('?').takeLast(40)}", e)
+                throw e
+            } finally { cut?.cancel(false); c.disconnect() }
         }
     }
 }
