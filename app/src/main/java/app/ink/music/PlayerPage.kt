@@ -690,9 +690,10 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
 @Composable
 private fun Backdrop(cover: Cover?, n: Now) {
     val chosen by Looks.on.collectAsState()
-    // DOT MATRIX (Android 13's shaders): dots over the blur, the x-ray or the clear cover; in place of dither and pixels
-    val dots = Hand.dots && android.os.Build.VERSION.SDK_INT >= 33
-    val look = if (dots && (chosen == Look.DITHER || chosen == Look.PIXELS || chosen == Look.DOTS)) Look.AS_IS else chosen
+    // DOT MATRIX (Android 13's shaders): dots over the blur, the x-ray or the clear cover; dither and tiles as chosen
+    // (a crisp look chosen is kept, 2026-11-25), dots chosen drawn once
+    val look = chosen
+    val dots = Hand.dots && android.os.Build.VERSION.SDK_INT >= 33 && (look == Look.BLUR || look == Look.XRAY || look == Look.AS_IS)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current.density
         // the square cover cropped to fill the page: shown at the page's longer side

@@ -1677,7 +1677,7 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
 
 /** An artist's page: the name big, their records as covers, every song they're on. */
 @Composable
-private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
+internal fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
     val albums by Library.albums.collectAsState()
     val songs by Library.songs.collectAsState()
     val records = remember(albums, name) { albums.filter { it.artist.equals(name, ignoreCase = true) } }
@@ -1792,11 +1792,11 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                     val still = remember(photo) { photoSong(name, photo) }
                     val extra by ArtistLook.extra.collectAsState()
                     when {
-                        extra == "tiles" -> Dithered(still, Modifier.fillMaxSize(), print0 = Print.TILES, own = true)
+                        extra == "tiles" -> Dithered(still, Modifier.fillMaxSize(), print0 = Print.TILES, own = true, chosen = true)
                         extra == "dots" -> DotPrint(still, Modifier.fillMaxSize())
                         xray -> Xrayed(still, Modifier.fillMaxSize())
                         grain -> Grainy(still, Modifier.fillMaxSize())
-                        dithered -> Dithered(still, Modifier.fillMaxSize(), own = true)
+                        dithered -> Dithered(still, Modifier.fillMaxSize(), own = true, chosen = true)
                         else -> AsItIs(still, Modifier.fillMaxSize())
                     }
                     val c = rememberCover(still, 1080)
@@ -2432,10 +2432,11 @@ fun pullQuote(about: String): Pair<String?, String> = Bio.pullQuote(about)
  * in the look chosen for them ([Covered]).
  */
 @Composable
-fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print0: Print = Print.DITHER, own: Boolean = false) {
-    // DOT MATRIX: the dither and the tiles in dots everywhere (a special's grid and an artist page's dithered photo too),
-    // but 1-bit mode, an easter egg of its own
-    val print = if (Hand.dots && !OneBit.on.value && (print0 == Print.DITHER || print0 == Print.TILES)) Print.DOTS else print0
+fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print0: Print = Print.DITHER, own: Boolean = false, chosen: Boolean = false) {
+    // DOT MATRIX: the dither and the tiles in dots where nobody chose them (a special's grid); a look chosen in the
+    // grid (`chosen`: mixes and lists, artist pages, 1-bit mode) stays as chosen (2026-11-25, Bronson: artist pages'
+    // dither and tiles "all doing dots")
+    val print = if (Hand.dots && !chosen && (print0 == Print.DITHER || print0 == Print.TILES)) Print.DOTS else print0
     // covers set to clear (settings, the look; 2026-11-17, Bronson: for whoever wants no dither, tiles or blur at all):
     // the picture as it is, wherever a print was only the look's; not where a setting of its own chose it (`own`: 1-bit
     // mode, an artist page's dithered)
@@ -2476,9 +2477,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print0: Print = Pr
 
 /** A mix's or a list's picture in the look chosen for them (settings, the look, COVERS): the dither, tiles or grain. */
 @Composable
-fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px,
-    // DOT MATRIX: dots, unless covers are set to clear
-    CoverPrint.on.collectAsState().value.let { if (Hand.dots && it != Print.CLEAR) Print.DOTS else it })
+fun Covered(photo: Song, modifier: Modifier, px: Int = 1080) = Dithered(photo, modifier, px, CoverPrint.on.collectAsState().value, chosen = true)
 
 /**
  * An artist's photo as an x-ray in its own accent ([Xray]), developing in from black as covers do; black till it's
@@ -2517,7 +2516,7 @@ private fun Xrayed(photo: Song, modifier: Modifier, px: Int = 1080) {
 fun ArtistPhoto(photo: Song, modifier: Modifier) {
     // tiles and dots (2026-11-25), kept apart from the three flags
     when (ArtistLook.extra.collectAsState().value) {
-        "tiles" -> return Dithered(photo, modifier, print0 = Print.TILES, own = true)
+        "tiles" -> return Dithered(photo, modifier, print0 = Print.TILES, own = true, chosen = true)
         "dots" -> return DotPrint(photo, modifier)
     }
     val xray by Moving.artistXray.collectAsState()
@@ -2526,7 +2525,7 @@ fun ArtistPhoto(photo: Song, modifier: Modifier) {
     when {
         xray -> Xrayed(photo, modifier)
         grain -> Grainy(photo, modifier)
-        dithered -> Dithered(photo, modifier, own = true)
+        dithered -> Dithered(photo, modifier, own = true, chosen = true)
         else -> AsItIs(photo, modifier)
     }
 }
@@ -3389,7 +3388,7 @@ private val CLOSE_ROW = 40.dp
 fun CoverOf(song: Song?, name: String, modifier: Modifier, px: Int = 640, nameless: Boolean = false) {
     val cover = rememberCover(song, px)
     // 1-bit mode (the clickwheel three turns backwards): every cover in the dither, its own colour
-    if (OneBit.on.collectAsState().value && cover != null && song != null && !song.station) return Dithered(song, modifier, px = 600, own = true)
+    if (OneBit.on.collectAsState().value && cover != null && song != null && !song.station) return Dithered(song, modifier, px = 600, own = true, chosen = true)
     // a cover on its way: black a moment, the name cover only for a record with none (it flashed at each new song)
     val late by androidx.compose.runtime.produceState(false, song?.albumId) { kotlinx.coroutines.delay(1_500); value = true }
     // a cover come from the network or the disk develops in from black, as a print does (2026-11-08, Bronson: "loading

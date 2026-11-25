@@ -20,6 +20,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.layout.size
@@ -59,11 +63,12 @@ fun LookPage(pages: Pages) {
         fun turn(to: Int) { if (many && pager.currentPage != to) scope.launch { pager.animateScrollToPage(to, animationSpec = androidx.compose.animation.core.tween(Motion.ENTER, easing = Motion.expo)) } }
         // the player in small: what's chosen shows here at once
         val preview: @Composable ColumnScope.(Modifier) -> Unit = { size ->
-            // now playing and its artist's page side by side (2026-11-25, Bronson): each look shows where it's used
-            Row(size, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+            // now playing, mixes and lists, and its artist's page side by side (2026-11-25, Bronson): each look where it's used
+            Row(size, horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                 androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.weight(1f).fillMaxHeight(), beyondViewportPageCount = 0) { page ->
                     PlayerPreview(page, Modifier.fillMaxSize())
                 }
+                MixesPreview(Modifier.weight(1f).fillMaxHeight())
                 ArtistPreview(Modifier.weight(1f).fillMaxHeight())
             }
             Spacer(Modifier.height(8.dp))
@@ -301,11 +306,30 @@ private fun LooksGrid() {
 }
 
 /**
- * The artist page in small, beside the player in the look's preview (2026-11-25): the playing (or last) song's artist,
- * their photo in the artist pages' look, their name over its foot as their page has it, a phone's shape in a hairline.
+ * A screen drawn at a phone's full size and shrunk into its space (a smaller density, as the player's preview is, so its
+ * dots and type come out in proportion), on black in a hairline, touches kept off it: it's a picture of the screen.
  */
 @Composable
-private fun ArtistPreview(modifier: Modifier) {
+private fun Shrunk(modifier: Modifier, content: @Composable () -> Unit) {
+    val ctx = LocalContext.current
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier, contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
+        val full = ctx.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
+        val k = minOf(maxWidth / full.first, maxHeight / full.second, 1f)
+        val d = androidx.compose.ui.platform.LocalDensity.current
+        Box(Modifier.size(full.first * k, full.second * k).clipToBounds().border(1.dp, Ink.line)) {
+            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density * k, d.fontScale), LocalPreview provides true) {
+                Box(Modifier.wrapContentSize(androidx.compose.ui.Alignment.TopStart, unbounded = true).requiredSize(full.first, full.second).background(Ink.black)
+                    .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() } } }) {
+                    content()
+                }
+            }
+        }
+    }
+}
+
+/** The playing (or last played) song's artist, for the previews. */
+@Composable
+private fun previewArtist(): String {
     val now by Playback.now.collectAsState()
     val ctx = LocalContext.current
     val artist by androidx.compose.runtime.produceState(now?.artist?.substringBefore(", ").orEmpty(), now?.artist) {
@@ -313,23 +337,50 @@ private fun ArtistPreview(modifier: Modifier) {
             History.read(ctx).lastOrNull()?.artist?.substringBefore(", ").orEmpty()
         }
     }
-    val info by androidx.compose.runtime.remember(artist) { if (artist.isEmpty()) kotlinx.coroutines.flow.flowOf(null) else YouTubeAccount.artist(artist) }.collectAsState(null)
-    val photo = info?.photo
-    androidx.compose.foundation.layout.BoxWithConstraints(modifier, contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
-        val full = ctx.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
-        val k = minOf(maxWidth / full.first, maxHeight / full.second, 1f)
-        val w = full.first * k
-        Column(Modifier.size(w, full.second * k).border(1.dp, Ink.line).background(Ink.black)) {
-            Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = androidx.compose.ui.Alignment.BottomStart) {
-                if (photo != null) ArtistPhoto(remember(photo) { photoSong(artist, photo) }, Modifier.fillMaxSize())
-                BasicText(artist.uppercase(), style = headline((w.value / 7).sp), maxLines = 2, modifier = Modifier.padding(w / 20))
-            }
-            // their top songs under it, as their page has them
-            Column(Modifier.padding(w / 20)) {
-                BasicText(if (artist.isEmpty()) "play something" else "top songs", style = pixel(12.sp, Ink.mid))
-                info?.top?.take(5)?.forEach { t ->
-                    BasicText(t.title.uppercase(), style = headline((w.value / 16).sp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = w / 28))
+    return artist
+}
+
+/** The artist page in small (2026-11-25): the real one, the playing or last song's artist's, in the look chosen for it. */
+@Composable
+private fun ArtistPreview(modifier: Modifier) {
+    val artist = previewArtist()
+    val pages = remember { Pages() }
+    Shrunk(modifier) {
+        if (artist.isEmpty()) BasicText("play something, and see their page here", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(20.dp))
+        else androidx.compose.runtime.key(artist) { ArtistPage(artist, pages) }
+    }
+}
+
+/**
+ * Mixes and lists in small (2026-11-25): a listen shelf, MIXES FOR YOU, two by two, each tile a song you played lately in
+ * the look chosen for mixes and lists, named as a mix is.
+ */
+@Composable
+private fun MixesPreview(modifier: Modifier) {
+    val ctx = LocalContext.current
+    val recent by androidx.compose.runtime.produceState(emptyList<Song>()) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            History.read(ctx).asReversed().distinctBy { it.artist.substringBefore(", ").lowercase() }.mapNotNull { h ->
+                Library.song(h.id) ?: YouTubeMusic.known(h.id) ?: h.takeIf { it.id.startsWith("y") }?.let {
+                    Song(id = it.id, uri = android.net.Uri.parse("ytm://" + it.id.removePrefix("y")), title = it.title, artist = it.artist, album = it.album,
+                        albumId = it.record.ifEmpty { it.id }, albumArtist = it.artist, duration = it.ms, disc = 1, track = 0, year = 0, format = "youtube")
+                }
+            }.take(4)
+        }
+    }
+    Shrunk(modifier) {
+        Column(Modifier.fillMaxSize().padding(top = 60.dp)) {
+            Heading("mixes for you", "made from what you play")
+            if (recent.isEmpty()) BasicText("play something, and see them here", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(20.dp))
+            recent.chunked(2).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)) {
+                    row.forEach { s ->
+                        Column(Modifier.weight(1f)) {
+                            Covered(s, Modifier.fillMaxWidth().aspectRatio(1f), px = 480)
+                            BasicText("${s.artist.substringBefore(", ").uppercase()} MIX", style = headline(16.sp), maxLines = 1, modifier = Modifier.padding(top = 8.dp))
+                            BasicText("mix", style = pixel(12.sp, Ink.mid))
+                        }
+                    }
                 }
             }
         }

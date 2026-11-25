@@ -274,7 +274,7 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
     val drawn = shape?.takeIf { Build.VERSION.SDK_INT >= 33 || (it == Look.BLUR && Build.VERSION.SDK_INT >= 31) }
     // DOT MATRIX: a canvas or an artist's video (a cropped clip) in moving dots; the moving cover itself stays clear, as
     // the album art does (Android 13's shaders; before it, as it is)
-    val dotted = Hand.dots && crop && Build.VERSION.SDK_INT >= 33
+    val dotted = Hand.dots && crop && Build.VERSION.SDK_INT >= 33 && (drawn == null || drawn == Look.BLUR || drawn == Look.XRAY || drawn == Look.AS_IS)
     val come by animateFloatAsState(if (shown) 1f else 0f, if (less) snap() else tween(if (drawn == Look.DITHER) 1_400 else 600), label = "come")
     val density = LocalDensity.current.density
     var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
