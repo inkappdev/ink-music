@@ -197,9 +197,10 @@ fun Modifier.bleedPastCutout(): Modifier = composed {
 
 /** The marquee's names as drawn, the last few (a TV's reel comes back round to them). */
 private object Drawn {
-    /** A name as drawn: its words, size and colour, and the screen's density and font scale. */
+    /** A name as drawn: its words, size, colour and face, and the screen's density and font scale (the face since 2026-11-25:
+     *  another hand's name was given the old face's picture). */
     fun key(text: String, style: TextStyle, d: androidx.compose.ui.unit.Density) =
-        "$text|${style.fontSize}|${style.color}|${d.density}|${d.fontScale}"
+        "$text|${style.fontSize}|${style.color}|${style.fontFamily.hashCode()}|${d.density}|${d.fontScale}"
 
     private val kept = object : android.util.LruCache<String, ImageBitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, b: ImageBitmap) = b.width * b.height * 4
