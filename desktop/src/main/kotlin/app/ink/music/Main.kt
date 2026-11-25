@@ -581,7 +581,7 @@ private fun App() {
                     Rail(place, { place = it; pages.clear() }, { if (pages.lastOrNull() != Page.Find) pages += Page.Find; Finding.asked.value++ },
                         { if (pages.lastOrNull() != Page.Settings) pages += Page.Settings })
                 }
-                if (fold.value > 0f) Box(Modifier.graphicsLayer { alpha = fold.value }) { FoldedRail { place = if (Local.on) "listen" else "ink"; pages.clear() } }
+                if (fold.value > 0f) Box(Modifier.graphicsLayer { alpha = fold.value }) { FoldedRail { place = PLACES.filter { it !in Places.hidden.value }.let { s -> if (!Local.on && "ink" in s) "ink" else s.firstOrNull() ?: "listen" }; pages.clear() } }
             }
         }
         Column(Modifier.weight(1f).fillMaxHeight().graphicsLayer { translationX = if (railed) (seen - laid).toPx() else 0f }) {

@@ -7,7 +7,7 @@ import java.io.File
  * Local files only (settings, 2026-11-10; a Reddit report: near 1 GB, and a player kept to local files "works wonders"):
  * your files, your own server, lyrics and your phone kept; YouTube Music, INK's picks and charts, radio, podcasts,
  * music videos, live sets, Discord and the catalogs' covers never started, the network left alone, the INK, radio and
- * podcasts places not in the rail. Read once as ink music opens: everything online is held back where it starts
+ * podcasts places hidden as it's turned on ([Places]: each can be shown again). Read once as ink music opens: everything online is held back where it starts
  * (each one's `if (Local.on) return`), so it takes the whole way the next time it opens.
  */
 object Local {
@@ -22,5 +22,7 @@ object Local {
     fun choose(to: Boolean) {
         wanted.value = to
         runCatching { if (to) file.writeText("") else file.delete() }
+        // the places that are all online put away as it's turned on (each can be shown again; off brings none back)
+        if (to) Places.hideOnline()
     }
 }

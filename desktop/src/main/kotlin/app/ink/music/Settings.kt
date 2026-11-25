@@ -133,7 +133,7 @@ fun SettingsPage(onClose: () -> Unit) {
                             // the places shown in the rail (2026-11-11): lit, shown; a click hides or shows one
                             val hidden by Places.hidden.collectAsState()
                             SettingRow("PLACES", if (hidden.isEmpty()) "all" else "${PLACES.size - hidden.size} of ${PLACES.size}", opened,
-                                "the places along the side; a click hides or shows one" + if (Local.on) ". just your music: ink, radio and podcasts are away already" else "") {
+                                "the places along the side; a click hides or shows one" + if (Local.wanted.collectAsState().value) ". just your music put ink, radio and podcasts away" else "") {
                                 Pick(PLACES.map { it to (it !in hidden) }) { i -> Places.show(PLACES[i], PLACES[i] in hidden) }
                             }
                             LookSetting(opened)

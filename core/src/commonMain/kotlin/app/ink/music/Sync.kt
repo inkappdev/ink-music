@@ -9,6 +9,7 @@ import kotlin.concurrent.Volatile
  * and each hands the other what it hasn't got, sealed under that key (AES-GCM):
  *  - what you've heard (heard.jsonl): each asks for the other's lines from where it got to, a line it already has
  *    (the same start and title) passed over, a line it got from that one never sent back;
+ *  - your own playlists, each list the one changed last ([ListsSync]);
  *  - loves, recent searches, and the sign-ins (your server, ListenBrainz, Last.fm; YouTube Music's, the phone's to the
  *    computer): the latest change wins;
  *  - what each was playing, and where in it, to carry on with on the other ("continue here").
@@ -207,6 +208,10 @@ object Sync {
         fun intros(peer: Peer): JSONArray = JSONArray()
         /** Devices the phone introduced: kept as peers that listen (hub), to tell what plays here and be steered. */
         fun introduced(list: JSONArray) {}
+        /** Your own playlists as [ListsSync.part] gives them, to send (null: this side keeps none). */
+        fun lists(): JSONObject? = null
+        /** The other's playlists ([ListsSync.part]): merged with these, and kept. */
+        fun takeLists(part: JSONObject) {}
         /** A sign-in's file written from the other: read it again ("server", "listenbrainz", "lastfm"). */
         fun signedIn(what: String)
         /** heard.jsonl has the other's listens in it now. */
@@ -247,6 +252,7 @@ object Sync {
             .put("wants", JSONArray(side.wants()))
             .put("intros", side.intros(peer))
             .put("podcasts", Podcasts.syncPart() ?: JSON_NULL)
+            .put("lists", runCatching { side.lists() }.getOrNull() ?: JSON_NULL)
             .put("now", side.now() ?: JSON_NULL).put("handed", kept.handedAt(peer.id))
     }
 
@@ -279,6 +285,8 @@ object Sync {
         }
         // podcasts: the shows followed and each episode's place, the latest change wins
         m.optJSONObject("podcasts")?.let { if (runCatching { Podcasts.takeSync(it) }.getOrDefault(false)) runCatching { side.podcastsChanged() } }
+        // your own playlists: each the one changed last (an older device sends none, and none are taken)
+        m.optJSONObject("lists")?.let { runCatching { side.takeLists(it) } }
         m.optString("youtube").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeYoutube(it) } }
         m.optString("spotify").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeSpotify(it) } }
         m.optString("spotifySignIn").takeIf { it.isNotEmpty() }?.let { runCatching { side.takeSpotifySignIn(it) } }

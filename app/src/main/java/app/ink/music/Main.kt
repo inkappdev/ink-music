@@ -591,9 +591,20 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // own music too, so they have songs (2026-11-17)
     // INK: ink weekly, ink radio and everything people picked, one place (explore till 2026-10-29)
     val uploaded by YouTubeAccount.uploads.collectAsState()
+    val recordsFrom by SongsFrom.records.collectAsState()
+    // your records saved on YouTube Music, after your own once asked for (TubeInLibrary; #4), those you have left out
+    val tubeIn by TubeInLibrary.on.collectAsState()
+    val tubeSaved by YouTubeAccount.records.collectAsState()
+    val tubeRecords = remember(tubeIn, tubeSaved, albums, recordsFrom) {
+        if (!tubeIn || recordsFrom !in listOf("all", "youtube")) emptyList()
+        else tubeSaved.filter { t -> albums.none { plainName(it.title) == plainName(t.title) } }
+    }
+    // nor are the records you saved on YouTube Music, once asked for in albums: albums then, with nothing on the phone
+    // (never with just your music)
+    val tubeAlbums = tubeRecords.isNotEmpty() && !JustYours.on
     val every = if (songs.isNotEmpty()) listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
-        else if (uploaded.isNotEmpty()) listOf("listen", "ink", "songs", "radio", "podcasts", "lists")
-        else listOf("listen", "ink", "radio", "podcasts", "lists")
+        else listOf("listen", "ink") + (if (tubeAlbums) listOf("albums") else emptyList()) +
+            (if (uploaded.isNotEmpty()) listOf("songs") else emptyList()) + listOf("radio", "podcasts", "lists")
     // the places hidden in settings left out (Places); listen back first if none of yours would be left (nothing read yet)
     val hiddenPlaces by Places.hidden.collectAsState()
     val tabs = remember(every, hiddenPlaces) {
@@ -670,14 +681,6 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     var showHiddenRecords by remember { mutableStateOf(false) }
     // where the records come from (this phone, your server, kept offline), as the songs tab's
     val keptNow by Offline.kept.collectAsState()
-    val recordsFrom by SongsFrom.records.collectAsState()
-    // your records saved on YouTube Music, after your own once asked for (TubeInLibrary; #4), those you have left out
-    val tubeIn by TubeInLibrary.on.collectAsState()
-    val tubeSaved by YouTubeAccount.records.collectAsState()
-    val tubeRecords = remember(tubeIn, tubeSaved, albums, recordsFrom) {
-        if (!tubeIn || recordsFrom !in listOf("all", "youtube")) emptyList()
-        else tubeSaved.filter { t -> albums.none { plainName(it.title) == plainName(t.title) } }
-    }
     val recordCounts = remember(albums, keptNow) {
         albums.filter { it.songs.isNotEmpty() }.groupingBy { SongsFrom.of(it.songs.first()) }.eachCount() +
             (albums.count { a -> a.songs.any { it.id in keptNow } }.takeIf { it > 0 }?.let { mapOf("kept" to it) } ?: emptyMap())

@@ -12,7 +12,8 @@ import java.io.File
  * so a list plays with no signal for what's on the computer. In lists.json; a list's id "here:" and a number.
  */
 object HereLists {
-    data class Mine(val id: String, val name: String, val songs: List<Song>)
+    /** A list: `at` when it last changed (its name, its songs, their order), the latest change winning in a sync with the phone. */
+    data class Mine(val id: String, val name: String, val songs: List<Song>, val at: Long = 0)
 
     const val PREFIX = "here:"
     private val file get() = File(Home.dir, "lists.json")
@@ -22,14 +23,23 @@ object HereLists {
         val a = JSONArray(file.readText())
         (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             val songs = o.optJSONArray("songs")?.let { s -> (0 until s.length()).mapNotNull { runCatching { songOf(s.getJSONObject(it)) }.getOrNull() } }.orEmpty()
-            Mine(o.getString("id"), o.getString("name"), songs)
+            Mine(o.getString("id"), o.getString("name"), songs, o.optLong("at"))
         }
     }.getOrDefault(emptyList())
 
     private fun save() = runCatching {
-        file.writeText(JSONArray(all.value.map { m ->
-            JSONObject().put("id", m.id).put("name", m.name).put("songs", JSONArray(m.songs.map { it.json() }))
+        Keep.write(file, JSONArray(all.value.map { m ->
+            JSONObject().put("id", m.id).put("name", m.name).put("songs", JSONArray(m.songs.map { it.json() })).put("at", m.at)
         }).toString())
+    }
+
+    /** A change made here: the lists it touched stamped now, a deleted one's id marked (lists-gone.json), for the sync. */
+    @Synchronized private fun set(v: List<Mine>) {
+        val now = System.currentTimeMillis()
+        val (changed, gone) = ListsSync.touched(all.value, v, { it.id }) { a, b -> a.name == b.name && a.songs.map { it.id } == b.songs.map { it.id } }
+        ListsSync.Gone(Home.dir).add(gone, now)
+        all.value = v.map { if (it.id in changed) it.copy(at = now) else it }
+        save()
     }
 
     fun of(id: String): Mine? = all.value.firstOrNull { it.id == id }
@@ -37,8 +47,8 @@ object HereLists {
     /** A new list with these songs in it. */
     fun make(name: String, songs: List<Song>): Mine {
         val m = Mine(PREFIX + System.currentTimeMillis(), name, songs.filter(::fits).distinctBy { it.id })
-        all.value = all.value + m; save()
-        return m
+        set(all.value + m)
+        return of(m.id) ?: m
     }
 
     /** The list every track heard in a DJ set goes into (SetHeard), made the first time there's one. */
@@ -46,45 +56,75 @@ object HereLists {
 
     /** A song heard in a DJ set, onto the end of "from dj sets" (made if it isn't there; each song once). */
     fun fromSet(s: Song) {
-        if (all.value.none { it.id == DJ_SETS }) { all.value = all.value + Mine(DJ_SETS, "from dj sets", emptyList()); save() }
+        if (all.value.none { it.id == DJ_SETS }) set(all.value + Mine(DJ_SETS, "from dj sets", emptyList()))
         add(DJ_SETS, listOf(s))
     }
 
     /** These songs onto the end of a list (each once). */
-    fun add(id: String, songs: List<Song>) {
-        all.value = all.value.map { m -> if (m.id != id) m else m.copy(songs = (m.songs + songs.filter(::fits)).distinctBy { it.id }) }
-        save()
-    }
+    fun add(id: String, songs: List<Song>) =
+        set(all.value.map { m -> if (m.id != id) m else m.copy(songs = (m.songs + songs.filter(::fits)).distinctBy { it.id }) })
 
     /** The song at `index` out of a list. */
-    fun remove(id: String, index: Int) {
-        all.value = all.value.map { m -> if (m.id != id) m else m.copy(songs = m.songs.filterIndexed { i, _ -> i != index }) }
-        save()
-    }
+    fun remove(id: String, index: Int) =
+        set(all.value.map { m -> if (m.id != id) m else m.copy(songs = m.songs.filterIndexed { i, _ -> i != index }) })
 
     /** Every song picked out of a list at once (a list holds each song once). */
-    fun removeAll(id: String, songs: Collection<String>) {
-        all.value = all.value.map { m -> if (m.id != id) m else m.copy(songs = m.songs.filter { it.id !in songs }) }
-        save()
-    }
+    fun removeAll(id: String, songs: Collection<String>) =
+        set(all.value.map { m -> if (m.id != id) m else m.copy(songs = m.songs.filter { it.id !in songs }) })
 
-    fun delete(id: String) { all.value = all.value.filter { it.id != id }; save() }
+    fun delete(id: String) = set(all.value.filter { it.id != id })
 
     /** A list's name changed (2026-11-17, a tester: lists couldn't be renamed). */
     fun rename(id: String, name: String) {
         val n = name.trim().ifEmpty { return }
-        all.value = all.value.map { m -> if (m.id != id) m else m.copy(name = n) }; save()
+        set(all.value.map { m -> if (m.id != id) m else m.copy(name = n) })
     }
 
     /** A copy of a list, its name "<name> copy" (a second "copy 2" and so on), put just after it. */
     fun duplicate(name: String, songs: List<Song>, after: String? = null): Mine {
         var n = "$name copy"; var k = 2
         while (all.value.any { it.name == n }) n = "$name copy ${k++}"
-        val m = Mine(PREFIX + System.currentTimeMillis(), n, songs.filter(::fits).distinctBy { it.id })
+        var t = System.currentTimeMillis()
+        while (all.value.any { it.id == PREFIX + t }) t++
+        val m = Mine(PREFIX + t, n, songs.filter(::fits).distinctBy { it.id })
         val at = all.value.indexOfFirst { it.id == after }
-        all.value = if (at < 0) all.value + m else all.value.toMutableList().apply { add(at + 1, m) }
+        set(if (at < 0) all.value + m else all.value.toMutableList().apply { add(at + 1, m) })
+        return of(m.id) ?: m
+    }
+
+    // ---- kept in step with the phone's (Sync) ----
+
+    /** These lists as the phone's told them ([ListsSync.part]). */
+    fun syncPart(wire: (Song) -> JSONObject): JSONObject =
+        ListsSync.part(all.value.map { ListsSync.Wired(it.id, it.name, it.songs.map(wire), it.at) }, ListsSync.Gone(Home.dir).read())
+
+    /**
+     * The phone's lists taken in: each the one changed last, as it was. A song of theirs is the same one here where it
+     * can be (`song`: a server's or YouTube's by id, a file by its name and artist), else kept as it was told, so the
+     * list goes back whole: a file only the phone has shows here and doesn't play.
+     */
+    @Synchronized fun takeSync(part: JSONObject, song: (JSONObject) -> Song?) {
+        val gone = ListsSync.Gone(Home.dir)
+        val (theirs, theirGone) = ListsSync.read(part)
+        val mine = all.value
+        val m = ListsSync.merge(mine.map { ListsSync.Wired(it.id, it.name, it.songs.map(SyncHub::wire), it.at) }, gone.read(), theirs, theirGone)
+        if (!m.changed) return
+        val byId = mine.associateBy { it.id }
+        gone.write(m.gone)
+        all.value = m.lists.map { k ->
+            val l = k.list
+            if (!k.theirs) byId.getValue(l.id)
+            else Mine(l.id, l.name, l.songs.mapNotNull { o -> runCatching { song(o) ?: away(o) }.getOrNull() }.filter(::fits).distinctBy { it.id }, l.at)
+        }
         save()
-        return m
+    }
+
+    /** A song in a list from the phone that isn't here (its own file): kept by what it's called, with nowhere to play from. */
+    private fun away(o: JSONObject): Song? {
+        val id = o.optString("id").ifEmpty { return null }
+        val artist = o.optString("artist")
+        return Song(id, "", o.optString("title"), artist, o.optString("album"), o.optString("albumId").ifEmpty { id },
+            o.optString("albumArtist").ifEmpty { artist }, o.optLong("duration"), 0, 0, 0, art = o.optString("art").ifEmpty { null })
     }
 
     // a station or an episode isn't a song to keep in a list

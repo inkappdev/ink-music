@@ -44,13 +44,12 @@ import androidx.compose.ui.unit.sp
 
 /** The places, as the rail says them (the phone's tabs, with explore). */
 val PLACES = listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
-    // local files only: the places that are all online (INK, radio, podcasts) not there (Local)
-    .filter { !Local.on || it !in setOf("ink", "radio", "podcasts") }
 
 /**
  * The places the rail and the places menu show (2026-11-11, a tester: let people decide what they see; "there's no point
  * in overwhelming users with online features they can't even access"): the ones hidden in settings (the look, places)
- * left out ([PLACES] has no online ones with local files only). Kept in places-hidden, a place a line.
+ * left out. Just your music ([Local]) hides the ones that are all online as it's turned on, as the phone's does; each can
+ * be shown again, and turning it off leaves them as they are. Kept in places-hidden, a place a line.
  */
 object Places {
     private val file = java.io.File(Home.dir, "places-hidden")
@@ -60,6 +59,22 @@ object Places {
     fun show(p: String, on: Boolean) {
         val now = if (on) hidden.value - p else hidden.value + p
         if (PLACES.none { it !in now } || listOf("listen", "albums", "artists", "songs").all { it in now }) return
+        put(now)
+    }
+
+    private val ONLINE = setOf("ink", "radio", "podcasts")
+    // once hidden for just your music (a run with it on from before 2026-11-24 had them left out of the rail outright)
+    private val hiddenOnce = java.io.File(Home.dir, "places-online-hidden")
+
+    init { if (Local.on && !hiddenOnce.exists()) hideOnline() }
+
+    /** The places that are all online (INK, radio, podcasts) hidden: just your music turned on. */
+    fun hideOnline() {
+        put(hidden.value + ONLINE)
+        runCatching { hiddenOnce.writeText("") }
+    }
+
+    private fun put(now: Set<String>) {
         hidden.value = now
         runCatching { file.writeText(now.joinToString("\n")) }
     }

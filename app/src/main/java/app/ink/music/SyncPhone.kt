@@ -222,6 +222,11 @@ object SyncPhone {
             try { Loved.toggle(s) } finally { applying = false }
         }
 
+        // your own playlists both ways, each the one changed last; a computer's song found here where it can be
+        override fun lists(): JSONObject = MyLists.syncPart(c, ::wire)
+        // (once the library's read, so a song that's here is found as here, not kept as the computer's)
+        override fun takeLists(part: JSONObject) { if (Library.read.value) MyLists.takeSync(c, part, ::resolve) }
+
         override fun youtube(): String? = YouTubeAccount.handover(c)
 
         // Spotify's passes, so the computer shows canvases too (it can't sign in to Spotify itself)

@@ -52,11 +52,12 @@ import kotlin.math.roundToInt
  * Playlists of your own, as they're kept (2026-11-24, #4 and #6: only smart lists and the server's before, and adding a
  * song to one took too long): any song in them (your files, your server's, YouTube Music's), each once. The computer's
  * HereLists' file, the same shape: a list a line of [{id, name, songs}], ids "here:" and a number, so the two could be
- * kept in step one day; `used` beside them, when a song last went in (add to a playlist offers the latest first).
+ * kept in step ([ListsSync], since 2026-11-24); `used` beside them, when a song last went in (add to a playlist offers the
+ * latest first), and `at`, when the list last changed (its name, its songs, their order: the latest change wins in a sync).
  * Written here with nothing of Android's, so it's tried on its own (ListsFileTest).
  */
 object ListsFile {
-    data class Mine<S>(val id: String, val name: String, val songs: List<S>, val used: Long = 0)
+    data class Mine<S>(val id: String, val name: String, val songs: List<S>, val used: Long = 0, val at: Long = 0)
 
     const val PREFIX = "here:"
 
@@ -67,19 +68,19 @@ object ListsFile {
             val s = o.optJSONArray("songs")
             val songs = if (s == null) emptyList() else (0 until s.length()).mapNotNull { k -> s.optJSONObject(k)?.let { runCatching { songOf(it) }.getOrNull() } }
             val id = o.optString("id").ifEmpty { return@mapNotNull null }
-            Mine(id, o.optString("name").ifBlank { "playlist" }, songs, o.optLong("used"))
+            Mine(id, o.optString("name").ifBlank { "playlist" }, songs, o.optLong("used"), o.optLong("at"))
         }
     }.getOrDefault(emptyList())
 
     fun <S> write(lists: List<Mine<S>>, json: (S) -> JSONObject): String = JSONArray(lists.map { m ->
-        JSONObject().put("id", m.id).put("name", m.name).put("songs", JSONArray(m.songs.map(json))).put("used", m.used)
+        JSONObject().put("id", m.id).put("name", m.name).put("songs", JSONArray(m.songs.map(json))).put("used", m.used).put("at", m.at)
     }).toString()
 
     /** A new list at the end, with these songs (each once); its id a moment no other list has. */
     fun <S> make(lists: List<Mine<S>>, name: String, songs: List<S>, now: Long, key: (S) -> String): Pair<List<Mine<S>>, Mine<S>> {
         var at = now
         while (lists.any { it.id == PREFIX + at }) at++
-        val m = Mine(PREFIX + at, name.trim().ifEmpty { "playlist" }, songs.distinctBy(key), now)
+        val m = Mine(PREFIX + at, name.trim().ifEmpty { "playlist" }, songs.distinctBy(key), now, now)
         return (lists + m) to m
     }
 
@@ -107,6 +108,36 @@ object ListsFile {
 
     fun <S> delete(lists: List<Mine<S>>, id: String) = lists.filter { it.id != id }
 
+    /**
+     * After a change: the lists it touched stamped with `now` (one new, renamed, its songs or their order changed), and
+     * the ids of those it deleted.
+     */
+    fun <S> stamped(old: List<Mine<S>>, new: List<Mine<S>>, now: Long, key: (S) -> String): Pair<List<Mine<S>>, Set<String>> {
+        val (changed, gone) = ListsSync.touched(old, new, { it.id }) { a, b -> a.name == b.name && a.songs.map(key) == b.songs.map(key) }
+        return new.map { if (it.id in changed) it.copy(at = now) else it } to gone
+    }
+
+    /** A list as it goes to the other device, its songs as `wire` tells them. */
+    fun <S> wired(m: Mine<S>, wire: (S) -> JSONObject) = ListsSync.Wired(m.id, m.name, m.songs.map(wire), m.at)
+
+    /**
+     * The other's lists merged with these: each list the one changed last (one of theirs made into songs here by
+     * `song`, each once), the deletions either knows. Null when nothing here changed.
+     */
+    fun <S : Any> merged(mine: List<Mine<S>>, myGone: Map<String, Long>, part: JSONObject, wire: (S) -> JSONObject,
+                   song: (JSONObject) -> S?, key: (S) -> String): Pair<List<Mine<S>>, Map<String, Long>>? {
+        val (theirs, theirGone) = ListsSync.read(part)
+        val m = ListsSync.merge(mine.map { wired(it, wire) }, myGone, theirs, theirGone)
+        if (!m.changed) return null
+        val byId = mine.associateBy { it.id }
+        val lists = m.lists.map { k ->
+            val l = k.list
+            if (!k.theirs) byId.getValue(l.id)
+            else Mine(l.id, l.name, l.songs.mapNotNull { runCatching { song(it) }.getOrNull() }.distinctBy(key), byId[l.id]?.used ?: l.at, l.at)
+        }
+        return lists to m.gone
+    }
+
     /** The lists a song was last put in first (one never added to after, as it was made). */
     fun <S> latest(lists: List<Mine<S>>) = lists.sortedByDescending { it.used }
 }
@@ -119,7 +150,7 @@ object MyLists {
     val all = MutableStateFlow<List<ListsFile.Mine<Song>>>(emptyList())
     private var file: File? = null
 
-    fun start(c: android.content.Context) {
+    @Synchronized fun start(c: android.content.Context) {
         if (file != null) return
         file = File(c.filesDir, "lists.json").also { f ->
             all.value = runCatching { ListsFile.read(f.readText(), ::songOf) }.getOrDefault(emptyList())
@@ -127,9 +158,46 @@ object MyLists {
         }
     }
 
-    private fun keep(v: List<ListsFile.Mine<Song>>) {
+    /** A change made here: the lists it touched stamped now, a deleted one's id marked (lists-gone.json), for the sync. */
+    @Synchronized private fun keep(v: List<ListsFile.Mine<Song>>) {
+        val now = System.currentTimeMillis()
+        val (stamped, gone) = ListsFile.stamped(all.value, v, now) { it.id }
+        file?.parentFile?.let { ListsSync.Gone(it).add(gone, now) }
+        write(stamped)
+    }
+
+    private fun write(v: List<ListsFile.Mine<Song>>) {
         all.value = v
         file?.let { f -> runCatching { Keep.write(f, ListsFile.write(v) { it.json() }) } }
+    }
+
+    /** These lists as the computer's told them ([ListsSync.part]). */
+    fun syncPart(c: android.content.Context, wire: (Song) -> JSONObject): JSONObject {
+        start(c)
+        return ListsSync.part(all.value.map { ListsFile.wired(it, wire) }, ListsSync.Gone(c.filesDir).read())
+    }
+
+    /**
+     * The computer's lists taken in: each the one changed last, as it was. A song of theirs is the same one here where
+     * it can be (`song`: a server's or YouTube's by id, a file by its name and artist), else kept as it was told, so
+     * the list goes back whole: a file only the computer has shows here and doesn't play.
+     */
+    @Synchronized fun takeSync(c: android.content.Context, part: JSONObject, song: (JSONObject) -> Song?) {
+        start(c)
+        val gone = ListsSync.Gone(c.filesDir)
+        val (v, g) = ListsFile.merged(all.value, gone.read(), part, { SyncPhone.wire(it) }, { song(it) ?: away(it) }) { it.id } ?: return
+        gone.write(g)
+        v.forEach { m -> m.songs.filter { it.tube }.forEach(YouTubeMusic::remember) }
+        write(v)
+    }
+
+    /** A song in a list from the computer that isn't here (its own file): kept by what it's called, with nowhere to play from. */
+    private fun away(o: JSONObject): Song? {
+        val id = o.optString("id").ifEmpty { return null }
+        val title = o.optString("title"); val artist = o.optString("artist")
+        return Song(id = id, uri = android.net.Uri.EMPTY, title = title, artist = artist, album = o.optString("album"),
+            albumId = o.optString("albumId").ifEmpty { id }, albumArtist = o.optString("albumArtist").ifEmpty { artist },
+            duration = o.optLong("duration"), disc = 0, track = 0, year = 0, art = o.optString("art").ifEmpty { null })
     }
 
     fun fits(s: Song) = !s.station && !s.episode

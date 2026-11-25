@@ -334,6 +334,11 @@ object SyncHub {
             try { Loved.toggle(s) } finally { applying = false }
         }
 
+        // your own playlists both ways, each the one changed last; a phone's song found here where it can be
+        // (once the library's read, so a song that's here is found as here, not kept as the phone's)
+        override fun lists(): JSONObject = HereLists.syncPart(::wire)
+        override fun takeLists(part: JSONObject) { if (Library.read.value) HereLists.takeSync(part, ::resolve) }
+
         // the iPhone asks for YouTube's sign-in (it has no way to sign in itself): only a device that asks is handed it
         override fun wanted(peer: Sync.Peer, what: List<String>) { if ("youtube" in what) askedYoutube += peer.id else askedYoutube -= peer.id }
         override fun youtube(peer: Sync.Peer): String? = if (peer.id in askedYoutube) TubeAccount.handover() else null
