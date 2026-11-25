@@ -2377,7 +2377,7 @@ private fun ImportPage(pages: Pages) {
  * "offline" lit, and a tap then "remove it" lit a moment (a second tap lets them go). Nothing for songs not the server's.
  */
 @Composable
-fun KeepOffline(songs: List<Song>) {
+fun KeepOffline(songs: List<Song>, size: androidx.compose.ui.unit.TextUnit = 14.sp) {
     val ctx = LocalContext.current
     // your server's and YouTube Music's (the full build)
     val server = remember(songs) { songs.filter { Offline.keepable(it) } }
@@ -2397,21 +2397,21 @@ fun KeepOffline(songs: List<Song>) {
     var sure by remember { mutableStateOf(false) }
     LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
     when {
-        coming > 0 -> Filling("keeping $here of ${server.size}", done, Modifier.padding(top = 8.dp))
-        here == server.size -> Word(if (sure) "remove it" else "offline", pixel(14.sp), touch = 8.dp) {
+        coming > 0 -> Filling("keeping $here of ${server.size}", done, Modifier.padding(vertical = 8.dp), size)
+        here == server.size -> Word(if (sure) "remove it" else "offline", pixel(size), touch = 8.dp) {
             if (!sure) sure = true else { sure = false; Offline.remove(ctx, server.map { it.id }) }
         }
-        else -> Word("keep offline", pixel(14.sp, Ink.mid), touch = 8.dp) { Offline.keep(ctx, server) }
+        else -> Word("keep offline", pixel(size, Ink.mid), touch = 8.dp) { Offline.keep(ctx, server) }
     }
 }
 
 /** Words filling with ink from the left as something comes (the rest dim): progress without a bar. */
 @Composable
-fun Filling(text: String, done: Float, modifier: Modifier = Modifier) {
+fun Filling(text: String, done: Float, modifier: Modifier = Modifier, textSize: androidx.compose.ui.unit.TextUnit = 14.sp) {
     val shown by androidx.compose.animation.core.animateFloatAsState(done.coerceIn(0f, 1f), tween(Motion.ENTER, easing = Motion.expo), label = "filling")
     Box(modifier) {
-        BasicText(text, style = pixel(14.sp, Ink.dim))
-        BasicText(text, style = pixel(14.sp), modifier = Modifier.drawWithContent {
+        BasicText(text, style = pixel(textSize, Ink.dim))
+        BasicText(text, style = pixel(textSize), modifier = Modifier.drawWithContent {
             clipRect(right = size.width * shown) { this@drawWithContent.drawContent() }
         })
     }
@@ -2935,7 +2935,15 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
     var find by remember { mutableStateOf("") }
     val list = pageList()
     FrostedPage(onClose = { pages.close() }) { frost, top -> ListPageBody(frost, top, list, head = { Column(Modifier.cascade(0)) {
-            BasicText(pl.name.uppercase(), style = headline(if (Device.tv) 30.sp else 44.sp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            // its cover, small, at the left, the name running over its foot (2026-11-25, Bronson: the top needed a design
+            // pass; a full-width cover was too much for a list, YouTube's covers are small, and blew up blocky)
+            val name = pl.name.uppercase()
+            val nameStyle = headline(if (Device.tv) 30.sp else 36.sp)
+            if (pl.art != null && !Device.tv) Box {
+                val face = remember(pl.id) { tubeFace(TubeAlbum("https://music.youtube.com/playlist?list=${pl.id}", pl.name, "", pl.art)) }
+                Covered(face, Modifier.size(168.dp), px = 600)
+                BasicText(name, style = nameStyle, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 128.dp))
+            } else BasicText(name, style = nameStyle, maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
             val all = songs
             BasicText(
@@ -2944,12 +2952,13 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
                 style = pixel(12.sp, Ink.mid),
             )
             Spacer(Modifier.height(16.dp))
-            if (!all.isNullOrEmpty()) FlowRow {
+            // what it's for in one row; keeping it on the phone its own line (its count grows there); how it's shown and
+            // whether it's here at all, small, under (they had wrapped into one ragged block, 2026-11-25)
+            // centered: mix's drop-down word stands a little taller than a plain one, and sat low beside them
+            if (!all.isNullOrEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
                 Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
-                MixWord(pl.name, all, Modifier.padding(end = 26.dp))
-                CoversWord(Modifier.padding(end = 26.dp))
-                KeepOffline(all)
+                MixWord(pl.name, all)
             }
             MixProgress(pl.name)
             // hide: out of ink music's lists and find, YouTube untouched (#1: "delete" alone read as that, and wasn't).
@@ -2960,7 +2969,8 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
             var sure by remember { mutableStateOf(false) }
             LaunchedEffect(sure) { if (sure) { delay(3_000); sure = false } }
             val scope = rememberCoroutineScope()
-            Row(Modifier.padding(top = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!all.isNullOrEmpty()) { Box(Modifier.padding(end = 26.dp)) { KeepOffline(all, 12.sp) }; CoversWord(Modifier.padding(end = 26.dp), size = 12.sp) }
                 val off = pl.id in hidden
                 Word(if (off) "show in ink music" else "hide", pixel(12.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) {
                     HiddenLists.set(pl.id, !off); if (!off) pages.back()
@@ -3450,10 +3460,10 @@ private const val STOP_MS = 280
 
 /** A list's word for covers beside its songs, lit when on (one choice for every list: [ListCovers]). */
 @Composable
-internal fun CoversWord(modifier: Modifier = Modifier) {
+internal fun CoversWord(modifier: Modifier = Modifier, size: androidx.compose.ui.unit.TextUnit = 14.sp) {
     val ctx = LocalContext.current
     val on by ListCovers.on.collectAsState()
-    Word("covers", pixel(14.sp, if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { ListCovers.set(ctx, !on) }
+    Word("covers", pixel(size, if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { ListCovers.set(ctx, !on) }
 }
 
 /** Artists as a list or a grid: two words, the one chosen lit. */
