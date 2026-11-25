@@ -362,8 +362,11 @@ fun MadeForYou() {
 
 @Composable
 private fun MixRow(m: Discover.Mix, modifier: Modifier) {
+    // its share of the row on the outside (2026-11-24: given to the Row inside the menu's Box, the weight was lost, the
+    // first of each two took the whole width and the second was crushed to a sliver beside its "play": "s" and an arrow)
+    Box(modifier) {
     WithMenu({ listOf(listOf("play" to { Player.play(m.songs) }, "shuffle" to { Player.play(m.songs.shuffled()) }), listOf("keep as a list" to { HereLists.make(m.title.lowercase(), m.songs); Unit })) }) {
-    Row(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(m.songs) }),
+    Row(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(m.songs) }),
         verticalAlignment = Alignment.CenterVertically) {
         // four covers, two by two (what's in it at a look)
         val four = remember(m) { m.songs.distinctBy { it.albumId }.take(4) }
@@ -383,6 +386,7 @@ private fun MixRow(m: Discover.Mix, modifier: Modifier) {
         // as a DJ's arc, each into the next on the beat
         MixWord(m.title, m.songs, Modifier.padding(start = 12.dp))
         Word("play", pixel(14.sp), Modifier.padding(start = 12.dp), touch = 8.dp) { Player.play(m.songs) }
+    }
     }
     }
 }
