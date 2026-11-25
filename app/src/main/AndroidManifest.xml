@@ -116,6 +116,12 @@
             <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" android:resource="@xml/usb_audio" />
         </activity>
 
+        <!-- Spotify's passes kept fresh on a paired computer while the app's closed (PassJob) -->
+        <service
+            android:name=".PassJob"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+
         <service
             android:name=".PlayerService"
             android:process=":player"

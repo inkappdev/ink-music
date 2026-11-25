@@ -56,6 +56,8 @@ object SyncPhone {
         app = c.applicationContext
         kept = Sync.Kept(c.filesDir)
         peers.value = kept.peers()
+        // Spotify's passes kept fresh on a paired computer while the app's closed here (PassJob)
+        if (peers.value.isNotEmpty()) PassJob.schedule(c)
     }
 
     /** While the app's open: in step now, and every minute; what plays elsewhere heard as it changes ([Everywhere]). */
@@ -104,7 +106,7 @@ object SyncPhone {
     fun forget(id: String) { kept.forget(id); peers.value = kept.peers() }
 
     /** Paired (from the pairing): kept, and in step at once. */
-    fun paired(p: Sync.Peer) { kept.put(p); peers.value = kept.peers(); scope.launch { now() } }
+    fun paired(p: Sync.Peer) { kept.put(p); peers.value = kept.peers(); app?.let { PassJob.schedule(it) }; scope.launch { now() } }
 
     /** A love made here: told to the computer at the next call. */
     fun loved(s: Song, on: Boolean) {
