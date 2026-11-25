@@ -25,7 +25,7 @@
     <queries><package android:name="app.ink.launcher" /></queries>
 
     <application
-        android:label="ink music"
+        android:label="${appName}"
         android:icon="@mipmap/icon"
         android:roundIcon="@mipmap/icon"
         android:banner="@drawable/banner"
@@ -150,7 +150,7 @@
         <receiver
             android:name=".Widget"
             android:process=":player"
-            android:label="ink music"
+            android:label="${appName}"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

@@ -16,6 +16,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
+        manifestPlaceholders["appName"] = "ink music"
         applicationId = "app.ink.music"
         minSdk = 30
         targetSdk = 37
@@ -62,6 +63,9 @@ android {
             }
             // -PbesideDebug: a release build that installs next to the debug one (its own id), to try R8's build
             if (project.hasProperty("besideDebug")) applicationIdSuffix = ".check"
+            // -Pdev: a release of its own (its own id, so none of the sign-ins), named so on the home screen: the
+            // signed-out ways tried beside the everyday app
+            if (project.hasProperty("dev")) { applicationIdSuffix = ".dev"; manifestPlaceholders["appName"] = "ink music dev" }
         }
     }
     buildFeatures { compose = true; buildConfig = true }
