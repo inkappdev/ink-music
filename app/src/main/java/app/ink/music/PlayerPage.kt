@@ -332,15 +332,15 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 // middle, lit while it's a speaker, dim on the phone, a tap opens every speaker (its name is under the
                 // title: "flac on bedroom speaker", a long one here pushed close off the row); close. The look is chosen
                 // in settings, the look, now (its three layers there, each its own: 2026-10-30)
-                Centred(
-                    start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true } },
-                    middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
-                    end = { Row(verticalAlignment = Alignment.CenterVertically) {
-                        SleepWord(n, sleepUp) { sleepUp = !sleepUp }
-                        Spacer(Modifier.width(14.dp))
-                        Pixel(CLOSE, "close", SAID, onClick = onClose)
-                    } },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                // four parts (2026-11-24, Bronson): how songs turn into the next and close at the ends, the speaker in the
+                // very middle, sleep centered in the gap between it and close (the queue's count went: up next is under
+                // the controls)
+                TopRow(
+                    { if (n.song?.episode != true && n.song?.station != true) FadesWord(pixel(SMALL, SAID)) },
+                    { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
+                    { SleepWord(n, sleepUp) { sleepUp = !sleepUp } },
+                    { Pixel(CLOSE, "close", SAID, onClick = onClose) },
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
             }
             val words = lyric != null || notes != null
@@ -502,14 +502,8 @@ private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit
         }
         // how one song turns into the next (2026-11-15, Bronson: easier from the player than settings): a tap the next of
         // no fades, crossfade, automix (a TV, no automix); lit while on. What each does is in settings
-        if (!episode && n.song?.station != true) {
-            val ctx = LocalContext.current
-            var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
-            val ways = if (tv) listOf(Crossfade.OFF, Crossfade.CROSSFADE) else listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX)
-            Word(if (mode == Crossfade.OFF) "no fades" else mode, pixel(style, if (mode != Crossfade.OFF) Ink.ink else OFF), Modifier.tvLit(), touch = 10.dp) {
-                mode = ways[(ways.indexOf(mode) + 1) % ways.size]; Crossfade.set(ctx, mode)
-            }
-        }
+        // (on the phone it's in the top row since 2026-11-24: five words here were too many)
+        if (tv && !episode && n.song?.station != true) FadesWord(pixel(style, SAID), Modifier.tvLit())
         // stopped, the player goes too (the mini player's gone with it: nothing left to come back down to)
         Word("stop", pixel(style, if (n.playing) SAID else OFF), Modifier.tvLit(), touch = 10.dp) { Playback.stop(); onStop() }
     } }
@@ -1767,5 +1761,39 @@ private fun TvPlayer(
         if (moving) Marquee(n.artist, n.moving, Modifier.fillMaxWidth(), size = 72.sp)
         else Spacer(Modifier.height(24.dp))
     }
+    }
+}
+
+
+/** How one song turns into the next, a tap the next of no fades, crossfade, automix (a TV: no automix); lit while on. */
+@Composable
+private fun FadesWord(style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    var mode by remember { mutableStateOf(Crossfade.mode(ctx)) }
+    val ways = if (onTv()) listOf(Crossfade.OFF, Crossfade.CROSSFADE) else listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX)
+    Word(if (mode == Crossfade.OFF) "no fades" else mode, style.copy(color = if (mode != Crossfade.OFF) Ink.ink else OFF), modifier, touch = 10.dp) {
+        mode = ways[(ways.indexOf(mode) + 1) % ways.size]; Crossfade.set(ctx, mode)
+    }
+}
+
+/**
+ * The player's top row: [start] and [end] at the edges, [middle] in the very middle, [right] centered in the gap between
+ * the middle and the end; all on one centre line.
+ */
+@Composable
+private fun TopRow(start: @Composable () -> Unit, middle: @Composable () -> Unit,
+                   right: @Composable () -> Unit, end: @Composable () -> Unit, modifier: Modifier = Modifier) {
+    androidx.compose.ui.layout.Layout({ Box { start() }; Box { middle() }; Box { right() }; Box { end() } }, modifier) { ms, c ->
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val (a, m, r, e) = ms.map { it.measure(loose) }
+        val w = c.maxWidth
+        val h = maxOf(a.height, m.height, r.height, e.height)
+        layout(w, h) {
+            val mx = (w - m.width) / 2
+            val ex = w - e.width
+            fun y(p: androidx.compose.ui.layout.Placeable) = (h - p.height) / 2
+            a.place(0, y(a)); m.place(mx, y(m)); e.place(ex, y(e))
+            r.place((mx + m.width + ex) / 2 - r.width / 2, y(r))
+        }
     }
 }
