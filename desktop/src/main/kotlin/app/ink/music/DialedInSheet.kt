@@ -121,12 +121,15 @@ private fun playingIs(s: DialedIn.Slot, n: Player.Now): Boolean = when (s.kind) 
     DialedIn.Kind.SONG -> n.song.id == s.song
     DialedIn.Kind.RECORD -> n.song.albumId == s.record
     DialedIn.Kind.ARTIST -> n.song.artist.lowercase().startsWith(s.artist.lowercase())
+    // a playlist's square: the phone's (the computer doesn't say its songs' playlists yet)
+    DialedIn.Kind.LIST -> false
 }
 
 private fun nameOf(s: DialedIn.Slot, song: Song?): String = when (s.kind) {
     DialedIn.Kind.SONG -> song?.title ?: s.song
     DialedIn.Kind.RECORD -> song?.album?.ifEmpty { null } ?: song?.title.orEmpty()
     DialedIn.Kind.ARTIST -> s.artist
+    DialedIn.Kind.LIST -> s.artist
 }
 
 /** A YouTube record by its id ("ya" and its browse id, or its own playlist's). */
@@ -155,6 +158,7 @@ private fun play(s: DialedIn.Slot, song: Song, scope: kotlinx.coroutines.Corouti
             if (theirs.size >= 3 || !song.tube) Player.play(theirs.ifEmpty { listOf(song) }.shuffled())
             else scope.launch { Mixes.play(Mixes.Mix(s.artist, song, song)) }
         }
+        DialedIn.Kind.LIST -> Player.play(listOf(song))
     }
 }
 
@@ -166,7 +170,7 @@ private fun byArtist(name: String): List<Song> = Library.songs.value.filter { s 
 private fun openOf(s: DialedIn.Slot, song: Song?, open: (Page) -> Unit) = when (s.kind) {
     DialedIn.Kind.ARTIST -> open(Page.Artist(s.artist))
     DialedIn.Kind.RECORD -> if (Library.albums.value.any { it.id == s.record }) open(Page.Record(s.record)) else open(Page.Tube(tubeRecord(s.record, song)))
-    DialedIn.Kind.SONG -> Unit
+    DialedIn.Kind.SONG, DialedIn.Kind.LIST -> Unit
 }
 
 /** One of the nine: its picture (an artist's photo, else the cover), its number, pinned or not, its name along its foot. */

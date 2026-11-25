@@ -57,7 +57,7 @@ fun SignatureCard() {
             starting -> "gathering your songs"
             playing -> "skip to steer it, love one for more like it"
             on -> "paused where you left it"
-            else -> "made from you, never runs out"
+            else -> "your taste, written out. it never ends"
         }, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {

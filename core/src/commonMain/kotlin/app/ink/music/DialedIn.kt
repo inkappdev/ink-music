@@ -9,10 +9,15 @@ import kotlin.io.encoding.Base64
  * listens in and draws the nine its own way (a contact sheet: nine pictures touching, black and white, words over them).
  */
 object DialedIn {
-    /** A listen as each app keeps it: when, the song, its artist, its record's id ("" or the song's own for a single). */
-    data class Listen(val at: Long, val id: String, val artist: String, val record: String, val minute: Int)
+    /**
+     * A listen as each app keeps it: when, the song, its artist, its record's id ("" or the song's own for a single), and
+     * the playlist it was played from ([list]: "kind:id", [listName]; empty when it wasn't).
+     */
+    data class Listen(val at: Long, val id: String, val artist: String, val record: String, val minute: Int,
+                      val list: String = "", val listName: String = "")
 
-    enum class Kind(val word: String) { SONG("song"), RECORD("record"), ARTIST("artist") }
+    /** A playlist's slot holds its name as the artist and its "kind:id" as the record. */
+    enum class Kind(val word: String) { SONG("song"), RECORD("record"), ARTIST("artist"), LIST("playlist") }
 
     /** A slot: its number (1 to 9), what's in it, and the song that stands for it (its most heard). */
     data class Slot(val n: Int, val key: String, val kind: Kind, val song: String, val artist: String, val record: String, val pinned: Boolean)
@@ -50,10 +55,20 @@ object DialedIn {
             val songs = HashMap<String, Double>()
             fun top() = songs.maxByOrNull { it.value }?.key.orEmpty()
         }
+        // a playlist's songs count for the playlist (2026-11-25, Bronson: "can playlists appear in dialed in?"), not their
+        // records; one with a single song heard from it is that song
+        val lists = HashMap<String, Group>()
+        val artistOf = HashMap<String, String>()
+        for (l in listens) {
+            if (l.id.isEmpty() || l.list.isEmpty()) continue
+            val g = lists.getOrPut("l:" + l.list) { Group("l:" + l.list, Kind.LIST, l.listName.ifEmpty { l.list }, l.list) }
+            val w = weight(l, now, nowMs)
+            g.score += w; g.songs[l.id] = (g.songs[l.id] ?: 0.0) + w; artistOf[l.id] = l.artist
+        }
         // by record first (a single, or none: the song itself)
         val records = HashMap<String, Group>()
         for (l in listens) {
-            if (l.id.isEmpty()) continue
+            if (l.id.isEmpty() || l.list.isNotEmpty()) continue
             val single = l.record.isEmpty() || l.record == l.id || l.record == "y" + l.id.removePrefix("y")
             val key = if (single) "s:" + l.id else "r:" + l.record
             val g = records.getOrPut(key) { Group(key, if (single) Kind.SONG else Kind.RECORD, l.artist, if (single) "" else l.record) }
@@ -67,18 +82,21 @@ object DialedIn {
         // an artist across three and more, two of them records: the artist too, all of theirs under them (their records and
         // songs stay in the running: one slot an artist takes the first of them, and an artist passed over at three leaves
         // their best record to come)
-        val byArtist = parts.groupBy { artistKey(it.artist) }
+        val heardLists = lists.values.map { g ->
+            if (g.songs.size < 2) Group("s:" + g.top(), Kind.SONG, artistOf[g.top()].orEmpty(), "").also { it.score = g.score; it.songs.putAll(g.songs) } else g
+        }
+        val byArtist = (parts + heardLists.filter { it.kind == Kind.SONG }).groupBy { artistKey(it.artist) }
         val candidates = byArtist.flatMap { (key, theirs) ->
             if (theirs.size >= 3 && theirs.count { it.kind == Kind.RECORD } >= 2) theirs + Group(key, Kind.ARTIST, theirs.first().artist.substringBefore(", ").trim(), "").also { a ->
                 a.score = theirs.sumOf { it.score } * .7
                 theirs.forEach { t -> t.songs.forEach { (id, w) -> a.songs[id] = (a.songs[id] ?: 0.0) + w } }
             } else theirs
-        }.sortedByDescending { it.score }
+        }.plus(heardLists.filter { it.kind == Kind.LIST }).sortedByDescending { it.score }
         val pinned = pins.filter { it.n in 1..SLOTS }.associateBy { it.n }
         val taken = pinned.values.map { it.key }.toSet()
         val usedArtists = pinned.values.map { artistKey(it.artist) }.toMutableSet()
         // an artist said not here: none of theirs either
-        val free = ArrayDeque(candidates.filter { it.key !in taken && it.key !in hidden && artistKey(it.artist) !in hidden && it.score > 0 })
+        val free = ArrayDeque(candidates.filter { it.key !in taken && it.key !in hidden && (it.kind == Kind.LIST || artistKey(it.artist) !in hidden) && it.score > 0 })
         val out = ArrayList<Slot>()
         var artists = pinned.values.count { it.kind == Kind.ARTIST }
         for (n in 1..SLOTS) {
@@ -86,7 +104,8 @@ object DialedIn {
             while (free.isNotEmpty()) {
                 val g = free.removeFirst()
                 if (g.kind == Kind.ARTIST && artists >= 3) continue
-                if (!usedArtists.add(artistKey(g.artist))) continue
+                // a playlist's name isn't an artist: it never keeps one out
+                if (g.kind != Kind.LIST && !usedArtists.add(artistKey(g.artist))) continue
                 if (g.kind == Kind.ARTIST) artists++
                 out += Slot(n, g.key, g.kind, g.top(), g.artist, g.record, pinned = false)
                 break

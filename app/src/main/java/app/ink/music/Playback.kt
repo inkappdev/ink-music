@@ -250,15 +250,23 @@ object Playback {
     val begun = MutableStateFlow(0)
 
     /** Plays `songs` from `start` (at `at` ms), as a queue; on the speaker while one is chosen. */
-    fun play(songs: List<Song>, start: Int, at: Long = 0L, go: Boolean = true) {
+    /**
+     * The queue made of `songs`, from `start`. [from], a playlist's "kind:id" and name ([listed]): each song carries it,
+     * so what's heard from a playlist is kept as its (DIALED IN counts playlists by it).
+     */
+    fun play(songs: List<Song>, start: Int, at: Long = 0L, go: Boolean = true, from: Pair<String, String>? = null) {
         if (songs.isEmpty()) return
+        // the playlist it's from, if any: said for DIALED IN's lit square, and its songs kept as played (a smart list's
+        // are only made on its page)
+        listPlaying.value = from?.first
+        if (from != null) app?.let { c -> ListsPlayed.keep(c, from.first, songs.map { it.id }) }
         // something else played after a mix: the transition it lent given back (Crossfade.lend)
         app?.let { Crossfade.giveBack(it) }
         if (go) begun.value++
         val speaker = Casting.on.value
         if (speaker != null) { app?.let { Casting.play(it, speaker, songs, start, at) }; return }
         val c = controller ?: return
-        c.setMediaItems(songs.map(::item), start.coerceIn(songs.indices), at)
+        c.setMediaItems(songs.map { item(it, list = from) }, start.coerceIn(songs.indices), at)
         c.prepare()
         if (go) c.play()
     }
@@ -471,14 +479,20 @@ object Playback {
         c.addMediaItem(item(s))
     }
 
-    fun item(s: Song, next: Boolean = false) = MediaItem.Builder()
+    /** The playlist the queue was made from ("kind:id"), or null. */
+    val listPlaying = MutableStateFlow<String?>(null)
+
+    /** A song's playlist, as its item carries it: its "kind:id" and its name. */
+    const val LIST = "app.ink.music.LIST"; const val LIST_NAME = "app.ink.music.LIST_NAME"
+
+    fun item(s: Song, next: Boolean = false, list: Pair<String, String>? = null) = MediaItem.Builder()
         .setMediaId(s.id)
         .setUri(s.uri)
         .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(s.uri)
             .apply { if (next) setExtras(android.os.Bundle().apply { putBoolean(PlayerService.NEXT, true) }) }.build())
         .setMediaMetadata(
             MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
-                .setAlbumArtist(s.albumArtist).setTrackNumber(s.track).setIsPlayable(true).setExtras(Levelling.extras(s))
+                .setAlbumArtist(s.albumArtist).setTrackNumber(s.track).setIsPlayable(true).setExtras(Levelling.extras(s).apply { list?.let { (k, n) -> putString(LIST, k); putString(LIST_NAME, n) } })
                 // its length as listed, for what needs the whole song's (the player's is cut where a transition starts)
                 .apply { if (s.duration > 0) setDurationMs(s.duration) }
                 // a cover for the notification, the lock screen and the car: YouTube's link, else ink music's own
@@ -490,3 +504,25 @@ object Playback {
 @Suppress("DEPRECATION")
 private fun android.os.Bundle.parcelable(key: String): android.media.session.MediaSession.Token? =
     if (android.os.Build.VERSION.SDK_INT >= 33) getParcelable(key, android.media.session.MediaSession.Token::class.java) else getParcelable(key)
+
+/**
+ * Each playlist's songs as last played from it (files/lists-played.json: "kind:id" to song ids, the latest 30 lists), so
+ * DIALED IN can play one again as it was, a smart list too (its songs are made on its page).
+ */
+object ListsPlayed {
+    private fun file(c: android.content.Context) = java.io.File(c.filesDir, "lists-played.json")
+
+    @Synchronized fun keep(c: android.content.Context, ref: String, ids: List<String>) {
+        runCatching {
+            val o = runCatching { org.json.JSONObject(file(c).readText()) }.getOrDefault(org.json.JSONObject())
+            o.remove(ref)
+            val kept = org.json.JSONObject().put(ref, org.json.JSONArray(ids.take(500)))
+            o.keys().asSequence().toList().takeLast(29).forEach { kept.put(it, o.get(it)) }
+            Keep.write(file(c), kept.toString())
+        }
+    }
+
+    fun ids(c: android.content.Context, ref: String): List<String> = runCatching {
+        org.json.JSONObject(file(c).readText()).getJSONArray(ref).let { a -> (0 until a.length()).map { a.getString(it) } }
+    }.getOrDefault(emptyList())
+}

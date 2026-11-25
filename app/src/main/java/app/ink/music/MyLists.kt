@@ -285,8 +285,8 @@ fun MinePage(id: String, pages: Pages) {
             )
             Spacer(Modifier.height(16.dp))
             if (songs.isNotEmpty()) FlowRow {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(songs, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(songs, 0, from = "mine:$id" to m.name) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0, from = "mine:$id" to m.name) }
                 MixWord(m.name, songs, Modifier.padding(end = 26.dp))
                 CoversWord(Modifier.padding(end = 26.dp))
                 KeepOffline(songs)
@@ -312,7 +312,7 @@ fun MinePage(id: String, pages: Pages) {
             val shown = songs.withIndex().filter { matches(it.value, find) }
             if (songs.size > 8) item(key = "find") { Column(Modifier.padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, songs.size, find) } }
             itemsIndexed(shown, key = { _, (_, s) -> s.id }) { k, (i, s) -> Box(Modifier.cascade(k + 1)) {
-                SongRow(s, pages = pages, cover = covers, onRemove = { MyLists.remove(id, i) }) { Playback.play(shown.map { it.value }, k) }
+                SongRow(s, pages = pages, cover = covers, onRemove = { MyLists.remove(id, i) }) { Playback.play(shown.map { it.value }, k, from = "mine:$id" to m.name) }
             }}
         }
     } }

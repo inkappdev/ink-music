@@ -2,6 +2,7 @@ package app.ink.music
 
 import androidx.compose.ui.graphics.asAndroidBitmap
 import android.content.Context
+import kotlinx.coroutines.flow.firstOrNull
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -79,7 +80,7 @@ fun DialedInSheet(heard: List<History.Heard>, songOf: (String) -> Song?, pages: 
     val minute = remember(now) { Listening.minuteOfWeek(now) }
     // only what can be played again here (the library's, or a YouTube song this run knows)
     val slots = remember(heard, pins, hidden) {
-        val listens = heard.filter { songOf(it.id) != null }.map { DialedIn.Listen(it.at, it.id, it.artist, it.record, Listening.minuteOfWeek(it.at)) }
+        val listens = heard.filter { songOf(it.id) != null }.map { DialedIn.Listen(it.at, it.id, it.artist, it.record, Listening.minuteOfWeek(it.at), it.list, it.listName) }
         DialedIn.pick(listens, minute, now, pins.filter { songOf(it.song) != null }, hidden)
     }
     if (slots.size < 6) return
@@ -95,7 +96,7 @@ fun DialedInSheet(heard: List<History.Heard>, songOf: (String) -> Song?, pages: 
                         val song = songOf(s.song)
                         val lit = song != null && playing?.let { n -> playingIs(s, song, n) } == true
                         Box(Modifier.weight(1f).alpha(if (held == null || held == s.n) 1f else .35f)) {
-                            Slot(s, song, lit, onClick = { held = null; play(s, song, scope) }, onHold = { held = s.n })
+                            Slot(s, song, lit, onClick = { held = null; play(s, song, scope, ctx) }, onHold = { held = s.n })
                         }
                     }}
                     repeat(3 - row.size) { Box(Modifier.weight(1f)) }
@@ -126,12 +127,14 @@ private fun playingIs(s: DialedIn.Slot, song: Song, n: Now): Boolean = when (s.k
     DialedIn.Kind.SONG -> n.song?.id?.let { it == s.song } ?: (n.title.equals(song.title, true) && n.artist.equals(song.artist, true))
     DialedIn.Kind.RECORD -> n.song?.albumId?.let { it == s.record } ?: (song.album.isNotEmpty() && n.album.equals(song.album, true))
     DialedIn.Kind.ARTIST -> n.artist.lowercase().startsWith(s.artist.lowercase())
+    DialedIn.Kind.LIST -> Playback.listPlaying.value == s.record
 }
 
 private fun nameOf(s: DialedIn.Slot, song: Song?): String = when (s.kind) {
     DialedIn.Kind.SONG -> song?.title ?: s.song
     DialedIn.Kind.RECORD -> song?.album?.ifEmpty { null } ?: song?.title.orEmpty()
     DialedIn.Kind.ARTIST -> s.artist
+    DialedIn.Kind.LIST -> s.artist
 }
 
 /** A YouTube record by its id ("ya" and its browse id, or its own playlist's). */
@@ -146,7 +149,7 @@ private fun tubeRecord(record: String, song: Song?): TubeAlbum {
  * phone's files, your server's), else YouTube Music's mix from their most heard: someone with only their own files gets
  * them (2026-11-17, Bronson asked; the mix alone played one song and stopped, YouTube having none for a file).
  */
-private fun play(s: DialedIn.Slot, song: Song?, scope: kotlinx.coroutines.CoroutineScope) {
+private fun play(s: DialedIn.Slot, song: Song?, scope: kotlinx.coroutines.CoroutineScope, c: Context) {
     song ?: return
     when (s.kind) {
         DialedIn.Kind.SONG -> Playback.play(listOf(song), 0)
@@ -157,6 +160,11 @@ private fun play(s: DialedIn.Slot, song: Song?, scope: kotlinx.coroutines.Corout
                 val all = YouTubeMusic.album(tubeRecord(s.record, song))
                 if (all.isNotEmpty()) Playback.play(all, 0) else Playback.play(listOf(song), 0)
             } else Playback.play(listOf(song), 0)
+        }
+        // a playlist: its songs as they are now, played from the start as it was (said its own, so it keeps counting)
+        DialedIn.Kind.LIST -> scope.launch {
+            val all = listSongs(c, s.record)
+            if (all.isNotEmpty()) Playback.play(all, 0, from = s.record to s.artist) else Playback.play(listOf(song), 0)
         }
         DialedIn.Kind.ARTIST -> {
             val theirs = byArtist(s.artist)
@@ -176,6 +184,33 @@ private fun open(s: DialedIn.Slot, song: Song?, pages: Pages) = when (s.kind) {
     DialedIn.Kind.RECORD -> if (Library.albums.value.any { it.id == s.record }) pages.open(Page.Record(s.record))
         else pages.open(Page.Tube(tubeRecord(s.record, song)))
     DialedIn.Kind.SONG -> Unit
+    DialedIn.Kind.LIST -> listPage(s)?.let { pages.open(it) } ?: Unit
+}
+
+/**
+ * A playlist's songs by its "kind:id": your own, your server's, YouTube Music's as they are now; a smart list's (or one
+ * that won't read) as last played from it.
+ */
+private suspend fun listSongs(c: Context, ref: String): List<Song> {
+    val id = ref.substringAfter(":")
+    return when (ref.substringBefore(":")) {
+        "mine" -> MyLists.all.value.firstOrNull { it.id == id }?.songs.orEmpty()
+        "server" -> runCatching { Server.playlist(id) }.getOrNull().orEmpty()
+        "tube" -> kotlinx.coroutines.withTimeoutOrNull(15_000) { YouTubeAccount.playlist(id).firstOrNull() }.orEmpty()
+        else -> emptyList()
+    }.ifEmpty { ListsPlayed.ids(c, ref).mapNotNull { Library.song(it) ?: YouTubeMusic.known(it) } }
+}
+
+/** A playlist's own page. */
+private fun listPage(s: DialedIn.Slot): Page? {
+    val id = s.record.substringAfter(":")
+    return when (s.record.substringBefore(":")) {
+        "mine" -> Page.Mine(id)
+        "server" -> Page.Playlist(id, s.artist)
+        "tube" -> Page.TubeList(TubeList(id, s.artist, "", null))
+        "smart" -> Page.Smart(id)
+        else -> null
+    }
 }
 
 /** One of the nine: its picture (an artist's photo, else the cover), its number, pinned or not, its name along its foot. */

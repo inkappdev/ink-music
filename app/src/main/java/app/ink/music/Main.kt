@@ -1643,8 +1643,8 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
             )
             Spacer(Modifier.height(16.dp))
             if (!all.isNullOrEmpty()) FlowRow {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0, from = "server:$id" to name) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0, from = "server:$id" to name) }
                 MixWord(name, all, Modifier.padding(end = 26.dp))
                 CoversWord(Modifier.padding(end = 26.dp))
                 KeepOffline(all)
@@ -1667,7 +1667,7 @@ private fun PlaylistPage(id: String, name: String, pages: Pages) {
             SongRow(s, pages = pages, cover = covers, onRemove = if (mine) ({
                 songs = all.filterIndexed { j, _ -> j != i }    // gone at once; the server's answer reads it again
                 scope.launch { Server.removeFrom(id, i) }
-            }) else null) { Playback.play(shown.map { it.value }, k) }
+            }) else null) { Playback.play(shown.map { it.value }, k, from = "server:$id" to name) }
         }}
     } }
 }
@@ -2956,8 +2956,8 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
             // whether it's here at all, small, under (they had wrapped into one ragged block, 2026-11-25)
             // centered: mix's drop-down word stands a little taller than a plain one, and sat low beside them
             if (!all.isNullOrEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0) }
-                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0) }
+                Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(all, 0, from = "tube:${pl.id}" to pl.name) }
+                Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(all.shuffled(), 0, from = "tube:${pl.id}" to pl.name) }
                 MixWord(pl.name, all)
             }
             MixProgress(pl.name)
@@ -2987,7 +2987,7 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
         val shown = matching(all, find)
         if (all.size > 8) item(key = "find") { Column(Modifier.padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, all.size, find) } }
         // no keys: a playlist can hold one song twice
-        itemsIndexed(shown) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, cover = covers) { Playback.play(shown, i) } }}
+        itemsIndexed(shown) { i, s -> Box(Modifier.cascade(i + 1)) { SongRow(s, cover = covers) { Playback.play(shown, i, from = "tube:${pl.id}" to pl.name) } }}
     } }
 }
 
@@ -3993,8 +3993,8 @@ private fun SmartPage(id: String, pages: Pages) {
                 Spacer(Modifier.height(14.dp))
                 Row {
                     if (songs.isNotEmpty()) {
-                        Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(songs, 0) }
-                        Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0) }
+                        Word("play", pixel(14.sp), Modifier.padding(end = 26.dp).tvFirst(), touch = 8.dp) { Playback.play(songs, 0, from = "smart:$id" to l.name) }
+                        Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(songs.shuffled(), 0, from = "smart:$id" to l.name) }
                         MixWord(l.name, songs, Modifier.padding(end = 26.dp))
                     }
                     Word("change", pixel(14.sp, Ink.mid), touch = 8.dp) { pages.open(Page.SmartEdit(l.id)) }
@@ -4006,7 +4006,7 @@ private fun SmartPage(id: String, pages: Pages) {
             }
         }
         if (songs.size > 8) item(key = "find") { Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 10.dp)) { ListFind(find, { find = it }); Narrowed(shown.size, songs.size, find) } }
-        itemsIndexed(shown, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(shown, i) } } }
+        itemsIndexed(shown, key = { _, s -> s.id }) { i, s -> Box(Modifier.padding(horizontal = 20.dp)) { SongRow(s, pages = pages, cover = covers) { Playback.play(shown, i, from = "smart:$id" to l.name) } } }
     } }
 }
 

@@ -59,4 +59,19 @@ class DialedInTest {
         assertEquals("The Japanese House", TubeMixes.lead("The Japanese House, hard life, After"))
         assertEquals("tuesday afternoon, what you play now", DialedIn.said(tue1pm))
     }
+
+    @Test fun aPlaylistTakesASquare() {
+        // a playlist played at this hour, songs of many records and artists: one square, named for the playlist
+        val listens = (1..6).flatMap { w -> (1..5).map { k ->
+            DialedIn.Listen(now - 7L * w * day, "p$k", "Artist $k", "rec$k", tue1pm + k, "mine:7", "morning run") } } +
+            // and one song heard once from another list: just that song
+            DialedIn.Listen(now - day, "q1", "Lone", "rq", tue1pm, "server:9", "once")
+        val slots = DialedIn.pick(listens, tue1pm, now, emptyList(), emptySet())
+        println(slots)
+        val list = slots.first { it.kind == DialedIn.Kind.LIST }
+        assertEquals("l:mine:7", list.key); assertEquals("morning run", list.artist); assertEquals("mine:7", list.record)
+        // its songs don't make squares of their records
+        assertTrue(slots.none { it.kind == DialedIn.Kind.RECORD })
+        assertTrue(slots.any { it.key == "s:q1" })
+    }
 }

@@ -11,7 +11,9 @@ import java.io.File
  */
 object History {
     /** A song heard: when it started (wall clock ms), what it was, how long it played (ms). */
-    data class Heard(val at: Long, val id: String, val title: String, val artist: String, val album: String, val record: String, val ms: Long)
+    /** A song heard; [list] and [listName] the playlist it was played from ("kind:id"; empty when it wasn't). */
+    data class Heard(val at: Long, val id: String, val title: String, val artist: String, val album: String, val record: String, val ms: Long,
+                     val list: String = "", val listName: String = "")
 
     /** Less than this isn't a listen (a skip, a look). */
     const val ENOUGH = 30_000L
@@ -25,7 +27,8 @@ object History {
         if (Private.on(c)) return
         runCatching {
             file(c).appendText(JSONObject().put("at", h.at).put("id", h.id).put("title", h.title).put("artist", h.artist)
-                .put("album", h.album).put("record", h.record).put("ms", h.ms).toString() + "\n")
+                .put("album", h.album).put("record", h.record).put("ms", h.ms)
+                .apply { if (h.list.isNotEmpty()) put("list", h.list).put("listName", h.listName) }.toString() + "\n")
         }
     }
 
@@ -40,7 +43,7 @@ object History {
             runCatching {
                 val o = JSONObject(line)
                 Heard(o.getLong("at"), o.getString("id"), o.getString("title"), o.getString("artist"),
-                    o.optString("album"), o.optString("record"), o.getLong("ms"))
+                    o.optString("album"), o.optString("record"), o.getLong("ms"), o.optString("list"), o.optString("listName"))
             }.getOrNull()
         }
     }.getOrDefault(emptyList())
@@ -90,7 +93,8 @@ object History {
             item?.takeUnless { it.mediaId.startsWith("e") }?.let { i ->
                 val md = i.mediaMetadata
                 add(c, Heard(started, i.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(),
-                    md.albumTitle?.toString().orEmpty(), md.extras?.getString(Levelling.RECORD).orEmpty(), played))
+                    md.albumTitle?.toString().orEmpty(), md.extras?.getString(Levelling.RECORD).orEmpty(), played,
+                    md.extras?.getString(Playback.LIST).orEmpty(), md.extras?.getString(Playback.LIST_NAME).orEmpty()))
                 // moved on from in its first seconds (to another song, not stopped): a skip
                 if (next != null && played in 2_000 until ENOUGH) { skipped(c, started, i.mediaId, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(), played); skip = true }
             }
