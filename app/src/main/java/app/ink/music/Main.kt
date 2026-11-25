@@ -1226,6 +1226,9 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
                 Word("block song", pixel(13.sp, Ink.mid), touch = 8.dp) { open = false; Blocked.blockSong(ctxB, s) }
             }
         }
+        // its family (the original, its covers, samples, remixes), asked once it's held (SongFamily)
+        if (open && pages != null && !s.station && !s.episode)
+            SongFamily(s, pages, Modifier.padding(start = (if (cover) 58.dp else 0.dp) + (if (number != null) 30.dp else 0.dp)))
     }}
 }
 
@@ -1635,6 +1638,13 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
     // who fans also like, read ahead (wifi), so the next tap opens at once
     val ctx = LocalContext.current
     LaunchedEffect(i?.id) { i?.like?.take(5)?.forEach { YouTubeAccount.warm(ctx, it.name, it.id) } }
+    // fans also like as Last.fm's and ListenBrainz's listeners hear it too (FansAlsoLike): YouTube's at once, theirs when found
+    val alsoLike by androidx.compose.runtime.produceState(i?.like.orEmpty(), i?.name, i?.like) {
+        val like = i?.like.orEmpty()
+        value = like
+        if (i == null || like.isEmpty()) return@produceState
+        value = withContext(Dispatchers.IO) { FansAlsoLike.of(ctx, i.name.ifBlank { name }, like) }
+    }
     // their best-known songs, the library's own copy where there is one (it plays from the phone or the server)
     val top = remember(i, theirs) {
         i?.top.orEmpty().take(6).map { t -> theirs.firstOrNull { it.title.equals(t.title, ignoreCase = true) } ?: t }
@@ -1695,7 +1705,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                         items(singles, key = { it.url }) { r -> TubeTile(r, Modifier.width(120.dp), said = r.dated.ifEmpty { "single" }) { pages.open(Page.Tube(r)) } }
                     }
                 } }
-                i?.like?.takeIf { it.isNotEmpty() }?.let { like -> item(key = "like") {
+                alsoLike.takeIf { it.isNotEmpty() }?.let { like -> item(key = "like") {
                     TvLabel("fans also like")
                     LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         items(like, key = { it.id.ifEmpty { it.name } }) { a ->
@@ -1882,7 +1892,7 @@ private fun ArtistPage(name: String, pages: Pages, tubeId: String = "") {
                 Spacer(Modifier.height(18.dp))
             }
         }
-        i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
+        alsoLike.takeIf { it.isNotEmpty() }?.let { like ->
             item {
                 Label("fans also like")
                 LazyRow(Modifier.tvShelf(), state = tvRowState(), contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {

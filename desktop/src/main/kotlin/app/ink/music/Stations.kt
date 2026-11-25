@@ -50,7 +50,23 @@ object Stations {
             ).also { known[id] = it }
             Curated(song, city, o.optString("line"), o.optString("genre"), o.optBoolean("star"))
         }
-    }.getOrDefault(emptyList()).also { curated = it }
+    }.getOrDefault(emptyList()).also { curated = it; mixtapes() }
+
+    /** NTS's mixtapes as songs: the station, its line where a city would be (their streams name nothing). */
+    private fun songs(list: List<NtsMixtapes.Mixtape>): List<Pair<Song, String>> = list.map { m ->
+        (known[m.id] ?: Song(
+            id = m.id, path = m.stream, title = m.name, artist = m.said, album = "", albumId = m.id, albumArtist = m.name,
+            duration = 0, disc = 1, track = 0, year = 0, format = "radio",
+        ).also { known[m.id] = it }) to m.said
+    }
+
+    private val mixtapeFile get() = java.io.File(Home.dir, "nts-mixtapes.json")
+
+    /** NTS's mixtapes as last kept (none before the first read), known by id from here on (the queue kept). */
+    fun mixtapes(): List<Pair<Song, String>> = songs(NtsMixtapes.kept(mixtapeFile))
+
+    /** NTS's mixtapes, read again once a day (else, or if NTS doesn't answer, as kept). */
+    suspend fun freshMixtapes(): List<Pair<Song, String>> = withContext(Dispatchers.IO) { songs(NtsMixtapes.fresh(mixtapeFile)) }
 
     /**
      * What else a genre goes by: radio-browser's tags for it (matched exactly), and the words ink

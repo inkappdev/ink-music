@@ -50,7 +50,26 @@ object Stations {
             ).also { known[id] = it }
             Curated(song, city, o.optString("line"), o.optString("genre"), o.optBoolean("star"))
         }
-    }.getOrDefault(emptyList()).also { curated = it }
+    }.getOrDefault(emptyList()).also { curated = it; mixtapes(c) }
+
+    /** NTS's mixtapes as songs: the station, its line where a city would be (their streams name nothing). */
+    private fun songs(list: List<NtsMixtapes.Mixtape>): List<Pair<Song, String>> = list.map { m ->
+        (known[m.id] ?: Song(
+            id = m.id, uri = Uri.parse(m.stream), title = m.name, artist = m.said, album = "", albumId = m.id, albumArtist = m.name,
+            duration = 0, disc = 1, track = 0, year = 0, format = "radio", mime = "audio/mpeg",
+        ).also { known[m.id] = it }) to m.said
+    }
+
+    /** Where NTS's mixtapes are kept: in files, so the player knows them by id too (the queue kept, the car). */
+    private fun mixtapeFile(c: android.content.Context) = java.io.File(c.filesDir, "nts-mixtapes.json")
+
+    /** NTS's mixtapes as last kept (none before the first read), known by id from here on. */
+    fun mixtapes(c: android.content.Context): List<Pair<Song, String>> = songs(NtsMixtapes.kept(mixtapeFile(c)))
+
+    /** NTS's mixtapes, read again once a day (else, or if NTS doesn't answer, as kept). */
+    suspend fun freshMixtapes(c: android.content.Context): List<Pair<Song, String>> = withContext(Dispatchers.IO) {
+        songs(NtsMixtapes.fresh(mixtapeFile(c)))
+    }
 
     /**
      * What else a genre goes by: radio-browser's tags for it (matched exactly), and the words ink

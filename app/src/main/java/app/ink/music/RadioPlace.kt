@@ -99,6 +99,8 @@ fun RadioPlace(pages: Pages, pad: PaddingValues, grid: LazyGridState) {
         value = Stations.look(ctx, typed)
     }
     val pastedSong = remember(typed, stream) { if (stream) Stations.of(RadioBrowser.pasted(typed)) else null }
+    // NTS's infinite mixtapes: as kept at once, then read again once a day
+    val mixtapes by produceState(remember { Stations.mixtapes(ctx) }) { value = Stations.freshMixtapes(ctx).ifEmpty { value } }
     val now by Playback.now.collectAsState()
     LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, contentPadding = pad,
         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
@@ -178,6 +180,7 @@ fun RadioPlace(pages: Pages, pad: PaddingValues, grid: LazyGridState) {
                 else label("l-hint", "a long press on any station keeps it here as yours")
                 label("l-ink", "ink radio")
                 tiles(ours.map { it.song to it.city }, "c")
+                if (mixtapes.isNotEmpty()) { label("l-nts", "nts mixtapes · endless, themed, from nts"); tiles(mixtapes, "m") }
             }
         }
     }

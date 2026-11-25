@@ -100,8 +100,8 @@ object Socials {
 
     private fun quoted(s: String) = s.replace("\\", "").replace("\"", "")
 
-    /** One request, a second and a bit after the last (MusicBrainz's rule); a busy answer (503) waited out once. */
-    private fun ask(url: String): JSONObject {
+    /** One request, a second and a bit after the last (MusicBrainz's rule); a busy answer (503) waited out once. Lineage asks through it too. */
+    internal fun ask(url: String): JSONObject {
         repeat(2) { attempt ->
             gate.run {
                 while (true) { val wait = last + 1_100 - nowMs(); if (wait <= 0) break; gate.await(wait) }

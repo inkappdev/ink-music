@@ -82,6 +82,13 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
     val i = info
     // who fans also like, read ahead, so the next click opens at once
     LaunchedEffect(i?.id) { i?.like?.take(5)?.forEach { Artists.warm(it.name, it.id) } }
+    // fans also like as Last.fm's and ListenBrainz's listeners hear it too (FansAlsoLike): YouTube's at once, theirs when found
+    val alsoLike by produceState(i?.like.orEmpty(), i?.name, i?.like) {
+        val like = i?.like.orEmpty()
+        value = like
+        if (i == null || like.isEmpty()) return@produceState
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { FansAlsoLike.of(i.name.ifBlank { name }, like) }
+    }
     // their best-known songs, your own copy where there is one (it plays from here or your server)
     // six, three a column (YouTube's five and the next from its list: InnerTube.top)
     val top = remember(i, theirs) { i?.top.orEmpty().take(6).map { t -> theirs.firstOrNull { it.title.equals(t.title, ignoreCase = true) } ?: t } }
@@ -300,7 +307,7 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
                 i?.featured?.takeIf { it.isNotEmpty() }?.let { lists ->
                     shelf("featured", "on playlists") { items(lists, key = { it.url }) { r -> TubeTile(r, Modifier.width(150.dp)) { open(Page.Tube(r)) } } }
                 }
-                i?.like?.takeIf { it.isNotEmpty() }?.let { like ->
+                alsoLike.takeIf { it.isNotEmpty() }?.let { like ->
                     shelf("like", "fans also like") {
                         items(like, key = { it.id.ifEmpty { it.name } }) { a ->
                             var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }

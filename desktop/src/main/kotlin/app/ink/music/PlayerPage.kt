@@ -345,7 +345,11 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     RadioWord()
                                     QueueList(open, rememberLazyListState(), PaddingValues(bottom = 16.dp), Modifier.fillMaxSize(), follow = true)
                                 }
-                                else -> Notes(n, heard?.takeIf { it.id == n.song.id }, on?.name)
+                                // the notes, and under them the song's family (SongFamily), scrolled where they're long
+                                else -> Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                                    Notes(n, heard?.takeIf { it.id == n.song.id }, on?.name)
+                                    if (!n.song.station && !n.song.episode) SongFamily(n.song, open)
+                                }
                             }
                         }
                     }

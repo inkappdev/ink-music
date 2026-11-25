@@ -106,6 +106,28 @@ object Similar {
     fun artists(artist: String, key: String, limit: Int = 10): List<Pair<String, Double>> =
         blend(lastFmArtists(artist, key, limit), listenBrainzArtists(artist, limit), limit)
 
+    /** "Fans also like" heard by more ears: YouTube's own list in a new order ([order], places in it) and who to add. */
+    data class AlsoLike(val order: List<Int>, val agreed: Int, val extra: List<String>)
+
+    /**
+     * YouTube Music's "fans also like" (`names`, its order) with Last.fm's and ListenBrainz's near artists (`kin`, each 0
+     * to 1; [artists]) (2026-11-24): those they also name first, the nearest first ([AlsoLike.agreed] of them), the rest
+     * in YouTube's order; and up to `extra` they name that YouTube doesn't, yours (`preferred`) before the rest, each
+     * set by how near. Names matched folded.
+     */
+    fun alsoLike(names: List<String>, kin: List<Pair<String, Double>>, extra: Int, preferred: (String) -> Boolean): AlsoLike {
+        val near = HashMap<String, Double>()
+        kin.forEach { (n, m) -> val k = Curation.folded(n); if ((near[k] ?: -1.0) < m) near[k] = m }
+        val folded = names.map { Curation.folded(it) }
+        val agreed = names.indices.filter { folded[it] in near }.sortedByDescending { near[folded[it]] }
+        val rest = names.indices.filter { folded[it] !in near }
+        val have = folded.toHashSet()
+        val more = kin.filter { Curation.folded(it.first) !in have }.distinctBy { Curation.folded(it.first) }
+            .sortedWith(compareByDescending<Pair<String, Double>> { preferred(it.first) }.thenByDescending { it.second })
+            .take(extra.coerceAtLeast(0)).map { it.first }
+        return AlsoLike(agreed + rest, agreed.size, more)
+    }
+
     /** Two lists of near artists (each 0 to 1) as one: both named it, .6 and up; one alone, .55 at most. */
     fun blend(lastFm: List<Pair<String, Double>>, listenBrainz: List<Pair<String, Double>>, limit: Int): List<Pair<String, Double>> {
         if (listenBrainz.isEmpty()) return lastFm.take(limit)

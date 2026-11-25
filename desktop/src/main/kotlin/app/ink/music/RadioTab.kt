@@ -111,6 +111,8 @@ fun RadioTab() {
 
     // a stream's own link, as a station
     val pastedSong = remember(typed, stream) { if (stream) Stations.of(RadioBrowser.pasted(typed)) else null }
+    // NTS's infinite mixtapes: as kept at once, then read again once a day
+    val mixtapes by produceState(remember { Stations.mixtapes() }) { value = Stations.freshMixtapes().ifEmpty { value } }
     val grid = pageGrid("radio")
     LazyVerticalGrid(
         GridCells.Adaptive(176.dp), Modifier.fillMaxSize().feather(grid), grid,
@@ -193,6 +195,7 @@ fun RadioTab() {
                 if (kept.isNotEmpty()) { wide("l-yours") { Label("yours") }; stations(kept.map { Shown(it.song, it.said) }, "k") }
                 wide("l-ink") { Label("ink radio") }
                 stations(ink.map { Shown(it.song, "${it.city.lowercase()} · ${it.line.lowercase()}") }, "c")
+                if (mixtapes.isNotEmpty()) { wide("l-nts") { Label("nts mixtapes · endless, themed, from nts") }; stations(mixtapes.map { (s, said) -> Shown(s, said) }, "m") }
             }
         }
     }

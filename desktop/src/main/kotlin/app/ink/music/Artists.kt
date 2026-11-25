@@ -97,8 +97,8 @@ object Artists {
         .firstNotNullOfOrNull { InnerTube().artistByRecord(it.title, name) }
         ?.also { Log.d("artist $name: found through a record of theirs") }
 
-    /** An artist by name, with their photo and page id (a search). */
-    private fun find(name: String): TubeArtist? = runCatching {
+    /** An artist by name, with their photo and page id (a search); fans also like's additions too (FansAlsoLike). */
+    fun find(name: String): TubeArtist? = runCatching {
         Pipe.init()
         val yt = ServiceList.YouTube
         val found = SearchInfo.getInfo(yt, yt.searchQHFactory.fromQuery(name, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ARTISTS), "")).relatedItems
