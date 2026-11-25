@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
  * The switch between ink's hand and DOT MATRIX, full screen (2026-11-25, Bronson: "a full screen animation when you land
  * on and let go of 440hz"). From where it was let go, a ripple of cells crosses the screen, its front lit in ink and black
  * behind it, a tick as it goes; on black the new hand's name; the app is drawn again in it (the activity made anew) and
- * the black breaks back into cells that shrink away from the same point. Into DOT MATRIX it covers in ink's squares and
+ * the black and the name fade away, the app fading in under them. Into DOT MATRIX it covers in ink's squares and
  * opens in dots; back to ink, the other way. With less motion, none of it: the switch at once.
  */
 object Flip {
@@ -73,19 +73,19 @@ fun FlipLayer() {
             Flip.run.value = run.copy(opening = true)
             Flip.then?.invoke(); Flip.then = null
         } else {
-            // the name fading slowly as the cells open (not off first), and the whole of it fading over the opening's end
+            // the black and the name fading together, the app in its new hand fading in under them (2026-11-25, Bronson: a
+            // second sweep of cells opening was one too many)
             kotlinx.coroutines.delay(120)
             kotlinx.coroutines.coroutineScope {
-                launch { word.animateTo(0f, tween(420, easing = Motion.expo)) }
-                launch { kotlinx.coroutines.delay(OPEN * 6L / 10); fade.animateTo(0f, tween(OPEN * 6 / 10)) }
-                p.animateTo(1f, tween(OPEN, easing = Motion.expo))
+                launch { word.animateTo(0f, tween(360)) }
+                fade.animateTo(0f, tween(OPEN, easing = Motion.expo))
             }
             Flip.run.value = null
         }
     }
     val d = LocalDensity.current
-    // covering in the hand it leaves, opening in the hand it comes to
-    val dots = if (run.opening) run.toDots else !run.toDots
+    // covering in the hand it leaves
+    val dots = !run.toDots
     Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
         Canvas(Modifier.fillMaxSize()) {
             val pitch = with(d) { 18.dp.toPx() }
@@ -98,8 +98,8 @@ fun FlipLayer() {
                 val c = Offset((x + .5f) * pitch, (y + .5f) * pitch)
                 val dd = (c - o).getDistance() / far
                 // how far this cell's come: 0 untouched, 1 whole (black, covering); opening runs it back out
-                val v = if (!run.opening) ((p.value * 1.25f - dd) / .25f).coerceIn(0f, 1f)
-                        else 1f - ((p.value * 1.25f - dd) / .25f).coerceIn(0f, 1f)
+                // opening: every cell whole (black) while it all fades
+                val v = if (!run.opening) ((p.value * 1.25f - dd) / .25f).coerceIn(0f, 1f) else 1f
                 if (v <= 0f) continue
                 // the front lit in ink, black once a cell's whole
                 val colour = if (v >= 1f) androidx.compose.ui.graphics.Color.Black else Ink.ink.copy(alpha = .35f + .65f * v)
