@@ -354,7 +354,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     if (withLyrics && (lyric != null || notes != null)) {
                         if (notes != null) NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
-                        else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = if (fold) 12.dp else 20.dp)) { folded = !folded }
+                        else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = if (fold) 12.dp else 20.dp), fill = fold) { folded = !folded }
                         // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
                         Scrubber(line, accent, scrub, line = 2.dp, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
                         // folded (#11): a tap on the cover or the names brings the controls back, never a page opened
@@ -1098,7 +1098,7 @@ fun rememberLyric(n: Now?, lines: List<Line>?): Lyric? {
  * read the rest of a long song's words, 2026-11-01). Words with no times: all of them, scrolled.
  */
 @Composable
-private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true, onTap: (() -> Unit)? = null) {
+private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true, fill: Boolean = false, onTap: (() -> Unit)? = null) {
     val tap by rememberUpdatedState(onTap)
     val drift = with(LocalDensity.current) { Motion.drift.roundToPx() }
     val scroll = androidx.compose.foundation.rememberScrollState()
@@ -1129,7 +1129,9 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true, onTa
         // by the room both ways: tall alone grew the sung line past the width (cut off mid-word); then their size as
         // chosen (settings, the look: small, medium, large)
         val size by PlayerRoom.lyrics.collectAsState()
-        val k = minOf(maxHeight / 330.dp, maxWidth / 380.dp).coerceIn(.6f, 1.15f) * PlayerRoom.lyricsScale(size)
+        // the controls folded away (fill): a little larger, and as many lines to come as the height holds
+        val k = minOf(maxHeight / 330.dp, maxWidth / (if (fill) 350.dp else 380.dp)).coerceIn(.6f, if (fill) 1.3f else 1.15f) * PlayerRoom.lyricsScale(size)
+        val ahead = if (fill) ((maxHeight / (56.dp * k)).toInt() - 2).coerceIn(3, 12) else 3
         val lines = l.lines
         androidx.compose.animation.Crossfade(untimed || touched != 0L, animationSpec = tween(Motion.ENTER, easing = Motion.expo), label = "all") { all ->
             if (all) {
@@ -1168,7 +1170,7 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true, onTa
                 // a line leaving is drawn with its own number over the next song's lyrics (a mix changes them under it): read
                 // as far as they go (line 80 of 28 crashed the computer, 2026-11-08)
                 val before = (i - 1 downTo 0).asSequence().mapNotNull { lines.getOrNull(it) }.firstOrNull { it.words.isNotBlank() }?.takeIf { sung != null }
-                val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(3).toList()
+                val after = (i + 1 until lines.size).asSequence().map { lines[it] }.filter { it.words.isNotBlank() }.take(ahead).toList()
                 Column(Modifier.fillMaxWidth()) {
                     before?.let {
                         BasicText(it.words.uppercase(), style = headline(20.sp * k, Ink.dim))
