@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * The switch between ink's hand and DOT MATRIX, full screen (2026-11-25, Bronson: "a full screen animation when you land
@@ -59,28 +60,33 @@ fun FlipLayer() {
     val haptic = LocalHapticFeedback.current
     val p = remember(run) { Animatable(0f) }
     val word = remember(run) { Animatable(if (run.opening) 1f else 0f) }
+    val fade = remember(run) { Animatable(1f) }
     LaunchedEffect(run) {
         if (!run.opening) {
             // covering: the ripple across, a tick at its start and as it closes; the name on black; then the switch
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             p.animateTo(1f, tween(COVER, easing = LinearEasing))
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            word.animateTo(1f, tween(160))
+            word.animateTo(1f, tween(240, easing = Motion.expo))
             kotlinx.coroutines.delay(HOLD.toLong())
             // the switch: kept for the new activity, which opens it
             Flip.run.value = run.copy(opening = true)
             Flip.then?.invoke(); Flip.then = null
         } else {
+            // the name fading slowly as the cells open (not off first), and the whole of it fading over the opening's end
             kotlinx.coroutines.delay(120)
-            word.animateTo(0f, tween(140))
-            p.animateTo(1f, tween(OPEN, easing = Motion.expo))
+            kotlinx.coroutines.coroutineScope {
+                launch { word.animateTo(0f, tween(420, easing = Motion.expo)) }
+                launch { kotlinx.coroutines.delay(OPEN * 6L / 10); fade.animateTo(0f, tween(OPEN * 6 / 10)) }
+                p.animateTo(1f, tween(OPEN, easing = Motion.expo))
+            }
             Flip.run.value = null
         }
     }
     val d = LocalDensity.current
     // covering in the hand it leaves, opening in the hand it comes to
     val dots = if (run.opening) run.toDots else !run.toDots
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
         Canvas(Modifier.fillMaxSize()) {
             val pitch = with(d) { 18.dp.toPx() }
             val cols = (size.width / pitch).toInt() + 2; val rows = (size.height / pitch).toInt() + 2
@@ -105,7 +111,8 @@ fun FlipLayer() {
         // the new hand's name on the black
         BasicText(if (run.toDots) "DOT MATRIX" else "INK",
             style = if (run.toDots) TextStyle(fontFamily = DotMatrix.Doto, fontSize = 52.sp, color = Ink.ink, letterSpacing = (-.02).em)
-                    else headline(64.sp),
+                    // Archivo itself, not the headline's hand: that turned from DOT MATRIX's to ink's under the word
+                    else TextStyle(fontFamily = Archivo, fontSize = 64.sp, color = Ink.ink, letterSpacing = (-.02).em),
             modifier = Modifier.align(Alignment.Center).graphicsLayer { alpha = word.value })
     }
 }
