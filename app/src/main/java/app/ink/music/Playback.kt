@@ -355,11 +355,11 @@ object Playback {
             repeatMode = when (repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }
         }
     }
-    /** Shuffle off (your signature comes in its own order: what it chooses next is what plays next). */
+    /** Shuffle off (your frequency comes in its own order: what it chooses next is what plays next). */
     fun unshuffle() { controller?.run { if (shuffleModeEnabled) shuffleModeEnabled = false } }
-    /** Your signature's dials turned while it plays: the player drops its songs waiting and finds again (YourSignature). */
-    fun signatureAgain() {
-        controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.SIGNATURE, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
+    /** Your frequency's dials turned while it plays: the player drops its songs waiting and finds again (YourFrequency). */
+    fun frequencyAgain() {
+        controller?.sendCustomCommand(androidx.media3.session.SessionCommand(PlayerService.FREQUENCY, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
     }
     /** The sleep timer: in `ms`, at the song's end (PlayerService.SLEEP_END_OF_SONG), or off (0). */
     fun sleep(ms: Long) {

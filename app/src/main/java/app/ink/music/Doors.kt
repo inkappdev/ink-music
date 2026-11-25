@@ -154,15 +154,15 @@ fun AllMoodsPage(pages: Pages) {
     ) {
         item {
             BasicText("MOODS & GENRES", style = headline(40.sp))
-            BasicText("the moods are ink's own, each played as your signature: your taste, in that mood", style = pixel(12.sp, Ink.mid))
+            BasicText("the moods are ink's own, each played as your frequency: your taste, in that mood", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(8.dp))
         }
         // ink's moods (InkMoods), not youtube music's editors' playlists (2026-11-25, Bronson didn't like those): a tap plays
-        // your signature in that mood, a third of it the mood's songs by the artists nearest you
+        // your frequency in that mood, a third of it the mood's songs by the artists nearest you
         item { BasicText("moods", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 14.dp, bottom = 8.dp)) }
         items(InkMoods.ALL.chunked(2)) { row ->
             Row(Modifier.padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { m -> InkMoodTile(m, Modifier.weight(1f)) { YourSignature.startIn(ctx, m.key); pages.close() } }
+                row.forEach { m -> InkMoodTile(m, Modifier.weight(1f)) { YourFrequency.startIn(ctx, m.key); pages.close() } }
                 repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }

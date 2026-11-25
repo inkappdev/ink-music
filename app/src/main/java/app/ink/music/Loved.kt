@@ -103,8 +103,8 @@ object Loved {
 
     fun toggle(s: Song) {
         val on = s.id !in _ids.value
-        // your signature steered by it, while it plays
-        app?.let { YourSignature.loved(it, s, on) }
+        // your frequency steered by it, while it plays
+        app?.let { YourFrequency.loved(it, s, on) }
         val star = if (s.server) s.id else Library.twin(s.id)
         dates = if (on) dates + (s.id to System.currentTimeMillis()) else dates - s.id - (star ?: "")
         keepDates()

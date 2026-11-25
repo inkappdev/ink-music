@@ -365,7 +365,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         }
     }
     // dialed in: the nine you go back to at this hour, a shelf the moment moves like the rest (2026-11-25, Bronson: it was
-    // pinned on top, a second "tap to play yours" under SIGNATURE)
+    // pinned on top, a second "tap to play yours" under FREQUENCY)
     if (!Device.tv) sections["dialedIn"] = { Column(Modifier.padding(bottom = 10.dp)) { DialedInSheet(heard, ::songOf, pages) } }
     // made from your listening (Discover): fresh finds, deep cuts and the rest
     sections["madeForYou"] = { MadeForYouShelf() }
@@ -484,8 +484,8 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (YouTubeMusic.available && LastFm.available && brought.isEmpty() && heard.size < 40 && !knowMeShut)
             item(key = "know-me") { Column(Modifier.cascade(1).padding(horizontal = 20.dp).padding(bottom = 14.dp)) { KnowMeCard { knowMeShut = true } } }
         if (sinceLines.isNotEmpty()) item(key = "since") { Column(Modifier.cascade(1).moving(this)) { SinceYouWereHere(since, sinceLines) } }
-        // your signature: one endless station made from you, steered as it plays (#16)
-        if (!Device.tv) item(key = "signature") { Column(Modifier.cascade(1)) { SignatureCard() } }
+        // your frequency: one endless station made from you, steered as it plays (#16)
+        if (!Device.tv) item(key = "frequency") { Column(Modifier.cascade(1)) { FrequencyCard() } }
         // three ways in, small: charts, new releases, moods & genres (2026-11-17, Bronson)
         if (!Device.tv && !JustYours.on) item(key = "doors") { Column(Modifier.cascade(1)) { Doors(pages) } }
         // the shelves, in the moment's order (Fresh.order): each shown, and its taps counted, so the unopened sink

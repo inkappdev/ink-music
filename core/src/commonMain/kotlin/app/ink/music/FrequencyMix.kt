@@ -4,7 +4,7 @@ import kotlin.math.exp
 import kotlin.random.Random
 
 /**
- * Your signature (2026-11-25, #16: "my vibe"; after Yandex Music's My Vibe and ListenBrainz's LB Radio): one endless station made from
+ * Your frequency (2026-11-25, #16: "my vibe"; after Yandex Music's My Vibe and ListenBrainz's LB Radio): one endless station made from
  * you, not from a song, steered as it plays. Shared by the phone and the computer; each finds the songs, this chooses.
  *
  * Its songs come in four lanes:
@@ -12,17 +12,20 @@ import kotlin.random.Random
  * - "near": songs new to you by artists you're near;
  * - "far": artists new to you, found from what you've been playing;
  * - "mood": the mood chosen (InkMoods' tags), its songs by the artists nearest you first.
- * How much of each is set by a dial (yours, both, new: LB Radio's easy, medium, hard), moved by what each lane has done
+ * How much of each is set by the needle (yours, near, new: LB Radio's easy, medium, hard as one line), moved by what each lane has done
  * with you before ([Learned], kept across sittings as TUNER's sources are), and by this sitting ([Sitting]): a song
  * played through, or loved, brings its artist and what was found through it nearer; one left in its first seconds puts
  * them back, twice and they're out for the sitting.
  */
-object SignatureMix {
-    /** How familiar: mostly yours, both, or mostly new. */
-    enum class Familiar(val word: String) { YOURS("yours"), BOTH("both"), NEW("new") }
+object FrequencyMix {
+    /**
+     * What's chosen: where the needle's tuned (0 all yours, through near, to 1 all new: dragged along the spectrum on
+     * listen, LB Radio's easy to hard made one line), and a mood (an InkMoods key; empty, any).
+     */
+    data class Dials(val tuned: Double = .5, val mood: String = "")
 
-    /** What's chosen: how familiar, and a mood (an InkMoods key; empty, any). */
-    data class Dials(val familiar: Familiar = Familiar.BOTH, val mood: String = "")
+    /** Where the needle is, in words. */
+    fun said(t: Double) = when { t < .2 -> "mostly yours"; t < .42 -> "yours, and some new"; t < .58 -> "both"; t < .8 -> "new, and some yours"; else -> "mostly new" }
 
     const val YOURS = "yours"; const val NEAR = "near"; const val FAR = "far"; const val MOOD = "mood"
     val LANES = listOf(YOURS, NEAR, FAR, MOOD)
@@ -39,11 +42,12 @@ object SignatureMix {
      */
     fun shares(d: Dials, appetite: Double = ForYou.STRETCH): Map<String, Double> {
         val lean = (appetite - ForYou.STRETCH) * .5            // -.1 to +.1
-        val base = when (d.familiar) {
-            Familiar.YOURS -> mapOf(YOURS to .6, NEAR to .3, FAR to .1)
-            Familiar.BOTH -> mapOf(YOURS to .35 - lean, NEAR to .35, FAR to .3 + lean)
-            Familiar.NEW -> mapOf(YOURS to .05, NEAR to .35, FAR to .6)
-        }
+        // three settings along the needle, between them in proportion: all yours, both, all new
+        val t = d.tuned.coerceIn(0.0, 1.0)
+        val ends = listOf(doubleArrayOf(.65, .3, .05), doubleArrayOf(.35, .35, .3), doubleArrayOf(.05, .35, .6))
+        val (a, b, k) = if (t <= .5) Triple(ends[0], ends[1], t * 2) else Triple(ends[1], ends[2], (t - .5) * 2)
+        fun at(i: Int) = a[i] + (b[i] - a[i]) * k
+        val base = mapOf(YOURS to (at(0) - lean).coerceAtLeast(.02), NEAR to at(1), FAR to (at(2) + lean).coerceAtLeast(.02))
         return if (d.mood.isEmpty()) base else base.mapValues { it.value * 2 / 3 } + (MOOD to 1.0 / 3)
     }
 
