@@ -64,7 +64,8 @@ object Looks {
     /** How many dots cover `shown` pixels, whole-pixel dots (the last cut by the edge). */
     fun dots(shown: Float, density: Float): Int = kotlin.math.ceil(shown / cell(density)).toInt().coerceIn(24, 400)
 
-    fun draw(art: Bitmap, look: Look, accent: Color, shown: Float, density: Float): Bitmap? = if (look == Look.PLAIN) null else try {
+    /** `calm`: how far down (0 to 1) the dots looks keep their dots smaller, so words over the top read (behind the player). */
+    fun draw(art: Bitmap, look: Look, accent: Color, shown: Float, density: Float, calm: Float = 0f): Bitmap? = if (look == Look.PLAIN) null else try {
         val src = if (art.config == Bitmap.Config.HARDWARE) art.copy(Bitmap.Config.ARGB_8888, false) else art
         when (look) {
             // a lens's blur (the covers' and artist pages' too, 2026-11-11: one blur), its film grain drawn over it in the player
@@ -72,8 +73,8 @@ object Looks {
             Look.PIXELS -> pixels(src, (shown / (18 * density)).roundToInt().coerceIn(4, 80))
             Look.DITHER -> dither(src, dots(shown, density), accent.toArgb())
             Look.XRAY -> xray(src, accent.toArgb())
-            Look.DOTS -> halftone(src, (shown / (7 * density)).roundToInt().coerceIn(12, 90))
-            Look.SOFTDOTS -> halftone(Grain.lens(src), (shown / (7 * density)).roundToInt().coerceIn(12, 90))
+            Look.DOTS -> halftone(src, (shown / (7 * density)).roundToInt().coerceIn(12, 90), calm)
+            Look.SOFTDOTS -> halftone(Grain.lens(src), (shown / (7 * density)).roundToInt().coerceIn(12, 90), calm)
             Look.AS_IS -> src
             Look.PLAIN -> null
         }
@@ -99,7 +100,7 @@ object Looks {
      * The dots: `n` cells a side, each a round dot in its cell's own colour (a dark one lifted a little), as wide as the
      * cell is light, on black; 12 px a cell, drawn up smoothly.
      */
-    private fun halftone(src: Bitmap, n: Int): Bitmap {
+    private fun halftone(src: Bitmap, n: Int, calm: Float = 0f): Bitmap {
         val small = Bitmap.createScaledBitmap(src, n, n, true)
         val c = 12
         val out = Bitmap.createBitmap(n * c, n * c, Bitmap.Config.ARGB_8888)
@@ -112,7 +113,9 @@ object Looks {
             val l = (r * 299 + g * 587 + b * 114) / 255_000f
             val k = if (l < .35f) 1.35f else 1f
             paint.color = (255 shl 24) or ((r * k).toInt().coerceAtMost(255) shl 16) or ((g * k).toInt().coerceAtMost(255) shl 8) or (b * k).toInt().coerceAtMost(255)
-            canvas.drawCircle((x + .5f) * c, (y + .5f) * c, c * .48f * (.18f + .82f * kotlin.math.sqrt(l)), paint)
+            // calmer up top: smaller to half at the very top, over the first `calm` of it
+            val top = if (calm > 0f) { val f = ((y + .5f) / n / calm).coerceIn(0f, 1f); .5f + .5f * f * f * (3 - 2 * f) } else 1f
+            canvas.drawCircle((x + .5f) * c, (y + .5f) * c, c * .48f * (.18f + .82f * kotlin.math.sqrt(l)) * top, paint)
         }
         return out
     }

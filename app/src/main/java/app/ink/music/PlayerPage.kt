@@ -130,6 +130,8 @@ import kotlin.math.atan2
  * the times, the top row) at 75%, not 55%; what's off (shuffle, repeat, sleep, lyrics) at 32%, not 17%.
  */
 private val SMALL = 13.sp
+/** The top row's words (how songs turn, sleep), a step up from SMALL: read over the background (2026-11-25, Bronson). */
+private val TOP = 15.sp
 private val SAID = Ink.ink.copy(alpha = .75f)
 private val OFF = Ink.ink.copy(alpha = .32f)
 
@@ -344,8 +346,9 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 // mirrored (2026-11-24, Bronson: four parts read lopsided): how songs turn into the next at the left
                 // edge, sleep at the right, close in the very middle; the speaker went down beside what's heard, over the cover
                 Centred(
-                    start = { if (n.song?.episode != true && n.song?.station != true) FadesWord(pixel(SMALL, SAID)) },
-                    middle = { Pixel(CLOSE, "close", SAID, onClick = onClose) },
+                    start = { if (n.song?.episode != true && n.song?.station != true) FadesWord(pixel(TOP, SAID)) },
+                    // close a size up (2026-11-25, Bronson: the arrow and the words a bit bigger)
+                    middle = { Pixel(CLOSE, "close", SAID, cell = 3.dp, onClick = onClose) },
                     end = { SleepWord(n, sleepUp) { sleepUp = !sleepUp } },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
@@ -473,7 +476,7 @@ private fun SleepWord(n: Now, open: Boolean, onOpen: () -> Unit) {
         at > 0 -> "sleep ${((left + 59_999) / 60_000).coerceAtLeast(1)}m"
         else -> "sleep"
     }
-    Word(said, pixel(SMALL, if (at != 0L || open) Ink.ink else SAID), touch = 10.dp) {
+    Word(said, pixel(TOP, if (at != 0L || open) Ink.ink else SAID), touch = 10.dp) {
         if (at != 0L) Playback.sleep(0) else onOpen()
     }
 }
@@ -481,7 +484,7 @@ private fun SleepWord(n: Now, open: Boolean, onOpen: () -> Unit) {
 /** Sleep's choices, in the second row's place: a tap sets it and they close. */
 @Composable
 private fun SleepChoices(onDone: () -> Unit) {
-    Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+    Fit(least = 12f / 16) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         SLEEPS.forEach { (word, ms) ->
             Word(word, pixel(14.sp, SAID), Modifier.tvLit(), touch = 10.dp) { Playback.sleep(ms); onDone() }
         }
@@ -498,7 +501,8 @@ private val SLEEPS = listOf("15m" to 15 * 60_000L, "30m" to 30 * 60_000L, "45m" 
  */
 @Composable
 private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null, episode: Boolean = false, lyricsWord: Boolean = true) {
-    val style = 14.sp
+    // a size up (2026-11-25, Bronson): 16 sp, the room's least 12 still where they'd not fit
+    val style = 16.sp
     // the words with no drawing everyone reads, stop last, away from next (it ends everything and closes the player)
     // a TV: the words together from the left under shuffle, not spread the width (they sat oddly far apart, 2026-11-10)
     val tv = onTv()
@@ -699,7 +703,8 @@ private fun Backdrop(cover: Cover?, n: Now) {
         val shown = maxOf(maxWidth, maxHeight).value * density
         val drawn by produceState<Pair<ImageBitmap, Look>?>(null, cover, look, shown) {
             if (cover == null || look == Look.PLAIN) { value = null; return@produceState }
-            withContext(Dispatchers.Default) { Looks.draw(cover.image.asAndroidBitmap(), look, cover.accent, shown, density) }
+            // the page is tall and the square cropped to it, so its top is the page's: calmer under the top row, its top 18%
+            withContext(Dispatchers.Default) { Looks.draw(cover.image.asAndroidBitmap(), look, cover.accent, shown, density, calm = .18f) }
                 ?.let { value = it.asImageBitmap() to look }
         }
         // a canvas playing over it: the still one not drawn under it (its look came through the canvas)
@@ -1669,7 +1674,7 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
                         // words, the giant name at the foot; the controls drawn, not working (it's a picture of it)
                         val side = minOf(full.first - 40.dp, 420.dp)
                         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            BasicText("no fades", style = pixel(SMALL, Ink.dim)); Sprite(CLOSE, SAID, 2.dp); BasicText("sleep", style = pixel(SMALL, SAID))
+                            BasicText("no fades", style = pixel(TOP, Ink.dim)); Sprite(CLOSE, SAID, 3.dp); BasicText("sleep", style = pixel(TOP, SAID))
                         }
                         Spacer(Modifier.height(44.dp))
                         Box(Modifier.padding(horizontal = 20.dp)) { Sleeve(n, side, Modifier) }
@@ -1688,7 +1693,7 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
                             }
                             Spacer(Modifier.height(36.dp))
                             Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                listOf("up next", "lyrics", "playlist", "stop").forEach { BasicText(it, style = pixel(SMALL, SAID)) }
+                                listOf("up next", "lyrics", "playlist", "stop").forEach { BasicText(it, style = pixel(16.sp, SAID)) }
                             }
                             Spacer(Modifier.height(20.dp))
                             Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.requiredWidth(full.first),

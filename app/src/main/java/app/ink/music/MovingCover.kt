@@ -201,7 +201,7 @@ fun CanvasBehind(title: String, artist: String, accent: Color, playing: Boolean,
     // as it is: the clip itself, held to half over the black so the white words over it still read (at full, a light
     // canvas took the title; Spotify's own app darkens it too, by a gradient: here evenly, as ink's look has none);
     // an effect, at that look's own strength, as the still background's
-    Loop(u, playing, look.takeUnless { it == Look.AS_IS }, accent, look.alpha, crop = true, modifier, onShown)
+    Loop(u, playing, look.takeUnless { it == Look.AS_IS }, accent, look.alpha, crop = true, modifier, onShown, calm = true)
 }
 
 /**
@@ -233,7 +233,7 @@ fun TunerMotion(title: String, artist: String, accent: Color, modifier: Modifier
  */
 @OptIn(UnstableApi::class)
 @Composable
-private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, strength: Float, crop: Boolean, modifier: Modifier, onShown: () -> Unit = {}) {
+private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, strength: Float, crop: Boolean, modifier: Modifier, onShown: () -> Unit = {}, calm: Boolean = false) {
     val ctx = LocalContext.current
     val less by Moves.less.collectAsState()
     var shown by remember(url) { mutableStateOf(false) }
@@ -288,9 +288,10 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
                 tv.setTransform(android.graphics.Matrix().apply { setScale(vw * k / size.width, vh * k / size.height, size.width / 2f, size.height / 2f) })
             }
             if (Build.VERSION.SDK_INT >= 31) tv.setRenderEffect(when {
-                drawn == Look.DOTS -> Shaders.dots(density, come)
+                // (behind the player: calmer under the top row, its top 18%)
+                drawn == Look.DOTS -> Shaders.dots(density, come, if (calm) size.height * .18f else 0f)
                 // soft dots: the blur, then the dots over it
-                drawn == Look.SOFTDOTS -> Shaders.dots(density, come)?.let { d ->
+                drawn == Look.SOFTDOTS -> Shaders.dots(density, come, if (calm) size.height * .18f else 0f)?.let { d ->
                     RenderEffect.createChainEffect(d, RenderEffect.createBlurEffect(24 * density, 24 * density, android.graphics.Shader.TileMode.CLAMP))
                 }
                 drawn == Look.BLUR -> android.graphics.RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP)
@@ -373,6 +374,7 @@ private object Shaders {
         uniform shader content;
         uniform float cell;
         uniform float gain;
+        uniform float calm;
         half4 main(float2 p) {
             float2 c = floor(p / cell);
             float2 o = (c + 0.5) * cell;
@@ -380,7 +382,9 @@ private object Shaders {
             if (s.a < 0.5) return half4(0.0);
             float l = dot(float3(s.rgb), float3(0.3, 0.59, 0.11));
             float3 col = l < 0.35 ? min(float3(s.rgb) * 1.35, float3(1.0)) : float3(s.rgb);
-            float r = cell * 0.48 * (0.18 + 0.82 * sqrt(l)) * gain;
+            // calmer up top (`calm` px; 0, nowhere): the dots smaller there, to half at the very top, so the words read
+            float top = calm > 0.0 ? mix(0.5, 1.0, smoothstep(0.0, calm, o.y)) : 1.0;
+            float r = cell * 0.48 * (0.18 + 0.82 * sqrt(l)) * gain * top;
             float d = distance(p, o);
             float k = 1.0 - smoothstep(r - 1.0, r, d);
             return half4(col * k, 1.0);
@@ -388,8 +392,8 @@ private object Shaders {
     """
 
     /** The dots as an effect for a moving picture, cells about 7 dp; null before Android 13 (or if it won't build: said). */
-    fun dots(density: Float, gain: Float): RenderEffect? = if (Build.VERSION.SDK_INT < 33) null else runCatching {
-        RenderEffect.createRuntimeShaderEffect(RuntimeShader(DOTS).apply { setFloatUniform("cell", 7 * density); setFloatUniform("gain", gain) }, "content")
+    fun dots(density: Float, gain: Float, calm: Float = 0f): RenderEffect? = if (Build.VERSION.SDK_INT < 33) null else runCatching {
+        RenderEffect.createRuntimeShaderEffect(RuntimeShader(DOTS).apply { setFloatUniform("cell", 7 * density); setFloatUniform("gain", gain); setFloatUniform("calm", calm) }, "content")
     }.onFailure { android.util.Log.w("ink-moving", "dots shader: $it") }.getOrNull()
 
     fun effect(look: Look, accent: Color, density: Float, gain: Float, wide: Float): RenderEffect? = if (Build.VERSION.SDK_INT < 33) null else runCatching {
