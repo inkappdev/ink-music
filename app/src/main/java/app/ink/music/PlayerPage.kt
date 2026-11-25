@@ -633,7 +633,7 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
                 Spacer(Modifier.width(14.dp))
                 FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).tvLit().clickable(remember { MutableInteractionSource() }, indication = null,
-                        onClick = felt { song?.takeUnless { it.station }?.let { onOpen(Page.Record(it.albumId)) } }))
+                        onClick = felt { song?.let(::recordOf)?.let(onOpen) }))
             }
           }
             // the song's link to send; held, its poster for a story
@@ -909,8 +909,9 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub, onTap: () -> Unit)
  */
 private fun coverTap(n: Now, onOpen: (Page) -> Unit) {
     val s = n.song
-    if (s == null || s.station || s.episode || n.album.isBlank() || SetHeard.isSet(n)) Playback.toggle()
-    else onOpen(Page.Record(s.albumId))
+    // the library's record, else YouTube Music's (a YouTube song's albumId is no library record: the page opened empty)
+    val record = s?.takeUnless { SetHeard.isSet(n) }?.let(::recordOf)
+    if (record == null) Playback.toggle() else onOpen(record)
 }
 
 /**

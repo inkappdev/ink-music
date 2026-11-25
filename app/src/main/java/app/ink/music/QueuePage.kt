@@ -65,7 +65,7 @@ private val ROW = 58.dp   // every row the same height, so a carried one knows t
 object Opening { val asked = kotlinx.coroutines.flow.MutableStateFlow<Page?>(null) }
 
 /** A queued song's record: the library's, else YouTube Music's by its id ("ya" and its browse id); none for a station. */
-private fun recordOf(s: Song): Page? = when {
+internal fun recordOf(s: Song): Page? = when {
     s.station || s.episode || s.album.isBlank() -> null
     Library.albums.value.any { it.id == s.albumId } -> Page.Record(s.albumId)
     s.albumId.startsWith("ya") -> s.albumId.removePrefix("ya").let { id ->
