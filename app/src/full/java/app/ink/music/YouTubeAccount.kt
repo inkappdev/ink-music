@@ -588,7 +588,9 @@ object YouTubeAccount {
     fun playlist(id: String): Flow<List<Song>> = flow {
         val was = kept(id)
         if (was != null) emit(was)
-        val t = tube ?: return@flow
+        // signed out, a public list (INK's and explore's editors' lists) read as a visitor, as a record is (2026-11-25:
+        // it had read nothing signed out, and the page stayed empty)
+        val t = tube ?: InnerTube()
         val t0 = System.currentTimeMillis()
         val pages = Channel<List<Song>>(Channel.CONFLATED)
         val read = scope.async { read(t, id) { if (was == null) pages.trySend(it) } }
