@@ -57,6 +57,22 @@ object Similar {
     }
 
     /**
+     * Last.fm's songs most like this one (title, artist, how alike 0 to 1; 2026-11-25, FREQUENCY finding the new in your
+     * own library: local files have no similar of their own); none without a key.
+     */
+    fun lastFmTracks(title: String, artist: String, key: String, limit: Int = 60): List<Track> {
+        if (key.isBlank() || title.isBlank() || artist.isBlank()) return emptyList()
+        return runCatching {
+            val a = JSONObject(Curation.get("https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&track=${urlEncode(title)}&artist=${urlEncode(artist)}&autocorrect=1&limit=$limit&api_key=$key&format=json"))
+                .optJSONObject("similartracks")?.optJSONArray("track") ?: return emptyList()
+            (0 until a.length()).map { a.getJSONObject(it) }.mapNotNull { t ->
+                val name = t.optString("name"); val who = t.optJSONObject("artist")?.optString("name").orEmpty()
+                if (name.isBlank() || who.isBlank()) null else Track(name, who, t.optString("match").toDoubleOrNull() ?: 0.0)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
      * Where ListenBrainz's answers and the artists' MusicBrainz ids are kept (each app's cache folder, told at start);
      * none told, ListenBrainz isn't asked.
      */

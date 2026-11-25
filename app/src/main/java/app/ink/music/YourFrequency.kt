@@ -21,6 +21,8 @@ import java.io.File
 object YourFrequency {
     private const val FILE = "frequency.json"
     private const val KNOWN = "frequency-known.json"
+    /** Your whole library (the phone's files and your server's), for Last.fm's similar to be found in (the player's process reads it). */
+    private const val LIBRARY = "frequency-library.json"
     private const val LOVED = "frequency-loved.jsonl"
     private const val LEARNED = "frequency-learned.json"
     /** How many come at a time: few, so what you do turns it within a song or two. */
@@ -71,6 +73,7 @@ object YourFrequency {
                 // the opening: one of yours you're near, a little chance among the best few
                 val opening = ranked.take(6).shuffled().firstOrNull() ?: pool.shuffled().firstOrNull() ?: return@launch
                 Keep.write(File(app.filesDir, KNOWN), JSONArray().apply { (ranked + pool).distinctBy { it.id }.take(400).forEach { put(it.json()) } }.toString())
+                Keep.write(File(app.filesDir, LIBRARY), JSONArray().apply { Library.songs.value.filter { !it.station && !it.episode }.forEach { put(it.json()) } }.toString())
                 File(app.filesDir, LOVED).delete()
                 val d = dials.value
                 write(app, JSONObject().put("tuned", d.tuned).put("mood", d.mood).put("started", System.currentTimeMillis())
@@ -181,7 +184,11 @@ object YourFrequency {
         val pool = java.util.concurrent.Executors.newFixedThreadPool(seeds.size.coerceAtLeast(1) + 1)
         val asked = seeds.map { s ->
             pool.submit<List<Song>> {
-                runCatching { if (just) (if (s.id.startsWith("y")) emptyList() else Server.similar(c, s.id, s.title, s.artist)) else Radio.related(c, s) }.getOrDefault(emptyList())
+                val theirs = runCatching { if (just) (if (s.id.startsWith("y")) emptyList() else Server.similar(c, s.id, s.title, s.artist)) else Radio.related(c, s) }.getOrDefault(emptyList())
+                // and Last.fm's similar found in your own library (2026-11-25: local files had no similar of their own),
+                // one of each in turn
+                val owned = runCatching { inLibrary(c, s) }.getOrDefault(emptyList())
+                (0 until maxOf(theirs.size, owned.size)).flatMap { i -> listOfNotNull(owned.getOrNull(i), theirs.getOrNull(i)) }.distinctBy { it.id }
             }
         }
         // the mood's songs, read once a sitting (Last.fm's tags), nearest you first
@@ -264,6 +271,38 @@ object YourFrequency {
         android.util.Log.d("ink-frequency", "${sitting.size} this sitting; seeds ${seeds.joinToString { it.artist }}; " +
             out.joinToString { s -> "${s.title} - ${s.artist} (${given.optJSONArray(Radio.key(s.title, s.artist))?.optString(0)})" })
         return out
+    }
+
+    /** Your library as the screens last kept it (LIBRARY), read again when it changes. */
+    @Volatile private var library: List<Song> = emptyList()
+    @Volatile private var libraryAt = 0L
+    private fun library(c: Context): List<Song> {
+        val f = File(c.filesDir, LIBRARY)
+        if (f.lastModified() != libraryAt) runCatching {
+            library = JSONArray(f.readText()).let { a -> (0 until a.length()).map { songOf(a.getJSONObject(it)) } }
+            libraryAt = f.lastModified()
+        }
+        return library
+    }
+
+    /**
+     * What Last.fm hears as near a seed, found in your own library: its similar songs you have (most alike first), then
+     * your songs by its similar artists, two of each. Playable with no YouTube at all (just your music, the play build, a
+     * library of files alone); none without a Last.fm key or a library.
+     */
+    private fun inLibrary(c: Context, s: Radio.Seed): List<Song> {
+        val lib = library(c)
+        if (lib.isEmpty()) return emptyList()
+        if (LastFm.key.isBlank()) LastFm.key = BuildConfig.LASTFM_KEY
+        val artist = s.artist.substringBefore(", ").trim()
+        val byKey = lib.associateBy { Radio.key(it.title, it.artist) }
+        val tracks = Similar.lastFmTracks(s.title, artist, LastFm.key).mapNotNull { byKey[Radio.key(it.title, it.artist)] }
+        val byArtist = lib.groupBy { FrequencyMix.who(it.artist) }
+        val rnd = java.util.Random(s.id.hashCode().toLong())
+        val theirs = Similar.lastFmArtists(artist, LastFm.key, 20).flatMap { (a, _) ->
+            byArtist[FrequencyMix.who(a)].orEmpty().shuffled(rnd).take(2)
+        }
+        return (tracks + theirs).filter { it.id != s.id }.distinctBy { it.id }
     }
 
     private fun dialsOf(o: JSONObject) = FrequencyMix.Dials(o.optDouble("tuned", .5).takeIf { !it.isNaN() } ?: .5, o.optString("mood"))
