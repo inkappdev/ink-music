@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.blur
 
 /**
  * DOT MATRIX (2026-11-25, Bronson: an easter egg turning the whole app to the dot matrix FREQUENCY is drawn in, "best of
@@ -173,7 +174,9 @@ fun DotPrint(photo: Song, modifier: androidx.compose.ui.Modifier, px: Int = 1080
             if (grid != null) { if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, androidx.compose.animation.core.tween(900, easing = Motion.expo)) }
         }
         grid?.let { (colour, light) ->
-            androidx.compose.foundation.Canvas(androidx.compose.ui.Modifier.fillMaxSize()) {
+            // soft: a light blur over the dots, so they bleed into each other a little (Android 12 and up)
+            androidx.compose.foundation.Canvas(androidx.compose.ui.Modifier.fillMaxSize().then(
+                if (soft && android.os.Build.VERSION.SDK_INT >= 31) androidx.compose.ui.Modifier.blur(2.dp, androidx.compose.ui.draw.BlurredEdgeTreatment.Rectangle) else androidx.compose.ui.Modifier)) {
                 val dx = size.width / cols; val dy = size.height / rows
                 val max = minOf(dx, dy) * .48f
                 val t = shown.value

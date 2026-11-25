@@ -74,7 +74,7 @@ object Looks {
             Look.DITHER -> dither(src, dots(shown, density), accent.toArgb())
             Look.XRAY -> xray(src, accent.toArgb())
             Look.DOTS -> halftone(src, (shown / (7 * density)).roundToInt().coerceIn(12, 90), calm)
-            Look.SOFTDOTS -> halftone(Grain.lens(src), (shown / (7 * density)).roundToInt().coerceIn(12, 90), calm)
+            Look.SOFTDOTS -> halftone(Grain.lens(src), (shown / (7 * density)).roundToInt().coerceIn(12, 90), calm, soft = true)
             Look.AS_IS -> src
             Look.PLAIN -> null
         }
@@ -100,13 +100,15 @@ object Looks {
      * The dots: `n` cells a side, each a round dot in its cell's own colour (a dark one lifted a little), as wide as the
      * cell is light, on black; 12 px a cell, drawn up smoothly.
      */
-    private fun halftone(src: Bitmap, n: Int, calm: Float = 0f): Bitmap {
+    private fun halftone(src: Bitmap, n: Int, calm: Float = 0f, soft: Boolean = false): Bitmap {
         val small = Bitmap.createScaledBitmap(src, n, n, true)
         val c = 12
         val out = Bitmap.createBitmap(n * c, n * c, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(out)
         canvas.drawColor(0xFF000000.toInt())
         val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        // soft dots: each dot's edge blurred, so they bleed into each other a little (2026-11-25, Bronson)
+        if (soft) paint.maskFilter = android.graphics.BlurMaskFilter(c * .3f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         for (y in 0 until n) for (x in 0 until n) {
             val p = small.getPixel(x, y)
             val r = p shr 16 and 255; val g = p shr 8 and 255; val b = p and 255

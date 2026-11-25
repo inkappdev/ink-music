@@ -291,8 +291,10 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
                 // (behind the player: calmer under the top row, its top 18%)
                 drawn == Look.DOTS -> Shaders.dots(density, come, if (calm) size.height * .18f else 0f)
                 // soft dots: the blur, then the dots over it
+                // (and a light blur over the dots, so they bleed into each other a little)
                 drawn == Look.SOFTDOTS -> Shaders.dots(density, come, if (calm) size.height * .18f else 0f)?.let { d ->
-                    RenderEffect.createChainEffect(d, RenderEffect.createBlurEffect(24 * density, 24 * density, android.graphics.Shader.TileMode.CLAMP))
+                    RenderEffect.createChainEffect(RenderEffect.createBlurEffect(2.2f * density, 2.2f * density, android.graphics.Shader.TileMode.CLAMP),
+                        RenderEffect.createChainEffect(d, RenderEffect.createBlurEffect(24 * density, 24 * density, android.graphics.Shader.TileMode.CLAMP)))
                 }
                 drawn == Look.BLUR -> android.graphics.RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP)
                 drawn != null -> Shaders.effect(drawn, accent, density, come, size.width.toFloat())
