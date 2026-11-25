@@ -20,6 +20,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -64,28 +66,18 @@ fun LookPage(pages: Pages) {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 val at = pager.currentPage
                 if (many) Word("<", pixel(14.sp, if (at > 0) Ink.ink else Ink.dim), Modifier.padding(end = 14.dp), touch = 10.dp) { turn(at - 1) }
-                BasicText(if (YouTubeMusic.available) Showcase.picks[at].said else "what plays now", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
+                BasicText("what plays now, or the last song you played", style = pixel(12.sp, Ink.mid), modifier = Modifier.weight(1f))
                 if (many) Word(">", pixel(14.sp, if (at < Showcase.picks.size - 1) Ink.ink else Ink.dim), Modifier.padding(start = 14.dp), touch = 10.dp) { turn(at + 1) }
             }
         }
         // the choices, each layer its own: a heading, its line, its words
         val opened = rememberOpened()
         val sections: @Composable ColumnScope.() -> Unit = if (tv) ({ TvLookChoices(signed, canvasOn) }) else ({
-            // each layer a row (SettingRows): its name and what it's set to, its words a tap away, showing above at once;
-            // in the picture's order: the cover, what's behind it, the canvas over it, the name, then the rest
-            val options = listOf<Look?>(null) + Moving.coverLooks
-            SettingRow("THE COVER", cover?.word ?: "clear", opened, "the record's cover, moving where it has a moving one") {
-                Pick(options.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(ctx, cover = options[it]) }
-            }
-            SettingRow("BEHIND IT", look.word, opened, "one background: a song's canvas where it has one, else its cover") {
-                Pick(Look.entries.map { it.word to (it == look) }) { Looks.set(ctx, Look.entries[it]) }
-            }
-            // spotify's canvas over the background (signed in to spotify)
-            if (Spotify.available) SettingRow("SPOTIFY'S CANVAS", if (!signed) "sign in" else if (canvasOn) "on" else "off", opened,
-                "a song's own looping clip as the background, where it has one") {
-                if (!signed) Word("SIGN IN", headline(40.sp), touch = 8.dp) { Spotify.signIn(ctx) }
-                else Pick(listOf("on" to canvasOn, "off" to !canvasOn)) { Moving.set(ctx, canvasOn = it == 0) }
-            }
+            // PICTURES (2026-11-25, Bronson: the page "starting to get really crazy"): one grid for the four places a picture
+            // is drawn, the looks down its side, a lit square a column (LooksGrid); then the rest in four short groups
+            Group("PICTURES", "one look for each place a picture is drawn")
+            LooksGrid()
+            Group("THE PLAYER")
             // the giant names running across: moving, or still where they are
             val marquee by Marquees.on.collectAsState()
             val nameSize by PlayerRoom.name.collectAsState()
@@ -96,52 +88,43 @@ fun LookPage(pages: Pages) {
             }
             // the player over the status and navigation bars, more room for the lyrics (#11); a swipe from the edge brings them
             val full by PlayerRoom.full.collectAsState()
+            SettingRow("FULL SCREEN", if (full) "on" else "off", opened, "the player over the status and navigation bars; swipe from the edge for them") {
+                Pick(listOf("on" to full, "off" to !full)) { PlayerRoom.setFull(ctx, it == 0) }
+            }
+            // what moves: covers and canvases (video, so on wifi unless you say), spotify's canvas, an artist's video
+            if (Moving.available || Spotify.available) Group("MOVING")
+            if (Moving.available) SettingRow("MOVING COVERS", whenOn, opened, "moving covers and canvases, silent; they settle when you pause") {
+                Pick(listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF).map { it to (whenOn == it) }) { Moving.set(ctx, whenOn = listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF)[it]) }
+            }
+            if (Spotify.available) SettingRow("SPOTIFY CANVAS", if (!signed) "sign in" else if (canvasOn) "on" else "off", opened,
+                "a song's own looping clip behind the player, where it has one") {
+                if (!signed) Word("SIGN IN", headline(40.sp), touch = 8.dp) { Spotify.signIn(ctx) }
+                else Pick(listOf("on" to canvasOn, "off" to !canvasOn)) { Moving.set(ctx, canvasOn = it == 0) }
+            }
+            if (Moving.available) {
+                val video by Moving.artistVideo.collectAsState()
+                SettingRow("ARTIST PAGES", if (video) "video" else "photo", opened, "their photo, or their moving one where apple music has one") {
+                    Pick(listOf("video" to video, "photo" to !video)) { Moving.set(ctx, artistVideo = it == 0) }
+                }
+            }
+            Group("LYRICS")
+            // how big the sung lines are (#11)
+            val lyricsSize by PlayerRoom.lyrics.collectAsState()
+            SettingRow("SIZE", lyricsSize, opened, "how big the lines are; a tap on them folds the controls away") {
+                Pick(PlayerRoom.SIZES.map { it to (it == lyricsSize) }) { PlayerRoom.setLyrics(ctx, PlayerRoom.SIZES[it]) }
+            }
+            // under each sung line: its English, or how it sounds (Better Lyrics', for a song in another language)
+            val under by Lyrics.under.collectAsState()
+            SettingRow("UNDER THEM", under, opened, "for a song in another language: its english, or how it sounds, under each line") {
+                val all = listOf(Lyrics.UNDER_NOTHING, Lyrics.UNDER_ENGLISH, Lyrics.UNDER_SOUND)
+                Pick(all.map { it to (it == under) }) { Lyrics.under(ctx, all[it]) }
+            }
+            Group("THE WHOLE APP")
             // DOT MATRIX, once found (FREQUENCY at 440 Hz): the whole app in a dot-matrix hand, or ink's
             val dotFound by DotMatrix.found.collectAsState()
             val dotOn by DotMatrix.on.collectAsState()
             if (dotFound) SettingRow("TYPE", if (dotOn) "dot matrix" else "ink", opened, "you found it: the whole app in a dot-matrix hand, or ink's own") {
                 Pick(listOf("ink" to !dotOn, "dot matrix" to dotOn)) { DotMatrix.set(ctx, it == 1) }
-            }
-            SettingRow("FULL SCREEN", if (full) "on" else "off", opened, "the player over the status and navigation bars; swipe from the edge for them") {
-                Pick(listOf("on" to full, "off" to !full)) { PlayerRoom.setFull(ctx, it == 0) }
-            }
-            // how mixes and lists are drawn from their covers
-            val print by CoverPrint.on.collectAsState()
-            SettingRow("COVERS", print.word, opened, if (print == Print.CLEAR) "clear: every cover and photo as it is, no dither, tiles or blur" else "how mixes, lists and photos are drawn from their covers; clear for none") {
-                Pick(Print.entries.map { it.word to (it == print) }) { CoverPrint.set(ctx, Print.entries[it]) }
-            }
-            // an artist's page: their photo or their moving one (apple music's), dithered, blurred or clear (both alike)
-            val video by Moving.artistVideo.collectAsState()
-            val dithered by Moving.artistDither.collectAsState()
-            val grain by Moving.artistGrain.collectAsState()
-            val xray by Moving.artistXray.collectAsState()
-            val artistWord = if (xray) "x-ray" else if (grain) "blur" else if (dithered) "dithered" else "clear"
-            SettingRow("ARTIST PAGES", if (Moving.available) "${if (video) "video" else "photo"} · $artistWord" else artistWord, opened,
-                if (Moving.available) "their photo, or their moving one where apple music has one" else "their photo across their page") {
-                if (Moving.available) Pick(listOf("video" to video, "photo" to !video)) { Moving.set(ctx, artistVideo = it == 0) }
-                Pick(listOf("dithered" to (dithered && !grain && !xray), "blur" to (grain && !xray), "x-ray" to xray, "clear" to (!dithered && !grain && !xray))) {
-                    Moving.set(ctx, artistDither = it == 0, artistGrain = it == 1, artistXray = it == 2)
-                }
-            }
-            // whether covers and canvases move: they're video, so on wifi unless you say
-            if (Moving.available) SettingRow("MOVING", whenOn, opened, "moving covers and canvases, silent; they settle when you pause") {
-                Pick(listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF).map { it to (whenOn == it) }) { Moving.set(ctx, whenOn = listOf(Moving.WIFI, Moving.ALWAYS, Moving.OFF)[it]) }
-            }
-            // under each sung line: its English, or how it sounds (Better Lyrics', for a song in another language)
-            val under by Lyrics.under.collectAsState()
-            SettingRow("UNDER THE LYRICS", under, opened, "for a song in another language: its english, or how it sounds, under each line") {
-                val all = listOf(Lyrics.UNDER_NOTHING, Lyrics.UNDER_ENGLISH, Lyrics.UNDER_SOUND)
-                Pick(all.map { it to (it == under) }) { Lyrics.under(ctx, all[it]) }
-            }
-            // how big the sung lines are (#11)
-            val lyricsSize by PlayerRoom.lyrics.collectAsState()
-            SettingRow("LYRICS", lyricsSize, opened, "how big the lines are; a tap on them folds the controls away") {
-                Pick(PlayerRoom.SIZES.map { it to (it == lyricsSize) }) { PlayerRoom.setLyrics(ctx, PlayerRoom.SIZES[it]) }
-            }
-            // the hi-res moment: a lossless song's format typed across the cover as it starts (here since 2026-11-11, out of sound)
-            val moment by Moments.on.collectAsState()
-            SettingRow("HI-RES MOMENT", if (moment) "on" else "off", opened, "a lossless song says so across its cover as it starts") {
-                Pick(listOf("on" to moment, "off" to !moment)) { Moments.set(ctx, it == 0) }
             }
             // how much moves: full, less, or as the phone says (Moves; here since 2026-11-11, out of listening)
             val chosen by Moves.chosen.collectAsState()
@@ -237,5 +220,73 @@ private fun ColumnScope.TvLookChoices(signed: Boolean, canvasOn: Boolean) {
         else { val on = canvasOn && whenOn != Moving.OFF
             Part("SPOTIFY CANVAS", "a song's looping clip behind the player, in the effect above. smooth on a fast tv; on a slow one, leave it off",
                 listOf("on" to on, "off" to !on)) { Moving.set(ctx, canvasOn = it == 0, whenOn = if (it == 0) Moving.ALWAYS else Moving.OFF) } }
+    }
+}
+
+/** A group's head on the look page: its name, and a line where it needs one. */
+@Composable
+private fun Group(name: String, line: String? = null) {
+    Spacer(Modifier.height(26.dp))
+    BasicText(name, style = headline(22.sp))
+    if (line != null) BasicText(line, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
+    Spacer(Modifier.height(6.dp))
+}
+
+/**
+ * PICTURES (2026-11-25): the four places a picture is drawn across the top (the player's cover, behind it, mixes and
+ * lists, artist pages), one set of looks down the side, a lit square for each place's (a round dot in DOT MATRIX); a
+ * look a place can't take a faint point. A tap chooses, and the preview above shows it.
+ */
+@Composable
+private fun LooksGrid() {
+    val ctx = LocalContext.current
+    val behind by Looks.on.collectAsState()
+    val cover by Moving.cover.collectAsState()
+    val print by CoverPrint.on.collectAsState()
+    val dithered by Moving.artistDither.collectAsState()
+    val grain by Moving.artistGrain.collectAsState()
+    val xray by Moving.artistXray.collectAsState()
+    val looks = listOf("as it is", "dither", "tiles", "dots", "blur", "x-ray", "black")
+    // each place: which look it's in, and what each look it can take does
+    class Place(val head: String, val on: String, val can: Map<String, () -> Unit>)
+    val places = listOf(
+        Place("the\ncover", when (cover) { Look.DITHER -> "dither"; Look.PIXELS -> "tiles"; else -> "as it is" }, mapOf(
+            "as it is" to { Moving.set(ctx, cover = null) }, "dither" to { Moving.set(ctx, cover = Look.DITHER) }, "tiles" to { Moving.set(ctx, cover = Look.PIXELS) })),
+        Place("behind\nit", when (behind) { Look.AS_IS -> "as it is"; Look.DITHER -> "dither"; Look.PIXELS -> "tiles"; Look.BLUR -> "blur"; Look.XRAY -> "x-ray"; Look.PLAIN -> "black" }, mapOf(
+            "as it is" to { Looks.set(ctx, Look.AS_IS) }, "dither" to { Looks.set(ctx, Look.DITHER) }, "tiles" to { Looks.set(ctx, Look.PIXELS) },
+            "blur" to { Looks.set(ctx, Look.BLUR) }, "x-ray" to { Looks.set(ctx, Look.XRAY) }, "black" to { Looks.set(ctx, Look.PLAIN) })),
+        Place("mixes,\nlists", when (print) { Print.CLEAR -> "as it is"; Print.DITHER -> "dither"; Print.TILES -> "tiles"; Print.DOTS -> "dots"; Print.GRAIN -> "blur" }, mapOf(
+            "as it is" to { CoverPrint.set(ctx, Print.CLEAR) }, "dither" to { CoverPrint.set(ctx, Print.DITHER) }, "tiles" to { CoverPrint.set(ctx, Print.TILES) },
+            "dots" to { CoverPrint.set(ctx, Print.DOTS) }, "blur" to { CoverPrint.set(ctx, Print.GRAIN) })),
+        Place("artist\npages", if (xray) "x-ray" else if (grain) "blur" else if (dithered) "dither" else "as it is", mapOf(
+            "as it is" to { Moving.set(ctx, artistDither = false, artistGrain = false, artistXray = false) },
+            "dither" to { Moving.set(ctx, artistDither = true, artistGrain = false, artistXray = false) },
+            "blur" to { Moving.set(ctx, artistDither = false, artistGrain = true, artistXray = false) },
+            "x-ray" to { Moving.set(ctx, artistDither = false, artistGrain = false, artistXray = true) })),
+    )
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Spacer(Modifier.width(72.dp))
+            places.forEach { p -> BasicText(p.head, style = pixel(12.sp, Ink.mid).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), modifier = Modifier.weight(1f)) }
+        }
+        looks.forEach { look ->
+            Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                BasicText(look, style = pixel(13.sp, if (places.any { it.on == look }) Ink.ink else Ink.mid), modifier = Modifier.width(72.dp))
+                places.forEach { p ->
+                    val pick = p.can[look]
+                    val lit = p.on == look
+                    Box(Modifier.weight(1f).fillMaxSize().then(if (pick != null) Modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt { pick() }) else Modifier)
+                        .semantics { contentDescription = "${p.head.replace("\n", " ")}: $look" + if (lit) ", chosen" else "" },
+                        contentAlignment = androidx.compose.ui.Alignment.Center) {
+                        val shape = if (Hand.dots) androidx.compose.foundation.shape.CircleShape else androidx.compose.ui.graphics.RectangleShape
+                        when {
+                            pick == null -> Box(Modifier.size(2.dp).background(Ink.line, shape))
+                            lit -> Box(Modifier.size(12.dp).background(Ink.ink, shape))
+                            else -> Box(Modifier.size(12.dp).border(1.dp, Ink.dim, shape))
+                        }
+                    }
+                }
+            }
+        }
     }
 }

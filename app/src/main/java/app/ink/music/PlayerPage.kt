@@ -1601,7 +1601,8 @@ object Moments {
     private val _on = kotlinx.coroutines.flow.MutableStateFlow(true)
     val on: kotlinx.coroutines.flow.StateFlow<Boolean> = _on
     private fun prefs(c: android.content.Context) = c.getSharedPreferences("player", android.content.Context.MODE_PRIVATE)
-    fun start(c: android.content.Context) { _on.value = prefs(c).getBoolean("moment", true) }
+    // always on since 2026-11-25 (Bronson: no choice to turn it off); a kept off from before let go
+    fun start(c: android.content.Context) { _on.value = true }
     fun set(c: android.content.Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("moment", on).apply() }
 }
 
@@ -1619,9 +1620,23 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
         if (value == null && YouTubeMusic.available)
             value = withContext(Dispatchers.IO) { runCatching { YouTubeMusic.find(pick.title, pick.artist) }.getOrNull() }?.also { Showcase.found[pick.title] = it }
     }
-    // its moving covers and canvas keep moving here though the music's paused: a preview shows what they do
-    val n = shown?.let { s -> Now(s, s.title, s.artist, s.album.ifBlank { pick.album }, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1) }
-        ?: now?.copy(moving = true)
+    // the last song played (2026-11-25, Bronson: the preview the current or last song): read once
+    val ctx = LocalContext.current
+    val last by produceState<Song?>(null) {
+        value = withContext(Dispatchers.IO) {
+            History.read(ctx).lastOrNull()?.let { h ->
+                Library.song(h.id) ?: YouTubeMusic.known(h.id) ?: h.takeIf { it.id.startsWith("y") }?.let {
+                    Song(id = it.id, uri = android.net.Uri.parse("ytm://" + it.id.removePrefix("y")), title = it.title, artist = it.artist, album = it.album,
+                        albumId = it.record.ifEmpty { it.id }, albumArtist = it.artist, duration = it.ms, disc = 1, track = 0, year = 0, format = "youtube")
+                }
+            }
+        }
+    }
+    // its moving covers and canvas keep moving here though the music's paused: a preview shows what they do.
+    // What plays first, else the last song played, else the example
+    fun nowOf(s: Song) = Now(s, s.title, s.artist, s.album, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1)
+    val n = now?.copy(moving = true) ?: last?.let(::nowOf)
+        ?: shown?.let { s -> Now(s, s.title, s.artist, s.album.ifBlank { pick.album }, s.duration, 0, 0, playing = true, moving = true, index = 0, count = 1) }
     BoxWithConstraints(modifier, contentAlignment = Alignment.TopCenter) {
         val full = LocalContext.current.resources.displayMetrics.let { (it.widthPixels / it.density).dp to (it.heightPixels / it.density).dp }
         // only its top shown: the cover and the title (under them are the player's own controls, the same whatever's chosen)
