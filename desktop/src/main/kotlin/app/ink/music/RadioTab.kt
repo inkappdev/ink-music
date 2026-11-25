@@ -195,7 +195,13 @@ fun RadioTab() {
                 if (kept.isNotEmpty()) { wide("l-yours") { Label("yours") }; stations(kept.map { Shown(it.song, it.said) }, "k") }
                 wide("l-ink") { Label("ink radio") }
                 stations(ink.map { Shown(it.song, "${it.city.lowercase()} · ${it.line.lowercase()}") }, "c")
-                if (mixtapes.isNotEmpty()) { wide("l-nts") { Label("nts mixtapes · endless, themed, from nts") }; stations(mixtapes.map { (s, said) -> Shown(s, said) }, "m") }
+                if (mixtapes.isNotEmpty()) {
+                    wide("l-nts") { Label("nts mixtapes · endless, themed, from nts") }
+                    // each a signal tile, as on listen
+                    itemsIndexed(mixtapes, key = { _, (s, _) -> "m" + s.id }) { i, (s, said) ->
+                        SignalTile(s, said, Modifier.fillMaxWidth()) { Player.play(mixtapes.drop(i).map { it.first }) }
+                    }
+                }
             }
         }
     }

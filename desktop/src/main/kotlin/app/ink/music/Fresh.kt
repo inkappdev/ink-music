@@ -128,7 +128,7 @@ object Fresh {
             Moment.Part.MORNING -> { b("fromYours", -3.0); b("forYou", -3.0); b("newest", -8.0); b("episodes", -6.0) }
             Moment.Part.DAY -> { b("madeForYou", -2.0); b("mixes", -3.0); b("because", -3.0); b("newToYou", -4.0) }
             Moment.Part.EVENING -> { b("liveSets", -3.0); b("tubeMixes", -4.0); b("mixes", -4.0); b("yours", -5.0); b("because", -3.0) }
-            Moment.Part.LATE -> { b("liveSets", -5.0); b("forgotten", -9.0); b("inkRadio", -7.0); b("fromYours", 3.0) }
+            Moment.Part.LATE -> { b("liveSets", -5.0); b("forgotten", -9.0); b("inkRadio", -7.0); b("nts", -6.0); b("fromYours", 3.0) }
         }
         if (now.friday) { b("fromYours", -6.0); b("forYou", -5.0); b("newest", -9.0) }
         if (now.weekend) { b("liveSets", -2.0); b("yours", -5.0); b("forgotten", -4.0) }

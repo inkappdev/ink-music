@@ -52,8 +52,15 @@ object Stations {
         }
     }.getOrDefault(emptyList()).also { curated = it; mixtapes() }
 
+    // each mixtape's picture on NTS, by its station's id (the signal tile's corner)
+    private val ntsArt = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** A mixtape's picture on NTS, by its station's id (none for any other station, or before its list is read). */
+    fun mixtapeArt(id: String): String? = ntsArt[id]
+
     /** NTS's mixtapes as songs: the station, its line where a city would be (their streams name nothing). */
     private fun songs(list: List<NtsMixtapes.Mixtape>): List<Pair<Song, String>> = list.map { m ->
+        if (m.art.isNotEmpty()) ntsArt[m.id] = m.art
         (known[m.id] ?: Song(
             id = m.id, path = m.stream, title = m.name, artist = m.said, album = "", albumId = m.id, albumArtist = m.name,
             duration = 0, disc = 1, track = 0, year = 0, format = "radio",

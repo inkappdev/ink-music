@@ -75,7 +75,7 @@ private fun Modifier.moving(scope: androidx.compose.foundation.lazy.LazyItemScop
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment). */
 // listen is you, INK is the world (2026-11-12, Bronson): live sets, ink radio, the indie chart and stations are INK's;
 // your mix (your own music at a tempo) is here
-val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "videos", "tuner", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "because", "newToYou",
+val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "videos", "tuner", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "nts", "because", "newToYou",
     "onRepeat", "fresh", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours")
 
 object Listen {
@@ -396,6 +396,12 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     }
     // your own music at a tempo, from INK (2026-11-12): made from yours, so it's listen's
     if (!Device.tv) sections["yourMix"] = { YourMix() }
+    // NTS's infinite mixtapes (2026-11-24), each a signal tile: as kept at once, then read again once a day
+    val mixtapes by androidx.compose.runtime.produceState(remember { Stations.mixtapes(ctx) }) { value = Stations.freshMixtapes(ctx).ifEmpty { value } }
+    if (mixtapes.isNotEmpty()) sections["nts"] = {
+        Heading("nts mixtapes", "endless, themed, from nts")
+        ShelfIndexed(mixtapes) { i, (s, said) -> SignalTile(s, said, Modifier.width(140.dp)) { Playback.play(mixtapes.drop(i).map { it.first }, 0) } }
+    }
     sections["because"] = { BecauseYouLovedShelf() }
     sections["newToYou"] = { NewToYouShelf(pages) }
     if (uOnRepeat.size >= 3) sections["onRepeat"] = {

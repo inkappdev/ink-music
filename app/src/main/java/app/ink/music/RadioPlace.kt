@@ -180,7 +180,13 @@ fun RadioPlace(pages: Pages, pad: PaddingValues, grid: LazyGridState) {
                 else label("l-hint", "a long press on any station keeps it here as yours")
                 label("l-ink", "ink radio")
                 tiles(ours.map { it.song to it.city }, "c")
-                if (mixtapes.isNotEmpty()) { label("l-nts", "nts mixtapes · endless, themed, from nts"); tiles(mixtapes, "m") }
+                if (mixtapes.isNotEmpty()) {
+                    label("l-nts", "nts mixtapes · endless, themed, from nts")
+                    // each a signal tile, as on listen
+                    itemsIndexed(mixtapes, key = { _, (s, _) -> "m" + s.id }) { i, (s, said) ->
+                        SignalTile(s, said, Modifier.fillMaxWidth()) { Playback.play(mixtapes.drop(i).map { it.first }, 0) }
+                    }
+                }
             }
         }
     }

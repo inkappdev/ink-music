@@ -129,6 +129,8 @@ fun ListenPage(open: (Page) -> Unit) {
     // the shows you follow: their newest episodes not yet heard (read again from their feeds each hour)
     val episodes by Pods.fresh.collectAsState()
     LaunchedEffect(Unit) { Pods.refresh() }
+    // NTS's infinite mixtapes (2026-11-24): as kept at once, then read again once a day
+    val mixtapes by produceState(remember { Stations.mixtapes() }) { value = Stations.freshMixtapes().ifEmpty { value } }
     fun openPick(p: Picks.Shown) = mixScope.launch {
         val a = if (p.pick.record) Picks.record(p.pick) else null
         a?.let { open(Page.Tube(it)) } ?: Picks.song(p.pick.title, p.pick.artist)?.let { Player.play(listOf(it)) }
@@ -271,6 +273,19 @@ fun ListenPage(open: (Page) -> Unit) {
                 }
             }
         }
+        shelf["nts"] = {
+            // each a signal tile: a click plays it and the ones after it, as stations
+            if (mixtapes.isNotEmpty()) item(key = "nts") {
+                Column {
+                Section("NTS MIXTAPES", "endless, themed, from nts")
+                Shelf {
+                    itemsIndexed(mixtapes, key = { _, m -> m.first.id }) { i, (s, said) ->
+                        SignalTile(s, said, Modifier.width(170.dp)) { Player.play(mixtapes.drop(i).map { it.first }) }
+                    }
+                }
+                }
+            }
+        }
         shelf["because"] = {
             if (because != null) item { BecauseYouLoved(open) }
         }
@@ -355,7 +370,7 @@ private fun SinceYouWereHere(since: Long, lines: List<NewLine>) {
 
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment); the phone's keys, where shared. */
 // listen is you, INK is the world (2026-11-12, Bronson): live sets and ink radio are INK's; your mix is here
-val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "forYou", "videos", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "yourMix", "because",
+val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "forYou", "videos", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "yourMix", "nts", "because",
     "newToYou", "jumpBack", "forgotten", "newest", "lists")
 
 /**
