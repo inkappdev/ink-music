@@ -4,5 +4,6 @@
 - Crossfades come back for YouTube songs
 - YouTube playlists get their cover, and a tidier top
 - Lyrics keep their place between songs, no cover flashing up
+- Computer: YouTube lists load even if your sign-in expired
 - Our songs were waiting in line at the DMV. Now they skip it
 - Tell someone their playlist taste is underrated
