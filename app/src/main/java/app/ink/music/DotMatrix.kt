@@ -61,8 +61,35 @@ object DotMatrix {
         Flip.start(from, value) { set(c, value) }
     }
 
+    /**
+     * Each hand's own pictures (2026-11-25, Bronson): the look page's grid kept for ink and for DOT MATRIX apart, so a
+     * switch puts back what was chosen in the hand it comes to; DOT MATRIX the first time: dots everywhere, soft dots
+     * behind the player. Files ("looks-ink", "looks-dots"): the cover's look, behind it, the print, the artist pages'.
+     */
+    private fun lookFile(c: Context, dots: Boolean) = File(c.applicationContext.filesDir, if (dots) "looks-dots" else "looks-ink")
+
+    private fun keepLooks(c: Context, dots: Boolean) {
+        val artist = ArtistLook.extra.value.ifEmpty {
+            if (Moving.artistXray.value) "x-ray" else if (Moving.artistGrain.value) "blur" else if (Moving.artistDither.value) "dither" else "as it is"
+        }
+        runCatching { lookFile(c, dots).writeText(listOf(Moving.cover.value?.name ?: "", Looks.on.value.name, CoverPrint.on.value.name, artist).joinToString("\n")) }
+    }
+
+    private fun putLooks(c: Context, dots: Boolean) {
+        val kept = runCatching { lookFile(c, dots).readLines() }.getOrNull()
+        val (cover, behind, print, artist) = kept?.takeIf { it.size >= 4 }
+            ?: if (dots) listOf(Look.DOTS.name, Look.SOFTDOTS.name, Print.DOTS.name, "dots") else return
+        Moving.set(c, cover = Look.entries.firstOrNull { it.name == cover })
+        Look.entries.firstOrNull { it.name == behind }?.let { Looks.set(c, it) }
+        Print.entries.firstOrNull { it.name == print }?.let { CoverPrint.set(c, it) }
+        ArtistLook.set(c, if (artist == "tiles" || artist == "dots" || artist == "soft dots") artist else "")
+        Moving.set(c, artistDither = artist == "dither", artistGrain = artist == "blur", artistXray = artist == "x-ray")
+    }
+
     /** Turned on or off: kept, and the screens drawn again in the new hand. */
     fun set(c: Context, value: Boolean) {
+        // the pictures of the hand it leaves kept, the ones of the hand it comes to put back
+        if (value != on.value) { keepLooks(c, on.value); putLooks(c, value) }
         runCatching { if (value) file(c).createNewFile() else file(c).delete() }
         runCatching { foundFile(c).createNewFile() }
         on.value = value; found.value = true
