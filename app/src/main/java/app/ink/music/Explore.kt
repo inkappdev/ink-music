@@ -1400,14 +1400,14 @@ internal fun MixFinding(st: Mixes.State) {
     val within = (beats - Math.floor(beats)).toFloat()
     val pulse = if (less) 0f else 1f - within
     Row(verticalAlignment = Alignment.Bottom) {
-        BasicText(if (st.bpm > 0) "${st.bpm}" else "MIX", style = headline(64.sp, androidx.compose.ui.graphics.lerp(Ink.mid, Ink.ink, pulse)).copy(lineHeight = 64.sp))
+        BasicText(if (st.bpm > 0) "${st.bpm}" else "MIX", style = numeral(headline(64.sp, androidx.compose.ui.graphics.lerp(Ink.mid, Ink.ink, pulse)).copy(lineHeight = 64.sp)))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.padding(bottom = 10.dp)) {
             androidx.compose.foundation.Canvas(Modifier.width(52.dp).height(7.dp)) {
                 val sq = 7.dp.toPx(); val gap = (size.width - 4 * sq) / 3
                 for (i in 0 until 4) {
                     val lit = if (less) 0f else if (i == step) 1f - within * .7f else 0f
-                    drawRect(androidx.compose.ui.graphics.lerp(if (i == 0) Ink.mid else Ink.dim, Ink.ink, lit),
+                    cell(androidx.compose.ui.graphics.lerp(if (i == 0) Ink.mid else Ink.dim, Ink.ink, lit),
                         androidx.compose.ui.geometry.Offset(i * (sq + gap), 0f), androidx.compose.ui.geometry.Size(sq, sq))
                 }
             }

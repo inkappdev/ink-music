@@ -53,3 +53,20 @@ object DotMatrix {
     /** Concert A: the needle let go within a few hertz of 440. */
     fun isA(hz: Double) = hz in 436.0..444.0
 }
+
+/** A pixel cell: a round dot in DOT MATRIX, ink's square otherwise (each pixel piece draws its cells with it). */
+fun androidx.compose.ui.graphics.drawscope.DrawScope.cell(color: androidx.compose.ui.graphics.Color, topLeft: androidx.compose.ui.geometry.Offset, size: androidx.compose.ui.geometry.Size) {
+    if (Hand.dots) drawCircle(color, minOf(size.width, size.height) * .45f, androidx.compose.ui.geometry.Offset(topLeft.x + size.width / 2, topLeft.y + size.height / 2))
+    else drawRect(color, topLeft, size)
+}
+
+/** A bar `w` wide rising `h` from `bottom`: dots stacked in DOT MATRIX, one block otherwise. */
+fun androidx.compose.ui.graphics.drawscope.DrawScope.cellBar(color: androidx.compose.ui.graphics.Color, x: Float, bottom: Float, w: Float, h: Float) {
+    if (!Hand.dots) { drawRect(color, androidx.compose.ui.geometry.Offset(x, bottom - h), androidx.compose.ui.geometry.Size(w, h)); return }
+    var y = bottom - w / 2
+    while (y >= bottom - h) { drawCircle(color, w * .45f, androidx.compose.ui.geometry.Offset(x + w / 2, y)); y -= w * 1.35f }
+}
+
+/** A number shown big: in Doto's dots in DOT MATRIX, as it was otherwise. */
+fun numeral(style: androidx.compose.ui.text.TextStyle) =
+    if (Hand.dots) style.copy(fontFamily = DotMatrix.Doto, letterSpacing = androidx.compose.ui.unit.TextUnit(-.02f, androidx.compose.ui.unit.TextUnitType.Em)) else style

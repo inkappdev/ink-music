@@ -604,7 +604,7 @@ private fun Scale(station: Float, modifier: Modifier = Modifier) {
         val cols = (size.width / px).toInt()
         val rows = (size.height / px).toInt()
         fun cell(c: Int, r: Int, color: androidx.compose.ui.graphics.Color) =
-            drawRect(color, androidx.compose.ui.geometry.Offset(c * px, r * px), androidx.compose.ui.geometry.Size(px, px))
+            cell(color, androidx.compose.ui.geometry.Offset(c * px, r * px), androidx.compose.ui.geometry.Size(px, px))
         // 87.5 to 108.5 across the width: a long tick each whole megahertz, a short one each half
         fun colOf(f: Float) = ((f - 87.5f) / 21f * (cols - 1)).toInt().coerceIn(0, cols - 1)
         var f = 88f
@@ -741,7 +741,7 @@ private fun FillingHeart(on: Boolean, modifier: Modifier = Modifier, onClick: ()
                     edge[r][c] == '#' -> Ink.mid
                     else -> continue
                 }
-                drawRect(color, androidx.compose.ui.geometry.Offset(c * px, r * px), androidx.compose.ui.geometry.Size(px, px))
+                cell(color, androidx.compose.ui.geometry.Offset(c * px, r * px), androidx.compose.ui.geometry.Size(px, px))
             }
         }
     }
@@ -790,7 +790,7 @@ private fun Dial() {
     androidx.compose.foundation.Canvas(Modifier.width(3.dp * cols).height(3.dp * 7)) {
         val px = 3.dp.toPx()
         fun cell(c: Int, r: Int, color: androidx.compose.ui.graphics.Color) =
-            drawRect(color, androidx.compose.ui.geometry.Offset(c * px, r * px), androidx.compose.ui.geometry.Size(px, px))
+            cell(color, androidx.compose.ui.geometry.Offset(c * px, r * px), androidx.compose.ui.geometry.Size(px, px))
         for (c in 0 until cols) {
             if (c % 4 == 0) for (r in 1..3) cell(c, r, Ink.mid)
             else if (c % 2 == 0) for (r in 2..3) cell(c, r, Ink.dim)

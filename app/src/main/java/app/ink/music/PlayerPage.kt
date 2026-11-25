@@ -823,6 +823,7 @@ private fun Scrubber(
                 .wrapContentHeight(androidx.compose.ui.Alignment.Bottom, unbounded = true)
             if (k != null && mix != null) MixBar(mix, k, old, new, thick, grow)
             else if (point != null) MixPointBar(frac, point.cutAt.toFloat() / point.full, accent, thick, grow)
+            else if (Hand.dots) DotLine(frac, accent, thick, grow)
             else Box(grow.fillMaxWidth().height(thick).background(Ink.line)) {
                 Box(Modifier.fillMaxWidth(frac).height(thick).background(accent))
             }
@@ -1799,5 +1800,22 @@ private fun FadesWord(style: androidx.compose.ui.text.TextStyle, modifier: Modif
     val ways = if (onTv()) listOf(Crossfade.OFF, Crossfade.CROSSFADE) else listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX)
     Word(if (mode == Crossfade.OFF) "no fades" else mode, style.copy(color = if (mode != Crossfade.OFF) Ink.ink else OFF), modifier, touch = 10.dp) {
         mode = ways[(ways.indexOf(mode) + 1) % ways.size]; Crossfade.set(ctx, mode)
+    }
+}
+
+/**
+ * The progress line in DOT MATRIX: a row of round dots along the cover's top edge, as big as the line is thick (3 dp at
+ * the least), lit in the cover's colour as far as the song's got and 12% after.
+ */
+@Composable
+private fun DotLine(frac: Float, accent: androidx.compose.ui.graphics.Color, thick: Dp, modifier: Modifier) {
+    val d = maxOf(thick, 3.dp)
+    Canvas(modifier.fillMaxWidth().height(d)) {
+        val r = d.toPx() / 2; val step = d.toPx() * 1.8f
+        val n = (size.width / step).toInt().coerceAtLeast(1)
+        for (i in 0..n) {
+            val x = (i * step + r).coerceAtMost(size.width - r)
+            drawCircle(if (x / size.width <= frac) accent else Ink.line, r, androidx.compose.ui.geometry.Offset(x, size.height / 2))
+        }
     }
 }

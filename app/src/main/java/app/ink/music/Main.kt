@@ -3449,7 +3449,12 @@ private fun Line(n: Now, accent: androidx.compose.ui.graphics.Color) {
         while (true) { value = n.positionNow(); if (!n.moving) break; kotlinx.coroutines.delay(500) }
     }
     val frac = if (n.duration > 0) (pos.toFloat() / n.duration).coerceIn(0f, 1f) else 0f
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
+    // DOT MATRIX: small dots along the mini player's top, lit as far as the song's got
+    if (Hand.dots) androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(2.dp)) {
+        val r = size.height / 2; val step = 2.dp.toPx() * 2.2f
+        var x = r
+        while (x < size.width) { drawCircle(if (x / size.width <= frac) accent else Ink.line, r, androidx.compose.ui.geometry.Offset(x, r)); x += step }
+    } else Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line)) {
         Box(Modifier.fillMaxWidth(frac).height(1.dp).background(accent))
     }
 }

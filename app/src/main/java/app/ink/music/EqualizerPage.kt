@@ -223,7 +223,7 @@ private fun Band(level: Int, b: Eq.Bands, on: Boolean, modifier: Modifier, order
                 d == zero -> Ink.mid
                 else -> Ink.dim
             }
-            drawRect(colour, Offset((size.width - dotSize) / 2, y), Size(dotSize, dotSize))
+            cell(colour, Offset((size.width - dotSize) / 2, y), Size(dotSize, dotSize))
         }
     }
 }

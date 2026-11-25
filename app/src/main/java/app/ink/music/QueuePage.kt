@@ -293,7 +293,7 @@ private fun FindingRows(artist: String) {
                         var k = (x * 73856093) xor (y * 19349663) xor ((r * 4 + salt) * 83492791)
                         k = k xor (k ushr 16); k *= 0x45d9f3b; k = k xor (k ushr 16)
                         val at = (k and 0xffff) / 65536f
-                        if (at < level) drawRect(if (at < level * .3f) Ink.mid else Ink.dim, Offset(x * cell, top + y * cell), dot)
+                        if (at < level) cell(if (at < level * .3f) Ink.mid else Ink.dim, Offset(x * cell, top + y * cell), dot)
                         x++
                     }
                     y++

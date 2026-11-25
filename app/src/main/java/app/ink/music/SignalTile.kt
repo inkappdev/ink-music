@@ -87,7 +87,7 @@ private fun Wave(seed: Int, moving: Boolean, colour: Color, modifier: Modifier) 
         for (i in 0 until n) {
             val level = if (moving) SignalLine.moving(i, n, seed, t) else SignalLine.still(i, n, seed)
             val h = (level * rows).toInt().coerceIn(1, rows) * cell
-            drawRect(colour, Offset(i * cell * 2, size.height - h), Size(cell, h))
+            cellBar(colour, i * cell * 2, size.height, cell, h)
         }
     }
 }
@@ -98,6 +98,6 @@ private fun Infinity(colour: Color) {
     val dot = LocalDensity.current.run { 12.sp.toDp() } / 8
     Canvas(Modifier.size(dot * 7, dot * 5)) {
         val d = size.width / 7
-        SignalLine.INFINITY.forEachIndexed { y, row -> row.forEachIndexed { x, c -> if (c == '#') drawRect(colour, Offset(x * d, y * d), Size(d, d)) } }
+        SignalLine.INFINITY.forEachIndexed { y, row -> row.forEachIndexed { x, c -> if (c == '#') cell(colour, Offset(x * d, y * d), Size(d, d)) } }
     }
 }

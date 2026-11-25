@@ -155,7 +155,7 @@ fun BeatCounter(mix: Mix, n: Now, modifier: Modifier = Modifier) {
             for (i in 0 until 4) {
                 val lit = if (less || !n.moving) 0f else if (i == step) 1f - within * .7f else 0f
                 val base = if (i == 0) Ink.mid else Ink.dim
-                drawRect(lerp(base, Ink.ink, lit), Offset(i * (sq + gap), 0f), Size(sq, sq))
+                cell(lerp(base, Ink.ink, lit), Offset(i * (sq + gap), 0f), Size(sq, sq))
             }
         }
         androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))

@@ -204,7 +204,7 @@ private fun Opening(y: Year, some: Boolean, more: Boolean, shown: Boolean) {
             // the minutes counting up as the page comes
             val counted = remember { Animatable(0f) }
             LaunchedEffect(shown) { if (shown) { counted.snapTo(0f); counted.animateTo(y.minutes.toFloat(), tween(1_400, easing = Motion.expo)) } }
-            BasicText("%,d".format(counted.value.toLong()), style = headline(88.sp), modifier = Modifier.coming(0, shown))
+            BasicText("%,d".format(counted.value.toLong()), style = numeral(headline(88.sp)), modifier = Modifier.coming(0, shown))
             BasicText("minutes", style = pixel(14.sp, Ink.mid), modifier = Modifier.coming(1, shown))
             Spacer(Modifier.height(20.dp))
             BasicText("${y.heard} songs   ${y.artistCount} artists", style = pixel(13.sp), modifier = Modifier.coming(2, shown))
@@ -402,7 +402,7 @@ private fun Sounded(y: Year, shown: Boolean) {
         val lossless = sound.hiRes + sound.lossless
         val counted = remember { Animatable(0f) }
         LaunchedEffect(shown) { if (shown) { counted.snapTo(0f); counted.animateTo(lossless * 100, tween(1_200, easing = Motion.expo)) } }
-        BasicText("${counted.value.toInt()}%", style = headline(120.sp).copy(lineHeight = 120.sp))
+        BasicText("${counted.value.toInt()}%", style = numeral(headline(120.sp).copy(lineHeight = 120.sp)))
         BasicText("of it lossless", style = pixel(14.sp, Ink.mid))
         Spacer(Modifier.height(28.dp))
         // the three parts, side by side along one line
