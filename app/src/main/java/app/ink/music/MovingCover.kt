@@ -289,7 +289,14 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
                 tv.setTransform(android.graphics.Matrix().apply { setScale(vw * k / size.width, vh * k / size.height, size.width / 2f, size.height / 2f) })
             }
             if (Build.VERSION.SDK_INT >= 31) tv.setRenderEffect(when {
-                dotted -> Shaders.dots(density, come)
+                // dots over the blur or the x-ray (they make the dots calmer, or one colour); in place of dither and pixels
+                dotted -> Shaders.dots(density, come)?.let { d ->
+                    when (drawn) {
+                        Look.BLUR -> RenderEffect.createChainEffect(d, RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP))
+                        Look.XRAY -> Shaders.effect(Look.XRAY, accent, density, 1f, 0f)?.let { RenderEffect.createChainEffect(d, it) } ?: d
+                        else -> d
+                    }
+                }
                 drawn == Look.BLUR -> android.graphics.RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP)
                 drawn != null -> Shaders.effect(drawn, accent, density, come, size.width.toFloat())
                 else -> null
@@ -307,6 +314,9 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
  */
 /** The x-ray look as an effect for any picture (TUNER's clip as it tunes in), in `accent`; null before Android 13. */
 internal fun xrayEffect(accent: Color): RenderEffect? = Shaders.effect(Look.XRAY, accent, 1f, 1f, 0f)
+
+/** DOT MATRIX's dots as an effect for any picture (the still cover behind the player), cells about 7 dp; null before Android 13. */
+internal fun dotsEffect(density: Float): RenderEffect? = Shaders.dots(density, 1f)
 
 /** Whether DOT MATRIX's moving dots build on this phone (said once, as it's turned on). */
 internal fun dotsBuild(): Boolean = Build.VERSION.SDK_INT >= 33 && Shaders.dots(3f, 1f) != null

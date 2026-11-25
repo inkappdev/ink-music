@@ -93,6 +93,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
@@ -688,7 +689,10 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
  */
 @Composable
 private fun Backdrop(cover: Cover?, n: Now) {
-    val look by Looks.on.collectAsState()
+    val chosen by Looks.on.collectAsState()
+    // DOT MATRIX (Android 13's shaders): dots over the blur, the x-ray or the clear cover; in place of dither and pixels
+    val dots = Hand.dots && android.os.Build.VERSION.SDK_INT >= 33
+    val look = if (dots && (chosen == Look.DITHER || chosen == Look.PIXELS)) Look.AS_IS else chosen
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current.density
         // the square cover cropped to fill the page: shown at the page's longer side
@@ -708,22 +712,24 @@ private fun Backdrop(cover: Cover?, n: Now) {
             val fade = remember(img) { Animatable(0f) }
             LaunchedEffect(img) { fade.animateTo(shape.alpha, tween(600)) }
             // the blur's film grain under the same fade, so it's as faint as the picture (over black at full it glittered)
+            val density = LocalDensity.current.density
+            val dotted = remember(dots, density) { if (dots) dotsEffect(density)?.asComposeRenderEffect() else null }
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
                 Image(
-                    img, null, Modifier.fillMaxSize(),
+                    img, null, Modifier.fillMaxSize().graphicsLayer { renderEffect = dotted },
                     contentScale = ContentScale.Crop,
                     filterQuality = if (shape.crisp) FilterQuality.None else FilterQuality.Low,
                 )
-                if (shape == Look.BLUR) FilmGrain(Modifier.fillMaxSize())
+                if (shape == Look.BLUR && dotted == null) FilmGrain(Modifier.fillMaxSize())
             }
         }
         // the song's spotify canvas in its place, moving, in the same look (signed in to spotify: settings, the look)
         if (n.song?.station != true && n.song?.episode != true) CanvasBehind(n.title, n.artist, cover?.accent ?: Ink.ink, n.moving, Modifier.fillMaxSize()) { canvasUp = true }
         // a canvas in the blur: film's grain over it, moving with it, as faint as it is
-        if (canvasShown && look == Look.BLUR && !Device.tv) FilmGrain(Modifier.fillMaxSize().graphicsLayer { alpha = look.alpha }, moving = n.moving)
+        if (canvasShown && look == Look.BLUR && !Device.tv && !dots) FilmGrain(Modifier.fillMaxSize().graphicsLayer { alpha = look.alpha }, moving = n.moving)
         // ink's fine grain over the other looks (not dither's, nor as it is; the blur has its own)
         // (not on a TV: a blend across the whole screen, again each time anything over it moves)
-        if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN && look != Look.BLUR && !Device.tv) Grain()
+        if ((canvasShown || drawn != null) && look != Look.DITHER && look != Look.AS_IS && look != Look.PLAIN && look != Look.BLUR && !Device.tv && !dots) Grain()
     }
 }
 
