@@ -174,6 +174,8 @@ object YourFrequency {
         val seeds = (took.ifEmpty { listOfNotNull(last) } + listOfNotNull(anchor)).distinctBy { it.id }.take(3)
             .map { Radio.Seed(it.id, it.title, it.artist, it.ms) }
 
+        // the artists taken to this sitting: what they bring is near, not new
+        val tookTo = went.values.filter { it.how != FrequencyMix.How.LEFT }.map { FrequencyMix.who(it.artist) }.toSet()
         // what each seed brings, side by side
         val just = JustYours.read(c)
         val pool = java.util.concurrent.Executors.newFixedThreadPool(seeds.size.coerceAtLeast(1) + 1)
@@ -209,7 +211,9 @@ object YourFrequency {
             list.forEachIndexed { r, s ->
                 val k = Radio.key(s.title, s.artist)
                 if (s.id in queued || !fine(k, s.title) || Blocked.hides(s)) return@forEachIndexed
-                val lane = when { k in heardKeys -> FrequencyMix.YOURS; nearness(s.artist) >= ForYou.NEAR -> FrequencyMix.NEAR; else -> FrequencyMix.FAR }
+                // an artist taken to this sitting (played through, loved) isn't new any more, whatever the taste says yet
+                val lane = when { k in heardKeys -> FrequencyMix.YOURS
+                    nearness(s.artist) >= ForYou.NEAR || FrequencyMix.who(s.artist) in tookTo -> FrequencyMix.NEAR; else -> FrequencyMix.FAR }
                 songs.putIfAbsent(k, s)
                 found += FrequencyMix.Found(k, s.artist, lane, 1.0 - r.toDouble() / (list.size + 1), through)
             }
@@ -231,7 +235,9 @@ object YourFrequency {
         // kept apart from what's played lately and what's still waiting (the queue after the song playing comes last)
         // and the last dozen it gave (some taken off by a skip: they came straight back, 2026-11-25)
         val lately = o.optJSONArray("lately")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
-        val recent = lately + (went.values.sortedBy { it.at }.map { it.artist } + queue.take(current + 1).takeLast(8).map { it.artist } + queue.drop(current + 1).map { it.artist })
+        // (the latest last: only the last stretch keeps an artist away, and the given ones had been first, so cut off)
+        val recent = went.values.sortedBy { it.at }.map { it.artist } + queue.take(current + 1).takeLast(8).map { it.artist } +
+            queue.drop(current + 1).map { it.artist } + lately
         // each lane's count this sitting, so the shares hold across batches
         val laneCounts = given.keys().asSequence().mapNotNull { given.optJSONArray(it)?.optString(0) }.groupingBy { it }.eachCount()
         val picked = FrequencyMix.pick(found, d, ::taste, sitting, learned, recent, BATCH + 2, appetite, given0 = laneCounts)

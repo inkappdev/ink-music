@@ -125,7 +125,7 @@ object FrequencyMix {
     /**
      * The next `n`, from what's been found. Each place goes to a lane by its share (dial times learned), drawn in turn
      * so the shares hold over a few songs; within the lane, the best by its finders' rank, your nearness, the sitting,
-     * and a little chance. No artist twice in the last eight (`recent`, the sitting's artists, latest last), none out for
+     * and a little chance. No artist twice in the last twelve (`recent`, the sitting's artists, latest last), none out for
      * the sitting, none said not for you (taste below 0). A lane with nothing gives its place to the next best.
      */
     fun pick(
@@ -136,7 +136,7 @@ object FrequencyMix {
         // a lane with no share takes no place
         val shares = shares(dials, appetite).mapValues { (lane, s) -> s * learned.times(lane) }.filterValues { it > 0 }
         val open = found.filter { taste(it.artist) >= 0 && !sitting.out(it.artist) }.distinctBy { it.key }.toMutableList()
-        val away = recent.takeLast(8).map(::who).toMutableList()
+        val away = recent.takeLast(12).map(::who).toMutableList()
         // each lane's places so far this sitting (`given0`), against its share: a batch alone began with yours every time
         val given = HashMap<String, Double>().apply { given0.forEach { (k, v) -> put(k, v.toDouble()) } }
         val out = ArrayList<Found>(n)
@@ -150,7 +150,7 @@ object FrequencyMix {
             val best = open.filter { it.lane == lane && who(it.artist) !in away }.maxByOrNull(::score) ?: break
             out += best; open.remove(best)
             given[lane] = (given[lane] ?: 0.0) + 1
-            away += who(best.artist); if (away.size > 8) away.removeAt(0)
+            away += who(best.artist); if (away.size > 12) away.removeAt(0)
         }
         return out
     }
