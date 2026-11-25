@@ -171,6 +171,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     var added by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(added) { if (added != null) { delay(3_000); added = null } }
     var playOnUp by remember { mutableStateOf(false) }
+    val playOnAsked by PlayOnAsk.asked.collectAsState()
+    LaunchedEffect(playOnAsked) { if (playOnAsked) { playOnUp = true; PlayOnAsk.asked.value = false } }
     var heardUp by remember { mutableStateOf(false) }
     // a lossless song's moment across the cover, while it types (the word at the top waits for it)
     var typing by remember { mutableStateOf(false) }
@@ -332,15 +334,13 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 // middle, lit while it's a speaker, dim on the phone, a tap opens every speaker (its name is under the
                 // title: "flac on bedroom speaker", a long one here pushed close off the row); close. The look is chosen
                 // in settings, the look, now (its three layers there, each its own: 2026-10-30)
-                // four parts (2026-11-24, Bronson): how songs turn into the next and close at the ends, the speaker in the
-                // very middle, sleep centered in the gap between it and close (the queue's count went: up next is under
-                // the controls)
-                TopRow(
-                    { if (n.song?.episode != true && n.song?.station != true) FadesWord(pixel(SMALL, SAID)) },
-                    { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
-                    { SleepWord(n, sleepUp) { sleepUp = !sleepUp } },
-                    { Pixel(CLOSE, "close", SAID, onClick = onClose) },
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                // mirrored (2026-11-24, Bronson: four parts read lopsided): how songs turn into the next at the left
+                // edge, sleep at the right, close in the very middle; the speaker went down beside what's heard, over the cover
+                Centred(
+                    start = { if (n.song?.episode != true && n.song?.station != true) FadesWord(pixel(SMALL, SAID)) },
+                    middle = { Pixel(CLOSE, "close", SAID, onClick = onClose) },
+                    end = { SleepWord(n, sleepUp) { sleepUp = !sleepUp } },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
             }
             val words = lyric != null || notes != null
@@ -549,7 +549,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
                     FadeText(t.artist.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).clickable(remember { MutableInteractionSource() }, indication = null,
                             onClick = felt { (artistOf(t) ?: aired(t)?.artist?.substringBefore(", "))?.let { onOpen(Page.Artist(it)) } }))
-                    ShareWord(Modifier.padding(start = 12.dp), onShare, onPoster)
+                    PlayOnWord(t.device.isNotEmpty(), Modifier.padding(start = 12.dp))
                 }
             }
         } else Column {
@@ -634,7 +634,7 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
           }
             // the song's link to send; held, its poster for a story
             // (not on a TV: a link sent from a TV has nowhere to go)
-            if (!Device.tv) ShareWord(Modifier.padding(start = 12.dp).tvLit(), onShare, onPoster)
+            if (!Device.tv) PlayOnWord(t.device.isNotEmpty(), Modifier.padding(start = 12.dp).tvLit())
         }
         // a DJ set: the track playing in it, typed out as it's heard and kept there (SetHeard)
         if (SetHeard.isSet(t)) {
@@ -919,6 +919,20 @@ internal fun openRecord(s: Song, scope: kotlinx.coroutines.CoroutineScope, onOpe
     scope.launch { YouTubeMusic.findRecord(s.album, s.albumArtist.ifBlank { s.artist.substringBefore(", ") })?.let { onOpen(Page.Tube(it)) } }
 }
 
+/** The speaker list asked for from the words under the title (they sit apart from the page that opens it). */
+private object PlayOnAsk { val asked = kotlinx.coroutines.flow.MutableStateFlow(false) }
+
+/**
+ * Where it plays, as a word (2026-11-24, Bronson: in share's place, the speaker off the top row and away from what's
+ * heard): lit while a speaker plays it; a tap, every speaker.
+ */
+@Composable
+private fun PlayOnWord(casting: Boolean, modifier: Modifier) {
+    // drawn as share was, on the names' own line (a Word's room for a thumb set it lower than them)
+    BasicText("play on", style = pixel(SMALL, if (casting) Ink.ink else SAID), modifier = modifier.clickable(
+        remember { MutableInteractionSource() }, indication = null, onClick = felt { PlayOnAsk.asked.value = true }))
+}
+
 /**
  * Share as a word: a tap sends the song's link, a hold its poster (felt both ways). On a TV the remote's OK is the tap.
  */
@@ -1043,10 +1057,10 @@ internal fun Pixel(
 
 /** "play on" as a pixel speaker: lit in ink while a speaker plays, at the row's words' dimness on the phone. */
 @Composable
-private fun PlayOnSpeaker(casting: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun PlayOnSpeaker(casting: Boolean, modifier: Modifier, pixel: Dp = 2.dp, pad: Dp = 10.dp, onClick: () -> Unit) {
     val colour by androidx.compose.animation.animateColorAsState(if (casting) Ink.ink else SAID, tween(Motion.ENTER, easing = Motion.expo), label = "speaker")
-    Box(modifier.tvLit().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(10.dp)) {
-        Sprite(SPEAKER, colour, 2.dp)
+    Box(modifier.tvLit().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(pad)) {
+        Sprite(SPEAKER, colour, pixel)
     }
 }
 
@@ -1711,7 +1725,7 @@ private fun TvPlayer(
     Column(Modifier.fillMaxSize()) {
         Centred(
             start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), Modifier.tvLit(), touch = 10.dp, onClick = onQueue) },
-            middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier, onSpeaker) },
+            middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier, onClick = onSpeaker) },
             end = { CloseArrow(SAID, onClick = onClose) },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
         )
@@ -1773,29 +1787,5 @@ private fun FadesWord(style: androidx.compose.ui.text.TextStyle, modifier: Modif
     val ways = if (onTv()) listOf(Crossfade.OFF, Crossfade.CROSSFADE) else listOf(Crossfade.OFF, Crossfade.CROSSFADE, Crossfade.AUTOMIX)
     Word(if (mode == Crossfade.OFF) "no fades" else mode, style.copy(color = if (mode != Crossfade.OFF) Ink.ink else OFF), modifier, touch = 10.dp) {
         mode = ways[(ways.indexOf(mode) + 1) % ways.size]; Crossfade.set(ctx, mode)
-    }
-}
-
-/**
- * The player's top row: [start] and [end] at the edges, [middle] in the very middle, [right] centered in the gap between
- * the middle and the end; all on one centre line.
- */
-@Composable
-private fun TopRow(start: @Composable () -> Unit, middle: @Composable () -> Unit,
-                   right: @Composable () -> Unit, end: @Composable () -> Unit, modifier: Modifier = Modifier) {
-    androidx.compose.ui.layout.Layout({ Box { start() }; Box { middle() }; Box { right() }; Box { end() } }, modifier) { ms, c ->
-        val loose = c.copy(minWidth = 0, minHeight = 0)
-        val (a, m, r, e) = ms.map { it.measure(loose) }
-        // measured with no edge (Fit asks how wide it would be, to know whether to shrink it): as wide as its parts and
-        // a gap between each; an unbounded width laid out as is crashed the player as it opened (2026-11-24)
-        val w = if (c.hasBoundedWidth) c.maxWidth else a.width + m.width + r.width + e.width + 3 * 16.dp.roundToPx()
-        val h = maxOf(a.height, m.height, r.height, e.height)
-        layout(w, h) {
-            val mx = (w - m.width) / 2
-            val ex = w - e.width
-            fun y(p: androidx.compose.ui.layout.Placeable) = (h - p.height) / 2
-            a.place(0, y(a)); m.place(mx, y(m)); e.place(ex, y(e))
-            r.place((mx + m.width + ex) / 2 - r.width / 2, y(r))
-        }
     }
 }
