@@ -29,8 +29,9 @@ class PassJob : JobService() {
         if (SyncPhone.peers.value.isEmpty()) return false
         scope.launch {
             runCatching {
+                // the passes made where the web player lives (the main thread); the sync on the network's own
                 withTimeoutOrNull(60_000) { Spotify.fresh(this@PassJob) }
-                withTimeoutOrNull(60_000) { SyncPhone.now() }
+                withTimeoutOrNull(60_000) { kotlinx.coroutines.withContext(Dispatchers.IO) { SyncPhone.now() } }
             }.onFailure { android.util.Log.d("ink-spotify", "passes for the computer: $it") }
             jobFinished(p, false)
         }
