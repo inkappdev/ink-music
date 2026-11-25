@@ -48,8 +48,18 @@ import androidx.compose.ui.unit.sp
 private val Doto = DotMatrix.Doto
 private val Grotesk = DotMatrix.Grotesk
 private val Mono = DotMatrix.Mono
-private fun label(color: Color = Ink.mid) = TextStyle(fontFamily = Mono, fontSize = 12.sp, letterSpacing = .08.em, color = color)
-private fun grotesk(size: TextUnit, color: Color = Ink.ink) = TextStyle(fontFamily = Grotesk, fontSize = size, color = color, letterSpacing = (-.01).em)
+/**
+ * Its two hands (2026-11-25, Bronson: an ink FREQUENCY too): in DOT MATRIX, Nothing's (Doto, Space Grotesk, Space Mono,
+ * round dots, a pill, a red live); else ink's own (Archivo Black, Silkscreen, square pixels, a big word).
+ */
+private fun label(color: Color = Ink.mid) = if (Hand.dots) TextStyle(fontFamily = Mono, fontSize = 12.sp, letterSpacing = .08.em, color = color) else pixel(12.sp, color)
+private fun grotesk(size: TextUnit, color: Color = Ink.ink) =
+    if (Hand.dots) TextStyle(fontFamily = Grotesk, fontSize = size, color = color, letterSpacing = (-.01).em)
+    else if (size.value >= 20f) headline(size, color) else pixel(12.sp, color)
+/** The hero number: Doto in DOT MATRIX, Archivo Black in ink's. */
+private fun hero(size: TextUnit) = if (Hand.dots) TextStyle(fontFamily = Doto, fontSize = size, color = Ink.ink, letterSpacing = (-.02).em) else headline(size)
+/** A share's figure: Space Mono in DOT MATRIX, Archivo Black in ink's. */
+private fun figure(size: TextUnit) = if (Hand.dots) TextStyle(fontFamily = Mono, fontSize = size, color = Ink.ink) else headline(size)
 /** A dot not lit, and Nothing's red for live (the one interrupt). */
 private val OFF = Color(0xFF262626)
 private val LIVE = Color(0xFFD71921)
@@ -90,13 +100,14 @@ fun FrequencyCard() {
     Column(Modifier.padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 22.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             BasicText("FREQUENCY", style = label())
-            if (playing) Row(verticalAlignment = Alignment.CenterVertically) {
+            // live: Nothing's red dot in DOT MATRIX; ink keeps red for the loved heart, so a word
+            if (playing && Hand.dots) Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(6.dp).background(LIVE, CircleShape))
                 BasicText("LIVE", style = label(), modifier = Modifier.padding(start = 6.dp))
-            } else BasicText(if (starting) "[FINDING]" else if (on) "PAUSED" else "YOUR MUSIC, NEVER ENDS", style = label(Ink.dim))
+            } else if (playing) BasicText("PLAYING", style = label(Ink.ink)) else BasicText(if (starting) "[FINDING]" else if (on) "PAUSED" else "YOUR MUSIC, NEVER ENDS", style = label(Ink.dim))
         }
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.Bottom) {
-            BasicText(hz, style = TextStyle(fontFamily = Doto, fontSize = 64.sp, color = Ink.ink, letterSpacing = (-.02).em))
+            BasicText(hz, style = hero(64.sp))
             BasicText(unit.uppercase(), style = label(), modifier = Modifier.padding(start = 6.dp, bottom = 10.dp))
         }
         DotSpectrum(tuned, playing, if (on && cover != null) cover else Ink.ink, newColour, Modifier.fillMaxWidth().padding(top = 12.dp).height(150.dp)
@@ -109,7 +120,7 @@ fun FrequencyCard() {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             BasicText("YOURS", style = label(Ink.dim)); BasicText("NEAR", style = label(Ink.dim)); BasicText("NEW", style = label(Ink.dim))
         }
-        BasicText(FrequencyMix.said(t).replaceFirstChar { it.uppercase() }, style = grotesk(24.sp), modifier = Modifier.padding(top = 18.dp))
+        BasicText(FrequencyMix.said(t).let { if (Hand.dots) it.replaceFirstChar { c -> c.uppercase() } else it.uppercase() }, style = grotesk(24.sp), modifier = Modifier.padding(top = 18.dp))
         BasicText(FrequencyMix.meaning(t), style = grotesk(14.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
         // each share: its figure and a ten-segment bar, live while the needle's dragged
         val mix = remember(tuned) { FrequencyMix.shares(FrequencyMix.Dials(t)) }
@@ -119,7 +130,7 @@ fun FrequencyCard() {
                 Column(Modifier.weight(1f)) {
                     BasicText(word, style = label())
                     Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Bottom) {
-                        BasicText("$pct", style = TextStyle(fontFamily = Mono, fontSize = 28.sp, color = Ink.ink))
+                        BasicText("$pct", style = figure(28.sp))
                         BasicText("%", style = label(), modifier = Modifier.padding(start = 3.dp, bottom = 5.dp))
                     }
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp).height(6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -137,8 +148,13 @@ fun FrequencyCard() {
                     onClick = felt { YourFrequency.turn(ctx, d.copy(mood = "")) }))
             }
         }
-        // play: Nothing's pill, the one round button here
-        Row(Modifier.padding(top = 24.dp).border(1.dp, if (starting) Ink.dim else Ink.ink, RoundedCornerShape(50))
+        // play: in ink's own hand a big word, as ink's buttons are
+        if (!Hand.dots) Word(when { starting -> "FINDING"; playing -> "PAUSE"; else -> "PLAY" }, headline(40.sp, if (starting) Ink.dim else Ink.ink),
+            Modifier.padding(top = 20.dp), touch = 8.dp) {
+            if (!starting) { if (!on) YourFrequency.start(ctx) else Playback.toggle() }
+        }
+        // play: Nothing's pill in DOT MATRIX, the one round button here
+        else Row(Modifier.padding(top = 24.dp).border(1.dp, if (starting) Ink.dim else Ink.ink, RoundedCornerShape(50))
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt {
                 if (starting) return@felt
                 if (!on) YourFrequency.start(ctx) else Playback.toggle()
@@ -177,7 +193,9 @@ private fun DotSpectrum(tuned: Float, moving: Boolean, needle: Color, newColour:
             val lit = (4 + kotlin.math.sin(i / 3.2 + tick * .15) * 3 + (if (i < cols / 4) 3 else 0) + (if (moving) rnd.nextInt(6) else 2)).toInt().coerceIn(1, rows)
             for (k in 0 until rows) {
                 val c = when { i == at -> needle; k < lit -> colour; else -> OFF }
-                drawCircle(c, r, Offset((i + .5f) * sx, size.height - (k + .5f) * sy))
+                // round dots in DOT MATRIX, ink's square pixels otherwise
+                if (Hand.dots) drawCircle(c, r, Offset((i + .5f) * sx, size.height - (k + .5f) * sy))
+                else drawRect(c, Offset(i * sx + sx * .12f, size.height - (k + 1) * sy + sy * .12f), androidx.compose.ui.geometry.Size(sx * .76f, sy * .76f))
             }
         }
     }
