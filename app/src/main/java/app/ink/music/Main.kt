@@ -212,7 +212,7 @@ open class Main : ComponentActivity() {
         Hints.start(this)
         SetHeard.start(this)
         Stations.curated(this)
-        setContent { TvFocus { App() } }
+        setContent { TvFocus { Box(Modifier.fillMaxSize()) { App(); FlipLayer() } } }
         // the next song's cover (and the last's) ready before it plays (Covers.ahead)
         lifecycleScope.launch { Covers.ahead(this@Main) }
         // the genres opened most, their editors' songs read ahead (their pages open with them there)

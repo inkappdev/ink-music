@@ -53,6 +53,14 @@ object DotMatrix {
         Hand.dots = on.value
     }
 
+    /**
+     * Turned on or off with the full screen flip (Flip), from `from` (window px; null, the middle): kept, and the screens
+     * drawn again in the new hand once the flip has covered them.
+     */
+    fun flip(c: Context, value: Boolean, from: androidx.compose.ui.geometry.Offset? = null) {
+        Flip.start(from, value) { set(c, value) }
+    }
+
     /** Turned on or off: kept, and the screens drawn again in the new hand. */
     fun set(c: Context, value: Boolean) {
         runCatching { if (value) file(c).createNewFile() else file(c).delete() }

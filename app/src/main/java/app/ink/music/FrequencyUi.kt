@@ -34,6 +34,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.TextUnit
@@ -88,9 +90,13 @@ fun FrequencyCard() {
     var tuned by remember(d.tuned) { mutableFloatStateOf(d.tuned.toFloat()) }
     val cover = rememberCover(if (on) now?.song else null, 200)?.accent
     val newColour = cover ?: Ink.dim
+    // where the spectrum is on the screen, so the flip starts from the needle
+    var spectrumAt by remember { androidx.compose.runtime.mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     fun let(t: Float) {
         // let go at concert A: DOT MATRIX turns (the easter egg), the needle left where it is
-        if (DotMatrix.isA(FrequencyMix.hzOf(t.toDouble()))) { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); DotMatrix.set(ctx, !DotMatrix.on.value) }
+        // (the flip from where the needle was let go, across the whole screen)
+        if (DotMatrix.isA(FrequencyMix.hzOf(t.toDouble()))) DotMatrix.flip(ctx, !DotMatrix.on.value,
+            spectrumAt?.let { b -> androidx.compose.ui.geometry.Offset(b.left + t * b.width, b.center.y) })
         YourFrequency.turn(ctx, d.copy(tuned = t.toDouble().coerceIn(0.0, 1.0)))
     }
     val t = tuned.toDouble()
@@ -111,6 +117,7 @@ fun FrequencyCard() {
             BasicText(unit.uppercase(), style = label(), modifier = Modifier.padding(start = 6.dp, bottom = 10.dp))
         }
         DotSpectrum(tuned, playing, if (on && cover != null) cover else Ink.ink, newColour, Modifier.fillMaxWidth().padding(top = 12.dp).height(150.dp)
+            .onGloballyPositioned { spectrumAt = it.boundsInWindow() }
             .pointerInput(d) { detectTapGestures { tuned = (it.x / size.width).coerceIn(0f, 1f); let(tuned) } }
             .pointerInput(d) {
                 detectHorizontalDragGestures(onDragEnd = { let(tuned) }) { change, _ ->

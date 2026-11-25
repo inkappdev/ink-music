@@ -133,7 +133,7 @@ fun LookPage(pages: Pages) {
             val dotFound by DotMatrix.found.collectAsState()
             val dotOn by DotMatrix.on.collectAsState()
             if (dotFound) SettingRow("TYPE", if (dotOn) "dot matrix" else "ink", opened, "you found it: the whole app in a dot-matrix hand, or ink's own") {
-                Pick(listOf("ink" to !dotOn, "dot matrix" to dotOn)) { DotMatrix.set(ctx, it == 1) }
+                Pick(listOf("ink" to !dotOn, "dot matrix" to dotOn)) { if ((it == 1) != dotOn) DotMatrix.flip(ctx, it == 1) }
             }
             // how much moves: full, less, or as the phone says (Moves; here since 2026-11-11, out of listening)
             val chosen by Moves.chosen.collectAsState()
