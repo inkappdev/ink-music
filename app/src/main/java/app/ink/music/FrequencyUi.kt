@@ -36,10 +36,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -49,9 +45,9 @@ import androidx.compose.ui.unit.sp
  * FREQUENCY's own faces (2026-11-25, Bronson: Nothing's dot matrix, "a deliberate exception" to ink's two): Doto for its
  * one hero number, Space Grotesk for its words, Space Mono in capitals for its labels and figures. Only this block.
  */
-private val Doto = FontFamily(Font(R.font.doto, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))))
-private val Grotesk = FontFamily(Font(R.font.space_grotesk, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))))
-private val Mono = FontFamily(Font(R.font.space_mono))
+private val Doto = DotMatrix.Doto
+private val Grotesk = DotMatrix.Grotesk
+private val Mono = DotMatrix.Mono
 private fun label(color: Color = Ink.mid) = TextStyle(fontFamily = Mono, fontSize = 12.sp, letterSpacing = .08.em, color = color)
 private fun grotesk(size: TextUnit, color: Color = Ink.ink) = TextStyle(fontFamily = Grotesk, fontSize = size, color = color, letterSpacing = (-.01).em)
 /** A dot not lit, and Nothing's red for live (the one interrupt). */
@@ -69,6 +65,7 @@ private val LIVE = Color(0xFFD71921)
 @Composable
 fun FrequencyCard() {
     val ctx = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     LaunchedEffect(Unit) { YourFrequency.load(ctx) }
     val d by YourFrequency.dials.collectAsState()
     val starting by YourFrequency.starting.collectAsState()
@@ -81,9 +78,14 @@ fun FrequencyCard() {
     var tuned by remember(d.tuned) { mutableFloatStateOf(d.tuned.toFloat()) }
     val cover = rememberCover(if (on) now?.song else null, 200)?.accent
     val newColour = cover ?: Ink.dim
-    fun let(t: Float) { YourFrequency.turn(ctx, d.copy(tuned = t.toDouble().coerceIn(0.0, 1.0))) }
+    fun let(t: Float) {
+        // let go at concert A: DOT MATRIX turns (the easter egg), the needle left where it is
+        if (DotMatrix.isA(FrequencyMix.hzOf(t.toDouble()))) { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); DotMatrix.set(ctx, !DotMatrix.on.value) }
+        YourFrequency.turn(ctx, d.copy(tuned = t.toDouble().coerceIn(0.0, 1.0)))
+    }
     val t = tuned.toDouble()
-    val (hz, unit) = FrequencyMix.hz(t)
+    // near concert A the readout settles on 440, a detent to find
+    val (hz, unit) = if (DotMatrix.isA(FrequencyMix.hzOf(t))) "440" to "Hz" else FrequencyMix.hz(t)
 
     Column(Modifier.padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 22.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

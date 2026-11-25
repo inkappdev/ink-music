@@ -543,7 +543,8 @@ internal fun Bars(moving: Boolean, colour: androidx.compose.ui.graphics.Color, m
     Row(modifier.height(30.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
         rest.forEachIndexed { i, r ->
             val h = if (!moving) r else 1 + ((kotlin.math.sin((beat * 2 + i * .37f) * kotlin.math.PI * 2).toFloat() + 1f) * 2.5f).toInt()
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) { repeat(h) { Box(Modifier.size(5.dp, 3.dp).background(colour)) } }
+            // round dots in DOT MATRIX, ink's pixels otherwise
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) { repeat(h) { Box(if (Hand.dots) Modifier.size(4.dp).background(colour, androidx.compose.foundation.shape.CircleShape) else Modifier.size(5.dp, 3.dp).background(colour)) } }
         }
     }
 }

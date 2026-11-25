@@ -43,8 +43,9 @@ object FrequencyMix {
      * The needle as a frequency (2026-11-25, Bronson: finer than five steps): 20 Hz at all yours to 20 kHz at all new,
      * on a log scale as hearing is, so every place on it reads as its own; its number and unit ("612", "Hz"; "1.4", "kHz").
      */
+    fun hzOf(t: Double) = 20 * kotlin.math.exp(t.coerceIn(0.0, 1.0) * kotlin.math.ln(1000.0))
     fun hz(t: Double): Pair<String, String> {
-        val f = 20 * kotlin.math.exp(t.coerceIn(0.0, 1.0) * kotlin.math.ln(1000.0))
+        val f = hzOf(t)
         return if (f < 1000) kotlin.math.round(f).toInt().toString() to "Hz"
             else (if (f < 10_000) (kotlin.math.round(f / 100) / 10.0).toString() else kotlin.math.round(f / 1000).toInt().toString()) to "kHz"
     }

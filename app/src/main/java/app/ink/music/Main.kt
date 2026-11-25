@@ -163,6 +163,8 @@ open class Main : ComponentActivity() {
         Places.start(this)
         lifecycle.addObserver(Sun(this))   // the dim words brighter in sunlight
         Moves.start(this)
+        // DOT MATRIX, if it's been turned on: the hand set before anything's drawn
+        DotMatrix.start(this)
         // a computer's QR code read by the camera: kept before anything, so even a Main closing itself below hands it on
         Computers.take(intent)
         // opened again (the home screen, the notification) over ink music's own screens: those stay

@@ -96,6 +96,12 @@ fun LookPage(pages: Pages) {
             }
             // the player over the status and navigation bars, more room for the lyrics (#11); a swipe from the edge brings them
             val full by PlayerRoom.full.collectAsState()
+            // DOT MATRIX, once found (FREQUENCY at 440 Hz): the whole app in a dot-matrix hand, or ink's
+            val dotFound by DotMatrix.found.collectAsState()
+            val dotOn by DotMatrix.on.collectAsState()
+            if (dotFound) SettingRow("TYPE", if (dotOn) "dot matrix" else "ink", opened, "you found it: the whole app in a dot-matrix hand, or ink's own") {
+                Pick(listOf("ink" to !dotOn, "dot matrix" to dotOn)) { DotMatrix.set(ctx, it == 1) }
+            }
             SettingRow("FULL SCREEN", if (full) "on" else "off", opened, "the player over the status and navigation bars; swipe from the edge for them") {
                 Pick(listOf("on" to full, "off" to !full)) { PlayerRoom.setFull(ctx, it == 0) }
             }

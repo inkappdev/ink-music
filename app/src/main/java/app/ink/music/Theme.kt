@@ -64,13 +64,23 @@ val Pixel = FontFamily(Font(R.font.silkscreen))
 
 private val tight = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both)
 
+/**
+ * Another hand for the two faces and the pixels (ink music's DOT MATRIX, an easter egg, 2026-11-25; ink itself never
+ * sets it): a face for headlines, one for the small words, and pixels drawn as round dots. Null and false: ink's own.
+ */
+object Hand {
+    @Volatile var headline: FontFamily? = null
+    @Volatile var small: FontFamily? = null
+    @Volatile var dots = false
+}
+
 fun headline(size: TextUnit, color: Color = Ink.ink) = TextStyle(
-    fontFamily = Archivo, fontSize = size, color = color,
+    fontFamily = Hand.headline ?: Archivo, fontSize = size, color = color,
     letterSpacing = (-0.02).em, lineHeight = 0.95.em, lineHeightStyle = tight,
 )
 
 fun pixel(size: TextUnit, color: Color = Ink.ink) = TextStyle(
-    fontFamily = Pixel, fontSize = readable(size), color = color, lineHeight = 1.4.em,
+    fontFamily = Hand.small ?: Pixel, fontSize = readable(size), color = color, lineHeight = 1.4.em,
 )
 
 /**
@@ -253,7 +263,8 @@ fun Sprite(rows: List<String>, color: Color, cell: Dp, modifier: Modifier = Modi
         rows.forEachIndexed { y, row ->
             row.forEachIndexed { x, ch ->
                 if (ch == '#' || ch == 'X') {
-                    drawRect(color, Offset(at(x), at(y)), Size(at(x + 1) - at(x), at(y + 1) - at(y)))
+                    if (Hand.dots) drawCircle(color, px * .45f, Offset((x + .5f) * px, (y + .5f) * px))
+                    else drawRect(color, Offset(at(x), at(y)), Size(at(x + 1) - at(x), at(y + 1) - at(y)))
                 }
             }
         }
