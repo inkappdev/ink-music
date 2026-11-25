@@ -42,6 +42,7 @@ object DotMatrix {
         on.value = file(c).exists()
         found.value = on.value || foundFile(c).exists()
         apply()
+        if (on.value) android.util.Log.i("ink-moving", "dot matrix: moving dots ${if (dotsBuild()) "build" else "won't build here"}")
     }
 
     private fun apply() {

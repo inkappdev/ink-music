@@ -271,6 +271,9 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
     }
     // the shaders are Android 13's: before it, as it is (and blur too: Android 12's own blur)
     val drawn = shape?.takeIf { Build.VERSION.SDK_INT >= 33 || (it == Look.BLUR && Build.VERSION.SDK_INT >= 31) }
+    // DOT MATRIX: a canvas or an artist's video (a cropped clip) in moving dots; the moving cover itself stays clear, as
+    // the album art does (Android 13's shaders; before it, as it is)
+    val dotted = Hand.dots && crop && Build.VERSION.SDK_INT >= 33
     val come by animateFloatAsState(if (shown) 1f else 0f, if (less) snap() else tween(if (drawn == Look.DITHER) 1_400 else 600), label = "come")
     val density = LocalDensity.current.density
     var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
@@ -286,6 +289,7 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
                 tv.setTransform(android.graphics.Matrix().apply { setScale(vw * k / size.width, vh * k / size.height, size.width / 2f, size.height / 2f) })
             }
             if (Build.VERSION.SDK_INT >= 31) tv.setRenderEffect(when {
+                dotted -> Shaders.dots(density, come)
                 drawn == Look.BLUR -> android.graphics.RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP)
                 drawn != null -> Shaders.effect(drawn, accent, density, come, size.width.toFloat())
                 else -> null
@@ -303,6 +307,9 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
  */
 /** The x-ray look as an effect for any picture (TUNER's clip as it tunes in), in `accent`; null before Android 13. */
 internal fun xrayEffect(accent: Color): RenderEffect? = Shaders.effect(Look.XRAY, accent, 1f, 1f, 0f)
+
+/** Whether DOT MATRIX's moving dots build on this phone (said once, as it's turned on). */
+internal fun dotsBuild(): Boolean = Build.VERSION.SDK_INT >= 33 && Shaders.dots(3f, 1f) != null
 
 private object Shaders {
     // the dither: cells 3 dp a side, each lit in the cover's colour or black by a 4 x 4 ordered (Bayer) threshold; the
@@ -353,6 +360,31 @@ private object Shaders {
             return half4(ink.rgb * v, 1.0);
         }
     """
+
+    // dots (DOT MATRIX's print, moving): cells about 7 dp, each a round dot in its centre's own colour (a dark one lifted
+    // a little), as wide as it's light, its edge softened a pixel; black between; `gain` of it shown, so it develops in
+    private const val DOTS = """
+        uniform shader content;
+        uniform float cell;
+        uniform float gain;
+        half4 main(float2 p) {
+            float2 c = floor(p / cell);
+            float2 o = (c + 0.5) * cell;
+            half4 s = content.eval(o);
+            if (s.a < 0.5) return half4(0.0);
+            float l = dot(float3(s.rgb), float3(0.3, 0.59, 0.11));
+            float3 col = l < 0.35 ? min(float3(s.rgb) * 1.35, float3(1.0)) : float3(s.rgb);
+            float r = cell * 0.48 * (0.18 + 0.82 * sqrt(l)) * gain;
+            float d = distance(p, o);
+            float k = 1.0 - smoothstep(r - 1.0, r, d);
+            return half4(col * k, 1.0);
+        }
+    """
+
+    /** The dots as an effect for a moving picture, cells about 7 dp; null before Android 13 (or if it won't build: said). */
+    fun dots(density: Float, gain: Float): RenderEffect? = if (Build.VERSION.SDK_INT < 33) null else runCatching {
+        RenderEffect.createRuntimeShaderEffect(RuntimeShader(DOTS).apply { setFloatUniform("cell", 7 * density); setFloatUniform("gain", gain) }, "content")
+    }.onFailure { android.util.Log.w("ink-moving", "dots shader: $it") }.getOrNull()
 
     fun effect(look: Look, accent: Color, density: Float, gain: Float, wide: Float): RenderEffect? = if (Build.VERSION.SDK_INT < 33) null else runCatching {
         val s = when (look) {
