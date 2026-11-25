@@ -118,8 +118,9 @@ object YouTube {
      */
     suspend fun read(record: TubeAlbum, each: ((List<Song>) -> Unit)? = null): List<Song> = withContext(Dispatchers.IO) {
         if (Local.on) return@withContext emptyList()
-        // as you when signed in (your own playlists are private)
-        val tube = TubeAccount.tube() ?: InnerTube()
+        // as you when signed in (your own playlists are private); a sign-in gone stale (YouTube answering as no one) read as
+        // a visitor, as signed out: a public list or record had read nothing (2026-11-25)
+        val tube = TubeAccount.tube()?.takeUnless { TubeAccount.stale.value } ?: InnerTube()
         val list = Regex("[?&]list=([^&]+)").find(record.url)?.groupValues?.get(1)
         // a mix ("RD...") goes on for ever, page after page of more like it: its first 50, as the phone reads it, its
         // queue where it has no page (2026-11-10: Discover Mix was read to the 40-page stop, 1,200 songs in 15 s)
