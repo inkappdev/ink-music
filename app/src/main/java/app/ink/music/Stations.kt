@@ -61,9 +61,10 @@ object Stations {
     /** NTS's mixtapes as songs: the station, its line where a city would be (their streams name nothing). */
     private fun songs(list: List<NtsMixtapes.Mixtape>): List<Pair<Song, String>> = list.map { m ->
         if (m.art.isNotEmpty()) ntsArt[m.id] = m.art
-        (known[m.id] ?: Song(
+        // NTS's own picture its cover (2026-11-24, Bronson: theirs in the player, not our sleeve; any other station keeps its sleeve)
+        (known[m.id]?.takeIf { it.art == m.art.ifEmpty { null } } ?: Song(
             id = m.id, uri = Uri.parse(m.stream), title = m.name, artist = m.said, album = "", albumId = m.id, albumArtist = m.name,
-            duration = 0, disc = 1, track = 0, year = 0, format = "radio", mime = "audio/mpeg",
+            duration = 0, disc = 1, track = 0, year = 0, format = "radio", mime = "audio/mpeg", art = m.art.ifEmpty { null },
         ).also { known[m.id] = it }) to m.said
     }
 

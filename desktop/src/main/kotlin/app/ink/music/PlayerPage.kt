@@ -174,7 +174,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
         // the page's (at 150 it sat over the record / lyrics / up next words)
         val tall = maxHeight > maxWidth * 1.1f && maxWidth < 1000.dp
         // the background (settings, the look): the cover across the whole window in its effect
-        if (!n.song.station && behind != Look.PLAIN) Backdrop(cover, behind, n.song, n.playing)
+        if (!sleeved(n.song) && behind != Look.PLAIN) Backdrop(cover, behind, n.song, n.playing)
         // the artist's name, big, along the foot: a way to their page too
         Marquee(said(n).second, n.playing && names, Modifier.align(Alignment.BottomStart).fillMaxWidth()
             .clickable(remember { MutableInteractionSource() }, indication = null) { show?.let(open) ?: artist?.let { open(Page.Artist(it)) } }, size = if (tall) 84.sp else 150.sp)
@@ -220,7 +220,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                         AnimatedContent(n.song, transitionSpec = { push(this, dir) }, contentKey = { it.id }, label = "push") { s ->
                             Box(Modifier.size(side + off)) {
                                 // its print beside it, while there's no background (the background takes its place)
-                                if (!s.station && behind == Look.PLAIN && CoverPrint.on.collectAsState().value != Print.CLEAR) Dithered(s, Modifier.offset(off, off).size(side), px = 1200)
+                                if (!sleeved(s) && behind == Look.PLAIN && CoverPrint.on.collectAsState().value != Print.CLEAR) Dithered(s, Modifier.offset(off, off).size(side), px = 1200)
                                 var menuAt by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
                                 Box(Modifier.size(side).clickable(remember { MutableInteractionSource() }, indication = null) { Player.toggle() }
                                     .rightClick { menuAt = it }) {
@@ -230,7 +230,7 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                         // a DJ set's frame blurred inside its square only: unclipped, the blur spread a
                                         // smear past the cover over the page and the name along the foot (2026-11-12, Bronson)
                                         clip = SetHeard.isSet(s)
-                                        renderEffect = (if (SetHeard.isSet(s)) Look.BLUR else coverLook)?.takeIf { !s.station }?.let { Effects.of(it, accent, density, 1f, size.width) }
+                                        renderEffect = (if (SetHeard.isSet(s)) Look.BLUR else coverLook)?.takeIf { !sleeved(s) }?.let { Effects.of(it, accent, density, 1f, size.width) }
                                     }, px = 1200, moving = n.playing && s.id == n.song.id)
                                     // the record's moving cover over it, where it has one (settings, the look)
                                     if (!s.station && !s.episode) MovingCover(s.albumArtist.ifBlank { s.artist.substringBefore(", ") }, s.album, s.title,
@@ -910,3 +910,7 @@ fun androidx.compose.foundation.layout.BoxScope.ColumnEdge(onBack: () -> Unit) {
 }
 
 
+
+
+/** A station drawn as its sleeve (no look, print or backdrop on it); one with its own picture (NTS's mixtapes) is drawn as a record. */
+private fun sleeved(s: Song) = s.station && s.art == null

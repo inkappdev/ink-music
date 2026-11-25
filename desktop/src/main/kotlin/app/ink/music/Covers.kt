@@ -225,7 +225,8 @@ object Covers {
     /** A server's or YouTube's cover, from the computer if it's been fetched before. */
     private fun remote(song: Song, px: Int): ByteArray? {
         val art = song.art ?: return null
-        if (!song.server && !song.tube && !song.episode) return null
+        // a station with its own picture (NTS's mixtapes) as YouTube's: a link
+        if (!song.server && !song.tube && !song.episode && !(song.station && art.startsWith("http"))) return null
         return fromDisk(art, px) ?: (if (song.server) Server.cover(art, px) else fetch(art, px))?.also { toDisk(art, px, it) }
     }
 
