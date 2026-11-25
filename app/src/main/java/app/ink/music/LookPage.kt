@@ -139,6 +139,7 @@ fun LookPage(pages: Pages) {
                     // each as it looks: its picture on black in a hairline square (lit when chosen), its word under it
                     androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(18.dp)) {
                         AppIcon.CHOICES.forEachIndexed { i, (word, _) ->
+                            if (i == AppIcon.DOTS && !DotMatrix.found.value) return@forEachIndexed
                             val on = icon == i
                             androidx.compose.foundation.layout.Column(Modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
                                 onClick = felt { icon = i; AppIcon.choose(ctx, i) })) {
@@ -173,7 +174,8 @@ fun LookPage(pages: Pages) {
         } else Column(Modifier.fillMaxSize().hazeSource(frost).padding(start = 20.dp, end = 20.dp, top = top + 14.dp)) {
             title()
             Spacer(Modifier.height(14.dp))
-            preview(Modifier.fillMaxWidth().height(tall * .38f))
+            // short (2026-11-25, Bronson: tall for no reason): the cover and what's behind it are all it needs to show
+            preview(Modifier.fillMaxWidth().height(tall * .24f))
             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 14.dp, bottom = LocalFoot.current + 40.dp)) {
                 sections()

@@ -10,9 +10,11 @@ import android.content.pm.PackageManager
  * screen's icon changes with it, as a launcher allows: some take a moment, some put it back where it was).
  */
 object AppIcon {
-    val CHOICES = listOf("words" to ".Main", "drop" to ".MainDrop", "dithered" to ".MainDither")
+    val CHOICES = listOf("words" to ".Main", "drop" to ".MainDrop", "dithered" to ".MainDither", "dots" to ".MainDots")
     /** Each one's picture, for its preview in settings (the icons' foregrounds). */
-    val PICTURES = listOf(R.drawable.icon_word, R.drawable.icon_drop, R.drawable.icon_dither)
+    val PICTURES = listOf(R.drawable.icon_word, R.drawable.icon_drop, R.drawable.icon_dither, R.drawable.icon_dots)
+    /** The dots, DOT MATRIX's: offered once it's been found. */
+    const val DOTS = 3
 
     private fun component(c: Context, alias: String) = ComponentName(c.packageName, "app.ink.music" + alias)
 

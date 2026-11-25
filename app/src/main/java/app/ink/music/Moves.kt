@@ -13,7 +13,8 @@ import java.io.File
  * default): less when Android's own animations are off, or the phone is a small one (little memory).
  */
 object Moves {
-    const val AUTO = "as the phone says"; const val FULL = "full"; const val LESS = "less"
+    // "auto" was "as the phone says" till 2026-11-25 (Bronson: too wordy); never kept, so free to change
+    const val AUTO = "auto"; const val FULL = "full"; const val LESS = "less"
 
     private val _less = MutableStateFlow(false)
     /** Whether ink music moves less, now. */

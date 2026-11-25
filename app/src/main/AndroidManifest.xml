@@ -104,6 +104,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+        <activity-alias
+            android:name=".MainDots"
+            android:targetActivity=".Home"
+            android:icon="@mipmap/icon_dots"
+            android:roundIcon="@mipmap/icon_dots"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".UsbAttach"
             android:exported="true"

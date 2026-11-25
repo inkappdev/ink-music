@@ -75,28 +75,35 @@ object StationSleeve {
      * name's strip starts: it's left black, the rings starting just above it.
      */
     fun rings(id: String, cells: Int, clear: Float, frame: Int = 0): Bitmap {
+        val dot = colorOf(id)
+        val v = levels(id, cells, clear, frame)
+        val out = IntArray(cells * cells) { k -> val j = k / cells; val i = k % cells
+            if (v[k] > (BAYER[(j and 3) * 4 + (i and 3)] + .5f) / 16) dot else 0xFF000000.toInt() }
+        return Bitmap.createBitmap(out, cells, cells, Bitmap.Config.ARGB_8888)
+    }
+
+    /** How lit each of `cells` x `cells` is (0 to about 1.25): the rings, before the dither (DOT MATRIX draws them as dots). */
+    fun levels(id: String, cells: Int, clear: Float, frame: Int = 0): FloatArray {
         val s = id.hashCode()
         fun r(k: Int) = ((s ushr (k * 4)) and 15) / 15f
         val ox = .09f + .08f * r(0)
         val oy = clear - .02f
         val lambda = .085f + .035f * r(1)
         val phase = frame.toFloat() / FRAMES
-        val dot = colorOf(id)
-        val out = IntArray(cells * cells)
+        val out = FloatArray(cells * cells)
         for (j in 0 until cells) {
             val y = (j + .5f) / cells
             val open = 1 - smooth(clear - .1f, clear, y)
-            if (open <= 0f) { out.fill(0xFF000000.toInt(), j * cells, (j + 1) * cells); continue }
+            if (open <= 0f) continue
             for (i in 0 until cells) {
                 val x = (i + .5f) / cells
                 val d = hypot(x - ox, y - oy)
                 val band = (.5f + .5f * cos(2 * PI * (d / lambda - phase)).toFloat()).pow(1.6f)
                 val fall = (1 - d / 1.15f).coerceAtLeast(0f).pow(.8f)
-                val v = band * fall * open * smooth(.03f, .09f, d) * 1.25f
-                out[j * cells + i] = if (v > (BAYER[(j and 3) * 4 + (i and 3)] + .5f) / 16) dot else 0xFF000000.toInt()
+                out[j * cells + i] = band * fall * open * smooth(.03f, .09f, d) * 1.25f
             }
         }
-        return Bitmap.createBitmap(out, cells, cells, Bitmap.Config.ARGB_8888)
+        return out
     }
 
     private fun smooth(a: Float, b: Float, x: Float): Float { val t = ((x - a) / (b - a)).coerceIn(0f, 1f); return t * t * (3 - 2 * t) }
@@ -135,19 +142,22 @@ fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean =
         val density = LocalDensity.current.density
         val side = (sidePx / density).dp
         val px = sidePx.toFloat()
-        val frames by produceState<List<ImageBitmap>?>(null, station.id, px, moving) {
-            val n = StationSleeve.cells(px, density)
-            value = withContext(Dispatchers.Default) {
-                (0 until if (moving) StationSleeve.FRAMES else 1).map { StationSleeve.rings(station.id, n, .96f, it).asImageBitmap() }
+        // DOT MATRIX: the rings as a halftone of round dots in the station's colour, travelling as they do
+        if (Hand.dots) DotRings(station, px, density, moving) else {
+            val frames by produceState<List<ImageBitmap>?>(null, station.id, px, moving) {
+                val n = StationSleeve.cells(px, density)
+                value = withContext(Dispatchers.Default) {
+                    (0 until if (moving) StationSleeve.FRAMES else 1).map { StationSleeve.rings(station.id, n, .96f, it).asImageBitmap() }
+                }
             }
-        }
-        var frame by remember { mutableIntStateOf(0) }
-        LaunchedEffect(moving, frames) {
-            val count = frames?.size ?: return@LaunchedEffect
-            while (moving && count > 1) { delay(220); frame = (frame + 1) % count }
-        }
-        frames?.let { f ->
-            Image(f[frame % f.size], null, Modifier.fillMaxSize().padding(1.dp), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
+            var frame by remember { mutableIntStateOf(0) }
+            LaunchedEffect(moving, frames) {
+                val count = frames?.size ?: return@LaunchedEffect
+                while (moving && count > 1) { delay(220); frame = (frame + 1) % count }
+            }
+            frames?.let { f ->
+                Image(f[frame % f.size], null, Modifier.fillMaxSize().padding(1.dp), contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.None)
+            }
         }
         Box(Modifier.fillMaxSize().padding(start = 1.dp, bottom = side / 12), contentAlignment = Alignment.BottomStart) {
             // as big as the sleeve allows, but its longest word whole on a line (CASHMERE broke as CASHME / RE)
@@ -158,6 +168,32 @@ fun StationCover(station: Song, modifier: Modifier = Modifier, moving: Boolean =
                 maxLines = 3, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.background(Ink.black).padding(start = side / 14, end = side / 20, top = side / 40),
             )
+        }
+    }
+}
+
+/** The sleeve's rings in DOT MATRIX: about 6 dp apart, each dot as wide as its ring is lit there, the station's own colour. */
+@Composable
+private fun DotRings(station: Song, px: Float, density: Float, moving: Boolean) {
+    val n = (px / (6 * density)).roundToInt().coerceIn(18, 72)
+    val frames by produceState<List<FloatArray>?>(null, station.id, n, moving) {
+        value = withContext(Dispatchers.Default) { (0 until if (moving) StationSleeve.FRAMES else 1).map { StationSleeve.levels(station.id, n, .96f, it) } }
+    }
+    var frame by remember { mutableIntStateOf(0) }
+    LaunchedEffect(moving, frames) {
+        val count = frames?.size ?: return@LaunchedEffect
+        while (moving && count > 1) { delay(220); frame = (frame + 1) % count }
+    }
+    val colour = androidx.compose.ui.graphics.Color(StationSleeve.colorOf(station.id))
+    frames?.let { f ->
+        val v = f[frame % f.size]
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(1.dp)) {
+            val step = size.width / n
+            for (j in 0 until n) for (i in 0 until n) {
+                val l = v[j * n + i].coerceAtMost(1f)
+                if (l < .06f) continue
+                drawCircle(colour, step * .48f * kotlin.math.sqrt(l), androidx.compose.ui.geometry.Offset((i + .5f) * step, (j + .5f) * step))
+            }
         }
     }
 }
