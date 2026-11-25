@@ -130,6 +130,8 @@ object Pipe {
 
         override fun execute(request: Request): Response {
             if (lean.get() == true && request.url().contains("/youtubei/v1/next")) return Response(200, "OK", emptyMap(), EMPTY, request.url())
+            // just your music (the phone's): YouTube never asked
+            if (HeldBack.held(request.url())) throw java.io.IOException("held back")
             val c = URL(request.url()).openConnection() as HttpURLConnection
             c.requestMethod = request.httpMethod()
             c.connectTimeout = 15_000; c.readTimeout = 20_000

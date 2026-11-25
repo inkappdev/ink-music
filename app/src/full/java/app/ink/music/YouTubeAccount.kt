@@ -37,7 +37,8 @@ import javax.crypto.spec.GCMParameterSpec
  * Signing out forgets the cookies and the WebView's data.
  */
 object YouTubeAccount {
-    const val available = true
+    /** The full build's; not with just your music (JustYours). */
+    val available get() = !JustYours.on
     private val _who = MutableStateFlow<TubeWho?>(null)
     val who: StateFlow<TubeWho?> = _who
     val playlists = MutableStateFlow<List<TubeList>>(emptyList())
@@ -111,6 +112,8 @@ object YouTubeAccount {
         InnerTube.trace = { android.util.Log.d("ink-youtube", it) }
         app = c.applicationContext
         dir = java.io.File(c.filesDir, "youtube")
+        // just your music: your youtube library neither shown nor read again
+        if (JustYours.on) return
         if (tube != null) return
         val p = prefs(c)
         val auth = p.getString("auth", null)?.let { runCatching { JSONObject(open(it)) }.getOrNull() } ?: return

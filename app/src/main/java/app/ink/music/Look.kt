@@ -182,8 +182,38 @@ object Marquees {
     private val _on = MutableStateFlow(true)
     val on: StateFlow<Boolean> = _on
     private fun prefs(c: Context) = c.getSharedPreferences("look", Context.MODE_PRIVATE)
-    fun start(c: Context) { _on.value = prefs(c).getBoolean("marquee", true) }
+    fun start(c: Context) { _on.value = prefs(c).getBoolean("marquee", true); PlayerRoom.start(c) }
     fun set(c: Context, on: Boolean) { _on.value = on; prefs(c).edit().putBoolean("marquee", on).apply() }
+}
+
+/**
+ * Room on the player (#11, 2026-11-24, a listener wanting more of it for the lyrics; settings, the look): the player over
+ * the status and navigation bars (off at first; clear of the cutout still), the lyrics' size and the giant name's (as
+ * they were at first: lyrics medium, the name large). Read with the marquee's choice (Marquees.start).
+ */
+object PlayerRoom {
+    const val SMALL = "small"; const val MEDIUM = "medium"; const val LARGE = "large"
+    val SIZES = listOf(SMALL, MEDIUM, LARGE)
+    private val _full = MutableStateFlow(false)
+    val full: StateFlow<Boolean> = _full
+    private val _lyrics = MutableStateFlow(MEDIUM)
+    val lyrics: StateFlow<String> = _lyrics
+    private val _name = MutableStateFlow(LARGE)
+    val name: StateFlow<String> = _name
+    private fun prefs(c: Context) = c.getSharedPreferences("look", Context.MODE_PRIVATE)
+    fun start(c: Context) {
+        val p = prefs(c)
+        _full.value = p.getBoolean("player-full", false)
+        _lyrics.value = p.getString("lyrics-size", null)?.takeIf { it in SIZES } ?: MEDIUM
+        _name.value = p.getString("name-size", null)?.takeIf { it in SIZES } ?: LARGE
+    }
+    fun setFull(c: Context, on: Boolean) { _full.value = on; prefs(c).edit().putBoolean("player-full", on).apply() }
+    fun setLyrics(c: Context, size: String) { _lyrics.value = size; prefs(c).edit().putString("lyrics-size", size).apply() }
+    fun setName(c: Context, size: String) { _name.value = size; prefs(c).edit().putString("name-size", size).apply() }
+    /** The lyrics' sizes over the first (medium). */
+    fun lyricsScale(size: String) = when (size) { SMALL -> .8f; LARGE -> 1.25f; else -> 1f }
+    /** The giant name's sizes over the first (large). */
+    fun nameScale(size: String) = when (size) { SMALL -> .5f; MEDIUM -> .75f; else -> 1f }
 }
 
 /**

@@ -431,6 +431,8 @@ object Playback {
     // on a speaker the queue there is fixed for now (it holds its own): moving and removing are the phone's
     fun move(from: Int, to: Int) { if (casting) return; controller?.run { if (from in 0 until mediaItemCount && to in 0 until mediaItemCount) moveMediaItem(from, to) } }
     fun remove(index: Int) { if (casting) return; controller?.run { if (index in 0 until mediaItemCount) removeMediaItem(index) } }
+    /** Whether the queue is a speaker's just now (up next can't take one out there). */
+    val onSpeaker get() = casting
 
     /** After the song playing (nothing playing: it plays). */
     fun playNext(s: Song) {

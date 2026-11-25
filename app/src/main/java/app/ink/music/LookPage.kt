@@ -88,8 +88,16 @@ fun LookPage(pages: Pages) {
             }
             // the giant names running across: moving, or still where they are
             val marquee by Marquees.on.collectAsState()
-            SettingRow("THE NAME", if (marquee) "moving" else "still", opened, "the artist's name along the player's foot") {
+            val nameSize by PlayerRoom.name.collectAsState()
+            SettingRow("THE NAME", "${if (marquee) "moving" else "still"} · $nameSize", opened, "the artist's name along the player's foot") {
                 Pick(listOf("moving" to marquee, "still" to !marquee)) { Marquees.set(ctx, it == 0) }
+                PickLabel("its size")
+                Pick(PlayerRoom.SIZES.map { it to (it == nameSize) }) { PlayerRoom.setName(ctx, PlayerRoom.SIZES[it]) }
+            }
+            // the player over the status and navigation bars, more room for the lyrics (#11); a swipe from the edge brings them
+            val full by PlayerRoom.full.collectAsState()
+            SettingRow("FULL SCREEN", if (full) "on" else "off", opened, "the player over the status and navigation bars; swipe from the edge for them") {
+                Pick(listOf("on" to full, "off" to !full)) { PlayerRoom.setFull(ctx, it == 0) }
             }
             // how mixes and lists are drawn from their covers
             val print by CoverPrint.on.collectAsState()
@@ -118,6 +126,11 @@ fun LookPage(pages: Pages) {
             SettingRow("UNDER THE LYRICS", under, opened, "for a song in another language: its english, or how it sounds, under each line") {
                 val all = listOf(Lyrics.UNDER_NOTHING, Lyrics.UNDER_ENGLISH, Lyrics.UNDER_SOUND)
                 Pick(all.map { it to (it == under) }) { Lyrics.under(ctx, all[it]) }
+            }
+            // how big the sung lines are (#11)
+            val lyricsSize by PlayerRoom.lyrics.collectAsState()
+            SettingRow("LYRICS", lyricsSize, opened, "how big the lines are; a tap on them folds the controls away") {
+                Pick(PlayerRoom.SIZES.map { it to (it == lyricsSize) }) { PlayerRoom.setLyrics(ctx, PlayerRoom.SIZES[it]) }
             }
             // the hi-res moment: a lossless song's format typed across the cover as it starts (here since 2026-11-11, out of sound)
             val moment by Moments.on.collectAsState()

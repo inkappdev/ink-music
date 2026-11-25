@@ -53,7 +53,8 @@ object Weekly {
     private const val GITHUB = "https://raw.githubusercontent.com/inkappdev/ink-music/main/weekly.json"
 
     fun load(c: Context) {
-        if (loaded) return
+        // just your music: ink weekly not read
+        if (loaded || JustYours.on) return
         loaded = true
         scope.launch {
             val f = File(c.filesDir, "weekly.json")

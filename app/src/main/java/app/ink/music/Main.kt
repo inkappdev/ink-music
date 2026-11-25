@@ -158,6 +158,9 @@ class Home : Main()
 open class Main : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // just your music, read before anything goes online; the places shown
+        JustYours.start(this)
+        Places.start(this)
         lifecycle.addObserver(Sun(this))   // the dim words brighter in sunlight
         Moves.start(this)
         // a computer's QR code read by the camera: kept before anything, so even a Main closing itself below hands it on
@@ -191,6 +194,8 @@ open class Main : ComponentActivity() {
         KeepLoved.start(this)
         KeepMost.start(this)
         SongsFrom.start(this)
+        MyLists.start(this)
+        TubeInLibrary.start(this)
         // INK's whole lists through a Spotify sign-in; the curator's phone given its key by adb (CuratorLists)
         CuratorLists.start(this)
         intent?.getStringExtra("curatorKey")?.let { CuratorLists.setKey(this, it) }
@@ -304,6 +309,8 @@ sealed interface Page {
     data object Find : Page
     data object Settings : Page
     data class Playlist(val id: String, val name: String) : Page
+    /** One of your own playlists, kept on the phone ([MyLists]). */
+    data class Mine(val id: String) : Page
     data class Tube(val album: TubeAlbum) : Page
     data class AddTo(val song: Song) : Page
     /** Several songs picked (Picking), into a playlist. */
@@ -377,7 +384,7 @@ class Pages {
 
 /** A page of browsing: one music leads to another from (an artist, a record, a playlist, YouTube's). */
 private fun Page.browsing() = this is Page.Artist || this is Page.TubeArtist || this is Page.Record || this is Page.Tube ||
-    this is Page.Playlist || this is Page.TubeList
+    this is Page.Playlist || this is Page.TubeList || this is Page.Mine
 
 @Composable
 private fun App() {
@@ -397,6 +404,9 @@ private fun App() {
     // what plays on another device, opened from its bar ([RemotePlayerPage])
     var remoteUp by remember { mutableStateOf(false) }
     BackHandler(playerUp) { playerUp = false }
+    // a page asked for from inside the player (up next's record and artist): the player down, the page up
+    val asked by Opening.asked.collectAsState()
+    LaunchedEffect(asked) { asked?.let { playerUp = false; pages.open(it); Opening.asked.value = null } }
     // a TV: a song, a record, a mix begun from the sofa brings the player up (as ink tv shows what starts playing)
     if (onTv()) LaunchedEffect(Unit) {
         var seen = Playback.begun.value
@@ -490,6 +500,7 @@ private fun App() {
                         // a TV's settings: one short page (TvSettingsPage)
                         Page.Settings -> if (onTv()) TvSettingsPage(pages) else SettingsPage(pages)
                         is Page.Playlist -> PlaylistPage(p.id, p.name, pages)
+                        is Page.Mine -> MinePage(p.id, pages)
                         is Page.Tube -> TubeAlbumPage(p.album, pages)
                         is Page.AddTo -> AddToPage(p.song, pages)
                         is Page.AddToMany -> AddToList(p.songs, onDone = { pages.back(); Picking.clear() }, onClose = { pages.close() })
@@ -580,9 +591,14 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // own music too, so they have songs (2026-11-17)
     // INK: ink weekly, ink radio and everything people picked, one place (explore till 2026-10-29)
     val uploaded by YouTubeAccount.uploads.collectAsState()
-    val tabs = if (songs.isNotEmpty()) listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
+    val every = if (songs.isNotEmpty()) listOf("listen", "ink", "albums", "artists", "songs", "radio", "podcasts", "lists")
         else if (uploaded.isNotEmpty()) listOf("listen", "ink", "songs", "radio", "podcasts", "lists")
         else listOf("listen", "ink", "radio", "podcasts", "lists")
+    // the places hidden in settings left out (Places); listen back first if none of yours would be left (nothing read yet)
+    val hiddenPlaces by Places.hidden.collectAsState()
+    val tabs = remember(every, hiddenPlaces) {
+        every.filter { it !in hiddenPlaces }.let { t -> if (t.none { it in setOf("listen", "albums", "artists", "songs") }) listOf("listen") + t else t }
+    }
     val pager = rememberPagerState(tabs.indexOf(tab).coerceAtLeast(0)) { tabs.size }
     // the places' menu, dropped down from the place's word
     var menu by remember { mutableStateOf(false) }
@@ -655,6 +671,13 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
     // where the records come from (this phone, your server, kept offline), as the songs tab's
     val keptNow by Offline.kept.collectAsState()
     val recordsFrom by SongsFrom.records.collectAsState()
+    // your records saved on YouTube Music, after your own once asked for (TubeInLibrary; #4), those you have left out
+    val tubeIn by TubeInLibrary.on.collectAsState()
+    val tubeSaved by YouTubeAccount.records.collectAsState()
+    val tubeRecords = remember(tubeIn, tubeSaved, albums, recordsFrom) {
+        if (!tubeIn || recordsFrom !in listOf("all", "youtube")) emptyList()
+        else tubeSaved.filter { t -> albums.none { plainName(it.title) == plainName(t.title) } }
+    }
     val recordCounts = remember(albums, keptNow) {
         albums.filter { it.songs.isNotEmpty() }.groupingBy { SongsFrom.of(it.songs.first()) }.eachCount() +
             (albums.count { a -> a.songs.any { it.id in keptNow } }.takeIf { it > 0 }?.let { mapOf("kept" to it) } ?: emptyMap())
@@ -785,6 +808,12 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                         at = end
                     }
                 } else items(records, key = { it.id }) { a -> RecordTile(a, Modifier.fillMaxWidth()) { pages.open(Page.Record(a.id)) } }
+                if (tubeRecords.isNotEmpty()) {
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "tubeHead") {
+                        BasicText("saved on youtube music", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 6.dp))
+                    }
+                    items(tubeRecords, key = { "t" + it.url }) { t -> TubeTile(t, Modifier.fillMaxWidth()) { pages.open(Page.Tube(t)) } }
+                }
                 // the records you've hidden: a dim word at the foot, then them, dim, once asked for (#1)
                 val hiddenRecords = hiddenAlbums
                 if (hiddenRecords.isNotEmpty()) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "hidden") {
@@ -842,6 +871,8 @@ private fun LibraryPage(pages: Pages, backHome: Boolean = false, onPlayer: () ->
                         if (keptIds.isNotEmpty()) ListRow("kept on this phone", "${keptIds.size} ${if (keptIds.size == 1) "song" else "songs"}, offline") { pages.open(Page.Kept) }
                         val fromSets by FromSets.songs.collectAsState()
                         if (fromSets.isNotEmpty()) ListRow("from dj sets", "${fromSets.size} ${if (fromSets.size == 1) "song" else "songs"}, heard in the sets you played") { pages.open(Page.FromSets) }
+                        // your own playlists, kept on the phone (MyLists), and a new one
+                        MineRows(pages)
                         // lists that fill themselves from rules (SmartLists), and a new one
                         SmartRows(pages)
                         Spacer(Modifier.height(10.dp))
@@ -1107,10 +1138,23 @@ fun UnderCover(title: String, said: String, saidStyle: TextStyle, gap: Dp = 0.dp
 
 @Composable
 fun RecordTile(a: Album, modifier: Modifier, said: String = a.artist, onClick: () -> Unit) {
-    Column(modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+    // held, the whole record into the queue in its order (#4): play next, add to queue under the cover in place of its
+    // name, a word the moment after; a tap, or five seconds, puts the name back
+    var held by remember(a.id) { mutableStateOf(false) }
+    var done by remember(a.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(held, done) { if (done != null) { delay(1_400); done = null; held = false } else if (held) { delay(5_000); held = false } }
+    val haptic = LocalHapticFeedback.current
+    val tap = felt(then = onClick)
+    Column(modifier.combinedClickable(remember { MutableInteractionSource() }, indication = null, hapticFeedbackEnabled = false,
+        onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); held = !held },
+        onClick = { if (held) held = false else tap() })) {
         CoverOf(a.songs.first(), a.title, Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
-        UnderCover(a.title, said, pixel(12.sp, Ink.mid), gap = 3.dp)
+        if (!held) UnderCover(a.title, said, pixel(12.sp, Ink.mid), gap = 3.dp)
+        else done?.let { BasicText(it, style = pixel(12.sp), modifier = Modifier.padding(vertical = 6.dp)) } ?: Column {
+            Word("play next", pixel(13.sp), touch = 6.dp) { Whole.next(a.songs); done = "playing next" }
+            Word("add to queue", pixel(13.sp), Modifier.padding(top = 4.dp), touch = 6.dp) { Whole.queue(a.songs); done = "queued" }
+        }
     }
 }
 
@@ -1202,8 +1246,8 @@ internal fun SongRow(s: Song, number: String? = null, pages: Pages? = null, onRe
             val lovedIds by Loved.ids.collectAsState()
             Word(if (s.id in lovedIds) "unlove" else "love", pixel(13.sp), touch = 8.dp) { open = false; Loved.toggle(s) }
             val account by Server.account.collectAsState()
-            val tubeWho by YouTubeAccount.who.collectAsState()
-            if (pages != null && ((account != null && Server.idOf(s) != null) || (tubeWho != null && !s.station && !s.episode)))
+            // any song: your own playlists on the phone take every kind (MyLists)
+            if (pages != null && MyLists.fits(s))
                 Word("add to playlist", pixel(13.sp), touch = 8.dp) { open = false; pages.open(Page.AddTo(s)) }
             val sonic by Server.sonic.collectAsState()
             if (pages != null && sonic && account != null && Server.idOf(s) != null)
@@ -1301,6 +1345,8 @@ private fun RecordPage(id: String, pages: Pages, tube: TubeAlbum? = null) {
                 Word("shuffle", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 8.dp) { Playback.play(whole.shuffled(), 0) }
                 KeepOffline(a.songs)
             }
+            // the whole record into the queue, in its order, or into a playlist (#4)
+            WholeWords(whole, pages)
             // out of ink music, the files untouched (#1); a hidden one's page says so and brings it back
             val ctx = LocalContext.current
             Word(if (off) "hidden: show it again" else "hide", pixel(12.sp, Ink.mid), Modifier.padding(top = 10.dp), touch = 8.dp) {
@@ -1403,7 +1449,7 @@ private fun Heartbeat(content: @Composable () -> Unit) {
 
 /** A row in "lists": its name big, a word on it small; `heart` sets ink's red pixel heart before the name (loved). */
 @Composable
-private fun ListRow(name: String, said: String, heart: Boolean = false, onClick: () -> Unit) {
+internal fun ListRow(name: String, said: String, heart: Boolean = false, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick)).padding(vertical = 9.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (heart) { Sprite(HEART, HeartRed, 3.dp); Spacer(Modifier.width(10.dp)) }
@@ -2593,7 +2639,8 @@ private fun FindPage(query: String, onQuery: (String) -> Unit, pages: Pages) {
     }
     // radio's stations by that name (ink radio's own first)
     val stations by androidx.compose.runtime.produceState(emptyList<Song>(), ask) {
-        value = ask?.let { Stations.search(ctx, it.first) }.orEmpty()
+        // (just your music: your library and server only)
+        value = if (JustYours.on) emptyList() else ask?.let { Stations.search(ctx, it.first) }.orEmpty()
     }
     // youtube.com's own videos (the full build): songs never put on YouTube Music, apart from its songs; none it already gave
     // (none, set to songs only: SongsOnly)
@@ -2858,6 +2905,8 @@ private fun TubeAlbumPage(a: TubeAlbum, pages: Pages) {
             }
             // kept on the phone: its own line under the row (as the computer's: beside the rest it was cut short)
             if (!all.isNullOrEmpty()) Box(Modifier.padding(top = 10.dp)) { KeepOffline(all) }
+            // the whole of it into the queue, in its order, or into a playlist (#4)
+            if (!all.isNullOrEmpty()) WholeWords(all, pages)
             // the mix as it's found: its tempo beating, the songs dropping in
             if (a.playlist) MixProgress(a.title)
             // what critics said of it (a record's, not a playlist's)
@@ -2934,17 +2983,14 @@ private fun TubeListPage(pl: TubeList, pages: Pages) {
 @Composable
 private fun AddToPage(s: Song, pages: Pages) = AddToList(s, onDone = { pages.back() }, onClose = { pages.close() })
 
-/** Whether a song can go into one of your playlists: the server has it, or you're signed in to YouTube Music. */
+/** Whether a song can go into one of your playlists: any song can, into your own on the phone (MyLists). */
 @Composable
-fun canAddToList(s: Song?): Boolean {
-    val account by Server.account.collectAsState()
-    val who by YouTubeAccount.who.collectAsState()
-    return s != null && ((account != null && Server.idOf(s) != null) || (who != null && !s.station && !s.episode))
-}
+fun canAddToList(s: Song?): Boolean = s != null && MyLists.fits(s)
 
 /**
  * The playlists a song can go into, as a page over what's below (the held song's, or the player's): a new one, or one
- * of yours on your server or YouTube Music; `onDone` with the list's name once it's in.
+ * of yours on this phone (the latest added to first: one tap), your server or YouTube Music; `onDone` with the list's
+ * name once it's in.
  */
 @Composable
 fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) = AddToList(listOf(s), onDone, onClose)
@@ -2961,6 +3007,10 @@ fun AddToList(songs: List<Song>, onDone: (String) -> Unit, onClose: () -> Unit) 
     val mine = remember(lists, server) { if (server) lists.filter { it.mine } else emptyList() }
     val who by YouTubeAccount.who.collectAsState()
     val tubeLists by YouTubeAccount.playlists.collectAsState()
+    // yours on the phone: any song goes in (MyLists), the one last added to first
+    val onPhone = songs.filter(MyLists::fits)
+    val hereAll by MyLists.all.collectAsState()
+    val here = remember(hereAll) { ListsFile.latest(hereAll) }
     val scope = rememberCoroutineScope()
     var failed by remember { mutableStateOf(false) }
     // your server's lists as they are now (one made in another app since)
@@ -2977,9 +3027,27 @@ fun AddToList(songs: List<Song>, onDone: (String) -> Unit, onClose: () -> Unit) 
             BasicText(if (songs.size == 1) s.title.lowercase() else "${songs.size} songs", style = pixel(12.sp, Ink.mid), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(18.dp))
             if (failed) BasicText("that didn't take", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 8.dp))
+            if (onPhone.isNotEmpty()) {
+                if (server || who != null) Label("on this ${Device.word}")
+                // the keyboard up at once only when there's no list anywhere to tap
+                NewPlaylist(s, focused = here.isEmpty() && !server && who == null, make = { MyLists.make(it, onPhone); true }) { onDone("a new playlist") }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+        if (onPhone.isNotEmpty()) items(here, key = { "h" + it.id }) { pl ->
+            Column(Modifier.fillMaxWidth().clickable(remember { MutableInteractionSource() }, indication = null,
+                onClick = felt { MyLists.add(pl.id, onPhone); onDone(pl.name) }).padding(vertical = 9.dp)) {
+                BasicText(pl.name.uppercase(), style = headline(22.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val n = pl.songs.size
+                val had = onPhone.count { s -> pl.songs.any { it.id == s.id } }
+                BasicText("$n ${if (n == 1) "song" else "songs"}" + if (had == onPhone.size) "   in it already" else "", style = pixel(12.sp, Ink.mid))
+            }
+        }
+        item {
             if (server) {
-                if (who != null) Label("on your server")
-                NewPlaylist(s, focused = mine.isEmpty() && who == null, make = { Server.makePlaylist(it, onServer) }) { ok -> if (ok) onDone("a new playlist") else failed = true }
+                Spacer(Modifier.height(14.dp))
+                Label("on your server")
+                NewPlaylist(s, make = { Server.makePlaylist(it, onServer) }) { ok -> if (ok) onDone("a new playlist") else failed = true }
                 if (mine.isEmpty()) BasicText("no playlists of yours on your server yet: new > makes one, named as you type", style = pixel(12.sp, Ink.mid),
                     modifier = Modifier.padding(top = 6.dp))
                 Spacer(Modifier.height(14.dp))
@@ -2997,7 +3065,7 @@ fun AddToList(songs: List<Song>, onDone: (String) -> Unit, onClose: () -> Unit) 
             item {
                 Spacer(Modifier.height(10.dp))
                 Label("on youtube music")
-                NewPlaylist(s, focused = !server, make = { if (onTube.size == 1) YouTubeAccount.makePlaylist(it, s) else YouTubeAccount.makePlaylistOf(it, onTube) != null }) { ok -> if (ok) onDone("a new playlist") else failed = true }
+                NewPlaylist(s, make = { if (onTube.size == 1) YouTubeAccount.makePlaylist(it, s) else YouTubeAccount.makePlaylistOf(it, onTube) != null }) { ok -> if (ok) onDone("a new playlist") else failed = true }
                 Spacer(Modifier.height(14.dp))
             }
             items(tubeLists, key = { "y" + it.id }) { pl ->
@@ -3108,7 +3176,7 @@ private fun PathPage(from: Song, pages: Pages) {
 
 /** "new >" and a name: go makes the playlist on the server (with `song` in it, if there's one). */
 @Composable
-private fun NewPlaylist(song: Song?, focused: Boolean = false, make: suspend (String) -> Boolean = { Server.makePlaylist(it, listOfNotNull(song)) }, onMade: (Boolean) -> Unit) {
+internal fun NewPlaylist(song: Song?, focused: Boolean = false, make: suspend (String) -> Boolean = { Server.makePlaylist(it, listOfNotNull(song)) }, onMade: (Boolean) -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
@@ -3379,7 +3447,7 @@ private const val STOP_MS = 280
 
 /** A list's word for covers beside its songs, lit when on (one choice for every list: [ListCovers]). */
 @Composable
-private fun CoversWord(modifier: Modifier = Modifier) {
+internal fun CoversWord(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val on by ListCovers.on.collectAsState()
     Word("covers", pixel(14.sp, if (on) Ink.ink else Ink.dim), modifier, touch = 8.dp) { ListCovers.set(ctx, !on) }
@@ -3445,7 +3513,7 @@ private fun ListsView() {
 
 /** A list as a tile: its art square, its name and what it holds under it. */
 @Composable
-private fun ListTile(name: String, said: String, onClick: () -> Unit, heart: Boolean = false, art: @Composable () -> Unit) {
+internal fun ListTile(name: String, said: String, onClick: () -> Unit, heart: Boolean = false, art: @Composable () -> Unit) {
     Column(Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(Ink.black)) {
             art()
@@ -3459,7 +3527,7 @@ private fun ListTile(name: String, said: String, onClick: () -> Unit, heart: Boo
 
 /** A list's art from its songs: four of its records' covers, two by two; fewer records, the first; none, its name. */
 @Composable
-private fun Mosaic(songs: List<Song>, name: String) {
+internal fun Mosaic(songs: List<Song>, name: String) {
     val four = remember(songs) { songs.distinctBy { it.albumId }.take(4) }
     when {
         four.size == 4 -> Column(Modifier.fillMaxSize()) {
@@ -3484,6 +3552,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
     val tubeWho by YouTubeAccount.who.collectAsState()
     val keptIds by Offline.kept.collectAsState()
     val lists by Server.playlists.collectAsState()
+    val mine by MyLists.all.collectAsState()
     val tubeLists by YouTubeAccount.playlists.collectAsState()
     val followed by FollowedLists.lists.collectAsState()
     val hidden by HiddenLists.ids.collectAsState()
@@ -3518,6 +3587,11 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
         if (kept.isNotEmpty()) item(key = "kept") {
             ListTile("kept on this phone", "${kept.size} ${if (kept.size == 1) "song" else "songs"}, offline", { pages.open(Page.Kept) }) { Mosaic(kept, "kept") }
         }
+        // your own playlists, kept on the phone (MyLists): mosaics of their records, and a new one
+        items(mine, key = { it.id }) { m ->
+            ListTile(m.name, "${m.songs.size} ${if (m.songs.size == 1) "song" else "songs"}", { pages.open(Page.Mine(m.id)) }) { Mosaic(m.songs, m.name) }
+        }
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "newMine") { NewMine(pages) }
         if (account != null) item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }, key = "new") { NewPlaylist(null) {} }
         items(lists, key = { it.id }) { pl ->
             ListTile(pl.name, "${pl.count} ${if (pl.count == 1) "song" else "songs"}", { pages.open(Page.Playlist(pl.id, pl.name)) }) {
@@ -3565,7 +3639,7 @@ private fun ListsTiles(pages: Pages, pad: PaddingValues, minutes: Long?) {
  * it (the grey name cover read as a missing picture).
  */
 @Composable
-private fun Lettered(name: String) {
+internal fun Lettered(name: String) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
         val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * .15f).toSp() }
         BasicText(name.uppercase(), style = headline(size).copy(lineHeight = size * 1.02f), maxLines = 4, overflow = TextOverflow.Ellipsis,
@@ -3784,8 +3858,6 @@ private fun PickBar(pages: Pages) {
     val picked by Picking.picked.collectAsState()
     val ctx = LocalContext.current
     val lovedIds by Loved.ids.collectAsState()
-    val account by Server.account.collectAsState()
-    val who by YouTubeAccount.who.collectAsState()
     var said by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(said) { if (said != null) { delay(1_200); Picking.clear(); said = null } }
     Column(Modifier.fillMaxWidth().background(Ink.black).border(androidx.compose.foundation.BorderStroke(1.dp, Ink.line))
@@ -3799,7 +3871,7 @@ private fun PickBar(pages: Pages) {
             // play next keeps them in the order picked: each put after the one before
             Word("play next", pixel(13.sp), touch = 8.dp) { picked.reversed().forEach { Playback.playNext(it) }; said = "PLAYING NEXT" }
             Word("add to queue", pixel(13.sp), touch = 8.dp) { picked.forEach { Playback.add(it) }; said = "QUEUED" }
-            if ((account != null && picked.any { Server.idOf(it) != null }) || (who != null && picked.any { !it.station && !it.episode }))
+            if (picked.any(MyLists::fits))
                 Word("add to playlist", pixel(13.sp), touch = 8.dp) { pages.open(Page.AddToMany(picked)) }
             if (picked.any { it.id !in lovedIds }) Word("love", pixel(13.sp), touch = 8.dp) { picked.filter { it.id !in lovedIds }.forEach { Loved.toggle(it) }; said = "LOVED" }
             val keep = picked.filter { Offline.keepable(it) }

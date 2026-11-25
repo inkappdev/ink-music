@@ -328,6 +328,12 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             // a station's: the song it's playing, found
                             val listed = if (n.song.station) airedSong else n.song.takeIf { canAddToList(it) }
                             if (listed != null) Word("playlist", pixel(14.sp, Ink.mid), Modifier.padding(end = 26.dp), touch = 10.dp) { open(Page.AddTo(listed)) }
+                            // sleep, here too (#7, 2026-11-24: it was the bar's more and the now column's, both gone under the
+                            // player): each click the next (15, 30, 60 minutes, the song's end, off), lit while set, the time left
+                            val sleep by Sleep.at.collectAsState()
+                            val tick by androidx.compose.runtime.produceState(0L, sleep) { while (sleep > 0) { value = System.currentTimeMillis(); kotlinx.coroutines.delay(20_000) } }
+                            Word(remember(sleep, tick) { if (sleep == 0L) "sleep" else Sleep.said().removePrefix("sleep · ").let { "sleep $it" } },
+                                pixel(14.sp, if (sleep != 0L) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 10.dp) { Sleep.next() }
                             Word("stop", pixel(14.sp, if (n.playing) Ink.mid else Ink.dim), touch = 10.dp) { Player.stop(); onClose() }
                         }
                         Spacer(Modifier.height(14.dp))

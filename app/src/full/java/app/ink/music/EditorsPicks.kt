@@ -13,7 +13,7 @@ object EditorsPicks {
     const val TUBE = "youtube music"
 
     /** Every one, newest lists first; any that won't answer passed over. */
-    fun read(): List<Curation.Pick> = runCatching { editors() }.getOrDefault(emptyList()) + runCatching { tube() }.getOrDefault(emptyList()) +
+    fun read(): List<Curation.Pick> = if (JustYours.on) emptyList() else runCatching { editors() }.getOrDefault(emptyList()) + runCatching { tube() }.getOrDefault(emptyList()) +
         runCatching { birp() }.getOrDefault(emptyList()) + runCatching { curators() }.getOrDefault(emptyList())
 
     // triple j's New Music Hitlist, alexrainbirdMusic's New Indie Music (TubeCurators, shared with the computer)

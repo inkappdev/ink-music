@@ -141,4 +141,20 @@ object Similar {
             name to if (a != null && b != null) .6 + .4 * maxOf(a, b) else .55 * (a ?: b ?: 0.0)
         }.sortedByDescending { it.second }.take(limit)
     }
+
+    /**
+     * A song of the same name as a seed's by someone else (#7, 2026-11-24, a listener: a song's radio brought other songs
+     * of its name before songs like it): a cover, or a namesake a search found. Titles as said (case, marks and a
+     * bracketed or dashed tail aside); an artist the seed's when they're among the seed's credits, or the seed among theirs.
+     */
+    fun namesake(title: String, artist: String, seedTitle: String, seedArtist: String): Boolean {
+        val t = bareTitle(title)
+        if (t.isEmpty() || t != bareTitle(seedTitle)) return false
+        val mine = credits(seedArtist); val theirs = credits(artist)
+        return mine.isNotEmpty() && theirs.isNotEmpty() && mine.none { it in theirs }
+    }
+
+    private fun bareTitle(s: String) = s.lowercase().substringBefore(" (").substringBefore(" [").substringBefore(" - ").filter { it.isLetterOrDigit() }
+    private fun credits(s: String) = s.split(Regex(""",|&| x | feat\.? | ft\.? | with | and """, RegexOption.IGNORE_CASE))
+        .map { Curation.folded(it).filter { c -> c.isLetterOrDigit() } }.filter { it.isNotEmpty() }.toSet()
 }

@@ -65,23 +65,19 @@ fun ExtensionsSetting() {
                 onClick = felt { editing = s.url; url = s.url; name = s.name; said = null })) {
                 val host = Regex("^https?://(?:[^/?#@]*@)?([^/?#:]+)").find(s.url)?.groupValues?.get(1).orEmpty()
                 BasicText(s.name.ifBlank { host }.lowercase(), style = pixel(14.sp, if (editing == s.url) Ink.ink else Ink.mid))
-                BasicText(s.url, style = pixel(12.sp, Ink.mid), maxLines = 2)
                 // a lossless one: what it uses (2026-11-24: ~35 MB a five-minute song)
-                if (s.url in lossless) BasicText("lossless: about 30 to 40 mb a song, a gb or more an hour. it sends the quality you choose", style = pixel(12.sp, Ink.mid))
+                if (s.url in lossless) BasicText("lossless · about a gb an hour", style = pixel(12.sp, Ink.mid))
                 if (s.on) last[s.url]?.let { BasicText(extensionSaid(it), style = pixel(12.sp, if (it.found) Ink.ink else Ink.mid)) }
             }
             Spacer(Modifier.height(4.dp))
             Pick(listOf("on" to s.on, "off" to !s.on)) { Extensions.turn(s.url, it == 0) }
         }
     }
-    BasicText(if (sources.isEmpty()) "an addon's link (its manifest.json, with search and stream: the song is searched for there), or an address " +
-        "with {title} {artist} {album} {duration} {id} where the song goes, or they're added as its query. " +
-        "it answers with the song's audio, or json with its link: {\"url\": \"https://...\"} or {\"data\": {\"url\": \"https://...\"}}. " +
-        "anything else, and the song plays from where it would have"
-        else "a click changes one. a new one starts off", style = pixel(12.sp, Ink.mid))
+    BasicText(if (sources.isEmpty()) "paste an addon's link"
+        else "click to change", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(14.dp))
     Field("address", url, { url = it; said = null }, "https://", onEnter = ::go)
-    Field("its name, if you like", name, { name = it }, "", onEnter = ::go)
+    Field("name", name, { name = it }, "", onEnter = ::go)
     said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Word(if (editing == null) "ADD" else "SAVE", headline(40.sp, if (url.isBlank()) Ink.mid else Ink.ink), Modifier.padding(end = 26.dp), touch = 10.dp) { go() }

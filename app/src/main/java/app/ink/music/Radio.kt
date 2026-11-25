@@ -140,6 +140,10 @@ object Radio {
                 found.getOrPut(key(s.title, s.artist)) { Found(s, 0f) }.score += w
             }
         }
+        // another song of a seed's name by someone else (a cover, a namesake), out while there's anything else (#7)
+        val seedNames = seeds.map { it.title to it.artist }
+        val namesakes = found.filterValues { f -> seedNames.any { (t, a) -> Similar.namesake(f.song.title, f.song.artist, t, a) } }.keys
+        if (namesakes.size < found.size) found.keys.removeAll(namesakes)
         // skipped once this session, lower; twice, or said not for you, out
         // and lifted for an artist you're near (your taste, as the screens last worked it out)
         found.forEach { (k, f) -> f.score += lifted(f.song.artist) - .5f * (skips[who(f.song.artist)] ?: 0) - (if (k in lately) .8f else 0f) }

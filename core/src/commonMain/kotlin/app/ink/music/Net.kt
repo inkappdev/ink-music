@@ -16,6 +16,22 @@ expect fun http(
     connectMs: Int = 10_000, readMs: Int = 20_000, follow: Int = 6,
 ): Reply
 
+/**
+ * Hosts nothing is asked of (the phone's "just your music", 2026-11-24, issue 8: a listener to their own server only): a
+ * request to one, or to a name under one, fails at once as an unreachable network would, so whatever asked finds
+ * nothing. Empty unless set; read by [http] and NewPipe's way in (Pipe).
+ */
+object HeldBack {
+    @kotlin.concurrent.Volatile var hosts: Set<String> = emptySet()
+
+    fun held(url: String): Boolean {
+        val h = hosts
+        if (h.isEmpty()) return false
+        val host = url.substringAfter("://").substringBefore('/').substringBefore('?').substringAfterLast('@').substringBefore(':').lowercase()
+        return h.any { host == it || host.endsWith(".$it") }
+    }
+}
+
 /** The network failed (or a service said try later): what's kept is tried again. */
 expect open class IOException(message: String?) : Exception
 

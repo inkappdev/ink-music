@@ -179,6 +179,23 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
     val scrub = remember { Scrub() }
     androidx.activity.compose.BackHandler(queueUp) { queueUp = false }
     androidx.activity.compose.BackHandler(addUp) { addUp = false }
+    // sleep's choices in the controls' second row, open (#7: sleep back on the player, 2026-11-24)
+    var sleepUp by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(sleepUp) { sleepUp = false }
+    // the controls folded away under the lyrics, by a tap on them (#11); back, or a tap again, brings them
+    var folded by remember { mutableStateOf(false) }
+    // full screen, as chosen (settings, the look): the status and navigation bars away while the player's up, a swipe
+    // from the edge brings them a moment (as the records sideways); the cutout still kept clear (displayCutout below)
+    val fullScreen by PlayerRoom.full.collectAsState()
+    if (fullScreen && !onTv()) {
+        val window = (ctx as? android.app.Activity)?.window
+        androidx.compose.runtime.DisposableEffect(window) {
+            val bars = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, it.decorView) }
+            bars?.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            bars?.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            onDispose { bars?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars()) }
+        }
+    }
     // pulled down, the player comes with the finger: past a fifth of the screen (or flung) it goes, else it settles
     // back (it had closed on a pull without moving, and a tester found no pull at all)
     val pull = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -295,7 +312,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             // selection is brightness: lit is on; on, for a song lrclib has no synced lines for, it says so
             // (lit with the cover still there read as broken to a tester)
             val none = sing && lines?.isEmpty() == true
-            Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
+            if (sleepUp && !episode) SleepChoices { sleepUp = false } else Modes(n, if (episode) (if (sing && notes == null) "no notes" else "notes") else if (none) "no lyrics" else "lyrics",
                 if (episode) notes != null else sing && !none, onQueue = { queueUp = true }, onStop = onStop,
                 added = added, onAdd = if (canAddToList(airedSong ?: n.song)) ({ addUp = true }) else null, episode = episode,
                 lyricsWord = !tv || episode || timed)
@@ -318,11 +335,17 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 Centred(
                     start = { Word(if (n.count > 1) "${n.index + 1} of ${n.count}" else "queue", pixel(SMALL, SAID), touch = 10.dp) { queueUp = true } },
                     middle = { PlayOnSpeaker(n.device.isNotEmpty(), Modifier) { playOnUp = true } },
-                    end = { Pixel(CLOSE, "close", SAID, onClick = onClose) },
+                    end = { Row(verticalAlignment = Alignment.CenterVertically) {
+                        SleepWord(n, sleepUp) { sleepUp = !sleepUp }
+                        Spacer(Modifier.width(14.dp))
+                        Pixel(CLOSE, "close", SAID, onClick = onClose)
+                    } },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
             }
             val words = lyric != null || notes != null
+            val fold = folded && lyric != null
+            androidx.activity.compose.BackHandler(fold) { folded = false }
             AnimatedContent(
                 targetState = words, modifier = Modifier.weight(1f),
                 transitionSpec = { fadeIn(tween(Motion.ENTER, easing = Motion.expo)) togetherWith fadeOut(tween(Motion.EXIT, easing = Motion.expo)) },
@@ -331,7 +354,7 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     if (withLyrics && (lyric != null || notes != null)) {
                         if (notes != null) NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
-                        else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
+                        else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp)) { folded = !folded }
                         // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
                         Scrubber(line, accent, scrub, line = 2.dp, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
                         Song(n, dir, small = true, scrub, onOpen, share, onHeard = { heardUp = true }, onPoster = poster)
@@ -372,14 +395,25 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
             }
             // the controls on black, so their small words read over any look (a tester couldn't read
             // shuffle, repeat, up next and sleep over dither); the art softens into the bar, never fades
+            // folded under the lyrics (#11): the bar and all in it slide away, the lines given its room
+            androidx.compose.animation.AnimatedVisibility(
+                !fold,
+                enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo), expandFrom = Alignment.Top) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo), shrinkTowards = Alignment.Top) + fadeOut(tween(Motion.EXIT, easing = Motion.expo)),
+            ) {
+            Column {
             Box(Modifier.fillMaxWidth().height(BAND).softEdge(frost, towardBottom = true))
             Column(Modifier.fillMaxWidth().background(Ink.black).navigationBarsPadding().padding(top = 6.dp)) {
             controls()
             Spacer(Modifier.height(12.dp))
-            // the artist's name, big, a way to their page too
+            // the artist's name, big, a way to their page too (its size as chosen: settings, the look)
+            val nameSize by PlayerRoom.name.collectAsState()
             Marquee(n.artist, n.moving && Marquees.on.collectAsState().value, Modifier.fillMaxWidth().bleedPastCutout().clickable(remember { MutableInteractionSource() }, indication = null,
-                onClick = felt { if (n.song?.episode == true) showOf(n.song)?.let(onOpen) else artistOf(n)?.let { onOpen(Page.Artist(it)) } }), size = 120.sp)
+                onClick = felt { if (n.song?.episode == true) showOf(n.song)?.let(onOpen) else artistOf(n)?.let { onOpen(Page.Artist(it)) } }), size = 120.sp * PlayerRoom.nameScale(nameSize))
             }
+            }
+            }
+            if (fold) Spacer(Modifier.navigationBarsPadding())
         }
         androidx.compose.animation.AnimatedVisibility(
             queueUp,
@@ -405,7 +439,45 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
 }
 
 /**
- * The player's second row, smaller: up next, lyrics, into a playlist, stop (sleep gone: 2026-10-29).
+ * Sleep, at the top beside close (#7, 2026-11-24, a listener who looked for it and found none; gone from the second row
+ * 2026-10-29 when it filled): "sleep", a tap opens its choices under the controls; while set, the time left ("sleep 23m",
+ * "sleep: song end"), lit, and a tap ends it. The timer's the player's own (PlayerService.SLEEP), so it holds with the
+ * app closed: the music eases out, pauses, and its volume's put back.
+ */
+@Composable
+private fun SleepWord(n: Now, open: Boolean, onOpen: () -> Unit) {
+    val at = n.sleepAt
+    val left by produceState(0L, at) {
+        while (at > 0) { value = at - System.currentTimeMillis(); delay(15_000) }
+        value = 0L
+    }
+    val said = when {
+        at == PlayerService.SLEEP_END_OF_SONG -> "sleep: song end"
+        at > 0 -> "sleep ${((left + 59_999) / 60_000).coerceAtLeast(1)}m"
+        else -> "sleep"
+    }
+    Word(said, pixel(SMALL, if (at != 0L || open) Ink.ink else SAID), touch = 10.dp) {
+        if (at != 0L) Playback.sleep(0) else onOpen()
+    }
+}
+
+/** Sleep's choices, in the second row's place: a tap sets it and they close. */
+@Composable
+private fun SleepChoices(onDone: () -> Unit) {
+    Fit(least = 12f / 14) { Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        SLEEPS.forEach { (word, ms) ->
+            Word(word, pixel(14.sp, SAID), Modifier.tvLit(), touch = 10.dp) { Playback.sleep(ms); onDone() }
+        }
+    } }
+}
+
+/** Sleep's choices: minutes, or the song's end. */
+private val SLEEPS = listOf("15m" to 15 * 60_000L, "30m" to 30 * 60_000L, "45m" to 45 * 60_000L, "60m" to 60 * 60_000L,
+    "end of song" to PlayerService.SLEEP_END_OF_SONG)
+
+/**
+ * The player's second row, smaller: up next, lyrics, into a playlist, stop (sleep gone from it 2026-10-29: it's at the
+ * top, beside close, since 2026-11-24, its choices in this row's place while they're open).
  */
 @Composable
 private fun Modes(n: Now, lyrics: String, lyricsOn: Boolean, onQueue: () -> Unit, onStop: () -> Unit, added: String? = null, onAdd: (() -> Unit)? = null, episode: Boolean = false, lyricsWord: Boolean = true) {
@@ -462,7 +534,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
     ) { t ->
         val live by rememberUpdatedState(t)
         if (small) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Sleeve(t, 96.dp, Modifier.clickwheel({ live }, scrub))
+            Sleeve(t, 96.dp, Modifier.clickwheel({ live }, scrub) { coverTap(live, onOpen) })
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
@@ -484,7 +556,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
         } else Column {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val side = minOf(maxWidth, coverCap(), LocalCoverRoom.current)
-                Sleeve(t, side, Modifier.clickwheel({ live }, scrub))
+                Sleeve(t, side, Modifier.clickwheel({ live }, scrub) { coverTap(live, onOpen) })
                 Box(Modifier.size(side)) { over(t) }
             }
             if (words) {
@@ -754,9 +826,10 @@ private val REACH = 14.dp
  * clockwise forward, a tick every 15 degrees moving the song 5 s; letting go seeks there. It turns
  * only once the thumb is really circling (its own way bending a sixth of a turn, round the centre),
  * so a straight swipe never scrubs, wherever it crosses the cover: a flick sideways is the next song (to the left) or the
- * one before (to the right), as the push goes. A tap is the centre button: play / pause.
+ * one before (to the right), as the push goes. A tap is [onTap] (coverTap: the record's page, or play / pause).
  */
-private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = composed {
+private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub, onTap: () -> Unit): Modifier = composed {
+    val tap by rememberUpdatedState(onTap)
     val view = LocalView.current
     val density = LocalDensity.current
     val hub = with(density) { 18.dp.toPx() }      // too near the centre, the angle jumps
@@ -819,10 +892,21 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub): Modifier = compos
                     Hints.did(Hints.FLICK)
                     if (moved.x < 0) Playback.next() else Playback.previous()
                 }
-                travel < viewConfiguration.touchSlop -> Playback.toggle()
+                travel < viewConfiguration.touchSlop -> tap()
             }
         }
     }
+}
+
+/**
+ * A tap on the player's cover (#4, 2026-11-24, a listener: the cover opens its record, as in most players): a song's
+ * record page (the record's name under the title goes there too); a station, an episode, a DJ set or a song with no
+ * record, play / pause as before. Pause is the play word's in the controls.
+ */
+private fun coverTap(n: Now, onOpen: (Page) -> Unit) {
+    val s = n.song
+    if (s == null || s.station || s.episode || n.album.isBlank() || SetHeard.isSet(n)) Playback.toggle()
+    else onOpen(Page.Record(s.albumId))
 }
 
 /**
@@ -1010,7 +1094,8 @@ fun rememberLyric(n: Now?, lines: List<Line>?): Lyric? {
  * read the rest of a long song's words, 2026-11-01). Words with no times: all of them, scrolled.
  */
 @Composable
-private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
+private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true, onTap: (() -> Unit)? = null) {
+    val tap by rememberUpdatedState(onTap)
     val drift = with(LocalDensity.current) { Motion.drift.roundToPx() }
     val scroll = androidx.compose.foundation.rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -1033,10 +1118,14 @@ private fun LyricsBlock(l: Lyric, modifier: Modifier, edge: Boolean = true) {
             ).draggable(drag, androidx.compose.foundation.gestures.Orientation.Vertical, onDragStopped = { v ->
                 touched = android.os.SystemClock.elapsedRealtime()
                 scope.launch { scroll.animateScrollBy(-v * .25f, tween(Motion.ENTER * 3, easing = Motion.expo)) }
-            }),
+            })
+            // a tap on them (not a line's, which plays from there): the controls folded away or back (#11)
+            .then(if (onTap == null) Modifier else Modifier.pointerInput(Unit) { detectTapGestures(onTap = { tap?.invoke() }) }),
     ) {
-        // by the room both ways: tall alone grew the sung line past the width (cut off mid-word)
-        val k = minOf(maxHeight / 330.dp, maxWidth / 380.dp).coerceIn(.6f, 1.15f)
+        // by the room both ways: tall alone grew the sung line past the width (cut off mid-word); then their size as
+        // chosen (settings, the look: small, medium, large)
+        val size by PlayerRoom.lyrics.collectAsState()
+        val k = minOf(maxHeight / 330.dp, maxWidth / 380.dp).coerceIn(.6f, 1.15f) * PlayerRoom.lyricsScale(size)
         val lines = l.lines
         androidx.compose.animation.Crossfade(untimed || touched != 0L, animationSpec = tween(Motion.ENTER, easing = Motion.expo), label = "all") { all ->
             if (all) {
@@ -1525,7 +1614,8 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
                         // the giant name, under the title here (the player's controls between them left out), edge to edge,
                         // moving or still as set
                         Spacer(Modifier.height(28.dp))
-                        Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.requiredWidth(full.first))
+                        Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.requiredWidth(full.first),
+                            size = 150.sp * PlayerRoom.nameScale(PlayerRoom.name.collectAsState().value))
                     }
                 }
             }

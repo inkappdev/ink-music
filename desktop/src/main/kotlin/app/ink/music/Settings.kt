@@ -119,7 +119,7 @@ fun SettingsPage(onClose: () -> Unit) {
                             remember { Extensions.start() }
                             val ext by Extensions.sources.collectAsState()
                             SettingRow("EXTENSIONS", if (ext.isEmpty()) "add one" else "${ext.count { it.on }} of ${ext.size} on", opened,
-                                "addresses of yours asked first for a youtube or server song's stream. one turned on gets each song's title, artist, record and length") {
+                                "your addons, asked first for a song") {
                                 ExtensionsSetting()
                             }
                             SettingRow("YOUR FILES", "$local ${if (local == 1) "song" else "songs"}", opened) { FilesSetting() }
@@ -133,7 +133,7 @@ fun SettingsPage(onClose: () -> Unit) {
                             // the places shown in the rail (2026-11-11): lit, shown; a click hides or shows one
                             val hidden by Places.hidden.collectAsState()
                             SettingRow("PLACES", if (hidden.isEmpty()) "all" else "${PLACES.size - hidden.size} of ${PLACES.size}", opened,
-                                "the places along the side; a click hides or shows one" + if (Local.on) ". local files only: ink, radio and podcasts are away already" else "") {
+                                "the places along the side; a click hides or shows one" + if (Local.on) ". just your music: ink, radio and podcasts are away already" else "") {
                                 Pick(PLACES.map { it to (it !in hidden) }) { i -> Places.show(PLACES[i], PLACES[i] in hidden) }
                             }
                             LookSetting(opened)
@@ -220,19 +220,20 @@ private fun CloseSetting() {
 /**
  * Local files only ([Local]): ink music kept to your files, your server, lyrics and your phone; everything else online
  * (YouTube Music, INK, radio, podcasts, videos, Discord, the catalogs' covers) never started, lighter on memory and the
- * network. Taken the whole way from the next time ink music opens.
+ * network. Taken the whole way from the next time ink music opens. Said "just your music" since 2026-11-24 (issue 8,
+ * the phone's JustYours the same idea): your server was always kept, and "local files" read as if it wasn't.
  */
 @Composable
 private fun LocalSetting() {
     val wanted by Local.wanted.collectAsState()
-    SettingHead("LOCAL FILES ONLY")
+    SettingHead("JUST YOUR MUSIC")
     BasicText((if (wanted) "your files and your server, lyrics and your phone; nothing else online, lighter on memory"
         else "everything: youtube music, ink, radio, podcasts and the rest, with your files") +
         (if (wanted != Local.on) ". from the next time ink music opens" else ""), style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(12.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(26.dp)) {
         Word("everything", pixel(14.sp, if (!wanted) Ink.ink else Ink.dim), touch = 8.dp) { Local.choose(false) }
-        Word("local files only", pixel(14.sp, if (wanted) Ink.ink else Ink.dim), touch = 8.dp) { Local.choose(true) }
+        Word("just your music", pixel(14.sp, if (wanted) Ink.ink else Ink.dim), touch = 8.dp) { Local.choose(true) }
     }
 }
 
@@ -922,7 +923,7 @@ private fun PrivateSetting() {
 private fun SimilarSetting() {
     val mode by Player.radioMode.collectAsState()
     SettingHead("SIMILAR SONGS")
-    BasicText(if (Local.on) "local files only is on: similar songs come from your files"
+    BasicText(if (Local.on) "just your music is on: similar songs come from your files"
         else "when up next runs out and keep playing similar is on, more songs like these come from", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(10.dp))
     if (!Local.on) androidx.compose.foundation.layout.Row {

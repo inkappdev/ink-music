@@ -26,7 +26,7 @@ object LiveSessions {
     @Volatile private var started = false
 
     fun start(ctx: Context) {
-        if (started) return
+        if (started || JustYours.on) return
         started = true
         val app = ctx.applicationContext
         scope.launch {

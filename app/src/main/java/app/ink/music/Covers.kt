@@ -214,6 +214,8 @@ object Covers {
     }
 
     private fun get(url: String): Bitmap? {
+        // just your music: YouTube's pictures not asked for (HeldBack)
+        if (HeldBack.held(url)) return null
         val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         c.connectTimeout = 10_000; c.readTimeout = 15_000
         return try { if (c.responseCode != 200) null else whole(c) }

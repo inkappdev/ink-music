@@ -26,6 +26,7 @@ object GenreSongs {
      * a second or two; on IO). 2026-11-09: a list at a time, and a kept one past half a day waited for the new.
      */
     suspend fun of(c: Context, genre: String): List<Picks.Shown> = withContext(Dispatchers.IO) {
+        if (JustYours.on) return@withContext emptyList()
         val g = genre.lowercase()
         val have = synchronized(kept) { (kept[g] ?: read(c, g)?.also { kept[g] = it }) }
         if (have != null && have.second.isNotEmpty()) {
@@ -37,6 +38,7 @@ object GenreSongs {
 
     /** The genres opened most, read ahead a while after the app opens, so their pages open with their songs there. */
     fun warm(c: Context, genres: List<String>) {
+        if (JustYours.on) return
         val app = c.applicationContext
         Thread({
             runCatching {

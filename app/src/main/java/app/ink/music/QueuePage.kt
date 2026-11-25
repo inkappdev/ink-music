@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,10 +61,25 @@ import kotlin.math.roundToInt
 
 private val ROW = 58.dp   // every row the same height, so a carried one knows the place it's over
 
+/** A page asked for from inside the player (up next's record and artist): the library opens it, the player let down. */
+object Opening { val asked = kotlinx.coroutines.flow.MutableStateFlow<Page?>(null) }
+
+/** A queued song's record: the library's, else YouTube Music's by its id ("ya" and its browse id); none for a station. */
+private fun recordOf(s: Song): Page? = when {
+    s.station || s.episode || s.album.isBlank() -> null
+    Library.albums.value.any { it.id == s.albumId } -> Page.Record(s.albumId)
+    s.albumId.startsWith("ya") -> s.albumId.removePrefix("ya").let { id ->
+        Page.Tube(TubeAlbum(if (id.startsWith("OLAK5uy_")) "https://music.youtube.com/playlist?list=$id" else "https://music.youtube.com/browse/$id",
+            s.album, s.albumArtist.ifEmpty { s.artist }, s.art))
+    }
+    else -> null
+}
+
 /**
  * The queue, as words: played dim, the one playing lit, the rest at 55%. A tap plays from there.
  * Hold one and it lifts: carried, the others slide aside to where it would go (a tick a place),
- * let go it settles there. Held and let go without moving, its "remove" shows beside it.
+ * let go it settles there. Held and let go without moving, its record, its artist and "remove" show beside it.
+ * Swiped left far enough (the word lit, a tick) it's out (#4), with "undo" at the top a few seconds.
  */
 @Composable
 fun QueuePage(onClose: () -> Unit) {
@@ -76,6 +92,10 @@ fun QueuePage(onClose: () -> Unit) {
     var lifted by remember { mutableStateOf<Int?>(null) }
     var drag by remember { mutableFloatStateOf(0f) }
     var options by remember { mutableStateOf<Int?>(null) }
+    // the last one swiped out, to put back (its place and the song) for a few seconds
+    var undo by remember { mutableStateOf<Pair<Int, Song>?>(null) }
+    LaunchedEffect(undo) { if (undo != null) { delay(4_000); undo = null } }
+    val reach = with(LocalDensity.current) { 96.dp.toPx() }
     val list = rememberLazyListState()
     LaunchedEffect(Unit) { if (playing > 0) list.scrollToItem((playing - 1).coerceAtLeast(0)) }
     // where the carried row would land
@@ -105,6 +125,10 @@ fun QueuePage(onClose: () -> Unit) {
                 val on = now?.radio != false
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Word("similar", pixel(13.sp, if (on) Ink.ink else Ink.dim), touch = 8.dp) { Playback.radio(!on) }
+                    // one just swiped out: back where it was
+                    undo?.let { (at, song) ->
+                        Word("undo", pixel(13.sp), Modifier.padding(start = 22.dp), touch = 8.dp) { undo = null; Playback.insert(song, at) }
+                    }
                 }
                 // a DJ set playing: its tracks as they're heard, the newest first; a tap puts one next (SetHeard)
                 val heardInSet by SetHeard.heard.collectAsState()
@@ -141,16 +165,45 @@ fun QueuePage(onClose: () -> Unit) {
                     else -> 0f
                 }
                 val eased by animateFloatAsState(shift, tween(Motion.ENTER, easing = Motion.expo), label = "make room")
+                // swiped left: the row goes with the finger, "remove" under it lit once far enough
+                val slid = remember { androidx.compose.animation.core.Animatable(0f) }
+                var armed by remember { mutableStateOf(false) }
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
                 val tone = when {
                     l != null && i != l -> Ink.dim
                     i == playing -> Ink.ink
                     i < playing -> Ink.dim
                     else -> Ink.mid
                 }
+                Box(Modifier.fillMaxWidth().height(ROW).zIndex(if (i == l) 1f else 0f).graphicsLayer { translationY = if (i == l) drag else eased }) {
+                if (slid.value < 0f) Row(Modifier.matchParentSize(), verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.weight(1f))
+                    BasicText("remove", style = pixel(13.sp, if (armed) Ink.ink else Ink.dim))
+                }
                 Row(
                     Modifier.fillMaxWidth().height(ROW)
-                        .zIndex(if (i == l) 1f else 0f)   // the carried one over the rest
-                        .graphicsLayer { translationY = if (i == l) drag else eased }
+                        .graphicsLayer { translationX = slid.value }.background(Ink.black)
+                        .pointerInput(i, queue.size) {
+                            var pulled = 0f
+                            fun letGo(act: Boolean) {
+                                val song = q.song
+                                if (act && armed && song != null && !Playback.onSpeaker) scope.launch {
+                                    // off to the left, then out: the rows under it close up
+                                    slid.animateTo(-size.width.toFloat(), tween(Motion.EXIT, easing = Motion.expo))
+                                    Playback.remove(i); undo = i to song
+                                    slid.snapTo(0f)
+                                } else scope.launch { slid.animateTo(0f, tween(Motion.EXIT, easing = Motion.expo)) }
+                                armed = false; pulled = 0f
+                            }
+                            detectHorizontalDragGestures(onDragEnd = { letGo(true) }, onDragCancel = { letGo(false) }) { c, dx ->
+                                c.consume()
+                                pulled = (pulled + dx).coerceAtMost(0f)
+                                val past = (-pulled - reach).coerceAtLeast(0f)
+                                scope.launch { slid.snapTo(pulled + past * .7f) }
+                                val now2 = -pulled > reach
+                                if (now2 != armed) { armed = now2; if (now2) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+                            }
+                        }
                         .pointerInput(i, queue.size) {
                             detectDragGesturesAfterLongPress(
                                 onDragStart = {
@@ -180,12 +233,19 @@ fun QueuePage(onClose: () -> Unit) {
                         BasicText(q.artist.lowercase(), style = pixel(12.sp, if (tone == Ink.ink) Ink.mid else Ink.dim), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (options == i) {
+                        // its record and its artist, the library's pages over the player let down (#4)
+                        val song = q.song
+                        val record = song?.let(::recordOf)
+                        if (record != null) { Spacer(Modifier.width(12.dp)); Word("record", pixel(13.sp, Ink.mid), touch = 10.dp) { options = null; Opening.asked.value = record } }
+                        if (song != null && !song.station && !song.episode && song.artist.isNotBlank())
+                            { Spacer(Modifier.width(12.dp)); Word("artist", pixel(13.sp, Ink.mid), touch = 10.dp) { options = null; Opening.asked.value = Page.Artist(song.albumArtist.ifBlank { song.artist }) } }
                         Spacer(Modifier.width(12.dp))
                         Word("remove", pixel(13.sp), touch = 10.dp) { options = null; Playback.remove(i) }
                     } else if (i == playing) {
                         Spacer(Modifier.width(12.dp))
                         BasicText("playing", style = pixel(12.sp, Ink.mid))
                     }
+                }
                 }
             }
             finding?.let { a -> item { FindingRows(a) } }

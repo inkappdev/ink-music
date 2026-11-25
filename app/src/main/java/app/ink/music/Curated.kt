@@ -47,6 +47,8 @@ object Picks {
      */
     fun start(c: Context) {
         app = c.applicationContext
+        // just your music: no critics' or djs' picks read
+        if (JustYours.on) return
         val file = File(c.cacheDir, "picks.json")
         if (readAt == 0L) {
             val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
@@ -133,6 +135,7 @@ object Picks {
 
     /** Read again when it's half a day old. */
     fun startFriday() {
+        if (JustYours.on) return
         if (System.currentTimeMillis() - fridayAt < 12 * 3_600_000L) return
         fridayAt = System.currentTimeMillis()
         startFresh()
@@ -235,6 +238,7 @@ object Picks {
     @Volatile private var electronicAt = 0L
 
     fun startElectronic() {
+        if (JustYours.on) return
         if (System.currentTimeMillis() - electronicAt < 12 * 3_600_000L) return
         electronicAt = System.currentTimeMillis()
         scope.launch { Curation.electronic().takeIf { it.isNotEmpty() }?.let { electronic.value = it } }
@@ -310,8 +314,9 @@ object Discover {
         scope.launch {
             val file = File(app.cacheDir, "discover.json")
             val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
-            kept?.let(::show)
-            runCatching { make(app, library, kept, file) }
+            // just your music: made anew from yours alone (what's kept may hold youtube's)
+            if (!JustYours.on) kept?.let(::show)
+            runCatching { make(app, library, if (JustYours.on) null else kept, file) }
         }
     }
 
@@ -346,19 +351,23 @@ object Discover {
         // the day's mixes made again when the day turns, or the part of it (this hour's: mornings, evenings...)
         val sameDay = kept?.optString("day") == day() && kept.optString("part") == Moment.now().part.name
         val out = JSONObject().put("week", week()).put("day", day()).put("part", Moment.now().part.name)
-        val weekly = if (sameWeek) mixes.value.filter { it.key == "fresh" || it.key == "deep" }
+        // just your music: only the mixes made from your own songs and listening (no radios, youtube or INK asked)
+        val yoursOnly = JustYours.on
+        val weekly = if (yoursOnly) emptyList() else if (sameWeek) mixes.value.filter { it.key == "fresh" || it.key == "deep" }
             else listOfNotNull(freshFinds(c, topSongs, heard, mine), deepCuts(topArtists, library, heard, mine))
         val daily = listOfNotNull(restOfTheRecord(all, library, heard), lovedLongAgo(all, library), aYearAgo(all, library), oneOfEach(library),
             thisHour(all, library), justAdded(library, heard), backOfTheShelf(library, heard), aDecade(library),
-            runCatching { spotlight(topArtists, library) }.getOrNull(), runCatching { pickedForYou() }.getOrNull())
-            .let { d -> listOfNotNull(runCatching { onThisDay(c) }.getOrNull(), runCatching { favorites(c) }.getOrNull(), runCatching { usedToLove(c, all) }.getOrNull()) + d }
+            if (yoursOnly) null else runCatching { spotlight(topArtists, library) }.getOrNull(), if (yoursOnly) null else runCatching { pickedForYou() }.getOrNull())
+            .let { d -> if (yoursOnly) d else listOfNotNull(runCatching { onThisDay(c) }.getOrNull(), runCatching { favorites(c) }.getOrNull(), runCatching { usedToLove(c, all) }.getOrNull()) + d }
         mixes.value = weekly + daily
         out.put("mixes", JSONArray(mixes.value.map { m ->
             JSONObject().put("key", m.key).put("title", m.title).put("said", m.said).put("fresh", m.fresh).put("songs", JSONArray(m.songs.map { it.json() }))
         }))
-        if (!sameDay || because.value == null) because.value = becauseYouLoved(c, library, heard, mine)
+        if (yoursOnly) because.value = null
+        else if (!sameDay || because.value == null) because.value = becauseYouLoved(c, library, heard, mine)
         because.value?.let { (seed, songs) -> out.put("because", JSONObject().put("seed", seed.json()).put("songs", JSONArray(songs.map { it.json() }))) }
-        if (!sameDay || newToYou.value.isEmpty()) newToYou.value = newArtists(topArtists, library, all)
+        if (yoursOnly) newToYou.value = emptyList()
+        else if (!sameDay || newToYou.value.isEmpty()) newToYou.value = newArtists(topArtists, library, all)
         out.put("new", JSONArray(newToYou.value.map { JSONObject().put("name", it.artist.name).put("face", it.artist.face ?: "").put("id", it.artist.id).put("via", it.via) }))
         runCatching { file.writeText(out.toString()) }
     }
@@ -544,6 +553,8 @@ object Discover {
      */
     /** Your listening just brought in: your favorites mix made now, first among the mixes (not waiting for tomorrow). */
     fun addFavorites(c: Context) {
+        // just your music: these are found on youtube music
+        if (JustYours.on) return
         val app = c.applicationContext
         scope.launch {
             for (make in listOf<suspend () -> Mix?>({ usedToLove(app, History.read(app)) }, { favorites(app) }, { onThisDay(app) }))

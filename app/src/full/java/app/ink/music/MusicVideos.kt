@@ -30,7 +30,7 @@ object MusicVideos {
     private val byArtist = java.util.concurrent.ConcurrentHashMap<String, List<Clip>>()
 
     fun start(ctx: Context) {
-        if (started) return
+        if (started || JustYours.on) return
         started = true
         val app = ctx.applicationContext
         scope.launch {

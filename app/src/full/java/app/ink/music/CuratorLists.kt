@@ -15,6 +15,7 @@ object CuratorLists {
     private fun keyFile(c: Context) = File(c.filesDir, "curator-key")
 
     fun start(c: Context) {
+        if (JustYours.on) return
         val app = c.applicationContext
         SpotifyLists.reader = reader@{ id ->
             if (!Spotify.signedIn()) return@reader null

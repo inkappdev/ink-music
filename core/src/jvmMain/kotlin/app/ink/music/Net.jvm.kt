@@ -9,6 +9,7 @@ actual fun http(url: String, method: String, headers: Map<String, String>, body:
     var at = URL(url)
     var left = follow
     while (true) {
+        if (HeldBack.held(at.toString())) throw java.io.IOException("held back: ${at.host}")
         val c = at.openConnection() as HttpURLConnection
         try {
             c.requestMethod = method; c.connectTimeout = connectMs; c.readTimeout = readMs; c.instanceFollowRedirects = false

@@ -40,6 +40,8 @@ object Finds {
 
     /** The kept weeks read, then any new one fetched (Main's onStart: ink music opened). */
     fun start(c: Context) {
+        // just your music: spotify's weekly lists not read
+        if (JustYours.on) return
         val app = c.applicationContext
         scope.launch {
             if (!read) {

@@ -24,7 +24,8 @@ import java.util.concurrent.ConcurrentHashMap
  * "ytm://<videoId>", resolved by the player. Not affiliated with YouTube or Google.
  */
 object YouTubeMusic {
-    const val available = true
+    /** The full build's; not with just your music (JustYours). */
+    val available get() = !JustYours.on
     private val yt get() = ServiceList.YouTube
     private val known = ConcurrentHashMap<String, Song>()
     private val streams = ConcurrentHashMap<String, Triple<String, String, Long>>()   // id -> url, mime, until
@@ -216,6 +217,7 @@ object YouTubeMusic {
      * started and the player prepared in it, all as that song waited): done now, ahead of it.
      */
     fun warmUp(c: android.content.Context) = runCatching {
+        if (JustYours.read(c)) return@runCatching
         attach(c)
         init()
         if (!SIGNED) return@runCatching

@@ -44,6 +44,7 @@ object CoolLists {
 
     /** Kept ones shown at once; read again once a day (blocking a minute or so the first time; on IO). */
     suspend fun read(c: Context) = withContext(Dispatchers.IO) {
+        if (JustYours.on) return@withContext
         val file = File(c.filesDir, "cool-lists.json")
         val kept = runCatching { JSONObject(file.readText()) }.getOrNull()
         if (_lists.value.isEmpty()) kept?.optJSONArray("lists")?.let { a -> _lists.value = (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(::cool) } }

@@ -39,6 +39,7 @@ object TunerFeed {
 
     /** The first pool: the editors' lists' songs and your artists' new videos. */
     suspend fun start(c: Context): List<Tune> = withContext(LANE) {
+        if (JustYours.on) return@withContext emptyList()
         val taste = Fresh.taste.value
         val editors = EditorsNew.songs(YouTubeMusic.editorsLists(), taste::of).filter { (_, t) -> fine(c, t.videoId, t.title, t.artists.joinToString(" & ")) }
             .map { (list, t) -> val who = t.artists.joinToString(" & ")

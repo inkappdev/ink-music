@@ -81,7 +81,7 @@ object InStep {
      */
     suspend fun catchUp(c: Context, now: Boolean = false): Int = withContext(Dispatchers.IO) {
         load(c)
-        if (links.value.isEmpty() || !Spotify.signedIn()) return@withContext 0
+        if (JustYours.on || links.value.isEmpty() || !Spotify.signedIn()) return@withContext 0
         val due = links.value.filter { now || System.currentTimeMillis() - it.at > DAY }
         if (due.isEmpty() || !Spotify.fresh(c)) return@withContext 0
         // one catch-up at a time (opening and a tap can both ask)

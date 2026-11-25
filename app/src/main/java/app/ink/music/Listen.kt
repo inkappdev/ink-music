@@ -78,6 +78,9 @@ private fun Modifier.moving(scope: androidx.compose.foundation.lazy.LazyItemScop
 val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "videos", "tuner", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "nts", "because", "newToYou",
     "onRepeat", "fresh", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours")
 
+/** The shelves made of yours alone: all listen shows with just your music (JustYours). */
+val JUST_YOURS_SHELVES = setOf("madeForYou", "jumpBack", "kept", "yourMix", "onRepeat", "forgotten", "newest", "yours")
+
 object Listen {
     /** Each time ink music is opened again after a while: the shelves' order is made anew for it. */
     var visit by androidx.compose.runtime.mutableStateOf(0)
@@ -100,8 +103,10 @@ object Listen {
         loaded = true; forArtists = artists
         if (first) {
             scope.launch { newest.value = Server.newest(12) }
-            scope.launch { indie.value = IndieChart.week(c) }
+            if (!JustYours.on) scope.launch { indie.value = IndieChart.week(c) }
         }
+        // just your music: your server's newest only; no stations, nor your artists looked for on youtube music
+        if (JustYours.on) return
         // the genres you like first, then the rest
         val liked = Seeds.genres.value
         radio.value = Stations.genres.sortedBy { (word, _) -> if (word in liked) 0 else 1 }
@@ -198,7 +203,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val keptRecords = remember(kept, albums) { albums.filter { a -> a.songs.any { it.id in kept } } }
     val online = remember(kept) { Quality.online(ctx) }
     val episodes by Pods.fresh.collectAsState()
-    LaunchedEffect(Unit) { Pods.refresh(ctx) }
+    LaunchedEffect(Unit) { if (!JustYours.on) Pods.refresh(ctx) }
     val heard by androidx.compose.runtime.produceState<List<History.Heard>>(emptyList()) {
         value = withContext(Dispatchers.IO) { History.read(ctx) }
     }
@@ -397,7 +402,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     // your own music at a tempo, from INK (2026-11-12): made from yours, so it's listen's
     if (!Device.tv) sections["yourMix"] = { YourMix() }
     // NTS's infinite mixtapes (2026-11-24), each a signal tile: as kept at once, then read again once a day
-    val mixtapes by androidx.compose.runtime.produceState(remember { Stations.mixtapes(ctx) }) { value = Stations.freshMixtapes(ctx).ifEmpty { value } }
+    val mixtapes by androidx.compose.runtime.produceState(remember { Stations.mixtapes(ctx) }) { if (!JustYours.on) value = Stations.freshMixtapes(ctx).ifEmpty { value } }
     if (mixtapes.isNotEmpty()) sections["nts"] = {
         Heading("nts mixtapes", "endless, themed, from nts")
         ShelfIndexed(mixtapes) { i, (s, said) -> SignalTile(s, said, Modifier.width(140.dp)) { Playback.play(mixtapes.drop(i).map { it.first }, 0) } }
@@ -479,9 +484,11 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
         if (!Device.tv) item(key = "dialedIn") { Column(Modifier.cascade(1).padding(bottom = 10.dp)) { DialedInSheet(heard, ::songOf, pages) } }
         // three ways in, small: charts, new releases, moods & genres (2026-11-17, Bronson)
-        if (!Device.tv) item(key = "doors") { Column(Modifier.cascade(1)) { Doors(pages) } }
+        if (!Device.tv && !JustYours.on) item(key = "doors") { Column(Modifier.cascade(1)) { Doors(pages) } }
         // the shelves, in the moment's order (Fresh.order): each shown, and its taps counted, so the unopened sink
         order.forEachIndexed { i, k ->
+            // just your music: only the shelves made of yours
+            if (JustYours.on && k !in JUST_YOURS_SHELVES) return@forEachIndexed
             val body = sections[k] ?: return@forEachIndexed
             item(key = k) { Column(Modifier.cascade(2 + i).moving(this).shelf(k)) { ShelfShown(k); body() } }
         }

@@ -122,6 +122,19 @@ class PlayerService : MediaLibraryService() {
     private var nowSaid: String? = null
     private var tubeTold: String? = null
 
+    /**
+     * Radio with just your music (JustYours): your server's similar songs to the seeds, none already queued, two at most
+     * by one artist, ten (blocking). The phone's own files have no similar of their own here: those find nothing.
+     */
+    private fun yoursAfter(seeds: List<Radio.Seed>, queued: Set<String>): List<Song> {
+        val by = HashMap<String, Int>()
+        return seeds.flatMap { Server.similar(this, it.id, it.title, it.artist) }.distinctBy { it.id }.filter { s ->
+            if (s.id in queued || Radio.key(s.title, s.artist) in queued) return@filter false
+            val who = s.artist.lowercase().substringBefore(",").trim()
+            (by[who] ?: 0) < 2 && true.also { by[who] = (by[who] ?: 0) + 1 }
+        }.take(10)
+    }
+
     private fun heard(p: Player) {
         // private listening: nothing told, anywhere
         if (Private.on(this)) return
@@ -420,7 +433,9 @@ class PlayerService : MediaLibraryService() {
         net.execute {
             // a mix's queue (its first song the mix's): radio keeps to its tempo
             val tempo = Mixes.keeping(this, firstId)
-            val more = runCatching { Radio.after(this, seeds, queued, tempo, synchronized(fromRadio) { fromRadio.toSet() }) }.getOrDefault(emptyList())
+            // just your music: only your server's own similar songs follow (nothing asked of youtube or the rest)
+            val more = if (JustYours.read(this)) runCatching { yoursAfter(seeds, queued) }.getOrDefault(emptyList())
+                else runCatching { Radio.after(this, seeds, queued, tempo, synchronized(fromRadio) { fromRadio.toSet() }) }.getOrDefault(emptyList())
             android.util.Log.d("ink-radio", "after ${seeds.joinToString(" + ") { it.title + " - " + it.artist }}: ${more.size} in ${System.currentTimeMillis() - began} ms (${more.joinToString { it.title + " - " + it.artist }})")
             main.post { finding = null; tell() }
             if (more.isEmpty()) return@execute
@@ -626,6 +641,8 @@ class PlayerService : MediaLibraryService() {
         // this process's WebView keeps its own data (YouTube's poToken runs one here, and the
         // screens' process may run another: two processes sharing one data folder crash)
         runCatching { android.webkit.WebView.setDataDirectorySuffix("player") }
+        // just your music: YouTube held back here too (read again each time radio looks)
+        JustYours.start(this)
         YouTubeMusic.attach(this)
         // the first song's way made ready now: YouTube Music's page, the player's code, the solver (it had cost that song 1-2 s)
         ahead.execute { YouTubeMusic.warmUp(this) }

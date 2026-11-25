@@ -56,10 +56,10 @@ object Places {
     private val file = java.io.File(Home.dir, "places-hidden")
     val hidden = kotlinx.coroutines.flow.MutableStateFlow(runCatching { file.readLines().map { it.trim() }.filter { it in PLACES }.toSet() }.getOrDefault(emptySet()))
 
-    /** A place shown or hidden (never the last one shown). */
+    /** A place shown or hidden (never the last one shown, nor the last of listen, albums, artists and songs). */
     fun show(p: String, on: Boolean) {
         val now = if (on) hidden.value - p else hidden.value + p
-        if (PLACES.none { it !in now }) return
+        if (PLACES.none { it !in now } || listOf("listen", "albums", "artists", "songs").all { it in now }) return
         hidden.value = now
         runCatching { file.writeText(now.joinToString("\n")) }
     }

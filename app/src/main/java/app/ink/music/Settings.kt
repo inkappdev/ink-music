@@ -158,6 +158,9 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     }
                 }
 
+                // just your music (JustYours): your files and server, nothing else asked for; the places shown (Places)
+                JustYoursRows(opened)
+
                 // your youtube music (the full build): signed in on youtube's own page, read only
                 if (YouTubeAccount.available) {
                     val who by YouTubeAccount.who.collectAsState()
@@ -191,6 +194,10 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                             PickLabel("youtube songs you play here, in your history there")
                             var tells by remember { mutableStateOf(YouTubeAccount.tells(ctx)) }
                             Pick(listOf("tell youtube" to tells, "don't" to !tells)) { tells = it == 0; YouTubeAccount.tell(ctx, tells) }
+                            // the records you saved there, in albums after your own (TubeInLibrary; #4)
+                            PickLabel("show your youtube music library here: its records in albums")
+                            val tubeIn by TubeInLibrary.on.collectAsState()
+                            Pick(listOf("show them" to tubeIn, "don't" to !tubeIn)) { TubeInLibrary.set(ctx, it == 0) }
                         }
                     }
                 }
@@ -208,7 +215,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     remember { Extensions.start(ctx) }
                     val ext by Extensions.sources.collectAsState()
                     SettingRow("EXTENSIONS", if (ext.isEmpty()) "add one" else "${ext.count { it.on }} of ${ext.size} on", opened,
-                        "addresses of yours asked first for a youtube or server song's stream. one turned on gets each song's title, artist, record and length") {
+                        "your addons, asked first for a song") {
                         ExtensionsSetting()
                     }
                 }
@@ -938,23 +945,19 @@ private fun ExtensionsSetting() {
                 },
                 onClick = felt { editing = s.url; url = s.url; name = s.name; said = null })) {
                 BasicText(s.name.ifBlank { Uri.parse(s.url).host.orEmpty() }.lowercase(), style = pixel(14.sp, if (editing == s.url) Ink.ink else Ink.mid))
-                BasicText(s.url, style = pixel(12.sp, Ink.mid), maxLines = 2)
                 // a lossless one: what it uses (2026-11-24: ~35 MB a five-minute song), so a phone's plan isn't a surprise
-                if (s.url in lossless) BasicText("lossless: about 30 to 40 mb a song, a gb or more an hour. on mobile data it sends what your quality there says", style = pixel(12.sp, Ink.mid))
+                if (s.url in lossless) BasicText("lossless · about a gb an hour", style = pixel(12.sp, Ink.mid))
                 if (s.on) last[s.url]?.let { BasicText(extensionSaid(it), style = pixel(12.sp, if (it.found) Ink.ink else Ink.mid)) }
             }
             Spacer(Modifier.height(4.dp))
             Pick(listOf("on" to s.on, "off" to !s.on)) { Extensions.turn(ctx, s.url, it == 0) }
         }
     }
-    BasicText(if (sources.isEmpty()) "an addon's link (its manifest.json, with search and stream: the song is searched for there), or an address " +
-        "with {title} {artist} {album} {duration} {id} where the song goes, or they're added as its query. " +
-        "it answers with the song's audio, or json with its link: {\"url\": \"https://...\"} or {\"data\": {\"url\": \"https://...\"}}. " +
-        "anything else, and the song plays from where it would have"
-        else "a tap changes one, a hold takes it away. a new one starts off", style = pixel(12.sp, Ink.mid))
+    BasicText(if (sources.isEmpty()) "paste an addon's link"
+        else "tap to change, hold to remove", style = pixel(12.sp, Ink.mid))
     Spacer(Modifier.height(14.dp))
     Field("address", url, { url = it; said = null }, "https://", KeyboardType.Uri)
-    Field("its name, if you like", name, { name = it }, "", KeyboardType.Text)
+    Field("name", name, { name = it }, "", KeyboardType.Text)
     said?.let { BasicText(it, style = pixel(12.sp, Ink.ink)); Spacer(Modifier.height(10.dp)) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Word(if (editing == null) "ADD" else "SAVE", headline(40.sp, if (url.isBlank()) Ink.mid else Ink.ink), Modifier.padding(end = 26.dp), touch = 10.dp) {
