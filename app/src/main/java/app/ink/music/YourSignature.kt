@@ -82,6 +82,12 @@ object YourSignature {
         }
     }
 
+    /** Begun anew in a mood (the moods page): the mood chosen, kept, and played. */
+    fun startIn(c: Context, mood: String) {
+        turn(c, dials.value.copy(mood = mood))
+        start(c)
+    }
+
     /** A love or an unlove while your signature plays: it steers what comes. */
     fun loved(c: Context, s: Song, on: Boolean) {
         if (!on || !playing()) return

@@ -3,7 +3,9 @@ package app.ink.music
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -152,14 +154,23 @@ fun AllMoodsPage(pages: Pages) {
     ) {
         item {
             BasicText("MOODS & GENRES", style = headline(40.sp))
-            BasicText("youtube music's editors' playlists for each, the ones you open most first", style = pixel(12.sp, Ink.mid))
+            BasicText("the moods are ink's own, each played as your signature: your taste, in that mood", style = pixel(12.sp, Ink.mid))
             Spacer(Modifier.height(8.dp))
+        }
+        // ink's moods (InkMoods), not youtube music's editors' playlists (2026-11-25, Bronson didn't like those): a tap plays
+        // your signature in that mood, a third of it the mood's songs by the artists nearest you
+        item { BasicText("moods", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 14.dp, bottom = 8.dp)) }
+        items(InkMoods.ALL.chunked(2)) { row ->
+            Row(Modifier.padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { m -> InkMoodTile(m, Modifier.weight(1f)) { YourSignature.startIn(ctx, m.key); pages.close() } }
+                repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
         }
         val all = moods
         if (all == null) item { BasicText("reading", style = pixel(12.sp, Ink.mid)) }
         else {
             fun ordered(xs: List<TubeMood>) = xs.sortedWith(compareByDescending<TubeMood> { counts[it.title] ?: 0 }.thenBy { Moods.rank(it.title) })
-            listOf("moods" to ordered(all.filter { !it.genre }), "genres" to ordered(all.filter { it.genre })).filter { it.second.isNotEmpty() }.forEach { (label, xs) ->
+            listOf("genres" to ordered(all.filter { it.genre })).filter { it.second.isNotEmpty() }.forEach { (label, xs) ->
                 item { BasicText(label, style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 14.dp, bottom = 8.dp)) }
                 items(xs.chunked(3)) { row ->
                     val size = genreSize(all.map { it.title })
@@ -171,4 +182,21 @@ fun AllMoodsPage(pages: Pages) {
             }
         }
     } }
+}
+
+/** One of ink's moods as a tile: its week's cover (Moodboard's) with its name on a black tab, its line under. */
+@Composable
+private fun InkMoodTile(m: InkMoods.Mood, modifier: Modifier, onClick: () -> Unit) {
+    val ctx = LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(Unit) { Moodboard.start(ctx) }
+    val kept by Moodboard.kept.collectAsState()
+    Column(modifier.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).border(1.dp, Ink.line), contentAlignment = Alignment.BottomStart) {
+            kept[m.key]?.art?.let { art -> Covered(remember(art) { faceSong("mood " + m.key, art) }, Modifier.fillMaxSize(), px = 400) }
+            BasicText(m.name.uppercase(), style = headline(20.sp), maxLines = 2,
+                modifier = Modifier.background(Ink.black).padding(start = 6.dp, end = 8.dp, top = 4.dp, bottom = 2.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        BasicText(m.line, style = pixel(12.sp, Ink.mid), maxLines = 2)
+    }
 }
