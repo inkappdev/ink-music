@@ -17,8 +17,8 @@ class FrequencyTest {
         val sitting = FrequencyMix.Sitting(emptyList())
         val yours = lanes(FrequencyMix.pick(all, FrequencyMix.Dials(0.0), { .5 }, sitting, FrequencyMix.Learned(), emptyList(), 20, random = Random(1)))
         val new = lanes(FrequencyMix.pick(all, FrequencyMix.Dials(1.0), { .5 }, sitting, FrequencyMix.Learned(), emptyList(), 20, random = Random(1)))
-        assertEquals(13, yours[FrequencyMix.YOURS]); assertEquals(1, yours[FrequencyMix.FAR])
-        assertEquals(1, new[FrequencyMix.YOURS]); assertEquals(12, new[FrequencyMix.FAR])
+        assertEquals(14, yours[FrequencyMix.YOURS]); assertEquals(1, yours[FrequencyMix.FAR])
+        assertEquals(null, new[FrequencyMix.YOURS]); assertEquals(16, new[FrequencyMix.FAR])
     }
 
     @Test fun aLaneThatsDoneBadlyGetsLess() {
@@ -61,5 +61,15 @@ class FrequencyTest {
         val heard = listOf(Triple("a/x", "x", now - 3_600_000), Triple("b/y", "y", now - 10L * 86_400_000), Triple("b/y", "y", now - 9L * 86_400_000))
         val r = FrequencyMix.yours(heard, emptySet(), { .5 }, now)
         assertEquals(listOf("b/y"), r.map { it.first })
+    }
+
+    @Test fun aNewBatchCarriesOnTheSittingsShares() {
+        // a sitting that's had one of yours already: the next batch's first isn't yours again (each batch began with yours)
+        val first = FrequencyMix.pick(all, FrequencyMix.Dials(.5), { .5 }, FrequencyMix.Sitting(emptyList()), FrequencyMix.Learned(), emptyList(), 1,
+            random = Random(1), given0 = mapOf(FrequencyMix.YOURS to 1)).single()
+        assertTrue(first.lane != FrequencyMix.YOURS)
+        // all new: none of yours at all
+        val allNew = FrequencyMix.pick(all, FrequencyMix.Dials(1.0), { .5 }, FrequencyMix.Sitting(emptyList()), FrequencyMix.Learned(), emptyList(), 30, random = Random(1))
+        assertTrue(allNew.none { it.lane == FrequencyMix.YOURS })
     }
 }

@@ -216,15 +216,21 @@ object YourFrequency {
 
         // chosen, then found to play (the mood's on YouTube Music), each one's lane kept
         // kept apart from what's played lately and what's still waiting (the queue after the song playing comes last)
-        val recent = (went.values.sortedBy { it.at }.map { it.artist } + queue.take(current + 1).takeLast(8).map { it.artist } + queue.drop(current + 1).map { it.artist })
-        val picked = FrequencyMix.pick(found, d, ::taste, sitting, learned, recent, BATCH + 2, appetite)
+        // and the last dozen it gave (some taken off by a skip: they came straight back, 2026-11-25)
+        val lately = o.optJSONArray("lately")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
+        val recent = lately + (went.values.sortedBy { it.at }.map { it.artist } + queue.take(current + 1).takeLast(8).map { it.artist } + queue.drop(current + 1).map { it.artist })
+        // each lane's count this sitting, so the shares hold across batches
+        val laneCounts = given.keys().asSequence().mapNotNull { given.optJSONArray(it)?.optString(0) }.groupingBy { it }.eachCount()
+        val picked = FrequencyMix.pick(found, d, ::taste, sitting, learned, recent, BATCH + 2, appetite, given0 = laneCounts)
         val out = ArrayList<Song>()
+        val givenArtists = ArrayList<String>()
         for (f in picked) {
             if (out.size >= BATCH) break
             val title = moodSongs.firstOrNull { Radio.key(it.first, it.second) == f.key }?.first
             val s = songs[f.key] ?: title?.let { runCatching { YouTubeMusic.find(it, f.artist) }.getOrNull() } ?: continue
             out += s
             given.put(f.key, JSONArray().put(f.lane).put(f.through))
+            givenArtists += s.artist
         }
         // kept: the newest 300 lanes, what's counted, the mood's songs
         val keys = given.keys().asSequence().toList()
@@ -232,7 +238,7 @@ object YourFrequency {
         // written over what's there now (a dial may have turned meanwhile), unless another frequency sitting has begun since
         val now = read(c) ?: o
         if (now.optString("first") == o.optString("first")) {
-            now.put("given", given).put("counted", counted)
+            now.put("given", given).put("counted", counted).put("lately", JSONArray((lately + givenArtists).takeLast(12)))
             moodKept?.let { now.put("moodOf", mood?.key).put("moodSongs", it) }
             write(c, now)
         }

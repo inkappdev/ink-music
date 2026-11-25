@@ -67,10 +67,12 @@ object FrequencyMix {
         val lean = (appetite - ForYou.STRETCH) * .5            // -.1 to +.1
         // three settings along the needle, between them in proportion: all yours, both, all new
         val t = d.tuned.coerceIn(0.0, 1.0)
-        val ends = listOf(doubleArrayOf(.65, .3, .05), doubleArrayOf(.35, .35, .3), doubleArrayOf(.05, .35, .6))
+        // all new is new: none of yours, a little near (2026-11-25, Bronson: all new "pretty much only played songs i know")
+        val ends = listOf(doubleArrayOf(.7, .25, .05), doubleArrayOf(.35, .35, .3), doubleArrayOf(0.0, .2, .8))
         val (a, b, k) = if (t <= .5) Triple(ends[0], ends[1], t * 2) else Triple(ends[1], ends[2], (t - .5) * 2)
         fun at(i: Int) = a[i] + (b[i] - a[i]) * k
-        val base = mapOf(YOURS to (at(0) - lean).coerceAtLeast(.02), NEAR to at(1), FAR to (at(2) + lean).coerceAtLeast(.02))
+        val base = mapOf(YOURS to (at(0) - lean).coerceAtLeast(if (t >= .9) 0.0 else .02), NEAR to at(1), FAR to (at(2) + lean).coerceAtLeast(.02))
+            .filterValues { it > 0 }
         return if (d.mood.isEmpty()) base else base.mapValues { it.value * 2 / 3 } + (MOOD to 1.0 / 3)
     }
 
@@ -129,19 +131,21 @@ object FrequencyMix {
     fun pick(
         found: List<Found>, dials: Dials, taste: (String) -> Double, sitting: Sitting, learned: Learned,
         recent: List<String>, n: Int, appetite: Double = ForYou.STRETCH, random: Random = Random.Default,
+        given0: Map<String, Int> = emptyMap(),
     ): List<Found> {
         val shares = shares(dials, appetite).mapValues { (lane, s) -> s * learned.times(lane) }
         val open = found.filter { taste(it.artist) >= 0 && !sitting.out(it.artist) }.distinctBy { it.key }.toMutableList()
         val away = recent.takeLast(8).map(::who).toMutableList()
-        val given = HashMap<String, Double>()   // each lane's places so far, against its share
+        // each lane's places so far this sitting (`given0`), against its share: a batch alone began with yours every time
+        val given = HashMap<String, Double>().apply { given0.forEach { (k, v) -> put(k, v.toDouble()) } }
         val out = ArrayList<Found>(n)
         fun score(f: Found) = f.rank * .5 + taste(f.artist).coerceAtLeast(0.0) * (if (f.lane == FAR) .1 else .4) +
             sitting.moved(f) + random.nextDouble() * .15
         while (out.size < n) {
             val lanes = shares.keys.filter { lane -> open.any { it.lane == lane && who(it.artist) !in away } }
             if (lanes.isEmpty()) break
-            // the lane furthest behind its share
-            val lane = lanes.minByOrNull { (given[it] ?: 0.0) / shares.getValue(it) } ?: break
+            // the lane furthest behind its share, a tie to the larger share
+            val lane = lanes.minWithOrNull(compareBy<String> { (given[it] ?: 0.0) / shares.getValue(it) }.thenByDescending { shares.getValue(it) }) ?: break
             val best = open.filter { it.lane == lane && who(it.artist) !in away }.maxByOrNull(::score) ?: break
             out += best; open.remove(best)
             given[lane] = (given[lane] ?: 0.0) + 1
