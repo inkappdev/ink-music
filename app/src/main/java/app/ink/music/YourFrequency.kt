@@ -88,6 +88,19 @@ object YourFrequency {
         start(c)
     }
 
+    /**
+     * Stopped (the player's stop, 2026-11-25, Bronson: the block "also needs to stop and reset"): the sitting over, its
+     * first song forgotten, so the block shows PLAY again and the queue's end gets radio, not more of it. The needle and
+     * the mood are kept.
+     */
+    fun stopped(c: Context) {
+        if (first.value == null) return
+        first.value = null
+        val o = read(c) ?: return
+        o.remove("first")
+        write(c, o)
+    }
+
     /** A love or an unlove while your frequency plays: it steers what comes. */
     fun loved(c: Context, s: Song, on: Boolean) {
         if (!on || !playing()) return

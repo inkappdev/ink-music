@@ -319,6 +319,8 @@ object Playback {
      * queue stays, and play starts it again. On a speaker, the same: the speaker let go, its queue here.
      */
     fun stop() {
+        // a FREQUENCY sitting ends with it: its block back to PLAY, the player finding no more for it
+        app?.let { YourFrequency.stopped(it) }
         if (casting) return Casting.bringBack(stopped = true)
         // one ask: the player fades, lets go and goes back to the start itself (three made the fade start over)
         controller?.stop()
