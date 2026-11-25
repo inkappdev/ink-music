@@ -71,8 +71,8 @@ object FrequencyMix {
         val ends = listOf(doubleArrayOf(.7, .25, .05), doubleArrayOf(.35, .35, .3), doubleArrayOf(0.0, .2, .8))
         val (a, b, k) = if (t <= .5) Triple(ends[0], ends[1], t * 2) else Triple(ends[1], ends[2], (t - .5) * 2)
         fun at(i: Int) = a[i] + (b[i] - a[i]) * k
+        // every lane kept, a share of 0 where none (the screens read each one; dropping it crashed listen, 2026-11-25)
         val base = mapOf(YOURS to (at(0) - lean).coerceAtLeast(if (t >= .9) 0.0 else .02), NEAR to at(1), FAR to (at(2) + lean).coerceAtLeast(.02))
-            .filterValues { it > 0 }
         return if (d.mood.isEmpty()) base else base.mapValues { it.value * 2 / 3 } + (MOOD to 1.0 / 3)
     }
 
@@ -133,7 +133,8 @@ object FrequencyMix {
         recent: List<String>, n: Int, appetite: Double = ForYou.STRETCH, random: Random = Random.Default,
         given0: Map<String, Int> = emptyMap(),
     ): List<Found> {
-        val shares = shares(dials, appetite).mapValues { (lane, s) -> s * learned.times(lane) }
+        // a lane with no share takes no place
+        val shares = shares(dials, appetite).mapValues { (lane, s) -> s * learned.times(lane) }.filterValues { it > 0 }
         val open = found.filter { taste(it.artist) >= 0 && !sitting.out(it.artist) }.distinctBy { it.key }.toMutableList()
         val away = recent.takeLast(8).map(::who).toMutableList()
         // each lane's places so far this sitting (`given0`), against its share: a batch alone began with yours every time
