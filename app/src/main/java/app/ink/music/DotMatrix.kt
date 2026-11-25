@@ -59,7 +59,11 @@ object DotMatrix {
         runCatching { foundFile(c).createNewFile() }
         on.value = value; found.value = true
         apply()
-        (c as? Activity)?.recreate()
+        // the screens drawn again in the new hand: the activity found through any wrapper round it (from the look page
+        // the context is wrapped, and nothing was redrawn: the giant name stayed in Doto, 2026-11-25)
+        var a: Context? = c
+        while (a is android.content.ContextWrapper && a !is Activity) a = a.baseContext
+        (a as? Activity)?.recreate()
     }
 
     /** Concert A: the needle let go within a few hertz of 440. */
