@@ -537,8 +537,9 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
         label = "push",
     ) { t ->
         val live by rememberUpdatedState(t)
+        val scope = rememberCoroutineScope()
         if (small) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Sleeve(t, 96.dp, Modifier.clickwheel({ live }, scrub) { coverTap(live, onOpen) })
+            Sleeve(t, 96.dp, Modifier.clickwheel({ live }, scrub) { coverTap(live, scope, onOpen) })
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.Top) {
@@ -560,7 +561,7 @@ private fun Song(n: Now, dir: Int, small: Boolean, scrub: Scrub, onOpen: (Page) 
         } else Column {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val side = minOf(maxWidth, coverCap(), LocalCoverRoom.current)
-                Sleeve(t, side, Modifier.clickwheel({ live }, scrub) { coverTap(live, onOpen) })
+                Sleeve(t, side, Modifier.clickwheel({ live }, scrub) { coverTap(live, scope, onOpen) })
                 Box(Modifier.size(side)) { over(t) }
             }
             if (words) {
@@ -623,6 +624,7 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
             Spacer(Modifier.height(4.dp))
         }
         // the artist and the record, each a way to its page
+        val recordScope = rememberCoroutineScope()
         Row(Modifier.fillMaxWidth()) {
           Row(Modifier.weight(1f)) {
             val song = t.song
@@ -633,7 +635,7 @@ private fun SongWords(t: Now, onOpen: (Page) -> Unit, onShare: () -> Unit, onHea
                 Spacer(Modifier.width(14.dp))
                 FadeText(t.album.lowercase(), pixel(SMALL, SAID), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).tvLit().clickable(remember { MutableInteractionSource() }, indication = null,
-                        onClick = felt { song?.let(::recordOf)?.let(onOpen) }))
+                        onClick = felt { song?.let { openRecord(it, recordScope, onOpen) } }))
             }
           }
             // the song's link to send; held, its poster for a story
@@ -907,11 +909,20 @@ private fun Modifier.clickwheel(now: () -> Now, scrub: Scrub, onTap: () -> Unit)
  * record page (the record's name under the title goes there too); a station, an episode, a DJ set or a song with no
  * record, play / pause as before. Pause is the play word's in the controls.
  */
-private fun coverTap(n: Now, onOpen: (Page) -> Unit) {
-    val s = n.song
-    // the library's record, else YouTube Music's (a YouTube song's albumId is no library record: the page opened empty)
-    val record = s?.takeUnless { SetHeard.isSet(n) }?.let(::recordOf)
-    if (record == null) Playback.toggle() else onOpen(record)
+private fun coverTap(n: Now, scope: kotlinx.coroutines.CoroutineScope, onOpen: (Page) -> Unit) {
+    val s = n.song?.takeUnless { SetHeard.isSet(n) }
+    if (s == null || s.station || s.episode || s.album.isBlank()) { Playback.toggle(); return }
+    openRecord(s, scope, onOpen)
+}
+
+/**
+ * A song's record page: the library's, or YouTube Music's by its id; a YouTube song that names its record but not its id
+ * (most found by search: "y" and the video's own id) has it looked up by name (2026-11-24: a tap on its cover paused it)
+ */
+internal fun openRecord(s: Song, scope: kotlinx.coroutines.CoroutineScope, onOpen: (Page) -> Unit) {
+    recordOf(s)?.let { onOpen(it); return }
+    if (!s.tube || s.album.isBlank()) return
+    scope.launch { YouTubeMusic.findRecord(s.album, s.albumArtist.ifBlank { s.artist.substringBefore(", ") })?.let { onOpen(Page.Tube(it)) } }
 }
 
 /**
