@@ -74,8 +74,15 @@ object DotMatrix {
         (a as? Activity)?.recreate()
     }
 
-    /** Concert A: the needle let go within a few hertz of 440. */
-    fun isA(hz: Double) = hz in 436.0..444.0
+    /**
+     * Concert A's notch (2026-11-25, Bronson: hard to land exactly): about a fingertip of the dial either side of 440
+     * (3% of it, some 360 to 540 Hz) and the needle snaps to it, with a tick; let go there and DOT MATRIX turns.
+     */
+    fun isA(hz: Double) = kotlin.math.abs(kotlin.math.ln(hz / 440.0)) < .03 * kotlin.math.ln(1000.0)
+    /** The needle's place at exactly 440 Hz (FrequencyMix.hzOf's inverse: 20 Hz to 20 kHz on a log scale). */
+    val A_AT = (kotlin.math.ln(440.0 / 20.0) / kotlin.math.ln(1000.0)).toFloat()
+    /** Where the needle sits for a finger at `t`: in the notch, exactly 440. */
+    fun detent(t: Float) = if (isA(FrequencyMix.hzOf(t.toDouble()))) A_AT else t
 }
 
 /** A pixel cell: a round dot in DOT MATRIX, ink's square otherwise (each pixel piece draws its cells with it). */

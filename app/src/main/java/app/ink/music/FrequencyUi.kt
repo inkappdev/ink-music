@@ -118,10 +118,14 @@ fun FrequencyCard() {
         }
         DotSpectrum(tuned, playing, if (on && cover != null) cover else Ink.ink, newColour, Modifier.fillMaxWidth().padding(top = 12.dp).height(150.dp)
             .onGloballyPositioned { spectrumAt = it.boundsInWindow() }
-            .pointerInput(d) { detectTapGestures { tuned = (it.x / size.width).coerceIn(0f, 1f); let(tuned) } }
+            .pointerInput(d) { detectTapGestures { tuned = DotMatrix.detent((it.x / size.width).coerceIn(0f, 1f)); let(tuned) } }
             .pointerInput(d) {
                 detectHorizontalDragGestures(onDragEnd = { let(tuned) }) { change, _ ->
-                    change.consume(); tuned = (change.position.x / size.width).coerceIn(0f, 1f)
+                    change.consume()
+                    // 440 is a notch: the needle snaps to it near it, a tick as it lands in it
+                    val next = DotMatrix.detent((change.position.x / size.width).coerceIn(0f, 1f))
+                    if (next == DotMatrix.A_AT && tuned != DotMatrix.A_AT) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                    tuned = next
                 }
             })
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
