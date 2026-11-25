@@ -269,6 +269,12 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
         val tv = onTv()
         val lines = rememberLines(n, sing || tv)
         val lyric = rememberLyric(n, lines)?.takeIf { sing || !tv }
+        // the next song's words still being looked for: the lyrics' place kept, empty, so the big cover doesn't pop up
+        // between songs and the controls stay folded (2026-11-24, Bronson: "feels glitchy"); a song found to have none
+        // gives it up
+        var hadWords by remember { mutableStateOf(false) }
+        if (lyric != null) hadWords = true else if (!sing || lines?.isEmpty() == true) hadWords = false
+        val held = lyric ?: if (sing && !tv && lines == null && hadWords) Lyric(emptyList(), -1) else null
         val timed = lines?.firstOrNull()?.let { it.at >= 0 } == true
         // the artist read ahead (their name, here, is a way to their page)
         val artist = artistOf(n)
@@ -343,8 +349,8 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
                 )
             }
-            val words = lyric != null || notes != null
-            val fold = folded && lyric != null
+            val words = held != null || notes != null
+            val fold = folded && held != null
             androidx.activity.compose.BackHandler(fold) { folded = false }
             AnimatedContent(
                 targetState = words, modifier = Modifier.weight(1f),
@@ -352,9 +358,15 @@ fun PlayerPage(onClose: () -> Unit, onOpen: (Page) -> Unit = {}, onStop: () -> U
                 label = "lyrics",
             ) { withLyrics ->
                 Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-                    if (withLyrics && (lyric != null || notes != null)) {
+                    if (withLyrics && (held != null || notes != null)) {
                         if (notes != null) NotesBlock(notes, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = 20.dp))
-                        else if (lyric != null) LyricsBlock(lyric, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp, bottom = if (fold) 12.dp else 20.dp), fill = fold) { folded = !folded }
+                        // one song's words fade out and the next's fade in (an empty place between, while they're looked for)
+                        else if (held != null) AnimatedContent(
+                            targetState = held, modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentKey = { (n.song?.id ?: n.title) + it.lines.isEmpty() },
+                            transitionSpec = { fadeIn(tween(Motion.ENTER, easing = Motion.expo)) togetherWith fadeOut(tween(Motion.EXIT, easing = Motion.expo)) },
+                            label = "words",
+                        ) { l -> LyricsBlock(l, Modifier.fillMaxSize().padding(top = 8.dp, bottom = if (fold) 12.dp else 20.dp), fill = fold) { folded = !folded } }
                         // lyrics up: the line a little heavier over the small cover (1 dp read as faint there)
                         Scrubber(line, accent, scrub, line = 2.dp, k = mixK, old = oldAccent, new = newAccent) { HeardWord(n, typing) { heardUp = true } }
                         // folded (#11): a tap on the cover or the names brings the controls back, never a page opened
