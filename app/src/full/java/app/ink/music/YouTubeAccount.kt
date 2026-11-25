@@ -392,7 +392,9 @@ object YouTubeAccount {
                     records.distinct().firstNotNullOfOrNull { (tube ?: InnerTube()).artistByRecord(it, name) }.orEmpty()
                 }
             if (page.isEmpty()) return@runCatching null
-            val a = (tube ?: InnerTube()).artist(page)
+            // read as a visitor: nothing on an artist's page is yours, and a sign-in gone stale (its cookie expired, still
+            // kept) had YouTube answer as no one, which InnerTube takes for signed out: the page came back empty (2026-11-25)
+            val a = InnerTube().artist(page)
             val who = a.name.ifEmpty { name }
             // its year and kind from the line under it ("2021", "Single • 2021", "EP • 2025")
             fun record(it: InnerTube.Item) = TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, who, it.art,
@@ -593,7 +595,14 @@ object YouTubeAccount {
         val t = tube ?: InnerTube()
         val t0 = System.currentTimeMillis()
         val pages = Channel<List<Song>>(Channel.CONFLATED)
-        val read = scope.async { read(t, id) { if (was == null) pages.trySend(it) } }
+        // a sign-in gone stale (YouTube answering as no one): the list asked again as a visitor (a public one reads so)
+        val read = scope.async {
+            runCatching { read(t, id) { if (was == null) pages.trySend(it) } }.recoverCatching { e ->
+                if (e !is InnerTube.SignedOut) throw e
+                android.util.Log.d("ink-youtube", "playlist $id: the sign-in answered as no one, read as a visitor")
+                read(InnerTube(), id) { if (was == null) pages.trySend(it) }
+            }.getOrThrow()
+        }
         read.invokeOnCompletion { pages.close() }
         for (p in pages) emit(p)
         val all = runCatching { read.await() }.onFailure { android.util.Log.d("ink-youtube", "playlist $id: $it") }.getOrNull()
