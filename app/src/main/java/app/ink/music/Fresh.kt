@@ -214,11 +214,11 @@ object Fresh {
         val boost = HashMap<String, Double>()
         fun b(k: String, v: Double) { boost[k] = (boost[k] ?: 0.0) + v }
         when (now.part) {
-            Moment.Part.MORNING -> { b("fromYours", -3.0); b("forYou", -3.0); b("newest", -8.0); b("fresh", -8.0); b("indie", -5.0); b("episodes", -6.0) }
-            Moment.Part.DAY -> { b("madeForYou", -2.0); b("mixes", -3.0); b("because", -3.0); b("newToYou", -4.0) }
+            Moment.Part.MORNING -> { b("dialedIn", -4.0); b("fromYours", -3.0); b("forYou", -3.0); b("newest", -8.0); b("fresh", -8.0); b("indie", -5.0); b("episodes", -6.0) }
+            Moment.Part.DAY -> { b("dialedIn", -1.0); b("madeForYou", -2.0); b("mixes", -3.0); b("because", -3.0); b("newToYou", -4.0) }
             // the DJ sets come up as the night does
-            Moment.Part.EVENING -> { b("liveSets", -3.0); b("tubeMixes", -4.0); b("mixes", -4.0); b("records", -8.0); b("yours", -10.0); b("because", -3.0) }
-            Moment.Part.LATE -> { b("liveSets", -5.0); b("forgotten", -9.0); b("onRepeat", -6.0); b("stations", -14.0); b("inkRadio", -7.0); b("nts", -6.0); b("fromYours", 3.0); b("indie", 4.0) }
+            Moment.Part.EVENING -> { b("dialedIn", -3.0); b("liveSets", -3.0); b("tubeMixes", -4.0); b("mixes", -4.0); b("records", -8.0); b("yours", -10.0); b("because", -3.0) }
+            Moment.Part.LATE -> { b("dialedIn", -3.0); b("liveSets", -5.0); b("forgotten", -9.0); b("onRepeat", -6.0); b("stations", -14.0); b("inkRadio", -7.0); b("nts", -6.0); b("fromYours", 3.0); b("indie", 4.0) }
         }
         if (now.friday) { b("fromYours", -6.0); b("forYou", -5.0); b("fresh", -9.0); b("newest", -9.0) }
         if (now.weekend) { b("liveSets", -2.0); b("yours", -10.0); b("records", -8.0); b("forgotten", -4.0) }

@@ -75,11 +75,11 @@ private fun Modifier.moving(scope: androidx.compose.foundation.lazy.LazyItemScop
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment). */
 // listen is you, INK is the world (2026-11-12, Bronson): live sets, ink radio, the indie chart and stations are INK's;
 // your mix (your own music at a tempo) is here
-val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "videos", "tuner", "forYou", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "nts", "because", "newToYou",
+val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "videos", "tuner", "forYou", "dialedIn", "madeForYou", "jumpBack", "kept", "episodes", "tubeMixes", "mixes", "yourMix", "nts", "because", "newToYou",
     "onRepeat", "fresh", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "records", "newest", "yours")
 
 /** The shelves made of yours alone: all listen shows with just your music (JustYours). */
-val JUST_YOURS_SHELVES = setOf("madeForYou", "jumpBack", "kept", "yourMix", "onRepeat", "forgotten", "newest", "yours")
+val JUST_YOURS_SHELVES = setOf("dialedIn", "madeForYou", "jumpBack", "kept", "yourMix", "onRepeat", "forgotten", "newest", "yours")
 
 object Listen {
     /** Each time ink music is opened again after a while: the shelves' order is made anew for it. */
@@ -364,6 +364,9 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
             PickTile(remember(s, art) { s.copy(pick = s.pick.copy(art = art), art = art) }, pages, Fresh.reason(s, p.stretch, taste), near = !p.stretch)
         }
     }
+    // dialed in: the nine you go back to at this hour, a shelf the moment moves like the rest (2026-11-25, Bronson: it was
+    // pinned on top, a second "tap to play yours" under SIGNATURE)
+    if (!Device.tv) sections["dialedIn"] = { Column(Modifier.padding(bottom = 10.dp)) { DialedInSheet(heard, ::songOf, pages) } }
     // made from your listening (Discover): fresh finds, deep cuts and the rest
     sections["madeForYou"] = { MadeForYouShelf() }
     if (uRecent.isNotEmpty() || uTubeRecent.isNotEmpty()) sections["jumpBack"] = {
@@ -483,8 +486,6 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
         if (sinceLines.isNotEmpty()) item(key = "since") { Column(Modifier.cascade(1).moving(this)) { SinceYouWereHere(since, sinceLines) } }
         // your signature: one endless station made from you, steered as it plays (#16)
         if (!Device.tv) item(key = "signature") { Column(Modifier.cascade(1)) { SignatureCard() } }
-        // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
-        if (!Device.tv) item(key = "dialedIn") { Column(Modifier.cascade(1).padding(bottom = 10.dp)) { DialedInSheet(heard, ::songOf, pages) } }
         // three ways in, small: charts, new releases, moods & genres (2026-11-17, Bronson)
         if (!Device.tv && !JustYours.on) item(key = "doors") { Column(Modifier.cascade(1)) { Doors(pages) } }
         // the shelves, in the moment's order (Fresh.order): each shown, and its taps counted, so the unopened sink
