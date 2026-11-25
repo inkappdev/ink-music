@@ -86,6 +86,13 @@ fun LookPage(pages: Pages) {
             // is drawn, the looks down its side, a lit square a column (LooksGrid); then the rest in four short groups
             Group("PICTURES", "one look for each place a picture is drawn")
             LooksGrid()
+            // dots laid over what's behind the player, whatever its look (Android 13 and up)
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                val over by DotsOver.on.collectAsState()
+                SettingRow("DOTS OVER", if (over) "on" else "off", opened, "round dots laid over what's behind the player, in any look") {
+                    Pick(listOf("on" to over, "off" to !over)) { DotsOver.set(ctx, it == 0) }
+                }
+            }
             Group("THE PLAYER")
             // the giant names running across: moving, or still where they are
             val marquee by Marquees.on.collectAsState()

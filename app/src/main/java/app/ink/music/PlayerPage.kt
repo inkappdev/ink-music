@@ -690,10 +690,10 @@ private fun Sleeve(t: Now, side: Dp, modifier: Modifier) {
 @Composable
 private fun Backdrop(cover: Cover?, n: Now) {
     val chosen by Looks.on.collectAsState()
-    // DOT MATRIX (Android 13's shaders): dots over the blur, the x-ray or the clear cover; dither and tiles as chosen
-    // (a crisp look chosen is kept, 2026-11-25), dots chosen drawn once
+    // dots over it (the look page's "dots over", Android 13's shaders), over any look but black or dots itself
     val look = chosen
-    val dots = Hand.dots && android.os.Build.VERSION.SDK_INT >= 33 && (look == Look.BLUR || look == Look.XRAY || look == Look.AS_IS)
+    val over by DotsOver.on.collectAsState()
+    val dots = over && android.os.Build.VERSION.SDK_INT >= 33 && look != Look.PLAIN && look != Look.DOTS
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current.density
         // the square cover cropped to fill the page: shown at the page's longer side
@@ -1680,18 +1680,22 @@ fun PlayerPreview(which: Int, modifier: Modifier = Modifier) {
                             Spacer(Modifier.height(8.dp))
                             BasicText(n.artist.lowercase(), style = pixel(SMALL, SAID), maxLines = 1)
                         }
-                        Spacer(Modifier.weight(1f))
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Sprite(SHUFFLE, OFF, 3.dp); Sprite(BACK, Ink.ink, 4.dp); Sprite(PLAY, Ink.ink, 4.dp); Sprite(NEXT, Ink.ink, 4.dp); Sprite(REPEAT, OFF, 3.dp)
+                        // the player's foot on black, as it is (2026-11-25): the backdrop above, the controls on black
+                        Spacer(Modifier.height(18.dp))
+                        Column(Modifier.weight(1f).fillMaxWidth().background(Ink.black)) {
+                            Spacer(Modifier.weight(1f))
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Sprite(SHUFFLE, OFF, 3.dp); Sprite(BACK, Ink.ink, 4.dp); Sprite(PLAY, Ink.ink, 4.dp); Sprite(NEXT, Ink.ink, 4.dp); Sprite(REPEAT, OFF, 3.dp)
+                            }
+                            Spacer(Modifier.height(36.dp))
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                listOf("up next", "lyrics", "playlist", "stop").forEach { BasicText(it, style = pixel(SMALL, SAID)) }
+                            }
+                            Spacer(Modifier.height(20.dp))
+                            Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.requiredWidth(full.first),
+                                size = 150.sp * PlayerRoom.nameScale(PlayerRoom.name.collectAsState().value))
+                            Spacer(Modifier.height(24.dp))
                         }
-                        Spacer(Modifier.height(36.dp))
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            listOf("up next", "lyrics", "playlist", "stop").forEach { BasicText(it, style = pixel(SMALL, SAID)) }
-                        }
-                        Spacer(Modifier.height(20.dp))
-                        Marquee(n.artist, Marquees.on.collectAsState().value, Modifier.requiredWidth(full.first),
-                            size = 150.sp * PlayerRoom.nameScale(PlayerRoom.name.collectAsState().value))
-                        Spacer(Modifier.height(24.dp))
                     }
                 }
             }

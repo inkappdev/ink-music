@@ -272,9 +272,9 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
     }
     // the shaders are Android 13's: before it, as it is (and blur too: Android 12's own blur)
     val drawn = shape?.takeIf { Build.VERSION.SDK_INT >= 33 || (it == Look.BLUR && Build.VERSION.SDK_INT >= 31) }
-    // DOT MATRIX: a canvas or an artist's video (a cropped clip) in moving dots; the moving cover itself stays clear, as
-    // the album art does (Android 13's shaders; before it, as it is)
-    val dotted = Hand.dots && crop && Build.VERSION.SDK_INT >= 33 && (drawn == null || drawn == Look.BLUR || drawn == Look.XRAY || drawn == Look.AS_IS)
+    // dots over a canvas (the look page's "dots over": what's behind the player), over any look but dots itself
+    val overOn by DotsOver.on.collectAsState()
+    val dotted = overOn && crop && Build.VERSION.SDK_INT >= 33 && drawn != Look.DOTS
     val come by animateFloatAsState(if (shown) 1f else 0f, if (less) snap() else tween(if (drawn == Look.DITHER) 1_400 else 600), label = "come")
     val density = LocalDensity.current.density
     var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
@@ -295,8 +295,8 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
                 dotted -> Shaders.dots(density, come)?.let { d ->
                     when (drawn) {
                         Look.BLUR -> RenderEffect.createChainEffect(d, RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP))
-                        Look.XRAY -> Shaders.effect(Look.XRAY, accent, density, 1f, 0f)?.let { RenderEffect.createChainEffect(d, it) } ?: d
-                        else -> d
+                        null, Look.AS_IS, Look.PLAIN -> d
+                        else -> Shaders.effect(drawn, accent, density, come, size.width.toFloat())?.let { RenderEffect.createChainEffect(d, it) } ?: d
                     }
                 }
                 drawn == Look.BLUR -> android.graphics.RenderEffect.createBlurEffect(40 * density, 40 * density, android.graphics.Shader.TileMode.CLAMP)

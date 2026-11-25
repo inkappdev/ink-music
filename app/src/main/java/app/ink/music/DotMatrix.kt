@@ -179,3 +179,14 @@ fun DotListCover(songs: List<Song>, name: String) {
             modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(10.dp))
     }
 }
+
+/**
+ * Dots over what's behind the player (the look page, under PICTURES; 2026-11-25): a halftone laid over the backdrop's
+ * look, still or a canvas, as DOT MATRIX once did by itself. Off at first; a file, as the player and screens both read.
+ */
+object DotsOver {
+    val on = MutableStateFlow(false)
+    private fun file(c: Context) = File(c.applicationContext.filesDir, "dots-over")
+    fun start(c: Context) { on.value = file(c).exists() }
+    fun set(c: Context, value: Boolean) { runCatching { if (value) file(c).createNewFile() else file(c).delete() }; on.value = value }
+}

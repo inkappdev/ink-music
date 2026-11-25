@@ -166,6 +166,7 @@ open class Main : ComponentActivity() {
         // DOT MATRIX, if it's been turned on: the hand set before anything's drawn
         DotMatrix.start(this)
         ArtistLook.start(this)
+        DotsOver.start(this)
         // a computer's QR code read by the camera: kept before anything, so even a Main closing itself below hands it on
         Computers.take(intent)
         // opened again (the home screen, the notification) over ink music's own screens: those stay
@@ -2433,10 +2434,9 @@ fun pullQuote(about: String): Pair<String?, String> = Bio.pullQuote(about)
  */
 @Composable
 fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print0: Print = Print.DITHER, own: Boolean = false, chosen: Boolean = false) {
-    // DOT MATRIX: the dither and the tiles in dots where nobody chose them (a special's grid); a look chosen in the
-    // grid (`chosen`: mixes and lists, artist pages, 1-bit mode) stays as chosen (2026-11-25, Bronson: artist pages'
-    // dither and tiles "all doing dots")
-    val print = if (Hand.dots && !chosen && (print0 == Print.DITHER || print0 == Print.TILES)) Print.DOTS else print0
+    // pictures follow the look page's grid alone, DOT MATRIX or not (2026-11-25, Bronson: "split clean"; DOT MATRIX is the
+    // type and the pixel pieces); `chosen` kept for who calls it so
+    val print = print0
     // covers set to clear (settings, the look; 2026-11-17, Bronson: for whoever wants no dither, tiles or blur at all):
     // the picture as it is, wherever a print was only the look's; not where a setting of its own chose it (`own`: 1-bit
     // mode, an artist page's dithered)
