@@ -38,8 +38,9 @@ object Tempos {
     private fun both(head: FloatArray?, headAt: Long, tail: FloatArray?, tailAt: Long): Read? {
         if (head == null && tail == null) return null
         val r = Crossfade.RATE
-        val hb = head?.let { Beat.find(it, r, headAt) }; val hk = head?.let { Key.find(it, r) }
-        val tb = tail?.let { Beat.find(it, r, tailAt) }; val tk = tail?.let { Key.find(it, r) }
+        // Beat's own quick reading, as the phone's (automix reads each song again by the model as it's played)
+        val hb = head?.let { Beat.find(it, r, headAt, model = false) }; val hk = head?.let { Key.find(it, r) }
+        val tb = tail?.let { Beat.find(it, r, tailAt, model = false) }; val tk = tail?.let { Key.find(it, r) }
         val inB = hb ?: tb; val outB = tb ?: hb
         if (inB == null || outB == null) return Read(0.0, 0.0, null)
         return Read(inB.bpm, inB.sure, hk ?: tk, outB.bpm, outB.sure, tk ?: hk)

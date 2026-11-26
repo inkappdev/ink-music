@@ -184,6 +184,9 @@ class Crossfade(
                 asked.createNewFile()
             }
         }
+        /** How much faster an old song's end may be played to meet the next one's tempo, and how much slower (smears sooner). */
+        const val FASTEST = .08
+        const val SLOWEST = .03
         /** How sure a beat must be to be matched (Beat's z-score). */
         const val SURE = Beat.SURE
         fun on(c: Context) = File(c.filesDir, "crossfade").exists()
@@ -576,14 +579,16 @@ class Crossfade(
         if (!onPhone) return
         titles[id] = item.mediaMetadata.title?.toString().orEmpty()
         val t0 = SystemClock.uptimeMillis()
-        val f = java.util.concurrent.CompletableFuture.supplyAsync { runCatching { ends(uri, id) }.getOrNull() }
+        // its beats by Beat's own quick reading (the model takes seconds), the model's read after on the measuring thread
+        val f = java.util.concurrent.CompletableFuture.supplyAsync { runCatching { ends(uri, id, quick = true) }.getOrNull() }
         val e = runCatching { f.get(FIRST_WAIT, java.util.concurrent.TimeUnit.MILLISECONDS) }.getOrNull()
         if (e != null) {
             ends[id] = e; asked += id; keepCut(id, e)
             android.util.Log.d("ink-crossfade", "$id: measured before it began, in ${SystemClock.uptimeMillis() - t0} ms")
+            work.execute { runCatching { reread(id) } }
         } else {
             android.util.Log.d("ink-crossfade", "$id: not measured in ${FIRST_WAIT} ms, begins uncut")
-            f.thenAccept { late -> if (late != null) keepCut(id, late) }
+            f.thenAccept { late -> if (late != null) keepCut(id, late); unbeaten.remove(id) }
         }
     }
 
@@ -770,7 +775,13 @@ class Crossfade(
         val mult = listOf(1.0, 2.0, .5).minByOrNull { kotlin.math.abs(a.period * it / b.period - 1) }!!
         val pa = a.period * mult
         val speed = pa / b.period   // the old one's end played this much faster (or slower) to keep the new one's tempo
-        if (kotlin.math.abs(speed - 1) > .08) return null
+        // sped up by 8% at most, slowed by 3% at most (2026-11-26, after ChordPlay's automix: a stretch that slows has to
+        // repeat bits of the sound, and smears; one that speeds up drops them, clean much further; North Pole slowed 7.4%
+        // into Motion Party was "noticeable"): further apart, the filter fade
+        if (speed > 1 + FASTEST || speed < 1 - SLOWEST) {
+            if (kotlin.math.abs(speed - 1) <= FASTEST) android.util.Log.d("ink-crossfade", "plan: beats not matched: its end would slow ${"%.1f".format((1 - speed) * 100)}% (${(SLOWEST * 100).toInt()}% at most)")
+            return null
+        }
         // sure of both beats; where the two tempos agree within 2%, a little less sure will do (148.7 into 150 was a
         // crossfade at 3.4, 2026-11-08: the tempos agreeing is evidence too)
         val needed = if (kotlin.math.abs(speed - 1) <= .02) Tempos.LOOSE else SURE
@@ -1084,7 +1095,24 @@ class Crossfade(
         else -> uri.toString()
     }
 
-    private fun ends(uri: android.net.Uri, id: String): Ends? {
+    /** Songs measured with Beat's quick reading only (begun on, [measureFirst]): their stretches, for the model's read after. */
+    private val unbeaten = ConcurrentHashMap<String, Pair<Pcm, Pcm?>>()
+
+    /**
+     * A song measured quickly as it began: its beats read again by the model (BeatNet). On the measuring thread, queued
+     * before the next song's measuring, so it's done by the time the blend into the next is planned (that waits on it).
+     */
+    private fun reread(id: String) {
+        val (endPcm, headPcm) = unbeaten.remove(id) ?: return
+        val e = ends[id] ?: return
+        val t0 = SystemClock.uptimeMillis()
+        val tail = beats(endPcm); val head = headPcm?.let { beats(it) }
+        ends[id] = e.copy(tail = tail, head = head)
+        android.util.Log.d("ink-crossfade", "$id: its beats read again by the model in ${SystemClock.uptimeMillis() - t0} ms: " +
+            "at its end ${tail?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}, at its start ${head?.let { "%.1f bpm (%.1f sure)".format(it.bpm, it.sure) }}")
+    }
+
+    private fun ends(uri: android.net.Uri, id: String, quick: Boolean = false): Ends? {
         val src = source(uri) ?: return null.also { why(id, "its stream wasn't found") }
         // a stream read through ink music's own requests, only the parts the decoder asks for (2026-11-08: YouTube's
         // streams wouldn't open in Android's own reader, "Failed to instantiate extractor", so no YouTube song blended;
@@ -1149,7 +1177,8 @@ class Crossfade(
         val handover = (if (cold) lastSound - COLD else listOfNotNull(lastSound - FADE, quiet?.minus(1_000), fading?.minus(500)).minOrNull()!!)
             .coerceAtLeast(dur - 25_000)
         val firstSound = headPcm?.let { levels(it) }?.indexOfFirst { it > -50f }?.takeIf { it > 0 }?.let { it * window }?.takeIf { it >= 400 } ?: 0L
-        val tail = beats(endPcm); val head = headPcm?.let { beats(it) }
+        val tail = beats(endPcm, model = !quick); val head = headPcm?.let { beats(it, model = !quick) }
+        if (quick) unbeaten[id] = Pcm(endPcm.start, endPcm.mono, endPcm.rate) to headPcm?.let { Pcm(it.start, it.mono, it.rate) }
         val tailKey = Key.find(endPcm.mono, endPcm.rate); val headKey = headPcm?.let { Key.find(it.mono, it.rate) }
         val lufs = loudness(listOfNotNull(headPcm, endPcm))
         // its intro: a second's level (in 50 ms steps) first within 6 dB of its usual (the loud tenth of its first 20 s)
@@ -1227,8 +1256,8 @@ class Crossfade(
         return (0 until p.mono.size / per).map { w -> var sum = 0.0; for (k in w * per until (w + 1) * per) sum += p.mono[k] * p.mono[k]; db(sum, per) }
     }
 
-    /** The beat over a stretch (Beat: Prism's way, 2026-11-08), as automix keeps it. */
-    private fun beats(p: Pcm): Beats? = Beat.find(p.mono, p.rate, p.start)?.let { Beats(it.period, it.first, it.sure, it.downbeat, it.bars) }
+    /** The beat over a stretch (BeatNet's model, 2026-11-26; `model` false, Beat's own quick reading), as automix keeps it. */
+    private fun beats(p: Pcm, model: Boolean = true): Beats? = Beat.find(p.mono, p.rate, p.start, model)?.let { Beats(it.period, it.first, it.sure, it.downbeat, it.bars) }
 
     /** A stretch decoded, its channels averaged to one (blocking; `wait` at most). */
     private fun decode(x: MediaExtractor, track: Int, fromMs: Long, toMs: Long, keep: Boolean = false, wait: Long = 12_000): Pcm? {

@@ -294,7 +294,8 @@ object Crossfade {
         val b = next.head ?: return null
         val pa = listOf(1.0, 2.0, .5).map { a.period * it }.minByOrNull { abs(it / b.period - 1) }!!
         val speed = pa / b.period
-        if (abs(speed - 1) > .08) return null
+        // sped up by 8% at most, slowed by 3% at most, as the phone (a stretch that slows smears sooner)
+        if (speed > 1.08 || speed < .97) return null
         // sure of both beats; where the tempos agree within 2%, a little less sure will do (the phone's)
         val needed = if (abs(speed - 1) <= .02) LOOSE else SURE
         if (a.sure < needed || b.sure < needed) return null

@@ -60,8 +60,12 @@ object Beat {
      * (within 2%), its beats landing. On the 50 test songs (librosa's tempo the reference, as 2026-11-08): sure 70 to 75,
      * right 60 to 64; pairs to mix 274 to 312, both right 198 to 227, as often right as before (72% to 73%).
      */
-    fun find(mono: FloatArray, rate: Int, startMs: Long): Found? {
+    fun find(mono: FloatArray, rate: Int, startMs: Long, model: Boolean = true): Found? {
+        // the trained model's reading first, where there is one (BeatNet, 2026-11-26): its grid, its bar one
+        if (model) modelBeat(mono, rate, startMs)?.let { return it }
         val r = read(mono, rate, startMs) ?: return null
+        // the model there and finding no steady beat: this reading never trusted alone
+        if (model && modelReady()) return r.copy(sure = min(r.sure, AGREED - .1))
         if (r.coverage < COVERED) return r.copy(sure = min(r.sure, AGREED - .1))
         if (r.sure >= SURE || r.sure < AGREED) return r
         val half = mono.size / 2
@@ -191,6 +195,23 @@ object Beat {
     }
 
     private fun hop(sr: Int) = (sr / 100).toDouble()
+
+    /** Each whole bar of `mono` (at `rate`, from `startMs`) from a bar one at `downbeat` (ms), `period` a beat: its loudness against the loudest. */
+    fun barsOf(mono: FloatArray, rate: Int, startMs: Long, downbeat: Double, period: Double): List<Bar> {
+        val bar = 4 * period
+        var d = downbeat
+        while (d - bar >= startMs) d -= bar
+        while (d < startMs) d += bar
+        val raw = ArrayList<Pair<Double, Double>>()
+        while (true) {
+            val a = ((d - startMs) * rate / 1000).toInt(); val b = ((d + bar - startMs) * rate / 1000).toInt()
+            if (b > mono.size || b <= a) break
+            var e = 0.0; for (i in a until b) e += mono[i].toDouble() * mono[i]
+            raw += d to sqrt(e / (b - a)); d += bar
+        }
+        val top = raw.maxOfOrNull { it.second }?.takeIf { it > 0 } ?: 1.0
+        return raw.map { Bar(it.first, (it.second / top).toFloat()) }
+    }
 
     /** At each place, how different the next `w` are from the last `w` (a section starting or stopping). */
     private fun novelty(x: DoubleArray, w: Int) = DoubleArray(x.size) { i ->

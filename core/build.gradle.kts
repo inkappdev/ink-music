@@ -26,6 +26,10 @@ kotlin {
             // Android has its own org.json; the desktop brings one
             compileOnly("org.json:json:20240303")
         }
+        jvmTest.dependencies {
+            implementation(kotlin("test"))
+            implementation("org.json:json:20240303")
+        }
     }
 }
 

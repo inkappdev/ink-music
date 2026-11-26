@@ -113,8 +113,10 @@ object Tempos {
     /** The two stretches read: each end's beat and key (an end that couldn't be read: the other's). */
     private fun both(head: Pair<FloatArray, Int>?, headAt: Long, tail: Pair<FloatArray, Int>?, tailAt: Long): Read? {
         if (head == null && tail == null) return null
-        val hb = head?.let { Beat.find(it.first, it.second, headAt) }; val hk = head?.let { Key.find(it.first, it.second) }
-        val tb = tail?.let { Beat.find(it.first, it.second, tailAt) }; val tk = tail?.let { Key.find(it.first, it.second) }
+        // Beat's own quick reading (the model's seconds a stretch would slow finding a mix's songs; automix reads each
+        // song again by the model as it's played)
+        val hb = head?.let { Beat.find(it.first, it.second, headAt, model = false) }; val hk = head?.let { Key.find(it.first, it.second) }
+        val tb = tail?.let { Beat.find(it.first, it.second, tailAt, model = false) }; val tk = tail?.let { Key.find(it.first, it.second) }
         val inB = hb ?: tb; val outB = tb ?: hb
         if (inB == null || outB == null) return Read(0.0, 0.0, null)
         return Read(inB.bpm, inB.sure, hk ?: tk, outB.bpm, outB.sure, tk ?: hk)

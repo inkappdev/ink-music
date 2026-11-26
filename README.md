@@ -229,6 +229,9 @@ the computer, with what the two share in `core/`.
   adapted from.
 - [FireTheDJ](https://github.com/suryablaze02-byte/FireTheDJ) (GPL-3.0), whose bar, key and filter-fade ideas
   automix's handovers are adapted from.
+- [Beat This!](https://github.com/CPJKU/beat_this) (MIT; Institute of Computational Perception, JKU Linz), whose small
+  model reads automix's beats and bar ones, its weights run in ink music's own Kotlin; and
+  [ChordPlay](https://github.com/code4nigel/ChordPlay) (GPL-3.0), whose automix pointed to it.
 - [AutoEq](https://github.com/jaakkopasanen/AutoEq) (MIT), for the headphone tunings, from measurements by
   oratory1990, crinacle, Rtings and others.
 - [Media3](https://github.com/androidx/media) and [Haze](https://github.com/chrisbanes/haze) (Apache-2.0).
