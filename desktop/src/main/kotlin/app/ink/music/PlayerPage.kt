@@ -227,9 +227,10 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                     menuAt?.let { SongMenu(s, null, null, it, playing = s.id == n.song.id) { menuAt = null } }
                                     val density = androidx.compose.ui.platform.LocalDensity.current.density
                                     CoverOf(s, s.album.ifEmpty { s.title }, Modifier.fillMaxSize().graphicsLayer {
-                                        // a DJ set's frame blurred inside its square only: unclipped, the blur spread a
-                                        // smear past the cover over the page and the name along the foot (2026-11-12, Bronson)
-                                        clip = SetHeard.isSet(s)
+                                        // every look inside the cover's square only: unclipped, a blur spread a smear past
+                                        // it over the page and the name along the foot (a DJ set's, 2026-11-12; the cover's
+                                        // blur and soft dots, 2026-11-27, Bronson: "bigger")
+                                        clip = true
                                         renderEffect = (if (SetHeard.isSet(s)) Look.BLUR else coverLook)?.takeIf { !sleeved(s) }?.let { Effects.of(it, accent, density, 1f, size.width) }
                                     }, px = 1200, moving = n.playing && s.id == n.song.id)
                                     // the record's moving cover over it, where it has one (settings, the look)

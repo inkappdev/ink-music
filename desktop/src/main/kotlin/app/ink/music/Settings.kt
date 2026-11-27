@@ -1103,6 +1103,7 @@ private fun LookPreview() {
             if (behind == Look.PLAIN && CoverPrint.on.collectAsState().value != Print.CLEAR) Dithered(song, Modifier.offset(off, off).size(side), px = 800)
             Box(Modifier.size(side)) {
                 CoverOf(song, song.album.ifEmpty { song.title }, Modifier.fillMaxSize().graphicsLayer {
+                    clip = true
                     renderEffect = look?.let { Effects.of(it, accent, density, 1f, size.width) }
                 }, px = 800)
                 MovingCover(song.albumArtist.ifBlank { song.artist.substringBefore(", ") }, song.album, song.title, accent, true, Modifier.fillMaxSize())

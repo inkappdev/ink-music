@@ -254,6 +254,8 @@ private fun Loop(url: String, playing: Boolean, shape: Look?, accent: Color, str
         val f = frame ?: return@BoxWithConstraints
         Image(f, null, Modifier.fillMaxSize().graphicsLayer {
             alpha = (if (shape == Look.DITHER) 1f else come) * strength
+            // kept inside its own square: a blur or soft dots spread past it otherwise
+            clip = true
             renderEffect = shape?.let { Effects.of(it, accent, density, come, size.width, big) }
         }, contentScale = ContentScale.Crop)
     }
