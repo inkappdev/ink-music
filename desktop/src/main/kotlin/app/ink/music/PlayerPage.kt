@@ -245,6 +245,18 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                 }
                 val wordsPart: @Composable (Modifier) -> Unit = { m ->
                     Column(m) {
+                        // the inner sleeve's panel (2026-10-29: the room beside the cover): the record, its lyrics, up next,
+                        // its notes, chosen by a word, kept from song to song (the phone's: lyrics keep their place while the
+                        // next song's are looked for); up next first, an episode its notes
+                        val lines = rememberLyrics(n.song)
+                        val words = if (n.song.episode) listOf("episode", "up next", "notes")
+                            else listOfNotNull("record".takeUnless { n.song.station }, "lyrics", "up next", "notes")
+                        var shows by remember { mutableStateOf<String?>(null) }
+                        val panel = shows?.takeIf { it in words } ?: if (n.song.episode) "episode" else "up next"
+                        // lyrics the main thing, the controls folded away (the phone's since 2026-11-26): a click on the
+                        // song's names brings them back, and folds them again
+                        var unfolded by remember(panel) { mutableStateOf(false) }
+                        val folded = panel == "lyrics" && !unfolded
                         val (title, by) = said(n)
                         // a station's song, said or heard (OnAirSong): its title opens find with it typed, its artist their
                         // page, the heart loves the song found (2026-11-12, Bronson: clickable wherever a station's song shows;
@@ -262,9 +274,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             contentKey = { it.first.id + it.second },
                             label = "song",
                         ) { (s, title, by) ->
-                            Column {
+                            Column(if (panel == "lyrics") Modifier.clickable(remember { MutableInteractionSource() }, indication = null) { unfolded = !unfolded } else Modifier) {
                                 Row(verticalAlignment = Alignment.Top) {
-                                    WholeWords(title.uppercase(), headline(44.sp), 3, Modifier.weight(1f, fill = false).then(
+                                    WholeWords(title.uppercase(), headline(if (folded) 30.sp else 44.sp), 3, Modifier.weight(1f, fill = false).then(
                                         if (s.station && aired != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null,
                                             onClick = felt { OnAirSong.find(aired.title, aired.artist!!) }) else Modifier))
                                     Heart(if (s.station) airedSong ?: s else s, 3.dp, Modifier.padding(start = 8.dp))
@@ -283,6 +295,10 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                                 EggsNow.line(s)?.let { BasicText(it, style = pixel(12.sp, Ink.ink), modifier = Modifier.padding(top = 6.dp)) }
                             }
                         }
+                        androidx.compose.animation.AnimatedVisibility(!folded,
+                            enter = androidx.compose.animation.expandVertically(tween(Motion.ENTER, easing = Motion.expo)) + fadeIn(tween(Motion.ENTER, easing = Motion.expo)),
+                            exit = androidx.compose.animation.shrinkVertically(tween(Motion.EXIT, easing = Motion.expo)) + fadeOut(tween(Motion.EXIT, easing = Motion.expo))) {
+                        Column {
                         Spacer(Modifier.height(22.dp))
                         // the controls, the volume beside them; where there isn't room (half the screen), the volume and its
                         // words on a line of their own under them (2026-11-17, Bronson: squeezed, the volume's "100" stood as
@@ -310,17 +326,11 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             Spacer(Modifier.height(18.dp))
                             Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.line))
                         }
+                        }
+                        }
                         Spacer(Modifier.height(14.dp))
-                        // the inner sleeve (2026-10-29: the room beside the cover):
-                        // the record, its lyrics, up next, its notes, chosen by a word; stop at the row's end
-                        val lines = rememberLyrics(n.song)
-                        var shows by remember(n.song.albumId) { mutableStateOf<String?>(null) }
-                        // up next first (2026-11-09: it was the lyrics where found, else the record); an episode its notes
-                        val panel = shows ?: if (n.song.episode) "episode" else "up next"
+                        // the panel's words; stop at the row's end
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            // an episode: its own notes where a song's record and lyrics are
-                            val words = if (n.song.episode) listOf("episode", "up next", "notes")
-                                else listOfNotNull("record".takeUnless { n.song.station }, "lyrics", "up next", "notes")
                             for (w in words)
                                 Word(w, pixel(14.sp, if (w == panel) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 10.dp) { shows = w }
                             Spacer(Modifier.weight(1f))
@@ -341,9 +351,9 @@ fun PlayerPage(open: (Page) -> Unit, onClose: () -> Unit) {
                             when (panel) {
                                 "record" -> RecordSide(n, open)
                                 "episode" -> EpisodeNotes(n.song.id, Modifier.fillMaxSize())
-                                "lyrics" -> {
+                                // one song's words fading out and the next's in (the phone's)
+                                "lyrics" -> androidx.compose.animation.Crossfade(n.song.id to lines, Modifier.fillMaxSize(), tween(Motion.ENTER, easing = Motion.expo), label = "lyrics") { (_, all) ->
                                     val pos by Player.position.collectAsState()
-                                    val all = lines
                                     if (all.isNullOrEmpty()) BasicText(lyricsSaid(all), style = pixel(13.sp, Ink.mid))
                                     else LyricsBlock(all, all.indexOfLast { it.at <= pos + Lyrics.LEAD }, Modifier.fillMaxSize(), big = true, onSeek = Player::seek, position = pos)
                                 }
