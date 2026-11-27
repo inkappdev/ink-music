@@ -452,7 +452,7 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
         }
         // developed in the first time it's seen (450 ms); a size changed after, there at once (the picture's, not the size's)
         val shown = remember(photo.id, photo.albumId) { Animatable(if (ready != null) 1f else 0f) }
-        LaunchedEffect(frames) { if (frames != null && shown.value < 1f) shown.animateTo(1f, tween(450, easing = Motion.expo)) }
+        LaunchedEffect(frames) { if (frames != null && shown.value < 1f) if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, tween(450, easing = Motion.expo)) }
         frames?.let { f ->
             // the dots drawn as dots: unfiltered, as the player draws them
             // each dot exactly `cell` pixels, the grid centered on whole pixels and cut by the tile's edges (never
@@ -534,7 +534,7 @@ fun Xrayed(photo: Song, modifier: Modifier) {
         }
     }
     val shown = remember(photo.id) { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(pic) { if (pic != null) shown.animateTo(1f, androidx.compose.animation.core.tween(600, easing = Motion.expo)) }
+    LaunchedEffect(pic) { if (pic != null) { if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, androidx.compose.animation.core.tween(600, easing = Motion.expo)) } }
     Box(modifier.background(Ink.black)) {
         pic?.let { p ->
             androidx.compose.foundation.Image(p, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)

@@ -207,7 +207,9 @@ fun FrequencyCard() {
 private fun Pixels(tuned: Float, moving: Boolean, needle: Color, newColour: Color, hover: Float?, modifier: Modifier) {
     val cols = 26; val rows = 13
     var tick by remember { mutableIntStateOf(0) }
-    LaunchedEffect(moving) { if (moving) while (true) { kotlinx.coroutines.delay(140); tick++ } }
+    // still with less motion (Moves)
+    val less by Moves.less.collectAsState()
+    LaunchedEffect(moving, less) { if (moving && !less) while (true) { kotlinx.coroutines.delay(140); tick++ } }
     // drawn again through its first second: arriving with listen's cascade (faded in from nothing), its first drawing
     // could be kept empty and the dial stayed blank till a click (2026-11-27, Bronson)
     var settle by remember { mutableIntStateOf(0) }

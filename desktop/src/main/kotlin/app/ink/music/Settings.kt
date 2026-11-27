@@ -1048,6 +1048,12 @@ private fun LookSetting(opened: Opened) {
     BasicText("one look for each place a picture is drawn", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
     LooksGrid()
     Spacer(Modifier.height(18.dp))
+    // how much moves (Moves; the phone's): full, less, or as the computer says
+    val motion by Moves.chosen.collectAsState()
+    SettingRow("MOTION", motion, opened, "pages arriving in turn, words fading in, covers developing" +
+        if (Moves.systemSaysLess) "; this computer says less" else "") {
+        Pick(listOf(Moves.AUTO, Moves.FULL, Moves.LESS).map { it to (motion == it) }) { Moves.set(listOf(Moves.AUTO, Moves.FULL, Moves.LESS)[it]) }
+    }
     val pass by SpotifyHanded.pass.collectAsState()
     val canvasOn by Moving.canvasOn.collectAsState()
     SettingRow("SPOTIFY'S CANVAS", if (canvasOn) "on" else "off", opened, when {

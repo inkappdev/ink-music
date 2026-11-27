@@ -160,7 +160,8 @@ fun felt(
     return { haptic.performHapticFeedback(kind); then() }
 }
 
-fun Modifier.arrive(order: Int, key: Any?, again: androidx.compose.runtime.State<Int>? = null): Modifier = composed {
+// less motion (Moves): there at once, no cascade
+fun Modifier.arrive(order: Int, key: Any?, again: androidx.compose.runtime.State<Int>? = null): Modifier = if (Moves.less.value) this else composed {
     val shift = with(LocalDensity.current) { Motion.drift.toPx() }
     val t = remember { Animatable(0f) }
     LaunchedEffect(key, again) {
@@ -284,7 +285,7 @@ fun Modifier.slideToPlace(still: () -> Boolean = { false }): Modifier = composed
 }
 
 /** A word that arrives on its own (a new notification): it fades up once, 150 ms. */
-fun Modifier.fadeUp(): Modifier = composed {
+fun Modifier.fadeUp(): Modifier = if (Moves.less.value) this else composed {
     val a = remember { Animatable(0f) }
     LaunchedEffect(Unit) { a.animateTo(1f, tween(WORD.toInt(), easing = Motion.expo)) }
     graphicsLayer { alpha = a.value }

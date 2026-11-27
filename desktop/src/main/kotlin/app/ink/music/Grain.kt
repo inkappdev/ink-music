@@ -113,7 +113,7 @@ fun Mono(photo: Song, modifier: Modifier, words: Boolean = true) {
         value = Grain.kept(key) ?: withContext(Dispatchers.Default) { Grain.mono(key, c.image, words) }
     }
     val shown = remember(key) { Animatable(if (had != null) 1f else 0f) }
-    LaunchedEffect(key, pic) { if (pic != null && shown.value < 1f) shown.animateTo(1f, tween(600, easing = Motion.expo)) }
+    LaunchedEffect(key, pic) { if (pic != null && shown.value < 1f) if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, tween(600, easing = Motion.expo)) }
     Box(modifier.background(Ink.black).clipToBounds()) {
         pic?.let { Image(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop, filterQuality = FilterQuality.High) }
         FilmGrain(Modifier.fillMaxSize(), tile = Grain.heavy)
@@ -133,7 +133,7 @@ fun Grainy(photo: Song, modifier: Modifier, px: Int = 1080) {
         value = Grain.kept(key) ?: withContext(Dispatchers.Default) { Grain.bokeh(key, c.image) }
     }
     val shown = remember(key) { Animatable(if (had != null) 1f else 0f) }
-    LaunchedEffect(key, pic) { if (pic != null && shown.value < 1f) shown.animateTo(1f, tween(600, easing = Motion.expo)) }
+    LaunchedEffect(key, pic) { if (pic != null && shown.value < 1f) if (Moves.less.value) shown.snapTo(1f) else shown.animateTo(1f, tween(600, easing = Motion.expo)) }
     Box(modifier.background(Ink.black).clipToBounds()) {
         pic?.let { Image(it, null, Modifier.fillMaxSize().graphicsLayer { alpha = shown.value }, contentScale = ContentScale.Crop, filterQuality = FilterQuality.High) }
         FilmGrain(Modifier.fillMaxSize())
