@@ -31,6 +31,10 @@ object TubeAccount {
      * no server to run (a free account may upload 100,000). Private, so they play only signed in ([YouTube.stream]).
      */
     val uploads = MutableStateFlow<List<Song>>(emptyList())
+    /** The records in your library, the artists you follow (else the ones your songs are by), and theirs from this year (the phone's). */
+    val records = MutableStateFlow<List<TubeAlbum>>(emptyList())
+    val artists = MutableStateFlow<List<TubeArtist>>(emptyList())
+    val fresh = MutableStateFlow<List<TubeAlbum>>(emptyList())
     /**
      * YouTube Music answered as to no one, though the phone's sign-in was sent (why, not yet known: the phone's own reads
      * with the same cookies work). Said in settings; the lists and likes last read are kept meanwhile.
@@ -74,6 +78,10 @@ object TubeAccount {
             .map { TubeAlbum(it.getString("url"), it.getString("title"), it.optString("artist"), it.optString("art").ifEmpty { null }) }
         playlists.value = albums(o.optJSONArray("playlists"))
         mixes.value = albums(o.optJSONArray("mixes"))
+        records.value = albums(o.optJSONArray("records"))
+        fresh.value = albums(o.optJSONArray("fresh"))
+        val p = o.optJSONArray("artists")
+        artists.value = (0 until (p?.length() ?: 0)).map { p!!.getJSONObject(it) }.map { TubeArtist(it.getString("name"), it.optString("face").ifEmpty { null }, it.optString("id")) }
         val a = o.optJSONArray("liked")
         liked.value = (0 until (a?.length() ?: 0)).mapNotNull { runCatching { songOf(a!!.getJSONObject(it)) }.getOrNull() }
         if (liked.value.isNotEmpty()) Loved.putTube(liked.value)
@@ -97,6 +105,8 @@ object TubeAccount {
     private fun keepLibrary() = runCatching {
         fun albums(l: List<TubeAlbum>) = JSONArray(l.map { JSONObject().put("url", it.url).put("title", it.title).put("artist", it.artist).put("art", it.art ?: "") })
         Home.write(library, JSONObject().put("playlists", albums(playlists.value)).put("mixes", albums(mixes.value))
+            .put("records", albums(records.value)).put("fresh", albums(fresh.value))
+            .put("artists", JSONArray(artists.value.map { JSONObject().put("name", it.name).put("face", it.face ?: "").put("id", it.id) }))
             .put("liked", JSONArray(liked.value.map { it.json() })).toString())
     }
 
@@ -123,6 +133,32 @@ object TubeAccount {
      * they were last read an hour ago or more: a big library of them is a thousand pages, and they change only when you
      * upload (this reads again every half hour).
      */
+    @Volatile private var freshAt = 0L
+
+    /** Your artists' records from this year (and last, early in the year), newest first, three each at most (the phone's). */
+    private fun freshFrom(t: InnerTube, people: List<TubeArtist>): List<TubeAlbum> {
+        val cal = java.util.Calendar.getInstance()
+        val year = cal.get(java.util.Calendar.YEAR)
+        val since = if (cal.get(java.util.Calendar.MONTH) <= java.util.Calendar.FEBRUARY) year - 1 else year
+        val yearOf = Regex("\\b(19|20)\\d{2}\\b")
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
+        try {
+            return people.filter { it.id.isNotEmpty() }.take(20).map { a ->
+                pool.submit<List<Triple<Int, String, TubeAlbum>>> {
+                    runCatching { t.records(a.id) }.getOrDefault(emptyList()).mapNotNull { r ->
+                        val y = yearOf.find(r.subtitle)?.value?.toInt() ?: return@mapNotNull null
+                        if (y < since) null else Triple(y, a.name, TubeAlbum("${InnerTube.BASE}/browse/${r.id}", r.title, a.name, r.art))
+                    }.take(3)
+                }
+            }.flatMap { runCatching { it.get(30, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(emptyList()) }
+                .sortedByDescending { it.first }.map { it.third }.distinctBy { it.url }.take(20)
+        } finally { pool.shutdownNow() }
+    }
+
+    /** A record's artist from its subtitle ("Album • Phoebe Bridgers • 2020"): what isn't the kind or the year. */
+    private fun artistOf(subtitle: String) = subtitle.split(" • ").map { it.trim() }
+        .firstOrNull { it.isNotEmpty() && it !in setOf("Album", "Single", "EP") && !it.matches(Regex("\\d{4}")) }.orEmpty()
+
     private fun read(t: InnerTube, fresh: Boolean): Boolean {
         var whole = true
         var out = false
@@ -145,6 +181,19 @@ object TubeAccount {
                     s.items.filter { it.kind == InnerTube.Kind.PLAYLIST && (it.id.startsWith("VLRDTMAK") || it.id.startsWith("RDTMAK") || "mix" in s.title.lowercase()) }
                 }.distinctBy { it.id }.map { TubeAlbum("${InnerTube.BASE}/playlist?list=${it.id.removePrefix("VL")}", it.title, it.subtitle, it.art) }
             }.onFailure { failed("mixes", it) }
+            // the records in your library; the artists you follow, else the ones your library's songs are by; and what
+            // those artists put out this year (last year's too, early in the year), newest first
+            runCatching {
+                records.value = t.items("FEmusic_liked_albums").filter { it.kind == InnerTube.Kind.RECORD || it.id.startsWith("MPREb") }
+                    .map { TubeAlbum("${InnerTube.BASE}/browse/${it.id}", it.title, artistOf(it.subtitle), it.art) }
+            }.onFailure { failed("records", it) }
+            runCatching {
+                fun of(id: String) = t.items(id).filter { it.kind == InnerTube.Kind.ARTIST && it.id.startsWith("UC") }
+                artists.value = of("FEmusic_library_corpus_artists").ifEmpty { of("FEmusic_library_corpus_track_artists") }.map { TubeArtist(it.title, it.art, it.id) }
+            }.onFailure { failed("artists", it) }
+            // (twenty artists' pages: once in six hours, not every half hour's read)
+            if (fresh || this@TubeAccount.fresh.value.isEmpty() || System.currentTimeMillis() - freshAt > 6 * 3_600_000L)
+                runCatching { freshFrom(t, artists.value).takeIf { it.isNotEmpty() }?.let { this@TubeAccount.fresh.value = it; freshAt = System.currentTimeMillis() } }.onFailure { Log.d("youtube fresh: $it") }
             if (fresh || !uploadsFile.exists() || System.currentTimeMillis() - uploadsFile.lastModified() >= 3_600_000L) runCatching {
                 uploads.value = t.uploads().map(YouTube::song)
                 Home.write(uploadsFile, JSONArray(uploads.value.map { it.json() }).toString())
@@ -207,6 +256,7 @@ object TubeAccount {
         library.delete(); stale.value = false; problem.value = null; syncing?.cancel()
         uploadsFile.delete()
         who.value = null; playlists.value = emptyList(); liked.value = emptyList(); mixes.value = emptyList(); uploads.value = emptyList()
+        records.value = emptyList(); artists.value = emptyList(); this.fresh.value = emptyList()
         Loved.putTube(emptyList())
     }
 

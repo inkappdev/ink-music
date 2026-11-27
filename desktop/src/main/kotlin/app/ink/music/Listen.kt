@@ -103,6 +103,10 @@ fun ListenPage(open: (Page) -> Unit) {
     val uploads = TubeAccount.uploads.shown { it.title to it.artist }
     val tubeLists by TubeAccount.playlists.collectAsState()
     val liked by TubeAccount.liked.collectAsState()
+    val tubeRecords by TubeAccount.records.collectAsState()
+    val tubeArtists by TubeAccount.artists.collectAsState()
+    // what your youtube music artists put out this year: suggestions, so the blocked left out
+    val tubeFresh = TubeAccount.fresh.shown { it.title to it.artist }
     val keptIds by Offline.kept.collectAsState()
     val keptRecords = remember(keptIds, albums) { albums.filter { a -> a.songs.any { it.id in keptIds } }.take(16) }
     // on repeat: the songs played most these 30 days, twice or more (the phone's)
@@ -205,6 +209,39 @@ fun ListenPage(open: (Page) -> Unit) {
                 Column {
                     Section("YOUR PLAYLISTS", "on youtube music")
                     Shelf { items(tubeLists, key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp), "playlist") { open(Page.Tube(a)) } } }
+                }
+            }
+        }
+        // your records, your artists and what they put out this year, on youtube music (signed in; the phone's)
+        shelf["tubeRecords"] = {
+            if (tubeRecords.isNotEmpty()) item(key = "tubeRecords") {
+                Column {
+                    Section("YOUR RECORDS", "on youtube music")
+                    Shelf { items(tubeRecords, key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp)) { open(Page.Tube(a)) } } }
+                }
+            }
+        }
+        shelf["fresh"] = {
+            if (tubeFresh.isNotEmpty()) item(key = "tubeFresh") {
+                Column {
+                    Section("NEW FROM YOUR ARTISTS", "on youtube music, this year")
+                    Shelf { items(tubeFresh, key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp)) { open(Page.Tube(a)) } } }
+                }
+            }
+        }
+        shelf["tubeArtists"] = {
+            if (tubeArtists.isNotEmpty()) item(key = "tubeArtists") {
+                Column {
+                    Section("YOUR ARTISTS", "on youtube music")
+                    Shelf {
+                        items(tubeArtists, key = { "f" + it.id.ifEmpty { it.name } }) { a ->
+                            Column(Modifier.width(150.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { open(Page.Artist(a.name, a.id)) })) {
+                                CoverOf(remember(a.face) { a.face?.let { faceSong(a.name, it) } }, a.name, Modifier.fillMaxWidth().aspectRatio(1f), px = 300)
+                                Spacer(Modifier.height(8.dp))
+                                UnderCover(a.name, "artist")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -405,7 +442,7 @@ private fun SinceYouWereHere(since: Long, lines: List<NewLine>) {
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment); the phone's keys, where shared. */
 // listen is you, INK is the world (2026-11-12, Bronson): live sets and ink radio are INK's; your mix is here
 val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "forYou", "videos", "dialedIn", "yours", "madeForYou", "kept", "tubeMixes", "episodes", "mixes", "yourMix", "nts", "because",
-    "newToYou", "onRepeat", "jumpBack", "forgotten", "uploads", "tubeLists", "newest", "lists")
+    "newToYou", "onRepeat", "fresh", "jumpBack", "forgotten", "uploads", "tubeLists", "tubeArtists", "tubeRecords", "newest", "lists")
 
 /**
  * Know me (2026-11-11): your listening on Last.fm or ListenBrainz, brought in by name, so INK, listen and the mixes
