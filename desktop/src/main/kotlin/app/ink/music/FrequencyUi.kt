@@ -163,6 +163,13 @@ fun FrequencyCard() {
                 }
             }
         }
+        // what stuck (FrequencyMemory): the artists it brought you that you've since loved or played away from it
+        val stuck by androidx.compose.runtime.produceState<List<String>>(emptyList(), first) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { YourFrequency.stuck() }.getOrDefault(emptyList()) }
+        }
+        if (stuck.isNotEmpty()) BasicText(said("found here, now yours: ") +
+            stuck.take(3).joinToString(", ").let { if (Hand.dots) it.uppercase() else it.lowercase() } + if (stuck.size > 3) " and ${stuck.size - 3} more" else "",
+            style = label(Ink.ink), modifier = Modifier.padding(top = 18.dp))
         // a mood's picked on the moods page (ink's twelve, each playing this in it): here only said, and put away in a click
         InkMoods.ALL.firstOrNull { it.key == d.mood }?.let { m ->
             Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {

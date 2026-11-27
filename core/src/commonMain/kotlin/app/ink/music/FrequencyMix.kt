@@ -57,7 +57,22 @@ object FrequencyMix {
      * A song it could play: its key (Radio.key's: title and first artist), artist, lane, how high its finders put it
      * (0 to 1), and what it was found through (a seed's artist; empty for yours).
      */
-    data class Found(val key: String, val artist: String, val lane: String, val rank: Double, val through: String = "")
+    data class Found(val key: String, val artist: String, val lane: String, val rank: Double, val through: String = "",
+        /** The source that found it (its best: the one it's credited to), and how many sources found it in all. */
+        val source: String = "", val ears: Int = 1)
+
+    /**
+     * Each song as all the sources found it (2026-11-27): one Found a song, ranked by its best finder, `ears` how many
+     * independent sources had it (a song two or three agree on is far likelier to land: each is people's listening
+     * together, YouTube's, Last.fm's, ListenBrainz's), and an artist the seeds' similar artists name (`named`, ListenBrainz's
+     * and Last.fm's) one ear more.
+     */
+    fun agreed(found: List<Found>, named: Set<String> = emptySet()): List<Found> =
+        found.groupBy { it.key }.values.map { same ->
+            val best = same.maxByOrNull { it.rank }!!
+            val ears = same.map { it.source }.distinct().size + (if (who(best.artist) in named) 1 else 0)
+            best.copy(ears = ears.coerceAtLeast(1))
+        }
 
     /**
      * Each lane's share of what comes, before learning: the dial's, with appetite (Taste's, .1 to .5) nudging both
@@ -131,16 +146,20 @@ object FrequencyMix {
     fun pick(
         found: List<Found>, dials: Dials, taste: (String) -> Double, sitting: Sitting, learned: Learned,
         recent: List<String>, n: Int, appetite: Double = ForYou.STRETCH, random: Random = Random.Default,
-        given0: Map<String, Int> = emptyMap(),
+        given0: Map<String, Int> = emptyMap(), memory: FrequencyMemory? = null, now: Long = nowMs(),
     ): List<Found> {
         // a lane with no share takes no place
         val shares = shares(dials, appetite).mapValues { (lane, s) -> s * learned.times(lane) }.filterValues { it > 0 }
-        val open = found.filter { taste(it.artist) >= 0 && !sitting.out(it.artist) }.distinctBy { it.key }.toMutableList()
+        // an artist left at once twice in sittings before and never taken stays away a month (FrequencyMemory)
+        val open = found.filter { taste(it.artist) >= 0 && !sitting.out(it.artist) && memory?.away(it.artist, now) != true }.distinctBy { it.key }.toMutableList()
         val away = recent.takeLast(12).map(::who).toMutableList()
         // each lane's places so far this sitting (`given0`), against its share: a batch alone began with yours every time
         val given = HashMap<String, Double>().apply { given0.forEach { (k, v) -> put(k, v.toDouble()) } }
         val out = ArrayList<Found>(n)
-        fun score(f: Found) = f.rank * .5 + taste(f.artist).coerceAtLeast(0.0) * (if (f.lane == FAR) .1 else .4) +
+        // its finders' rank (times what its source has found for you before), more for each source agreeing, your
+        // nearness, the artist's record here across sittings, this sitting, and a little chance
+        fun score(f: Found) = f.rank * .5 * (memory?.worth(f.source) ?: 1.0) + (f.ears - 1).coerceAtMost(3) * .2 +
+            taste(f.artist).coerceAtLeast(0.0) * (if (f.lane == FAR) .1 else .4) + (memory?.lean(f.artist) ?: 0.0) +
             sitting.moved(f) + random.nextDouble() * .15
         while (out.size < n) {
             val lanes = shares.keys.filter { lane -> open.any { it.lane == lane && who(it.artist) !in away } }
