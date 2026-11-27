@@ -163,5 +163,8 @@ object TubeMixes {
     }.getOrNull()
 
     /** A mix's lead artist, from its line ("The Japanese House, hard life, After, TAMARYN"). */
-    fun lead(said: String): String = said.split(", ", " • ", " · ").map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.equals("mix", true) }.orEmpty()
+    fun lead(said: String): String = leads(said).firstOrNull().orEmpty()
+
+    /** Every artist a mix names, in its order: the first with a photo stands on its tile (2026-11-27, Bronson: Hop Along's had none, the tile stayed black). */
+    fun leads(said: String): List<String> = said.split(", ", " • ", " · ").map { it.trim() }.filter { it.isNotEmpty() && !it.equals("mix", true) }
 }

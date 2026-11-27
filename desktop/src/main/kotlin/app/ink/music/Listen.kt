@@ -1,5 +1,6 @@
 package app.ink.music
 
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -392,13 +393,15 @@ fun ListenPage(open: (Page) -> Unit) {
  */
 @Composable
 private fun MixTile(a: TubeAlbum, onClick: () -> Unit) {
-    val lead = remember(a) { TubeMixes.lead(a.artist) }
-    // their photo from their page (kept); none (yet), black under the words: never the mix's own picture, YouTube's
-    // lettering on it (2026-11-17, Bronson: YouTube's own lettering showed through under ink's)
-    // the flow made once per artist: made in the drawing, each redraw had begun a new read of their page (one artist
-    // read every second or so while listen was open, 2026-11-18)
-    val info by remember(lead) { if (lead.isNotEmpty()) Artists.of(lead) else kotlinx.coroutines.flow.flowOf(null) }.collectAsState(null)
-    val pic = info?.photo?.let { faceSong(lead, it, photo = true) }
+    // the photo of the first artist it names who has one, from their page (kept); none (yet), black under the words:
+    // never the mix's own picture, YouTube's lettering on it (2026-11-17, Bronson). Each artist read once, in turn, till
+    // one has a photo (only the first was tried: a mix led by someone with none stayed black, 2026-11-27)
+    val pic by androidx.compose.runtime.produceState<Song?>(null, a) {
+        for (who in TubeMixes.leads(a.artist).take(5)) {
+            val info = kotlinx.coroutines.withTimeoutOrNull(10_000) { Artists.of(who).first { it != null } }
+            info?.photo?.let { value = faceSong(who, it, photo = true); return@produceState }
+        }
+    }
     val mark = remember(a) { TubeMixes.mark(a.title, a.art) }
     WithMenu({ listOf(listOf("open" to onClick, "play" to { playTube(a); Unit }, "shuffle" to { playTube(a, shuffle = true); Unit })) }) {
         Column(Modifier.width(170.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {

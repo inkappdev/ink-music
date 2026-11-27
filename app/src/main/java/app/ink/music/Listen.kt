@@ -1,5 +1,6 @@
 package app.ink.music
 
+import kotlinx.coroutines.flow.first
 import android.content.Context
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -662,13 +663,16 @@ private fun ContinueHere(o: SyncPhone.Offer) {
  */
 @Composable
 private fun MixTile(l: TubeList, onClick: () -> Unit) {
-    val lead = remember(l) { TubeMixes.lead(l.said) }
-    // their photo from their page (kept); none (yet), black under the words: never the mix's own picture, YouTube's
-    // lettering on it (2026-11-17, Bronson: YouTube's own lettering showed through under ink's)
-    // the flow made once per artist: made in the drawing, each redraw had begun a new read of their page (one artist
-    // read every second or so while listen was open, 2026-11-18)
-    val info by remember(lead) { if (lead.isNotEmpty()) YouTubeAccount.artist(lead) else kotlinx.coroutines.flow.flowOf(null) }.collectAsState(null)
-    val face = info?.photo?.let { photoSong(lead, it) }
+    // the photo of the first artist it names who has one, from their page (kept); none (yet), black under the words:
+    // never the mix's own picture, YouTube's lettering on it (2026-11-17, Bronson: YouTube's own lettering showed
+    // through under ink's). Each artist read once, in turn, till one has a photo (only the first was tried: a mix led
+    // by someone with none stayed black, 2026-11-27)
+    val face by androidx.compose.runtime.produceState<Song?>(null, l) {
+        for (who in TubeMixes.leads(l.said).take(5)) {
+            val info = kotlinx.coroutines.withTimeoutOrNull(10_000) { YouTubeAccount.artist(who).first { it != null } }
+            info?.photo?.let { value = photoSong(who, it); return@produceState }
+        }
+    }
     val mark = remember(l) { TubeMixes.mark(l.name, l.art) }
     Column(Modifier.width(140.dp).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt(then = onClick))) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(androidx.compose.ui.graphics.Color.Black)) {
