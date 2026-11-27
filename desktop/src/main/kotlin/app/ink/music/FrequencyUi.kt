@@ -168,7 +168,12 @@ private fun Pixels(tuned: Float, moving: Boolean, needle: Color, newColour: Colo
     val cols = 26; val rows = 13
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(moving) { if (moving) while (true) { kotlinx.coroutines.delay(140); tick++ } }
+    // drawn again through its first second: arriving with listen's cascade (faded in from nothing), its first drawing
+    // could be kept empty and the dial stayed blank till a click (2026-11-27, Bronson)
+    var settle by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { repeat(12) { kotlinx.coroutines.delay(100); settle++ } }
     Canvas(modifier) {
+        if (settle < 0) return@Canvas
         val sx = size.width / cols; val sy = size.height / rows
         val mix = FrequencyMix.shares(FrequencyMix.Dials(tuned.toDouble()))
         val yours = mix.getValue(FrequencyMix.YOURS).toFloat(); val near = mix.getValue(FrequencyMix.NEAR).toFloat()
