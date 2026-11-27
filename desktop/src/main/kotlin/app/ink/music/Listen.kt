@@ -40,6 +40,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.remember
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.isPrimaryPressed
@@ -98,6 +100,20 @@ fun ListenPage(open: (Page) -> Unit) {
     val mixes = mixesAll.unblocked { "" to it.name }
     val mixScope = androidx.compose.runtime.rememberCoroutineScope()
     val tubeMixes by TubeAccount.mixes.collectAsState()
+    val uploads = TubeAccount.uploads.shown { it.title to it.artist }
+    val tubeLists by TubeAccount.playlists.collectAsState()
+    val liked by TubeAccount.liked.collectAsState()
+    val keptIds by Offline.kept.collectAsState()
+    val keptRecords = remember(keptIds, albums) { albums.filter { a -> a.songs.any { it.id in keptIds } }.take(16) }
+    // on repeat: the songs played most these 30 days, twice or more (the phone's)
+    val onRepeat by produceState(emptyList<Song>(), heard, liked) {
+        value = withContext(Dispatchers.IO) {
+            val since = System.currentTimeMillis() - 30L * 86_400_000
+            val tube = liked.associateBy { it.id }
+            History.read().filter { it.at > since }.groupingBy { it.id }.eachCount().filter { it.value >= 2 }
+                .entries.sortedByDescending { it.value }.mapNotNull { Library.song(it.key) ?: tube[it.key] }.take(12)
+        }
+    }
     LaunchedEffect(songs.isNotEmpty()) { Discover.start(songs) }
     val list = pageList()
     LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic(); Updates.check() }
@@ -172,13 +188,28 @@ fun ListenPage(open: (Page) -> Unit) {
         if (sinceAt != null && sinceLines.isNotEmpty()) item(key = "since") { SinceYouWereHere(sinceAt!!, sinceLines) }
         // your frequency: one endless station made from you, steered as it plays (#16; the phone's)
         item(key = "frequency") { FrequencyCard() }
-        // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
-        item(key = "dialedIn") { DialedInSheet(open) }
         // three ways in, small: charts, new releases, moods & genres (2026-11-17, Bronson)
         item(key = "doors") { Doors(open) }
         // the shelves in the moment's order (Fresh.order: the time of day, the kind of day, what you open and what you
         // pass over; held for the visit), as the phone's listen (2026-11-11)
         val shelf = LinkedHashMap<String, () -> Unit>()
+        // dialed in: the nine you go back to at this hour, a shelf the moment moves like the rest (the phone's since
+        // 2026-11-25: pinned on top, it was a second "tap to play yours" under FREQUENCY)
+        shelf["dialedIn"] = { item(key = "dialedIn") { DialedInSheet(open) } }
+        // on repeat: what this computer played most these 30 days, twice or more
+        shelf["onRepeat"] = { if (onRepeat.size >= 3) item(key = "onRepeat") { SongsShelf("ON REPEAT", "what you've played most this month", onRepeat) } }
+        // the songs you've uploaded to youtube music yourself, and your playlists there (signed in)
+        shelf["uploads"] = { if (uploads.isNotEmpty()) item(key = "uploads") { SongsShelf("YOUR UPLOADS", "on youtube music", uploads) } }
+        shelf["tubeLists"] = {
+            if (tubeLists.isNotEmpty()) item(key = "tubeLists") {
+                Column {
+                    Section("YOUR PLAYLISTS", "on youtube music")
+                    Shelf { items(tubeLists, key = { it.url }) { a -> TubeTile(a, Modifier.width(170.dp), "playlist") { open(Page.Tube(a)) } } }
+                }
+            }
+        }
+        // your server's records kept on this computer
+        shelf["kept"] = { records("kept on this ${if (Home.mac) "mac" else "computer"}", "there with no signal", keptRecords, open) }
         shelf["fromYours"] = {
             if (fromYours.isNotEmpty()) item { NewFromYours(fromYours, open) }
         }
@@ -373,8 +404,8 @@ private fun SinceYouWereHere(since: Long, lines: List<NewLine>) {
 
 /** Listen's shelves in their usual order (Fresh.order moves them for the moment); the phone's keys, where shared. */
 // listen is you, INK is the world (2026-11-12, Bronson): live sets and ink radio are INK's; your mix is here
-val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "forYou", "videos", "yours", "madeForYou", "tubeMixes", "episodes", "mixes", "yourMix", "nts", "because",
-    "newToYou", "jumpBack", "forgotten", "newest", "lists")
+val LISTEN_SHELVES = listOf("fromYours", "monday", "friday", "forYou", "videos", "dialedIn", "yours", "madeForYou", "kept", "tubeMixes", "episodes", "mixes", "yourMix", "nts", "because",
+    "newToYou", "onRepeat", "jumpBack", "forgotten", "uploads", "tubeLists", "newest", "lists")
 
 /**
  * Know me (2026-11-11): your listening on Last.fm or ListenBrainz, brought in by name, so INK, listen and the mixes
@@ -1089,6 +1120,23 @@ fun matches(s: Song, query: String): Boolean {
 @Composable
 fun Narrowed(shown: Int, of: Int, query: String) {
     if (query.isNotBlank()) BasicText(if (shown == 0) "none of $of" else "$shown of $of", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
+}
+
+/** A shelf of songs: its name, a line, play all, then each song; a click plays from there. */
+@Composable
+private fun SongsShelf(title: String, line: String, songs: List<Song>) {
+    Column {
+        Section(title, line) { Word("play all", pixel(14.sp), touch = 8.dp) { Player.play(songs) } }
+        Shelf(songs.size, 150.dp) { each ->
+            itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
+                Column(Modifier.width(each).clickable(remember { MutableInteractionSource() }, indication = null, onClick = felt { Player.play(songs, i) })) {
+                    CoverOf(s, s.album.ifEmpty { s.title }, Modifier.width(each).aspectRatio(1f), px = 320)
+                    Spacer(Modifier.height(8.dp))
+                    UnderCover(s.title, s.artist)
+                }
+            }
+        }
+    }
 }
 
 /** A week's monday finds or friday drops (the phone's FindsShelf): its name, when it came out, play all, then its songs. */
