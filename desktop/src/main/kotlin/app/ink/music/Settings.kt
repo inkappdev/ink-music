@@ -1190,7 +1190,10 @@ private fun LooksGrid() {
     }
 }
 
-/** The previews' pictures all one size (2026-11-27, Bronson: the artist's was bigger than the mixes'). */
+/**
+ * The previews' pictures all one size, each in a hairline (2026-11-27, Bronson: the artist's was bigger than the mixes';
+ * then a mostly dark cover in the dither read as a smaller picture, its black parts lost on the black).
+ */
 private val PREVIEW_TILE = 72.dp
 
 /** Mixes and lists in small: four songs you played lately, each a mix's tile in the look chosen for mixes and lists. */
@@ -1208,7 +1211,7 @@ private fun MixesPreview(modifier: Modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             recent.forEach { s ->
                 Column(Modifier.width(PREVIEW_TILE)) {
-                    androidx.compose.runtime.key(s.id, print) { Dithered(s, Modifier.size(PREVIEW_TILE), px = 300, print = print) }
+                    androidx.compose.runtime.key(s.id, print) { Dithered(s, Modifier.size(PREVIEW_TILE).border(1.dp, Ink.line), px = 300, print = print) }
                     BasicText("${s.artist.substringBefore(", ").uppercase()} MIX", style = headline(11.sp), maxLines = 1, modifier = Modifier.padding(top = 6.dp))
                 }
             }
@@ -1230,7 +1233,7 @@ private fun ArtistLookPreview(modifier: Modifier) {
         val photo = info?.photo
         if (photo == null) BasicText(if (name.isEmpty()) "play something, and see their page here" else name.lowercase(), style = pixel(12.sp, Ink.dim))
         else Row(verticalAlignment = Alignment.Bottom) {
-            ArtistPhoto(remember(photo) { faceSong(name, photo, photo = true) }, Modifier.size(PREVIEW_TILE))
+            ArtistPhoto(remember(photo) { faceSong(name, photo, photo = true) }, Modifier.size(PREVIEW_TILE).border(1.dp, Ink.line))
             BasicText(name.uppercase(), style = headline(18.sp), maxLines = 2, modifier = Modifier.padding(start = 12.dp))
         }
     }
