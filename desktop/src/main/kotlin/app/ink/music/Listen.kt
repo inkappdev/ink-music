@@ -770,6 +770,8 @@ private fun ListTile(name: String, said: String, onClick: () -> Unit, more: List
 /** A list's art from its songs: four of its records' covers, two by two; fewer records, the first; none, its name. */
 @Composable
 private fun Mosaic(songs: List<Song>, name: String) {
+    // DOT MATRIX: its own cover, the name in Doto over its records' colours in dots (the phone's)
+    if (Hand.dots) return DotListCover(songs, name)
     val four = remember(songs) { songs.distinctBy { it.albumId }.take(4) }
     when {
         four.size == 4 -> Column(Modifier.fillMaxSize()) {
@@ -1083,6 +1085,7 @@ fun KeepOffline(songs: List<Song>) {
  */
 @Composable
 private fun Lettered(name: String) {
+    if (Hand.dots) return DotListCover(emptyList(), name)
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Ink.black).border(1.dp, Ink.line)) {
         val size = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * .15f).toSp() }
         BasicText(name.uppercase(), style = headline(size).copy(lineHeight = size * 1.02f), maxLines = 4, overflow = TextOverflow.Ellipsis,
