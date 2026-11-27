@@ -120,6 +120,8 @@ fun ExplorePage(open: (Page) -> Unit) {
         // one rhythm down the page: the same room between every section (2026-10-29)
         LazyColumn(Modifier.fillMaxSize().feather(list), list, contentPadding = PaddingValues(start = SIDE, end = SIDE, top = 6.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(GAP)) { cascading {
+            // the issue: its number, the day, and the day's line, yours then the world's (DayNote; the phone's)
+            item(key = "issue") { Issue(records, chart, friday, air) }
             // ink weekly, the cover: ours, new each Friday
             item(key = "weekly") { InkWeekly() }
             today?.let { d -> item(key = "today") { RecordOfTheDay(d, open) } }
@@ -898,4 +900,19 @@ private fun audience(said: String): Long {
     val m = Regex("([\\d.]+)\\s*([KMB]?)").find(said.uppercase()) ?: return 0
     val n = m.groupValues[1].toDoubleOrNull() ?: return 0
     return (n * when (m.groupValues[2]) { "K" -> 1e3; "M" -> 1e6; "B" -> 1e9; else -> 1.0 }).toLong()
+}
+
+/** INK's issue up top (the phone's): its number and the day, the day's line under them, kept all day once the picks are in. */
+@Composable
+private fun Issue(records: List<Picks.Shown>, chart: List<IndieChart.Entry>, friday: Curation.Week?, air: List<Curation.Aired>) {
+    val taste by Fresh.taste.collectAsState()
+    val since by Fresh.since.collectAsState()
+    val note by produceState<String?>(null, records, chart, friday, taste, air.isNotEmpty()) {
+        value = withContext(Dispatchers.IO) { runCatching { DayNote.of(records, chart, friday, air, Fests.all, since, taste) }.getOrNull() }
+    }
+    val day = remember { java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM", java.util.Locale.ENGLISH).format(Moment.issueDay().let { java.time.LocalDate.of(it.year, it.monthNumber, it.dayOfMonth) }).lowercase() }
+    Column(Modifier.widthIn(max = 640.dp)) {
+        BasicText("no. ${Moment.issue()}   $day", style = pixel(12.sp, Ink.mid))
+        note?.let { BasicText(it, style = pixel(13.sp, Ink.ink).copy(lineHeight = 21.sp), modifier = Modifier.padding(top = 6.dp)) }
+    }
 }
