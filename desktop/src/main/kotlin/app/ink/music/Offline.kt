@@ -35,8 +35,8 @@ object Offline {
     val small = MutableStateFlow(smallFile.exists())
     fun small(on: Boolean) { small.value = on; runCatching { if (on) smallFile.writeText("") else smallFile.delete() } }
 
-    /** Whether a song can be kept: your server's, or YouTube Music's (a file's here already; a station's live). */
-    fun keepable(s: Song) = s.server || s.tube
+    /** Whether a song can be kept: your server's, YouTube Music's, or a podcast's episode (the phone's since 2026-11-25); a file's here already, a station's live. */
+    fun keepable(s: Song) = s.server || s.tube || s.episode
 
     /** A song's kept file, if it's whole (the player asks as each song's loaded: quick). */
     fun file(id: String): File? = File(dir, id).takeIf { it.isFile && it.length() > 0 }
@@ -52,7 +52,8 @@ object Offline {
 
     private fun fetch(s: Song) {
         if (s.id !in keeping.value) return   // let go before its turn
-        val url = (if (s.server) Server.stream(s, mp3 = small.value) else YouTube.stream(s.id, small = small.value)) ?: return
+        // an episode: its file as the show gives it
+        val url = (if (s.episode) s.path else if (s.server) Server.stream(s, mp3 = small.value) else YouTube.stream(s.id, small = small.value))?.takeIf { it.isNotEmpty() } ?: return
         File(dir, "${s.id}.json").writeText(s.json().toString())
         val part = File(dir, "${s.id}.dl")
         part.delete()

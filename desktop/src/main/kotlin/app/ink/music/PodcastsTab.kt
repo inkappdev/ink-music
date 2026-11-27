@@ -174,6 +174,14 @@ private fun EpisodeRow(e: Song, place: Long, withShow: Boolean, on: Boolean, ope
         }
         Word("play next", pixel(12.sp, Ink.dim), Modifier.padding(start = 16.dp), touch = 8.dp) { Player.playNext(e) }
         Word("add to queue", pixel(12.sp, Ink.dim), Modifier.padding(start = 16.dp), touch = 8.dp) { Player.add(e) }
+        // kept on the computer for no signal (the phone's): "keep", then how far it's come, then "kept" (lit; a click lets it go)
+        val kept by Offline.kept.collectAsState()
+        val keeping by Offline.keeping.collectAsState()
+        val coming = keeping[e.id]
+        Word(when { e.id in kept -> "kept"; coming != null -> "${(coming * 100).toInt()}%"; else -> "keep" },
+            pixel(12.sp, if (e.id in kept) Ink.ink else Ink.dim), Modifier.padding(start = 16.dp), touch = 8.dp) {
+            if (e.id in kept || coming != null) Offline.remove(listOf(e.id)) else Offline.keep(listOf(e))
+        }
     }
 }
 
