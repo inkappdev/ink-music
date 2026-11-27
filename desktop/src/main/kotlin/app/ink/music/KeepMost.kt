@@ -15,12 +15,16 @@ import java.time.LocalDate
 /**
  * Keep what you play most, the computer's (settings, kept offline; the phone's KeepMost): the 50 most in your rotation (lately
  * counts more) kept on this computer, looked at again once a day; one that's dropped out let go, unless a love or
- * your own hand kept it too. Off at first. Kept in keep-most.json.
+ * your own hand kept it too. Off at first. How many, 25 to 200 (a listener's ask, 2026-11-27). Kept in keep-most.json.
+ * A kept song nothing can name yet is still in the rotation: only one fallen out of the top is let go.
  */
 object KeepMost {
-    const val N = 50
+    val counts = listOf(25, 50, 100, 200)
     private val _on = MutableStateFlow(false)
     val on: StateFlow<Boolean> = _on
+    private val _n = MutableStateFlow(50)
+    /** How many are kept. */
+    val n: StateFlow<Int> = _n
     private var forMost: Set<String> = emptySet()
     private var day = ""
     private var started = false
@@ -33,6 +37,7 @@ object KeepMost {
         runCatching {
             val o = JSONObject(file.readText())
             _on.value = o.optBoolean("on")
+            _n.value = o.optInt("n", 50).takeIf { it in counts } ?: 50
             forMost = o.optJSONArray("forMost")?.let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }.orEmpty()
             day = o.optString("day")
         }
@@ -46,6 +51,14 @@ object KeepMost {
         if (!on) { Offline.remove(forMost.filter { !KeepLoved.holds(it) }); forMost = emptySet() }
         save()
         if (on) scope.launch { look() }
+    }
+
+    /** How many; looked at again now (fewer: the ones past the new count let go). */
+    fun choose(n: Int) {
+        _n.value = n
+        day = ""
+        save()
+        scope.launch { look() }
     }
 
     /** Whether it's kept for being played most (a love let go of keeps it then). */
@@ -62,14 +75,21 @@ object KeepMost {
     @Synchronized private fun look() {
         if (!_on.value || day == today()) return
         val heard = History.read().map { it.id to it.at }
-        val top = LoveKeeping.mostPlayed(heard, System.currentTimeMillis(), n = N * 8).mapNotNull(Library::song).filter(Offline::keepable).take(N)
-        if (top.isEmpty()) return
+        val n = _n.value
         val have = Offline.kept.value + Offline.keeping.value.keys
-        val ids = top.map { it.id }.toSet()
-        val out = forMost - ids
+        // one kept already stays in the count whether or not it can be named now
+        val top = ArrayList<String>(); val fetch = ArrayList<Song>()
+        for (id in LoveKeeping.mostPlayed(heard, System.currentTimeMillis(), n = n * 8)) {
+            if (top.size >= n) break
+            if (id in have) { top += id; continue }
+            val s = Library.song(id)?.takeIf(Offline::keepable) ?: continue
+            top += id; fetch += s
+        }
+        if (top.isEmpty()) return
+        val out = forMost - top.toSet()
         Offline.remove(out.filter { !KeepLoved.holds(it) })
-        forMost = (forMost - out) + top.filter { it.id !in have }.map { it.id }
-        Offline.keep(top, auto = true)
+        forMost = (forMost - out) + fetch.map { it.id }
+        if (fetch.isNotEmpty()) Offline.keep(fetch, auto = true)
         day = today()
         save()
     }
@@ -77,6 +97,6 @@ object KeepMost {
     private fun today() = LocalDate.now().toString()
 
     private fun save() = runCatching {
-        file.writeText(JSONObject().put("on", _on.value).put("forMost", JSONArray(forMost.toList())).put("day", day).toString())
+        file.writeText(JSONObject().put("on", _on.value).put("n", _n.value).put("forMost", JSONArray(forMost.toList())).put("day", day).toString())
     }
 }

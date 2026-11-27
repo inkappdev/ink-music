@@ -370,8 +370,20 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 }
                 // the most played kept, refreshed daily on wifi (KeepMost): off at first
                 val most by KeepMost.on.collectAsState()
-                SettingRow("KEEP WHAT YOU PLAY MOST", if (most) "on" else "off", opened, "the ${KeepMost.N} most in your rotation, changed as they change (on wifi)") {
+                val mostN by KeepMost.n.collectAsState()
+                val mostAny by KeepMost.anyNetwork.collectAsState()
+                val mostCharging by KeepMost.charging.collectAsState()
+                SettingRow("KEEP WHAT YOU PLAY MOST", if (most) "the $mostN" else "off", opened,
+                    "the $mostN most in your rotation, changed as they change (${if (mostAny) "any network" else "on wifi"}${if (mostCharging) ", charging" else ""})") {
                     Pick(listOf("on" to most, "off" to !most)) { KeepMost.set(ctx, it == 0) }
+                    if (most) {
+                        PickLabel("how many")
+                        Pick(KeepMost.counts.map { "$it" to (mostN == it) }) { KeepMost.choose(ctx, n = KeepMost.counts[it]) }
+                        PickLabel("on")
+                        Pick(listOf("wifi" to !mostAny, "any network" to mostAny)) { KeepMost.choose(ctx, anyNetwork = it == 1) }
+                        PickLabel("when")
+                        Pick(listOf("any time" to !mostCharging, "charging" to mostCharging)) { KeepMost.choose(ctx, charging = it == 1) }
+                    }
                 }
                 RowsEnd()
             }

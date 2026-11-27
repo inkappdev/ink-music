@@ -873,8 +873,10 @@ private fun OfflineRows(opened: Opened) {
     }
     // the most played kept, refreshed daily (KeepMost): off at first
     val most by KeepMost.on.collectAsState()
-    SettingRow("KEEP WHAT YOU PLAY MOST", if (most) "on" else "off", opened, "the ${KeepMost.N} most in your rotation, changed as they change") {
+    val mostN by KeepMost.n.collectAsState()
+    SettingRow("KEEP WHAT YOU PLAY MOST", if (most) "the $mostN" else "off", opened, "the $mostN most in your rotation, changed as they change") {
         Pick(listOf("on" to most, "off" to !most)) { KeepMost.set(it == 0) }
+        if (most) Pick(KeepMost.counts.map { "$it" to (mostN == it) }) { KeepMost.choose(KeepMost.counts[it]) }
     }
 }
 
