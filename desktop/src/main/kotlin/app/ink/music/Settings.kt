@@ -1029,7 +1029,7 @@ private fun LookSetting(opened: Opened) {
     // DOT MATRIX, once found (FREQUENCY at 440 Hz): the whole app in a dot-matrix hand, or ink's (the phone's)
     val dotFound by DotMatrix.found.collectAsState()
     val dotOn by DotMatrix.on.collectAsState()
-    if (dotFound) SettingRow("THE HAND", if (dotOn) "dot matrix" else "ink", opened, "ink's own type and square pixels, or dot matrix: space grotesk, space mono and round dots") {
+    if (dotFound) SettingRow("TYPE", if (dotOn) "dot matrix" else "ink", opened, "you found it: the whole app in a dot-matrix hand, or ink's own") {
         Pick(listOf("ink" to !dotOn, "dot matrix" to dotOn)) { if ((it == 1) != dotOn) DotMatrix.set(it == 1) }
     }
     val covers = listOf<Look?>(null) + Moving.coverLooks
