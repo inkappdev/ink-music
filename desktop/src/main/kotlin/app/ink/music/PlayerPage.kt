@@ -544,6 +544,7 @@ fun SeekLine(n: Player.Now, accent: Color, modifier: Modifier = Modifier, held: 
         if (beat && live && h == null && k == null) BeatCounter(n.song.id, n.playing, Modifier.align(Alignment.TopCenter))
         if (k != null && mix != null) MixBar(mix, k, old, accent, thick, Modifier.align(Alignment.BottomStart))
         else if (cut != null) MixPointBar(frac, cut.toFloat() / n.duration, accent, thick, Modifier.align(Alignment.BottomStart))
+        else if (Hand.dots) DotLine(frac, accent, thick, Modifier.align(Alignment.BottomStart))
         else Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(thick).background(Ink.line)) {
             Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(accent))
         }

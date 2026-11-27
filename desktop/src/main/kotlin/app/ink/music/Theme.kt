@@ -68,8 +68,20 @@ private fun font(name: String) = androidx.compose.ui.text.platform.Font(
 
 private val tight = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both)
 
+/**
+ * The hand words are set in and pixels drawn in: ink's own (null: Archivo Black, Silkscreen, square pixels), or another's
+ * (DOT MATRIX: Space Grotesk, Space Mono, round dots), set before anything's drawn (the phone's).
+ */
+object Hand {
+    @Volatile var headline: FontFamily? = null
+    @Volatile var small: FontFamily? = null
+    /** For the few huge words (the player's giant name): null, the headline's. */
+    @Volatile var display: FontFamily? = null
+    @Volatile var dots = false
+}
+
 fun headline(size: TextUnit, color: Color = Ink.ink) = TextStyle(
-    fontFamily = Archivo, fontSize = settable(size), color = color,
+    fontFamily = Hand.headline ?: Archivo, fontSize = settable(size), color = color,
     letterSpacing = (-0.02).em, lineHeight = 0.95.em, lineHeightStyle = tight,
 )
 
@@ -104,7 +116,10 @@ private fun settable(size: TextUnit): TextUnit = when {
     else -> size.value.coerceIn(1f, 2000f).sp
 }
 
-fun pixel(size: TextUnit, color: Color = Ink.ink) = TextStyle(
+fun pixel(size: TextUnit, color: Color = Ink.ink) = Hand.small?.let { face ->
+    // another hand's small words (DOT MATRIX's Space Mono) need no step up, only the 12 sp floor, and sit a little closer
+    TextStyle(fontFamily = face, fontSize = if (size.value < 12f) 12.sp else settable(size), color = color, lineHeight = 1.3.em)
+} ?: TextStyle(
     fontFamily = Pixel, fontSize = readable(size), color = color, lineHeight = 1.4.em,
 )
 
@@ -288,7 +303,8 @@ fun Sprite(rows: List<String>, color: Color, cell: Dp, modifier: Modifier = Modi
         rows.forEachIndexed { y, row ->
             row.forEachIndexed { x, ch ->
                 if (ch == '#' || ch == 'X') {
-                    drawRect(color, Offset(at(x), at(y)), Size(at(x + 1) - at(x), at(y + 1) - at(y)))
+                    if (Hand.dots) drawCircle(color, px * .45f, Offset((x + .5f) * px, (y + .5f) * px))
+                    else drawRect(color, Offset(at(x), at(y)), Size(at(x + 1) - at(x), at(y + 1) - at(y)))
                 }
             }
         }

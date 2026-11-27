@@ -1026,6 +1026,12 @@ private fun LookSetting(opened: Opened) {
     val names by Marquees.on.collectAsState()
     LookPreview()
     Spacer(Modifier.height(20.dp))
+    // DOT MATRIX, once found (FREQUENCY at 440 Hz): the whole app in a dot-matrix hand, or ink's (the phone's)
+    val dotFound by DotMatrix.found.collectAsState()
+    val dotOn by DotMatrix.on.collectAsState()
+    if (dotFound) SettingRow("THE HAND", if (dotOn) "dot matrix" else "ink", opened, "ink's own type and square pixels, or dot matrix: space grotesk, space mono and round dots") {
+        Pick(listOf("ink" to !dotOn, "dot matrix" to dotOn)) { if ((it == 1) != dotOn) DotMatrix.set(it == 1) }
+    }
     val covers = listOf<Look?>(null) + Moving.coverLooks
     SettingRow("THE COVER", cover?.word ?: "clear", opened, "the record's cover, still or moving, in an effect of its own") {
         Pick(covers.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(cover = covers[it]) }

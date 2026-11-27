@@ -127,6 +127,8 @@ fun main() {
     // Apple's catalog (moving covers) wants an Origin header, which the JVM drops unless allowed before any request
     System.setProperty("sun.net.http.allowRestrictedHeaders", "true")
     linuxWindow()
+    // DOT MATRIX's hand set before anything's drawn
+    DotMatrix.start()
     // whatever stops it, kept in crash.log (Crash)
     Crash.start()
     // ⌘Q (the app menu's Quit, the Dock's): the same whole quit as closing the window
@@ -229,7 +231,9 @@ fun main() {
             // the menus in the Mac's own bar along the top of the screen (elsewhere, the keys alone)
             if (Home.mac) Menus()
             Box(Modifier.fillMaxSize()) {
-                Sized { App() }
+                // DOT MATRIX turned on or off: everything drawn again in the new hand
+                val dotHand by DotMatrix.on.collectAsState()
+                androidx.compose.runtime.key(dotHand) { Sized { App() } }
                 // Windows: the strip along the top the window's to drag (InkTitle), over the pages
                 TitleStrip(Size.of(chosen))
                 // the Mac: a double-click along the top zooms, as a title bar's does (MacTitleStrip)

@@ -81,7 +81,7 @@ fun Marquee(artist: String, playing: Boolean, modifier: Modifier, size: androidx
         },
         modifier = modifier,
         label = "marquee",
-    ) { shown -> Drift(shown, headline(size, color), playing, Modifier.fillMaxWidth().padding(bottom = 4.dp)) }
+    ) { shown -> Drift(shown, headline(size, color).let { s -> Hand.display?.let { s.copy(fontFamily = it) } ?: s }, playing, Modifier.fillMaxWidth().padding(bottom = 4.dp)) }
 }
 
 /**
