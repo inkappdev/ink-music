@@ -19,6 +19,10 @@ enum class Look(val word: String, val alpha: Float) {
     XRAY("x-ray", .4f),
     // the cover itself, held to half over the black so the words over it read
     AS_IS("clear", .5f),
+    // a halftone of round dots, each its patch's own colour, as large as the patch is light (DOT MATRIX's; the phone's
+    // since 2026-11-25, here since 2026-11-27); soft, the picture blurred first and the dots a little after
+    DOTS("dots", .5f),
+    SOFTDOTS("soft dots", .5f),
     PLAIN("plain", 0f),
 }
 
@@ -32,8 +36,8 @@ object Looks {
 
 /** Moving covers (Apple Music's motion artwork, [MotionCover]) and the cover's effect. */
 object Moving {
-    /** The effects a cover takes (blur would hide it); null is as it is. */
-    val coverLooks = listOf(Look.DITHER, Look.PIXELS)
+    /** The effects a cover takes (every look but black, as the phone's since 2026-11-25); null is as it is. */
+    val coverLooks = listOf(Look.DITHER, Look.PIXELS, Look.DOTS, Look.SOFTDOTS, Look.BLUR, Look.XRAY)
     private val _on = MutableStateFlow(true)
     val on: StateFlow<Boolean> = _on
     private val _cover = MutableStateFlow<Look?>(null)
@@ -53,6 +57,13 @@ object Moving {
     private val _artistXray = MutableStateFlow(false)
     /** An artist's photo and clip as an x-ray in its own colour ([Xray]; 2026-11-18), whatever the two above say. */
     val artistXray: StateFlow<Boolean> = _artistXray
+    private val _artistExtra = MutableStateFlow("")
+    /** An artist's photo in tiles, dots or soft dots (the phone's ArtistLook), whatever the three above say; "" none. */
+    val artistExtra: StateFlow<String> = _artistExtra
+    fun artistExtra(word: String) { _artistExtra.value = word; LookFile.save() }
+    internal fun putArtistExtra(word: String) { _artistExtra.value = word }
+    /** The look an artist's photo is drawn in, or null as it is (the dither, the grain and x-ray drawn their own ways). */
+    fun artistLook(): Look? = when (_artistExtra.value) { "tiles" -> Look.PIXELS; "dots" -> Look.DOTS; "soft dots" -> Look.SOFTDOTS; else -> null }
     fun set(on: Boolean = _on.value, cover: Look? = _cover.value, canvasOn: Boolean = _canvasOn.value,
             artistVideo: Boolean = _artistVideo.value, artistDither: Boolean = _artistDither.value, artistGrain: Boolean = _artistGrain.value,
             artistXray: Boolean = _artistXray.value) {
@@ -114,7 +125,8 @@ internal object LookFile {
         Moving.put(o.optBoolean("moving", true), Moving.coverLooks.firstOrNull { it.name == o.optString("cover") }, o.optBoolean("canvas", true),
             o.optBoolean("artistVideo", true), o.optBoolean("artistDither", true), o.optBoolean("artistGrain", false), o.optBoolean("artistXray", false))
         Marquees.put(o.optBoolean("marquee", true))
-        CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") && it != Print.DOTS && it != Print.XRAY && it != Print.SOFTDOTS } ?: Print.TILES)
+        CoverPrint.put(Print.entries.firstOrNull { it.name == o.optString("print") } ?: Print.TILES)
+        Moving.putArtistExtra(o.optString("artistExtra"))
         ListCovers.put(o.optBoolean("listCovers", false))
         ListsGrid.put(o.optBoolean("listsGrid", false))
     }
@@ -123,7 +135,7 @@ internal object LookFile {
         runCatching {
             file.writeText(JSONObject().put("behind", Looks.on.value.name).put("moving", Moving.on.value)
                 .put("cover", Moving.cover.value?.name ?: "AS_IS").put("canvas", Moving.canvasOn.value)
-                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("artistGrain", Moving.artistGrain.value).put("artistXray", Moving.artistXray.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).put("print", CoverPrint.on.value.name).toString())
+                .put("artistVideo", Moving.artistVideo.value).put("artistDither", Moving.artistDither.value).put("artistGrain", Moving.artistGrain.value).put("artistXray", Moving.artistXray.value).put("artistExtra", Moving.artistExtra.value).put("marquee", Marquees.on.value).put("listCovers", ListCovers.on.value).put("listsGrid", ListsGrid.on.value).put("print", CoverPrint.on.value.name).toString())
         }
     }
 }

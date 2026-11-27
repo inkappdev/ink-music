@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
@@ -1025,6 +1028,11 @@ private fun LookSetting(opened: Opened) {
     val moving by Moving.on.collectAsState()
     val names by Marquees.on.collectAsState()
     LookPreview()
+    // beside the player: mixes and lists, and the playing artist's photo, each in the look chosen for it (the phone's previews)
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        MixesPreview(Modifier.weight(1f))
+        ArtistLookPreview(Modifier.weight(1f))
+    }
     Spacer(Modifier.height(20.dp))
     // DOT MATRIX, once found (FREQUENCY at 440 Hz): the whole app in a dot-matrix hand, or ink's (the phone's)
     val dotFound by DotMatrix.found.collectAsState()
@@ -1032,15 +1040,11 @@ private fun LookSetting(opened: Opened) {
     if (dotFound) SettingRow("TYPE", if (dotOn) "dot matrix" else "ink", opened, "you found it: the whole app in a dot-matrix hand, or ink's own") {
         Pick(listOf("ink" to !dotOn, "dot matrix" to dotOn)) { if ((it == 1) != dotOn) DotMatrix.set(it == 1) }
     }
-    val covers = listOf<Look?>(null) + Moving.coverLooks
-    SettingRow("THE COVER", cover?.word ?: "clear", opened, "the record's cover, still or moving, in an effect of its own") {
-        Pick(covers.map { (it?.word ?: "clear") to (it == cover) }) { Moving.set(cover = covers[it]) }
-    }
-    val behinds = listOf(Look.PLAIN, Look.BLUR, Look.PIXELS, Look.DITHER, Look.XRAY, Look.AS_IS)
-    SettingRow("BEHIND IT", behind.word, opened, if (behind == Look.PLAIN) "plain: the cover's print in the dither beside it, on black"
-        else "the cover across the whole window behind the player") {
-        Pick(behinds.map { it.word to (it == behind) }) { Looks.set(behinds[it]) }
-    }
+    // PICTURES (the phone's since 2026-11-25): one grid for the four places a picture is drawn, the looks down its side
+    BasicText("PICTURES", style = headline(22.sp), modifier = Modifier.padding(top = 6.dp))
+    BasicText("one look for each place a picture is drawn", style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
+    LooksGrid()
+    Spacer(Modifier.height(18.dp))
     val pass by SpotifyHanded.pass.collectAsState()
     val canvasOn by Moving.canvasOn.collectAsState()
     SettingRow("SPOTIFY'S CANVAS", if (canvasOn) "on" else "off", opened, when {
@@ -1052,12 +1056,6 @@ private fun LookSetting(opened: Opened) {
     }
     SettingRow("MOVING COVERS", if (moving) "on" else "off", opened, "apple music's looping cover, where a label made one") {
         Pick(listOf("on" to moving, "off" to !moving)) { Moving.set(on = it == 0) }
-    }
-    // how mixes and lists are drawn from their covers
-    val print by CoverPrint.on.collectAsState()
-    SettingRow("COVERS", print.word, opened, if (print == Print.CLEAR) "clear: every cover and photo as it is, no dither, tiles or blur" else "how mixes, lists and photos are drawn from their covers; clear for none") {
-        val prints = Print.entries - Print.DOTS - Print.XRAY - Print.SOFTDOTS   // dots and x-ray as a print are the phone's
-        Pick(prints.map { it.word to (it == print) }) { CoverPrint.set(prints[it]) }
     }
     // the app's icon: the words, or an ink drop (DeskIcon), each shown as it looks
     val icon by DeskIcon.chosen.collectAsState()
@@ -1075,13 +1073,8 @@ private fun LookSetting(opened: Opened) {
     val artistDither by Moving.artistDither.collectAsState()
     val artistGrain by Moving.artistGrain.collectAsState()
     val artistXray by Moving.artistXray.collectAsState()
-    SettingRow("ARTIST PAGES", "${if (artistVideo) "video" else "photo"} · ${if (artistXray) "x-ray" else if (artistGrain) "blur" else if (artistDither) "dithered" else "clear"}", opened,
-        "their photo, or their moving one where apple music has one") {
+    SettingRow("ARTIST PAGES", if (artistVideo) "video" else "photo", opened, "their photo, or their moving one where apple music has one") {
         Pick(listOf("video" to artistVideo, "photo" to !artistVideo)) { Moving.set(artistVideo = it == 0) }
-        Pick(listOf("dithered" to (artistDither && !artistGrain && !artistXray), "blur" to (artistGrain && !artistXray), "x-ray" to artistXray,
-            "clear" to (!artistDither && !artistGrain && !artistXray))) {
-            Moving.set(artistDither = it == 0, artistGrain = it == 1, artistXray = it == 2)
-        }
     }
     SettingRow("THE NAME", if (names) "moving" else "still", opened, "the big artist names along the player's foot and on their pages") {
         Pick(listOf("moving" to names, "still" to !names)) { Marquees.set(it == 0) }
@@ -1133,4 +1126,109 @@ private fun TourSetting() {
     Spacer(Modifier.height(10.dp))
     CityPicker()
     if (tourPlace != null) Word("none", pixel(14.sp, Ink.mid), touch = 8.dp) { OnTour.choose(null) }
+}
+
+/**
+ * PICTURES (the phone's LooksGrid, 2026-11-25; here 2026-11-27): the four places a picture is drawn across the top (the
+ * player's cover, behind it, mixes and lists, artist pages), one set of looks down the side, a lit square for each place's
+ * (a round dot in DOT MATRIX); every look for every place but black, behind the player alone (a faint point elsewhere). A
+ * click chooses, the preview above shows it; the mouse over a square outlines it.
+ */
+@Composable
+private fun LooksGrid() {
+    val behind by Looks.on.collectAsState()
+    val cover by Moving.cover.collectAsState()
+    val print by CoverPrint.on.collectAsState()
+    val dithered by Moving.artistDither.collectAsState()
+    val grain by Moving.artistGrain.collectAsState()
+    val xray by Moving.artistXray.collectAsState()
+    val extra by Moving.artistExtra.collectAsState()
+    val looks = listOf("as it is", "dither", "tiles", "dots", "soft dots", "blur", "x-ray", "black")
+    class Place(val head: String, val on: String, val can: Map<String, () -> Unit>)
+    fun lookWord(l: Look?) = when (l) { null, Look.AS_IS -> "as it is"; Look.DITHER -> "dither"; Look.PIXELS -> "tiles"; Look.DOTS -> "dots"; Look.SOFTDOTS -> "soft dots"; Look.BLUR -> "blur"; Look.XRAY -> "x-ray"; Look.PLAIN -> "black" }
+    val asLook = mapOf("dither" to Look.DITHER, "tiles" to Look.PIXELS, "dots" to Look.DOTS, "soft dots" to Look.SOFTDOTS, "blur" to Look.BLUR, "x-ray" to Look.XRAY)
+    val asPrint = mapOf("as it is" to Print.CLEAR, "dither" to Print.DITHER, "tiles" to Print.TILES, "dots" to Print.DOTS, "soft dots" to Print.SOFTDOTS, "blur" to Print.GRAIN, "x-ray" to Print.XRAY)
+    fun artist(word: String) {
+        Moving.artistExtra(if (word == "tiles" || word == "dots" || word == "soft dots") word else "")
+        Moving.set(artistDither = word == "dither", artistGrain = word == "blur", artistXray = word == "x-ray")
+    }
+    val places = listOf(
+        Place("the cover", lookWord(cover), (listOf("as it is" to { Moving.set(cover = null) }) + asLook.map { (w, l) -> w to { Moving.set(cover = l) } }).toMap()),
+        Place("behind it", lookWord(behind),
+            (listOf("as it is" to { Looks.set(Look.AS_IS) }) + asLook.map { (w, l) -> w to { Looks.set(l) } } + listOf("black" to { Looks.set(Look.PLAIN) })).toMap()),
+        Place("mixes, lists", asPrint.entries.firstOrNull { it.value == print }?.key ?: "tiles", asPrint.mapValues { (_, p) -> { CoverPrint.set(p) } }),
+        Place("artist pages", extra.ifEmpty { if (xray) "x-ray" else if (grain) "blur" else if (dithered) "dither" else "as it is" },
+            listOf("as it is", "dither", "tiles", "dots", "soft dots", "blur", "x-ray").associateWith { w -> { artist(w) } }),
+    )
+    val shape = if (Hand.dots) androidx.compose.foundation.shape.CircleShape else androidx.compose.ui.graphics.RectangleShape
+    Column(Modifier.widthIn(max = 620.dp).fillMaxWidth().padding(top = 12.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Spacer(Modifier.width(96.dp))
+            places.forEach { p -> BasicText(p.head, style = pixel(12.sp, Ink.mid).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), modifier = Modifier.weight(1f)) }
+        }
+        looks.forEach { look ->
+            Row(Modifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText(look, style = pixel(13.sp, if (places.any { it.on == look }) Ink.ink else Ink.mid), modifier = Modifier.width(96.dp))
+                places.forEach { p ->
+                    val pick = p.can[look]
+                    val lit = p.on == look
+                    val over = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    val hovered by over.collectIsHoveredAsState()
+                    Box(Modifier.weight(1f).fillMaxHeight().then(if (pick != null) Modifier.hoverable(over)
+                        .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
+                        .clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = felt { pick() }) else Modifier),
+                        contentAlignment = Alignment.Center) {
+                        when {
+                            pick == null -> Box(Modifier.size(2.dp).background(Ink.line, shape))
+                            lit -> Box(Modifier.size(12.dp).background(Ink.ink, shape))
+                            else -> Box(Modifier.size(12.dp).border(1.dp, if (hovered) Ink.ink else Ink.dim, shape))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Mixes and lists in small: four songs you played lately, each a mix's tile in the look chosen for mixes and lists. */
+@Composable
+private fun MixesPreview(modifier: Modifier) {
+    val print by CoverPrint.on.collectAsState()
+    val recent by androidx.compose.runtime.produceState(emptyList<Song>()) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            History.read().asReversed().distinctBy { it.artist.substringBefore(", ").lowercase() }.mapNotNull { Library.song(it.id) ?: YouTube.known(it.id) }.take(4)
+        }
+    }
+    Column(modifier.border(1.dp, Ink.line).padding(12.dp)) {
+        BasicText("mixes, lists", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            recent.forEach { s ->
+                Column(Modifier.weight(1f)) {
+                    androidx.compose.runtime.key(s.id, print) { Dithered(s, Modifier.fillMaxWidth().aspectRatio(1f), px = 300, print = print) }
+                    BasicText("${s.artist.substringBefore(", ").uppercase()} MIX", style = headline(11.sp), maxLines = 1, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+        }
+    }
+}
+
+/** An artist page's photo in small: the playing (or last played) song's artist, in the look chosen for artist pages. */
+@Composable
+private fun ArtistLookPreview(modifier: Modifier) {
+    val now by Player.now.collectAsState()
+    val name by androidx.compose.runtime.produceState(now?.song?.artist?.substringBefore(", ").orEmpty(), now?.song?.artist) {
+        if (value.isEmpty()) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { History.read().lastOrNull()?.artist?.substringBefore(", ").orEmpty() }
+    }
+    val info by androidx.compose.runtime.produceState<ArtistInfo?>(null, name) { if (name.isNotEmpty()) Artists.of(name).collect { if (it != null) value = it } }
+    Column(modifier.border(1.dp, Ink.line).padding(12.dp)) {
+        BasicText("artist pages", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(8.dp))
+        val photo = info?.photo
+        if (photo == null) BasicText(if (name.isEmpty()) "play something, and see their page here" else name.lowercase(), style = pixel(12.sp, Ink.dim))
+        else Row(verticalAlignment = Alignment.Bottom) {
+            ArtistPhoto(remember(photo) { faceSong(name, photo, photo = true) }, Modifier.size(110.dp))
+            BasicText(name.uppercase(), style = headline(18.sp), maxLines = 2, modifier = Modifier.padding(start = 12.dp))
+        }
+    }
 }

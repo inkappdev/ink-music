@@ -312,6 +312,26 @@ object Effects {
         }
     """
 
+    // dots: a halftone, the picture in cells about a 26th of it (3 to 7 dp, twice that behind the player), each a round dot
+    // of its patch's own colour (a dark one lifted a little, so it still shows its colour), as wide as the patch is light,
+    // its edge smoothed, on black (the phone's DotPrint)
+    private const val DOTS = """
+        uniform shader content;
+        uniform float cell;
+        half4 main(float2 p) {
+            float2 c = floor(p / cell);
+            float2 m = (c + 0.5) * cell;
+            half4 s = (content.eval(m) + content.eval(m + float2(-0.25, -0.25) * cell) + content.eval(m + float2(0.25, -0.25) * cell)
+                + content.eval(m + float2(-0.25, 0.25) * cell) + content.eval(m + float2(0.25, 0.25) * cell)) * 0.2;
+            if (s.a < 0.5) return half4(0.0);
+            float l = dot(float3(s.rgb), float3(0.299, 0.587, 0.114));
+            float k = l < 0.35 ? 1.35 : 1.0;
+            float r = cell * 0.48 * (0.18 + 0.82 * sqrt(l));
+            float a = clamp(r - length(p - m) + 0.5, 0.0, 1.0);
+            return half4(min(float3(s.rgb) * k, float3(1.0)) * a, 1.0);
+        }
+    """
+
     private val made = HashMap<String, RuntimeEffect>()
     private fun effect(sksl: String) = synchronized(made) { made.getOrPut(sksl) { RuntimeEffect.makeForShader(sksl) } }
 
@@ -339,6 +359,14 @@ object Effects {
                 val cell = 18 * density * k
                 uniform("cell", if (wide > 0) wide / (wide / cell).roundToInt().coerceAtLeast(4) else cell)
             }, "content", null)
+            Look.DOTS, Look.SOFTDOTS -> {
+                val cell = (if (wide > 0) wide / 26f else 5 * density).coerceIn(3 * density * k, 7 * density * k)
+                val soft = look == Look.SOFTDOTS
+                // soft: the picture through a lens's blur first, the dots a little blurred after so they bleed together
+                val dots = ImageFilter.makeRuntimeShader(RuntimeShaderBuilder(effect(DOTS)).apply { uniform("cell", cell) }, "content",
+                    if (soft) ImageFilter.makeBlur(cell * .9f, cell * .9f, FilterTileMode.CLAMP) else null)
+                if (soft) ImageFilter.makeBlur(1.5f * density, 1.5f * density, FilterTileMode.CLAMP, dots) else dots
+            }
             else -> null
         }
     }.onFailure { Log.d("effect $look: $it") }.getOrNull()

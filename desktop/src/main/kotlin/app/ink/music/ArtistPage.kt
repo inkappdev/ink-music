@@ -112,7 +112,10 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
             val grain = Moving.artistGrain.collectAsState().value && !xray
             val dithered = Moving.artistDither.collectAsState().value && !grain && !xray
             val still = remember(photo) { faceSong(name, photo, photo = true) }
+            // tiles, dots or soft dots chosen (the look's grid): those, whatever the rest say
+            val extra = Moving.artistExtra.collectAsState().value.let { Moving.artistLook() }
             when {
+                extra != null -> Looked(still, extra, Modifier.fillMaxSize())
                 xray -> Xrayed(still, Modifier.fillMaxSize())
                 grain -> Grainy(still, Modifier.fillMaxSize())
                 dithered -> Dithered(still, Modifier.fillMaxSize(), own = true)
@@ -120,10 +123,10 @@ fun ArtistPage(name: String, id: String, open: (Page) -> Unit, onClose: () -> Un
             }
             val c = rememberCover(still, 1080)
             // in the grain look their clip moves under the grain, out of focus (the player's blur)
-            ArtistVideo(shown, c?.accent ?: Ink.ink, when { xray -> Look.XRAY; grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }, Modifier.fillMaxSize())
+            ArtistVideo(shown, c?.accent ?: Ink.ink, extra ?: when { xray -> Look.XRAY; grain -> Look.BLUR; dithered -> Look.DITHER; else -> null }, Modifier.fillMaxSize())
             if (grain) FilmGrain(Modifier.fillMaxSize(), moving = true)
             // as it is (or in the grain), a light photo held down so the name over its foot reads (nameDim)
-            if (!dithered && !xray && c != null) {
+            if (extra == null && !dithered && !xray && c != null) {
                 val dim = remember(c) { nameDim(c.image) }
                 if (dim < 1f) Box(Modifier.fillMaxSize().background(Ink.black.copy(alpha = 1f - dim)))
             }
@@ -418,6 +421,13 @@ fun Dithered(photo: Song, modifier: Modifier, px: Int = 1080, print: Print = Pri
     if (print == Print.GRAIN) return Grainy(photo, modifier, px)
     // clear: the cover as it is
     if (print == Print.CLEAR) return AsItIs(photo, modifier, px)
+    // dots, soft dots and x-ray: the picture through the look's own effect (the phone's prints since 2026-11-25)
+    when (print) {
+        Print.DOTS -> return Looked(photo, Look.DOTS, modifier, px)
+        Print.SOFTDOTS -> return Looked(photo, Look.SOFTDOTS, modifier, px)
+        Print.XRAY -> return Looked(photo, Look.XRAY, modifier, px)
+        else -> {}
+    }
     val cover = rememberCover(photo, px)
     val density = LocalDensity.current
     BoxWithConstraints(modifier.background(Ink.black)) {
@@ -466,11 +476,28 @@ fun ArtistPhoto(photo: Song, modifier: Modifier) {
     val xray by Moving.artistXray.collectAsState()
     val grain = Moving.artistGrain.collectAsState().value && !xray
     val dithered = Moving.artistDither.collectAsState().value && !grain && !xray
+    val extra = Moving.artistExtra.collectAsState().value.let { Moving.artistLook() }
     when {
+        extra != null -> Looked(photo, extra, modifier)
         xray -> Xrayed(photo, modifier)
         grain -> Grainy(photo, modifier)
         dithered -> Dithered(photo, modifier, own = true)
         else -> AsItIs(photo, modifier)
+    }
+}
+
+/** A picture through a look's effect (dots, soft dots, tiles, x-ray), filling its space, in its own colour where it takes one. */
+@Composable
+fun Looked(photo: Song, look: Look, modifier: Modifier, px: Int = 1080) {
+    val cover = rememberCover(photo, px)
+    val density = LocalDensity.current.density
+    Box(modifier.background(Ink.black).clipToBounds()) {
+        cover?.let { c ->
+            Image(c.image, null, Modifier.fillMaxSize().graphicsLayer {
+                clip = true
+                renderEffect = Effects.of(look, c.accent, density, 1f, size.width)
+            }, contentScale = ContentScale.Crop)
+        }
     }
 }
 
