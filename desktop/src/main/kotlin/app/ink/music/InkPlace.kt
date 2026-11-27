@@ -54,7 +54,10 @@ fun InkWeekly() {
     val weeks by Weekly.weeks.collectAsState()
     LaunchedEffect(Unit) { Weekly.load() }
     var chosen by remember { mutableStateOf<Int?>(null) }
-    val w = weeks.firstOrNull { it.week == chosen } ?: weeks.firstOrNull() ?: return Section("INK WEEKLY", "reading this week's")
+    val issue = weeks.firstOrNull { it.week == chosen } ?: weeks.firstOrNull() ?: return Section("INK WEEKLY", "reading this week's")
+    // the issue as it's played and shown here, the blocked left out
+    val shownSongs = issue.songs.unblocked { it.title to it.artist }
+    val w = remember(issue, shownSongs) { issue.copy(songs = shownSongs) }
     val latest = w.week == weeks.firstOrNull()?.week
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val room = maxWidth

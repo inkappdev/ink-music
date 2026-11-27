@@ -79,7 +79,9 @@ fun ExplorePage(open: (Page) -> Unit) {
     // each section as it was last read, at once, then read again: back from a page opened from here (a festival's), the
     // page is as it was and stays where it was left; it had read them all again from nothing, the page short and its
     // place kept pointing at another section, so it began at the top (2026-11-10, Bronson)
-    val chart by produceState(ExploreKept.chart) { value = IndieChart.week().also { if (it.isNotEmpty()) ExploreKept.chart = it } }
+    val chartAll by produceState(ExploreKept.chart) { value = IndieChart.week().also { if (it.isNotEmpty()) ExploreKept.chart = it } }
+    // what INK suggests, the blocked left out (Blocked; the phone's), at once as it changes
+    val chart = chartAll.orEmpty().unblocked { it.title to it.artist }
     val before = remember(chart) { IndieChart.before() }
     val who by TubeAccount.who.collectAsState()
     val fresh by produceState(ExploreKept.fresh, who) {
@@ -96,14 +98,18 @@ fun ExplorePage(open: (Page) -> Unit) {
     }
     val moods by produceState<List<InnerTube.Mood>?>(Moods.kept()) { value = Moods.read() ?: value }
     LaunchedEffect(Unit) { Picks.start(); Picks.startFriday(); Picks.startElectronic() }
-    val electronic by Picks.electronic.collectAsState()
-    val friday by Picks.friday.collectAsState()
+    val electronic = Picks.electronic.shown { it.title to it.artist }
+    val fridayAll by Picks.friday.collectAsState()
+    val fridayReleases = fridayAll?.releases.orEmpty().unblocked { it.title to it.artist }
+    val friday = remember(fridayAll, fridayReleases) { fridayAll?.copy(releases = fridayReleases) }
     // what's on the air, asked again each minute while explore is up
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
     val records = Picks.records.shown { it.pick.title to it.pick.artist }
     val songs = Picks.songs.shown { it.pick.title to it.pick.artist }
-    val today by Picks.today.collectAsState()
-    val air by Picks.onAir.collectAsState()
+    val blockedNow by Blocked.kept.collectAsState()
+    val todayAll by Picks.today.collectAsState()
+    val today = remember(todayAll, blockedNow) { todayAll?.takeUnless { Blocked.hides(it.pick.title, it.pick.artist) } }
+    val air = Picks.onAir.shown { it.title to it.artist }
     val list = pageList()
     // the record of the day arriving above: the page stays at its top (it had opened partway down)
     LaunchedEffect(today != null) { if (list.firstVisibleItemIndex <= 2) list.scrollToItem(0) }
@@ -302,7 +308,7 @@ private fun OfTheDay(songs: List<Picks.Shown>) {
         value = withContext(Dispatchers.IO) {
             val id = Fresh.ofTheDay("deep") { _ ->
                 val heard = History.read().map { it.id }.toHashSet()
-                library.filter { !it.tube && !it.station && it.id !in heard && taste.of(it.albumArtist.ifBlank { it.artist }) >= .3 }
+                library.filter { !it.tube && !it.station && it.id !in heard && !Blocked.hides(it) && taste.of(it.albumArtist.ifBlank { it.artist }) >= .3 }
                     .shuffled(java.util.Random(Moment.issue().toLong())).firstOrNull()?.id
             }
             id?.let { Library.song(it) }
@@ -571,7 +577,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, open: (Page) -> Unit)
     val picked = Picks.records.shown { it.pick.title to it.pick.artist }
     val names = remember(chart, picked) {
         (chart.map { it.artist } + picked.map { it.pick.artist }).map { it.substringBefore(",").substringBefore(" & ").trim() }
-            .filter { it.isNotBlank() && !it.equals("various artists", true) }.distinctBy { it.lowercase() }
+            .filter { it.isNotBlank() && !it.equals("various artists", true) && !Blocked.artist(it) }.distinctBy { it.lowercase() }
     }
     val week = java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toEpochDay() / 7
     val info by produceState<ArtistInfo?>(null, names) {
@@ -805,13 +811,14 @@ fun MoodPage(m: InnerTube.Mood, open: (Page) -> Unit, onClose: () -> Unit) {
     // of Last.fm's tags); the critics' records by the lists' artists. A genre with no lists: INK's picks by tag, as before
     val listed = m.genre && GenreLists.known(m.title)
     // what's kept shows in the first frame (no block arriving after the page); asked for, or freshened, behind it
-    val listSongs by produceState(if (listed) Picks.genreNow(m.title) else emptyList(), m.title) { if (listed) value = Picks.genre(m.title) }
+    val listSongsAll by produceState(if (listed) Picks.genreNow(m.title) else emptyList(), m.title) { if (listed) value = Picks.genre(m.title) }
+    val listSongs = listSongsAll.unblocked { it.pick.title to it.pick.artist }
     val ours = !listed && m.genre && Genres.known(m.title)
     val tagged by GenrePicks.tagged.collectAsState()
     val records = Picks.records.shown { it.pick.title to it.pick.artist }
     val songs = Picks.songs.shown { it.pick.title to it.pick.artist }
     LaunchedEffect(ours, records.size + songs.size) { if (ours) GenrePicks.tag() }
-    val picks = remember(ours, tagged, records, songs) { if (!ours) emptyList() else GenrePicks.all().filter { Genres.fits(it.pick.artist, m.title) } }
+    val picks = remember(ours, tagged, records, songs) { if (!ours) emptyList() else GenrePicks.all().filter { Genres.fits(it.pick.artist, m.title) && !Blocked.hides(it.pick.title, it.pick.artist) } }
     val listArtists = remember(listSongs) { listSongs.flatMap { it.pick.artist.split(", ") }.map { Curation.folded(it.trim()) }.filter { it.length >= 2 }.toSet() }
     val pickedSongs = remember(picks, listSongs) { if (listed) listSongs.take(40) else Curation.fair(picks.filter { !it.pick.record }) { it.pick.from }.take(30) }
     val pickedRecords = remember(picks, listArtists, records) {

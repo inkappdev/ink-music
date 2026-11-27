@@ -105,6 +105,13 @@ fun <T> StateFlow<List<T>>.shown(said: (T) -> Pair<String, String>): List<T> {
     return androidx.compose.runtime.remember(all, k) { if (k.artists.isEmpty() && k.songs.isEmpty()) all else all.filterNot { said(it).let { (t, a) -> Blocked.hides(t, a) } } }
 }
 
+/** A list of suggestions already in hand, as shown: what's blocked left out, at once when something's blocked. */
+@androidx.compose.runtime.Composable
+fun <T> List<T>.unblocked(said: (T) -> Pair<String, String>): List<T> {
+    val k by Blocked.kept.collectAsState()
+    return androidx.compose.runtime.remember(this, k) { if (k.artists.isEmpty() && k.songs.isEmpty()) this else filterNot { said(it).let { (t, a) -> Blocked.hides(t, a) } } }
+}
+
 /** A suggestion that is itself a list of songs (a mix, because you loved): its songs as shown. */
 @androidx.compose.runtime.Composable
 fun shownSongs(songs: List<Song>): List<Song> {

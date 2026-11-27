@@ -95,7 +95,7 @@ fun listenTo(c: MusicVideos.Clip, at: Long = 0L) {
 /** Listen's shelf of them: each frame wide, the DJ, the channel and how long ago; watch it, or listen only. */
 @Composable
 fun LiveSetsShelf(open: (Page) -> Unit) {
-    val clips by LiveSets.clips.collectAsState()
+    val clips = LiveSets.clips.shown { it.title to it.artist }
     LaunchedEffect(Unit) { LiveSets.start() }
     if (clips.isEmpty()) return
     // shuffled each time the shelf's shown, so it's never the same row twice running (2026-11-12, Bronson: "less stale")
