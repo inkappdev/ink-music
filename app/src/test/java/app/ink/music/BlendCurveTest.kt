@@ -49,4 +49,13 @@ class BlendCurveTest {
         val c = Vocals.check(emptyList(), 0.0, 1.0, listOf(500L..3_000L), 0.0, 6_000, all)
         assertTrue(c.hidesEntry)
     }
+
+    // automix v1's curve (as till 2.1.31): beats matched, the two meet at the middle a little over half each
+    @Test fun v1MeetsAtTheMiddle() {
+        val (n, o) = Blend.gainsV1(.5, 0.0, true)
+        assertEquals(n, o, 1e-9)
+        assertEquals(.6036, n, 1e-3)
+        assertEquals(0.0 to 1.0, Blend.gainsV1(0.0, 0.0, true))
+        assertEquals(1.0 to 0.0, Blend.gainsV1(1.0, 0.0, false))
+    }
 }

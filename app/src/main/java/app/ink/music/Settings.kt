@@ -294,6 +294,21 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                         PickLabel("a record played in order")
                         Pick(listOf("as made" to !records, "mixed too" to records)) { records = it == 1; Crossfade.records(ctx, records) }
                     }
+                    // how long each blend lasts (2026-11-27, a listener: "I prefer longer transitions"): as each pair fits, or chosen
+                    if (cross) {
+                        var length by remember { mutableStateOf((Crossfade.length(ctx) / 1000).toInt()) }
+                        PickLabel("how long each blend")
+                        Pick(Crossfade.LENGTHS.map { (if (it == 0) "as they fit" else "$it s") to (length == it) }) { length = Crossfade.LENGTHS[it]; Crossfade.length(ctx, length) }
+                    }
+                    // automix v1: as it was till 2.1.31, for long blends that overlap (the same listener's)
+                    if (mode == Crossfade.AUTOMIX) {
+                        var v1 by remember { mutableStateOf(Crossfade.v1(ctx)) }
+                        PickLabel("which automix")
+                        Pick(listOf("the newest" to !v1, "automix v1" to v1)) { v1 = it == 1; Crossfade.v1(ctx, v1) }
+                        BasicText(if (v1) "as it was till 2.1.31: long blends, the two songs over each other, endings faded out"
+                            else "endings that stop sharp kept whole, a blend ended where the new song lifts, voices kept apart",
+                            style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(top = 8.dp))
+                    }
                     var wifi by remember { mutableStateOf(Tempos.wifiOnly(ctx)) }
                     PickLabel("reading tempos, half a megabyte a song")
                     Pick(listOf("on wifi only" to wifi, "anywhere" to !wifi)) { wifi = it == 0; Tempos.wifiOnly(ctx, wifi) }

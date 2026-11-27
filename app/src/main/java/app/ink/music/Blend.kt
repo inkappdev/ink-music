@@ -34,6 +34,18 @@ class Blend : BaseAudioProcessor() {
          * it, so its last hit isn't faded. Else equal power. A quiet intro coming in (`hold`): the old one held up longer,
          * the new one rising sooner.
          */
+        /**
+         * Automix v1's gains, as till 2.1.31: equal power; beats matched, half way from equal power to equal gain (each
+         * meeting the other at the middle, about level either way). A quiet intro coming in held as [gains] holds it.
+         */
+        fun gainsV1(k: Double, hold: Double, matched: Boolean): Pair<Double, Double> {
+            if (k >= 1) return 1.0 to 0.0
+            val kOld = if (hold > 0) ((k - .8 * hold) / (1 - .8 * hold)).coerceIn(0.0, 1.0) else k
+            val kNew = if (hold > 0) (k / (1 - .5 * hold)).coerceIn(0.0, 1.0) else k
+            return if (matched) (sin(kNew * PI / 2) + kNew) / 2 to (cos(kOld * PI / 2) + 1 - kOld) / 2
+            else sin(kNew * PI / 2) to cos(kOld * PI / 2)
+        }
+
         fun gains(k: Double, hold: Double, matched: Boolean, cold: Boolean): Pair<Double, Double> {
             if (k >= 1) return 1.0 to 0.0
             if (cold) return sin(k * PI / 2) to (1 - k * k * k * k)
@@ -52,7 +64,9 @@ class Blend : BaseAudioProcessor() {
         /** The new song ridden in this many dB under its own (louder than the old end it comes in over), up to it after. */
         val rideDb: Double = 0.0,
         /** The old song ends cold (its last hit full, no fade of its own): held at full nearly to its end, the new one under it. */
-        val cold: Boolean = false)
+        val cold: Boolean = false,
+        /** Automix v1's (Crossfade.v1): beats matched, the curve as it was till 2.1.31 and the new one's top not held under a low-pass. */
+        val v1: Boolean = false)
 
     /**
      * The end stretched to the next song's tempo (beats matched; Crossfade): for that song only, its samples from
@@ -352,7 +366,7 @@ class Blend : BaseAudioProcessor() {
                 // together and add up louder (3 dB at the middle, "noticeably louder during mix", 2026-11-08): half way to
                 // equal gain, about level either way
                 // a quiet intro coming in: the old one held at full over most of it, the new one rising sooner
-                val (gNew, gOld) = gains(k, t.hold, st != null, t.cold)
+                val (gNew, gOld) = if (t.v1) gainsV1(k, t.hold, st != null) else gains(k, t.hold, st != null, t.cold)
                 // the bass across the middle tenth (beats matched, or the filter fade): the new one's lows in, the old one's out
                 // over a tenth of the blend, half a second at least (a short blend's tenth was a sudden drop of the low end)
                 val swapW = maxOf(.1, rate * .5 / fadeFrames)
@@ -363,7 +377,7 @@ class Blend : BaseAudioProcessor() {
                     val open = (1 - k / .5).coerceIn(0.0, 1.0)   // the new one's high-pass, 160 Hz down to 20 by the middle
                     hpNewK = highPass(20.0 * Math.pow(8.0, open), rate)
                 }
-                if (st != null && mixed % 64 == 0L)
+                if (st != null && !t.v1 && mixed % 64 == 0L)
                     lpNewK = lowPass((2_500.0 * Math.pow(8.0, (k / .5).coerceIn(0.0, 1.0))).coerceAtMost(rate * .45), rate)
                 val join = if (st != null) (mixed.toDouble() / joinFrames).coerceAtMost(1.0) else 0.0
                 var eo = 0.0; var en = 0.0; var es = 0.0
@@ -379,7 +393,7 @@ class Blend : BaseAudioProcessor() {
                     if (c == 0) parts?.let { pt -> for (v in doubleArrayOf(s, old)) { val q = (v * 32768).toInt().coerceIn(-32768, 32767); pt.write(q and 0xff); pt.write((q shr 8) and 0xff) } }
                     if (st != null) {
                         if (c < 8) {
-                            s = biquad(lpNewK, lpNew, c, s)
+                            if (!t.v1) s = biquad(lpNewK, lpNew, c, s)
                             val ln = filter(lowNew, c, s); s = (s - ln) + ln * swap
                             val lo = filter(lowOld, c, old); old = (old - lo) + lo * (1 - swap)
                         }

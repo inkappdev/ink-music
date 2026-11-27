@@ -70,6 +70,30 @@ fun TransitionsSetting() {
             Word("mixed too", pixel(14.sp, if (records) Ink.ink else Ink.dim), touch = 8.dp) { Crossfade.records(true) }
         }
     }
+    // how long each blend lasts (2026-11-27, a listener: "I prefer longer transitions"; the phone's)
+    if (mode != Crossfade.OFF) {
+        val length by Crossfade.length.collectAsState()
+        BasicText("how long each blend", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.padding(bottom = 12.dp)) {
+            Crossfade.LENGTHS.forEach { l ->
+                Word(if (l == 0) "as they fit" else "$l s", pixel(14.sp, if (length == l) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Crossfade.length(l) }
+            }
+        }
+    }
+    // automix v1: as it was till 2.1.31, for long blends that overlap (the phone's)
+    if (mode == Crossfade.AUTOMIX) {
+        val v1 by Crossfade.v1.collectAsState()
+        BasicText("which automix", style = pixel(12.sp, Ink.mid))
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.padding(bottom = 6.dp)) {
+            Word("the newest", pixel(14.sp, if (!v1) Ink.ink else Ink.dim), Modifier.padding(end = 26.dp), touch = 8.dp) { Crossfade.v1(false) }
+            Word("automix v1", pixel(14.sp, if (v1) Ink.ink else Ink.dim), touch = 8.dp) { Crossfade.v1(true) }
+        }
+        BasicText(if (v1) "as it was till 2.1.31: long blends, the two songs over each other, endings faded out"
+            else "endings that stop sharp kept whole, a blend ended where the new song lifts, voices kept apart",
+            style = pixel(12.sp, Ink.mid), modifier = Modifier.padding(bottom = 12.dp))
+    }
     if (mode != Crossfade.OFF && sound.exclusive) {
         BasicText("resting now: the output's had alone (sound, above)", style = pixel(12.sp, Ink.ink))
         Spacer(Modifier.height(8.dp))
