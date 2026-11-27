@@ -1,7 +1,7 @@
-- FREQUENCY learns you: who you skip, what you keep, songs its sources agree on, and how one song flows into the next
-- Automix v1, and how long each blend lasts: settings, transitions
-- Blocked artists stay out of listen and INK, and blocked has a search
-- Keep what you play most: 25 to 200 songs, any network or charging only. It no longer lets downloads go overnight
+- FREQUENCY learns you: who you skip, what you keep, and how one song flows into the next
+- Automix v1, and how long each blend lasts
+- Blocked stays out of listen and INK, and has a search
+- Keep what you play most: 25 to 200, any network or charging only. No more lost downloads
 - The computer catches up: FREQUENCY, DOT MATRIX, the look's grid, lyrics up front
 - FREQUENCY remembers who you skipped. It won't bring them up again. Promise
 - Tell the friend who got you into your favorite band that they did
