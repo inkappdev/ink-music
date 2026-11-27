@@ -1,6 +1,7 @@
 package app.ink.music
 
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import android.content.Context
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -669,7 +670,8 @@ private fun MixTile(l: TubeList, onClick: () -> Unit) {
     // by someone with none stayed black, 2026-11-27)
     val face by androidx.compose.runtime.produceState<Song?>(null, l) {
         for (who in TubeMixes.leads(l.said).take(5)) {
-            val info = kotlinx.coroutines.withTimeoutOrNull(10_000) { YouTubeAccount.artist(who).first { it != null } }
+            val info = runCatching { kotlinx.coroutines.withTimeoutOrNull(10_000) { YouTubeAccount.artist(who).firstOrNull { it != null } } }.getOrNull()
+            // (an artist with no page ends with nothing: none, and on to the next; it threw and took the app down, 2026-11-27)
             info?.photo?.let { value = photoSong(who, it); return@produceState }
         }
     }

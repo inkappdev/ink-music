@@ -398,7 +398,8 @@ private fun MixTile(a: TubeAlbum, onClick: () -> Unit) {
     // one has a photo (only the first was tried: a mix led by someone with none stayed black, 2026-11-27)
     val pic by androidx.compose.runtime.produceState<Song?>(null, a) {
         for (who in TubeMixes.leads(a.artist).take(5)) {
-            val info = kotlinx.coroutines.withTimeoutOrNull(10_000) { Artists.of(who).first { it != null } }
+            val info = runCatching { kotlinx.coroutines.withTimeoutOrNull(10_000) { Artists.of(who).firstOrNull { it != null } } }.getOrNull()
+            // (an artist with no page ends with nothing: none, and on to the next; it threw and took the app down, 2026-11-27)
             info?.photo?.let { value = faceSong(who, it, photo = true); return@produceState }
         }
     }
