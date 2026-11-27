@@ -131,6 +131,8 @@ fun ExplorePage(open: (Page) -> Unit) {
             item(key = "club") { RecordClubCard(today, open) }
             if (air.isNotEmpty()) item(key = "air") { OnTheAir(air) }
             // live DJ sets beside what's on the air: the live things together (from listen, 2026-11-12)
+            // live sessions (KEXP, Tiny Desk, COLORS...), beside the DJ sets: the live things together (the phone's)
+            item(key = "live-sessions") { LiveSessionsShelf(open) }
             item(key = "live-sets") { LiveSetsShelf(open) }
             item(key = "radio") { InkRadio(air) }
             item(key = "festivals") { FestivalsShelf(open) }
