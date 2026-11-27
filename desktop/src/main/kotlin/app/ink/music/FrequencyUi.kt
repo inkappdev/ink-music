@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package app.ink.music
 
 import androidx.compose.foundation.Canvas
@@ -38,6 +40,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -81,7 +88,21 @@ fun FrequencyCard() {
         if (DotMatrix.isA(FrequencyMix.hzOf(t.toDouble()))) DotMatrix.set(!DotMatrix.on.value)
         YourFrequency.turn(d.copy(tuned = t.toDouble().coerceIn(0.0, 1.0)))
     }
-    val t = tuned.toDouble()
+    // the mouse over the dial (2026-11-27, Bronson): the needle, the readout, the words and the shares follow it, a click
+    // sets it; the wheel moves the needle a step a notch, kept once it rests. Heard as it goes: a tick a column (Tick)
+    var hover by remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+    var wide by remember { mutableIntStateOf(1) }
+    val lastCol = remember { intArrayOf(-1) }
+    fun heard(x: Float) {
+        val col = (x * 26).toInt().coerceIn(0, 25)
+        if (col == lastCol[0]) return
+        lastCol[0] = col
+        if (x == DotMatrix.A_AT) Tick.a() else Tick.tick()
+    }
+    var wheeled by remember { mutableIntStateOf(0) }
+    LaunchedEffect(wheeled) { if (wheeled > 0) { kotlinx.coroutines.delay(700); let(tuned) } }
+    val shown = hover ?: tuned
+    val t = shown.toDouble()
     // near concert A the readout settles on 440, a notch to find
     val (hz, unit) = if (DotMatrix.isA(FrequencyMix.hzOf(t))) "440" to "Hz" else FrequencyMix.hz(t)
 
@@ -98,7 +119,19 @@ fun FrequencyCard() {
             BasicText(hz, style = hero(64.sp))
             BasicText(said(unit.lowercase()), style = label(), modifier = Modifier.padding(start = 6.dp, bottom = 12.dp))
         }
-        Pixels(tuned, playing, if (on && cover != null) cover else Ink.ink, cover ?: Ink.dim, Modifier.fillMaxWidth().padding(top = 12.dp).height(150.dp)
+        Pixels(shown, playing, if (on && cover != null) cover else Ink.ink, cover ?: Ink.dim, hover, Modifier.fillMaxWidth().padding(top = 12.dp).height(150.dp)
+            .onSizeChanged { wide = it.width.coerceAtLeast(1) }
+            .pointerHoverIcon(PointerIcon.Hand)
+            .onPointerEvent(PointerEventType.Move) { val x = DotMatrix.detent((it.changes.first().position.x / wide).coerceIn(0f, 1f)); heard(x); hover = x }
+            .onPointerEvent(PointerEventType.Exit) { hover = null; lastCol[0] = -1 }
+            .onPointerEvent(PointerEventType.Scroll) { e ->
+                val dl = e.changes.first().scrollDelta
+                val step = if (kotlin.math.abs(dl.x) > kotlin.math.abs(dl.y)) dl.x else -dl.y
+                if (step == 0f) return@onPointerEvent
+                tuned = DotMatrix.detent((tuned + kotlin.math.sign(step) / 26f).coerceIn(0f, 1f))
+                hover = null; heard(tuned); wheeled++
+                e.changes.forEach { it.consume() }
+            }
             .pointerInput(d) { detectTapGestures { tuned = DotMatrix.detent((it.x / size.width).coerceIn(0f, 1f)); let(tuned) } }
             .pointerInput(d) {
                 detectHorizontalDragGestures(onDragEnd = { let(tuned) }) { change, _ ->
@@ -113,7 +146,7 @@ fun FrequencyCard() {
         BasicText(FrequencyMix.said(t).let { if (Hand.dots) it.replaceFirstChar { c -> c.uppercase() } else it.uppercase() }, style = grotesk(24.sp), modifier = Modifier.padding(top = 18.dp))
         BasicText(FrequencyMix.meaning(t), style = grotesk(14.sp, Ink.mid), modifier = Modifier.padding(top = 4.dp))
         // each share: its figure and a ten-segment bar, live while the needle's dragged
-        val mix = remember(tuned) { FrequencyMix.shares(FrequencyMix.Dials(t)) }
+        val mix = remember(shown) { FrequencyMix.shares(FrequencyMix.Dials(t)) }
         val y = Math.round(mix.getValue(FrequencyMix.YOURS) * 100).toInt(); val n = Math.round(mix.getValue(FrequencyMix.NEAR) * 100).toInt()
         Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             listOf(Triple("yours", y, Ink.ink), Triple("near", n, Ink.mid), Triple("new", 100 - y - n, if (on && cover != null) cover else Ink.mid)).forEach { (word, pct, colour) ->
@@ -164,7 +197,7 @@ fun FrequencyCard() {
  * and fall seven times a second; at rest they hold a quiet shape.
  */
 @Composable
-private fun Pixels(tuned: Float, moving: Boolean, needle: Color, newColour: Color, modifier: Modifier) {
+private fun Pixels(tuned: Float, moving: Boolean, needle: Color, newColour: Color, hover: Float?, modifier: Modifier) {
     val cols = 26; val rows = 13
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(moving) { if (moving) while (true) { kotlinx.coroutines.delay(140); tick++ } }
@@ -182,7 +215,9 @@ private fun Pixels(tuned: Float, moving: Boolean, needle: Color, newColour: Colo
         for (i in 0 until cols) {
             val x = (i + .5f) / cols
             val colour = when { x < yours -> Ink.ink; x < yours + near -> Ink.mid; else -> newColour }
-            val lit = (4 + kotlin.math.sin(i / 3.2 + tick * .15) * 3 + (if (i < cols / 4) 3 else 0) + (if (moving) rnd.nextInt(6) else 2)).toInt().coerceIn(1, rows)
+            // under the mouse the columns swell, highest where it is, falling away either side
+            val swell = hover?.let { h -> val d = (x - h) * cols; 6.0 * kotlin.math.exp(-d * d / 6.0) } ?: 0.0
+            val lit = (4 + kotlin.math.sin(i / 3.2 + tick * .15) * 3 + (if (i < cols / 4) 3 else 0) + (if (moving) rnd.nextInt(6) else 2) + swell).toInt().coerceIn(1, rows)
             for (k in 0 until rows) {
                 val c = when { i == at -> needle; k < lit -> colour; else -> OFF }
                 // round dots in DOT MATRIX, ink's square pixels otherwise
