@@ -106,6 +106,12 @@ object YourFrequency {
         write(c, o)
     }
 
+    /** A song put in one of your lists while your frequency plays: kept, it steers what comes as a love does. */
+    fun listed(c: Context, s: Song) {
+        if (!playing()) return
+        runCatching { File(c.filesDir, LOVED).appendText(JSONObject().put("at", System.currentTimeMillis()).put("title", s.title).put("artist", s.artist).put("how", "kept").toString() + "\n") }
+    }
+
     /** A love or an unlove while your frequency plays: it steers what comes. */
     fun loved(c: Context, s: Song, on: Boolean) {
         if (!on || !playing()) return
@@ -140,18 +146,22 @@ object YourFrequency {
         // this sitting: each song as it went (the latest word on each)
         val went = LinkedHashMap<String, FrequencyMix.Went>()
         val heard = History.read(c)
-        heard.filter { it.at >= started }.forEach { h ->
+        // how each went by how much of it played (FrequencyMix.how: its length from the queue), in order; one played
+        // through a second time is kept, as a love a little less
+        val lengths = queue.associate { Radio.key(it.title, it.artist) to it.ms }
+        (heard.filter { it.at >= started } + History.skips(c).filter { it.at >= started }).sortedBy { it.at }.forEach { h ->
             val k = Radio.key(h.title, h.artist)
-            if (h.ms >= 90_000) went[k] = FrequencyMix.Went(h.artist, laneOf(k), throughOf(k), FrequencyMix.How.THROUGH, h.at)
+            val (how, strength) = FrequencyMix.how(h.ms, lengths[k] ?: 0L) ?: return@forEach
+            val again = how == FrequencyMix.How.THROUGH && went[k]?.how.let { it == FrequencyMix.How.THROUGH || it == FrequencyMix.How.KEPT }
+            went[k] = if (again) FrequencyMix.Went(h.artist, laneOf(k), throughOf(k), FrequencyMix.How.KEPT, h.at)
+                else FrequencyMix.Went(h.artist, laneOf(k), throughOf(k), how, h.at, strength)
         }
-        History.skips(c).filter { it.at >= started }.forEach { h ->
-            val k = Radio.key(h.title, h.artist)
-            went[k] = FrequencyMix.Went(h.artist, laneOf(k), throughOf(k), FrequencyMix.How.LEFT, h.at)
-        }
+        // loves while it played, and songs put in a list (kept)
         runCatching { File(c.filesDir, LOVED).readLines() }.getOrDefault(emptyList()).mapNotNull { runCatching { JSONObject(it) }.getOrNull() }
             .filter { it.optLong("at") >= started }.forEach { l ->
                 val k = Radio.key(l.optString("title"), l.optString("artist"))
-                went[k] = FrequencyMix.Went(l.optString("artist"), laneOf(k), throughOf(k), FrequencyMix.How.LOVED, l.optLong("at"))
+                val how = if (l.optString("how") == "kept") FrequencyMix.How.KEPT else FrequencyMix.How.LOVED
+                went[k] = FrequencyMix.Went(l.optString("artist"), laneOf(k), throughOf(k), how, l.optLong("at"))
             }
         val sitting = FrequencyMix.Sitting(went.values.sortedBy { it.at })
 
@@ -159,10 +169,13 @@ object YourFrequency {
         val counted = o.optJSONObject("counted") ?: JSONObject()
         var learned = learned(c)
         went.forEach { (k, w) ->
-            // each artist's and source's record across sittings (FrequencyMemory): a love counted apart, once
-            val ck = if (w.how == FrequencyMix.How.LOVED) "$k#loved" else k
-            if (!counted.has(ck)) { memory.went(w.artist, sourceOf(k), w.how, w.at); if (w.how == FrequencyMix.How.LOVED) counted.put(ck, true) }
-            if (w.lane.isEmpty() || w.how == FrequencyMix.How.LOVED || counted.has(k)) return@forEach
+            // each artist's and source's record across sittings (FrequencyMemory): a love or a keep counted apart, once
+            val apart = w.how == FrequencyMix.How.LOVED || w.how == FrequencyMix.How.KEPT
+            val ck = if (apart) "$k#${w.how.name.lowercase()}" else k
+            if (!counted.has(ck)) { memory.went(w.artist, sourceOf(k), w.how, w.at, w.strength); if (apart) counted.put(ck, true) }
+            // a lane's record: played to near its end, or left in its first half minute
+            val says = (w.how == FrequencyMix.How.THROUGH && w.strength >= .9) || (w.how == FrequencyMix.How.LEFT && w.strength >= .7)
+            if (w.lane.isEmpty() || !says || counted.has(k)) return@forEach
             learned = learned.with(w.lane, w.how == FrequencyMix.How.THROUGH); counted.put(k, true)
         }
         keepLearned(c, learned)
@@ -267,8 +280,31 @@ object YourFrequency {
             queue.drop(current + 1).map { it.artist } + lately
         // each lane's count this sitting, so the shares hold across batches
         val laneCounts = given.keys().asSequence().mapNotNull { given.optJSONArray(it)?.optString(0) }.groupingBy { it }.eachCount()
-        val picked = FrequencyMix.pick(FrequencyMix.agreed(found, named), d, ::taste, sitting, learned, recent, BATCH + 2, appetite,
-            given0 = laneCounts, memory = memory)
+        val agreed = FrequencyMix.agreed(found, named)
+        // flow and aim (FrequencyFlow): the front runners' tempo, key and loudness against the song playing, and a new
+        // artist's audience against where new is aimed
+        val lfmKey = LastFm.key.ifBlank { BuildConfig.LASTFM_KEY }
+        val aim = memory.aim(runCatching { memory.stuck(heard.map { Triple(it.artist, it.at, it.ms) }, emptyMap()) }.getOrDefault(emptyList()))
+        val nowSound = last?.let { q -> (Library.song(q.id) ?: YouTubeMusic.known(q.id))?.let { s -> sound(c, s, read = false) } }
+        fun pre(f: FrequencyMix.Found) = f.rank * memory.worth(f.source) + (f.ears - 1) * .4 + taste(f.artist).coerceAtLeast(0.0)
+        val front = agreed.filter { it.lane != FrequencyMix.YOURS }.sortedByDescending(::pre).take(10)
+        val plus = java.util.concurrent.ConcurrentHashMap<String, Double>()
+        val listened = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        val look = java.util.concurrent.Executors.newFixedThreadPool(4)
+        front.mapIndexed { i, f ->
+            look.submit {
+                val s = songs[f.key]
+                val title = s?.title ?: beyond[f.key]?.first ?: moodSongs.firstOrNull { Radio.key(it.first, it.second) == f.key }?.first ?: return@submit
+                // tempo read from the audio for the first few only (each a second or two, and data on a phone's network)
+                val next = s?.let { sound(c, it, read = i < 4) } ?: FrequencyFlow.Sound(gain = FrequencyFlow.gain(title, f.artist))
+                var b = FrequencyFlow.follows(nowSound, next)
+                if (f.lane == FrequencyMix.FAR && lfmKey.isNotBlank()) FrequencyFlow.listeners(title, f.artist, lfmKey)?.let { l -> listened[f.key] = l; b += FrequencyFlow.aimed(l, aim) }
+                plus[f.key] = b
+            }
+        }.forEach { runCatching { it.get(20, java.util.concurrent.TimeUnit.SECONDS) } }
+        look.shutdownNow()
+        val picked = FrequencyMix.pick(agreed, d, ::taste, sitting, learned, recent, BATCH + 2, appetite,
+            given0 = laneCounts, memory = memory, near = plus)
         val out = ArrayList<Song>()
         val givenArtists = ArrayList<String>()
         for (f in picked) {
@@ -278,7 +314,7 @@ object YourFrequency {
             out += s
             given.put(f.key, JSONArray().put(f.lane).put(f.through).put(f.source))
             // an artist new to you, brought: what stuck is counted from here (FrequencyMemory.stuck)
-            if (f.lane == FrequencyMix.FAR && heard.none { FrequencyMix.who(it.artist) == FrequencyMix.who(s.artist) }) memory.brought(s.artist, f.source, now0)
+            if (f.lane == FrequencyMix.FAR && heard.none { FrequencyMix.who(it.artist) == FrequencyMix.who(s.artist) }) memory.brought(s.artist, f.source, now0, listened[f.key] ?: 0L)
             givenArtists += s.artist
         }
         // kept: the newest 300 lanes, what's counted, the mood's songs
@@ -334,6 +370,13 @@ object YourFrequency {
         val owned = (tracks + theirs).filter { it.id != s.id }.distinctBy { it.id }
         val outside = if (beyond) all.filter { Radio.key(it.title, it.artist) !in byKey }.take(30) else emptyList()
         return Ears(owned = owned, beyond = outside, named = similar.map { it.first })
+    }
+
+    /** A song's sound for flow: its tempo and key (kept, else read now where `read` and allowed), its loudness (Deezer). */
+    private fun sound(c: Context, s: Song, read: Boolean): FrequencyFlow.Sound {
+        val t = Tempos.kept(c, s.id) ?: if (read) runCatching { Tempos.of(c, s) }.getOrNull() else null
+        val g = if (s.station || s.episode) null else FrequencyFlow.gain(s.title, s.artist)
+        return FrequencyFlow.Sound(t?.bpm ?: 0.0, t?.key, t?.outBpm ?: t?.bpm ?: 0.0, t?.outKey ?: t?.key, g)
     }
 
     /** What it remembers across sittings (FrequencyMemory). */

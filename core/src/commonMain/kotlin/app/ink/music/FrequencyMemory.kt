@@ -21,15 +21,20 @@ class FrequencyMemory private constructor(
     /** An artist's record with you here: songs played through, left at once, loved; when first brought, last left. */
     class Mark(var through: Int = 0, var left: Int = 0, var loved: Int = 0, var brought: Long = 0, var leftAt: Long = 0, var source: String = "",
         /** Their name as said (the key's compared: "slowpulp"). */
-        var name: String = "")
+        var name: String = "",
+        /** The Last.fm listeners of the song that brought them (0 not known): where new is aimed is learned from what stuck. */
+        var listeners: Long = 0)
 
     /** A song as it went (its artist, what found it, how): each artist's and source's record moved. */
-    fun went(artist: String, source: String, how: FrequencyMix.How, at: Long) {
+    fun went(artist: String, source: String, how: FrequencyMix.How, at: Long, strength: Double = 1.0) {
         val m = artists.getOrPut(FrequencyMix.who(artist)) { Mark() }
         if (m.name.isEmpty()) m.name = artist.substringBefore(", ").trim()
+        // only what says something counts: played to near its end, a skip in its first half minute, a love, kept
+        val counts = when (how) { FrequencyMix.How.THROUGH -> strength >= .9; FrequencyMix.How.LEFT -> strength >= .7; else -> true }
+        if (!counts) return
         when (how) {
             FrequencyMix.How.THROUGH -> m.through++
-            FrequencyMix.How.LOVED -> m.loved++
+            FrequencyMix.How.LOVED, FrequencyMix.How.KEPT -> m.loved++
             FrequencyMix.How.LEFT -> { m.left++; m.leftAt = at }
         }
         if (source.isNotEmpty()) {
@@ -39,10 +44,22 @@ class FrequencyMemory private constructor(
     }
 
     /** An artist new to you brought by it (its first song given): when, and through which source. */
-    fun brought(artist: String, source: String, at: Long) {
+    fun brought(artist: String, source: String, at: Long, listeners: Long = 0) {
         val m = artists.getOrPut(FrequencyMix.who(artist)) { Mark() }
         if (m.name.isEmpty()) m.name = artist.substringBefore(", ").trim()
-        if (m.brought == 0L) { m.brought = at; m.source = source }
+        if (m.brought == 0L) { m.brought = at; m.source = source; m.listeners = listeners }
+    }
+
+    /**
+     * Where new is aimed, as log10 of a song's Last.fm listeners: what stuck with you (three or more known), drawn toward
+     * a find's usual (about 50,000: Gems' sweet spot, known to some, not a hit) by how few there are.
+     */
+    fun aim(stuck: Collection<String>): Double {
+        val logs = stuck.mapNotNull { artists[FrequencyMix.who(it)]?.listeners?.takeIf { l -> l > 0 } }.map { kotlin.math.log10(it.toDouble()) }
+        val usual = 4.7
+        if (logs.size < 3) return usual
+        val k = (logs.size / 10.0).coerceAtMost(.8)
+        return usual * (1 - k) + logs.average() * k
     }
 
     /** Away for a month: left at once twice or more, never played through nor loved, the last time within 30 days. */
@@ -97,7 +114,7 @@ class FrequencyMemory private constructor(
     fun json(): String {
         val a = JSONObject()
         artists.forEach { (w, m) ->
-            a.put(w, JSONArray().put(m.through).put(m.left).put(m.loved).put(m.brought).put(m.leftAt).put(m.source).put(m.name))
+            a.put(w, JSONArray().put(m.through).put(m.left).put(m.loved).put(m.brought).put(m.leftAt).put(m.source).put(m.name).put(m.listeners))
         }
         val s = JSONObject(); sources.forEach { (k, v) -> s.put(k, JSONArray().put(v[0]).put(v[1])) }
         val t = JSONArray(); sittings.forEach { t.put(JSONArray().put(it[0]).put(it[1])) }
@@ -113,7 +130,7 @@ class FrequencyMemory private constructor(
             o.optJSONObject("artists")?.let { a ->
                 a.keys().forEach { w ->
                     val r = a.optJSONArray(w) ?: return@forEach
-                    artists[w] = Mark(r.optInt(0), r.optInt(1), r.optInt(2), r.optLong(3), r.optLong(4), r.optString(5), r.optString(6))
+                    artists[w] = Mark(r.optInt(0), r.optInt(1), r.optInt(2), r.optLong(3), r.optLong(4), r.optString(5), r.optString(6), r.optLong(7))
                 }
             }
             val sources = HashMap<String, IntArray>()

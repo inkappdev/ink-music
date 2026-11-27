@@ -102,9 +102,30 @@ object FrequencyMix {
             if (through) Learned(good + (lane to (good[lane] ?: 0) + 1), bad) else Learned(good, bad + (lane to (bad[lane] ?: 0) + 1))
     }
 
-    /** One song of this sitting, as it went: its artist, its lane, what it was found through, and how it went. */
-    data class Went(val artist: String, val lane: String, val through: String, val how: How, val at: Long)
-    enum class How { THROUGH, LEFT, LOVED }
+    /**
+     * One song of this sitting, as it went: its artist, its lane, what it was found through, how it went, and how strongly
+     * (2026-11-27: a skip in its first seconds says more than one late on; a song played to its end more than one left
+     * past halfway; played again or put in a list, as a love, a little less).
+     */
+    data class Went(val artist: String, val lane: String, val through: String, val how: How, val at: Long, val strength: Double = 1.0)
+    enum class How { THROUGH, LEFT, LOVED, KEPT }
+
+    /**
+     * How a song went, from how long it played (`ms`) of how long it is (`length`, 0 not known): its end or near it,
+     * through (fully at nine tenths); past half, through a little; in its first 10 s, left fully; by 30 s, left; past
+     * that but short of half, left a little. Null where it says nothing (it's still playing, or a few seconds of nothing).
+     */
+    fun how(ms: Long, length: Long): Pair<How, Double>? {
+        val share = if (length > 0) ms.toDouble() / length else if (ms >= 90_000) .9 else 0.0
+        return when {
+            share >= .9 -> How.THROUGH to 1.0
+            share >= .5 -> How.THROUGH to .5
+            ms in 1 until 10_000 -> How.LEFT to 1.0
+            ms in 10_000 until 30_000 -> How.LEFT to .7
+            ms >= 30_000 && length > 0 -> How.LEFT to .3
+            else -> null
+        }
+    }
 
     /** This sitting, so far: who's nearer and who's further, and what to find more like. */
     class Sitting(private val went: List<Went>) {
@@ -113,11 +134,13 @@ object FrequencyMix {
         private val left = HashMap<String, Int>()
         init {
             for (w in went) {
-                val a = who(w.artist); val t = who(w.through)
+                val a = who(w.artist); val t = who(w.through); val k = w.strength
                 when (w.how) {
-                    How.THROUGH -> { up(lean, a, .25); up(via, a, .2); if (t.isNotEmpty()) up(via, t, .1) }
-                    How.LOVED -> { up(lean, a, .5); up(via, a, .6); if (t.isNotEmpty()) up(via, t, .2) }
-                    How.LEFT -> { up(lean, a, -.4); left[a] = (left[a] ?: 0) + 1; if (t.isNotEmpty()) up(via, t, -.15) }
+                    How.THROUGH -> { up(lean, a, .25 * k); up(via, a, .2 * k); if (t.isNotEmpty()) up(via, t, .1 * k) }
+                    How.LOVED -> { up(lean, a, .5 * k); up(via, a, .6 * k); if (t.isNotEmpty()) up(via, t, .2 * k) }
+                    How.KEPT -> { up(lean, a, .4 * k); up(via, a, .45 * k); if (t.isNotEmpty()) up(via, t, .15 * k) }
+                    // only a skip in its first half minute counts toward out for the sitting
+                    How.LEFT -> { up(lean, a, -.4 * k); if (k >= .7) left[a] = (left[a] ?: 0) + 1; if (t.isNotEmpty()) up(via, t, -.15 * k) }
                 }
             }
         }
@@ -147,6 +170,8 @@ object FrequencyMix {
         found: List<Found>, dials: Dials, taste: (String) -> Double, sitting: Sitting, learned: Learned,
         recent: List<String>, n: Int, appetite: Double = ForYou.STRETCH, random: Random = Random.Default,
         given0: Map<String, Int> = emptyMap(), memory: FrequencyMemory? = null, now: Long = nowMs(),
+        /** What else a song has going for it, by key (FrequencyFlow: its tempo and loudness near the song playing, its audience where new is aimed). */
+        near: Map<String, Double> = emptyMap(),
     ): List<Found> {
         // a lane with no share takes no place
         val shares = shares(dials, appetite).mapValues { (lane, s) -> s * learned.times(lane) }.filterValues { it > 0 }
@@ -160,15 +185,23 @@ object FrequencyMix {
         // nearness, the artist's record here across sittings, this sitting, and a little chance
         fun score(f: Found) = f.rank * .5 * (memory?.worth(f.source) ?: 1.0) + (f.ears - 1).coerceAtMost(3) * .2 +
             taste(f.artist).coerceAtLeast(0.0) * (if (f.lane == FAR) .1 else .4) + (memory?.lean(f.artist) ?: 0.0) +
-            sitting.moved(f) + random.nextDouble() * .15
+            (near[f.key] ?: 0.0) + sitting.moved(f) + random.nextDouble() * .15
+        // a long shot every eighth song of the sitting (2026-11-27): one of the new lane's chosen at random, whatever it
+        // scores, so it never narrows to the same few and learns from the ones it would never pick
+        var total = given0.values.sum()
         while (out.size < n) {
             val lanes = shares.keys.filter { lane -> open.any { it.lane == lane && who(it.artist) !in away } }
             if (lanes.isEmpty()) break
             // the lane furthest behind its share, a tie to the larger share
             val lane = lanes.minWithOrNull(compareBy<String> { (given[it] ?: 0.0) / shares.getValue(it) }.thenByDescending { shares.getValue(it) }) ?: break
-            val best = open.filter { it.lane == lane && who(it.artist) !in away }.maxByOrNull(::score) ?: break
+            // (not where new has next to no share: all yours is all yours)
+            val longShot = total % LONG_SHOT == LONG_SHOT - 1 && (shares[FAR] ?: 0.0) >= .1
+            // (from below the new lane's three best: the ones it would pick anyway aren't a long shot)
+            val wild = if (longShot) open.filter { it.lane == FAR && who(it.artist) !in away }.sortedByDescending(::score).drop(3).takeIf { it.isNotEmpty() }?.random(random) else null
+            val best = wild ?: open.filter { it.lane == lane && who(it.artist) !in away }.maxByOrNull(::score) ?: break
+            total++
             out += best; open.remove(best)
-            given[lane] = (given[lane] ?: 0.0) + 1
+            given[best.lane] = (given[best.lane] ?: 0.0) + 1
             away += who(best.artist); if (away.size > 12) away.removeAt(0)
         }
         return out
@@ -191,6 +224,9 @@ object FrequencyMix {
             k to (1 - exp(-t / 3)) * .6 + taste(by[k].orEmpty()).coerceAtLeast(0.0) * .4 + random.nextDouble() * .2
         }.sortedByDescending { it.second }
     }
+
+    /** One song in this many is a long shot ([pick]). */
+    const val LONG_SHOT = 8
 
     /** An artist as compared: the first of a shared name, bare. */
     fun who(artist: String) = Taste.bare(artist.substringBefore(",").substringBefore(" & "))

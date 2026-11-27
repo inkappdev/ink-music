@@ -3030,7 +3030,11 @@ fun canAddToList(s: Song?): Boolean = s != null && MyLists.fits(s)
  * name once it's in.
  */
 @Composable
-fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) = AddToList(listOf(s), onDone, onClose)
+fun AddToList(s: Song, onDone: (String) -> Unit, onClose: () -> Unit) {
+    // put in a list while your frequency plays: kept, it steers what comes (YourFrequency.listed)
+    val ctx = LocalContext.current
+    AddToList(listOf(s), { name -> YourFrequency.listed(ctx, s); onDone(name) }, onClose)
+}
 
 /** Several songs into one playlist (picked: Picking): the server's ones there, every one found on YouTube Music there. */
 @Composable

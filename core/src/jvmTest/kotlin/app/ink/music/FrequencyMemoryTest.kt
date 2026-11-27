@@ -67,4 +67,38 @@ class FrequencyMemoryTest {
             emptyList(), 1, random = Random(1))
         assertEquals("b", picked.single().key)
     }
+
+    @Test fun howASongWentByHowMuchPlayed() {
+        assertEquals(FrequencyMix.How.THROUGH to 1.0, FrequencyMix.how(190_000, 200_000))
+        assertEquals(FrequencyMix.How.THROUGH to .5, FrequencyMix.how(120_000, 200_000))
+        assertEquals(FrequencyMix.How.LEFT to 1.0, FrequencyMix.how(4_000, 200_000))
+        assertEquals(FrequencyMix.How.LEFT to .7, FrequencyMix.how(20_000, 200_000))
+        assertEquals(FrequencyMix.How.LEFT to .3, FrequencyMix.how(60_000, 200_000))
+        assertEquals(null, FrequencyMix.how(0, 200_000))
+        // a late skip doesn't send an artist away; quick ones do
+        val m = FrequencyMemory.empty()
+        repeat(3) { m.went("Late", "related", FrequencyMix.How.LEFT, 0, .3) }
+        assertFalse(m.away("Late", 1))
+    }
+
+    @Test fun everyEighthIsALongShot() {
+        val found = (0 until 20).map { FrequencyMix.Found("k$it", "Artist$it", FrequencyMix.FAR, if (it == 0) 1.0 else .01, source = "related") }
+        val picks = FrequencyMix.pick(found, FrequencyMix.Dials(1.0), { 0.0 }, FrequencyMix.Sitting(emptyList()), FrequencyMix.Learned(),
+            emptyList(), 1, random = Random(3), given0 = mapOf(FrequencyMix.FAR to FrequencyMix.LONG_SHOT - 1))
+        // the best (k0) passed over for one chosen at random
+        assertTrue(picks.single().key != "k0")
+        // at all yours there are none
+        val yours = FrequencyMix.pick(found, FrequencyMix.Dials(0.0), { 0.0 }, FrequencyMix.Sitting(emptyList()), FrequencyMix.Learned(),
+            emptyList(), 1, random = Random(3), given0 = mapOf(FrequencyMix.FAR to FrequencyMix.LONG_SHOT - 1))
+        assertTrue(yours.isEmpty() || yours.single().key == "k0")
+    }
+
+    @Test fun flowAndAim() {
+        val now = FrequencyFlow.Sound(120.0, gain = -8.0)
+        assertTrue(FrequencyFlow.follows(now, FrequencyFlow.Sound(121.0, gain = -9.0)) > FrequencyFlow.follows(now, FrequencyFlow.Sound(150.0, gain = -2.0)))
+        // half and double counted
+        assertTrue(FrequencyFlow.follows(now, FrequencyFlow.Sound(60.5)) >= .2)
+        assertTrue(FrequencyFlow.aimed(50_000, 4.7) > FrequencyFlow.aimed(3_000_000, 4.7))
+        assertEquals(0.0, FrequencyFlow.aimed(null, 4.7))
+    }
 }

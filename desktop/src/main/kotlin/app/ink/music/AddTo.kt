@@ -51,7 +51,9 @@ fun canAddToList(s: Song?): Boolean = s != null && !s.station && !s.episode
  * on your server or YouTube Music; a song from elsewhere found there by its words. Once it's in, said, and back.
  */
 @Composable
-fun AddToPage(s: Song, onDone: () -> Unit, onClose: () -> Unit) = AddToPage(listOf(s), onDone, onClose)
+fun AddToPage(s: Song, onDone: () -> Unit, onClose: () -> Unit) =
+    // put in a list while your frequency plays: kept, it steers what comes (YourFrequency.listed)
+    AddToPage(listOf(s), { YourFrequency.listed(s); onDone() }, onClose)
 
 /** Several songs into one playlist (picked: Picking): the server's ones there, every one found on YouTube Music there. */
 @Composable
