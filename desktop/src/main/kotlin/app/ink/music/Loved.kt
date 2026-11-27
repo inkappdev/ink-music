@@ -85,6 +85,7 @@ object Loved {
     fun toggle(s: Song) {
         if (s.station || s.episode) return
         val on = s.id !in _ids.value
+        YourFrequency.loved(s, on)
         dates = if (on) dates + (s.id to System.currentTimeMillis()) else dates - s.id
         when {
             s.server -> { server = if (on) server + s.id else server - s.id; scope.launch { Server.star(s.id, on) } }

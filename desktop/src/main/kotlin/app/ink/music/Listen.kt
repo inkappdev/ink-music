@@ -170,6 +170,8 @@ fun ListenPage(open: (Page) -> Unit) {
         if (!Local.on && brought.isEmpty() && heard.plays.size < 40 && !knowMeShut) item(key = "know-me") { KnowMe { knowMeShut = true } }
         // since you were here: back after a while, what's new since then, four lines at most (Fresh.since)
         if (sinceAt != null && sinceLines.isNotEmpty()) item(key = "since") { SinceYouWereHere(sinceAt!!, sinceLines) }
+        // your frequency: one endless station made from you, steered as it plays (#16; the phone's)
+        item(key = "frequency") { FrequencyCard() }
         // dialed in: the nine you go back to at this hour, on top (not one of the shelves the moment orders)
         item(key = "dialedIn") { DialedInSheet(open) }
         // three ways in, small: charts, new releases, moods & genres (2026-11-17, Bronson)

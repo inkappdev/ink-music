@@ -46,7 +46,7 @@ object TempoMixes {
 
     fun yoursSize() = Library.songs.value.size + TubeAccount.liked.value.size
 
-    private fun pool(): List<Song> {
+    internal fun pool(): List<Song> {
         val out = LinkedHashMap<String, Song>()
         val names = HashSet<String>()
         fun add(s: Song?) { if (s == null || s.station || s.episode || s.id in out) return; if (names.add(Radio.key(s.title, s.artist))) out[s.id] = s }

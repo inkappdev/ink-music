@@ -155,7 +155,8 @@ fun InkMoodsShelf() {
     val kept by Moodboard.kept.collectAsState()
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
-    fun go(m: InkMoods.Mood) = scope.launch { said = "${m.name}: finding its songs"; said = if (Moodboard.play(m)) null else "${m.name}: couldn't find its songs" }
+    // a mood plays your frequency in it (the phone's since 2026-11-25): yours and near, leaning to the mood
+    fun go(m: InkMoods.Mood) { said = null; YourFrequency.startIn(m.key) }
     // one row of tiles (2026-10-29: the three as words and the rest as tiles didn't belong together): right
     // now's three bigger, then the rest
     Column {

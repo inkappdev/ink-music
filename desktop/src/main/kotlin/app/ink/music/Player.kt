@@ -631,6 +631,12 @@ object Player {
         timing?.takeIf { !it.station && !it.episode && !Private.on.value }?.let { t -> History.add(History.Heard(timingAt, t.id, t.title, t.artist, t.album, t.albumId, playedMs)) }
         // one of similar's left inside half a minute: its artist heard less of for the session (Radio.skipped)
         timing?.takeIf { it.id in fromRadio && !it.station && playedMs in 1 until 30_000 }?.let { Radio.skipped(it.artist) }
+        // your frequency: how the song went, and one left at once finds what's waiting again with that in mind
+        timing?.let { t ->
+            val steer = YourFrequency.playing() && !t.station && playedMs in 1 until 30_000
+            YourFrequency.heard(t, playedMs)
+            if (steer) scope.launch { frequencyAgain() }
+        }
         timing = s; timingAt = System.currentTimeMillis(); playedMs = 0; lastMs = 0; timingLength = s?.duration ?: 0
     }
 
@@ -655,11 +661,25 @@ object Player {
         topUp()
     }
 
+    /**
+     * Your frequency, steered: its songs waiting after the next one taken off, and more found at once (YourFrequency.more
+     * reads what you've just done).
+     */
+    fun frequencyAgain() {
+        if (!YourFrequency.playing() || casting) return
+        val keep = index + 2
+        while (_queue.value.size > keep) remove(_queue.value.size - 1)
+        radioFrom = null
+        topUp()
+    }
+
     private fun topUp() {
         val q = _queue.value
         // casting, where the speaker is (this computer's own player waits, paused)
         val index = if (casting) _now.value?.index ?: -1 else index
-        if (!radio.value || q.isEmpty() || index < 0 || index < q.size - 2) return
+        // your frequency never ends: it chooses what comes, radio on or off
+        val frequency = YourFrequency.playing()
+        if ((!radio.value && !frequency) || q.isEmpty() || index < 0 || index < q.size - 2) return
         val last = q.last()
         // a station plays on forever: nothing to follow it
         if (last.station) return
@@ -674,8 +694,9 @@ object Player {
         val queued = q.flatMap { listOf(it.id, Radio.key(it.title, it.artist)) }.toHashSet()
         scope.launch {
             // a mix's queue (its first song the mix's): radio keeps to its tempo
-            val more = Radio.after(seeds, queued, TempoMixes.keeping(q.firstOrNull()?.id), radioMode.value)
-            if (more.isEmpty() || !radio.value || _queue.value.lastOrNull()?.id != last.id) return@launch
+            val more = if (frequency) runCatching { YourFrequency.more(q, index, queued) }.onFailure { Log.d("frequency: more: $it") }.getOrDefault(emptyList())
+                else Radio.after(seeds, queued, TempoMixes.keeping(q.firstOrNull()?.id), radioMode.value)
+            if (more.isEmpty() || (!radio.value && !frequency) || _queue.value.lastOrNull()?.id != last.id) return@launch
             fromRadio += more.map { it.id }
             // on a speaker: to its queue
             if (casting) return@launch javax.swing.SwingUtilities.invokeLater { Casting.extend(more) }
@@ -946,6 +967,7 @@ object Player {
     }
 
     fun stop() {
+        YourFrequency.stopped()
         Crossfade.settle()
         stoppedAt = -1
         mpv?.command("stop")
