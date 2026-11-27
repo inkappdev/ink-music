@@ -82,8 +82,11 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     // critics' picks are in to score them by
     val cooling by Picks.records.collectAsState()
     LaunchedEffect(cooling.isNotEmpty()) { if (cooling.isNotEmpty()) CoolLists.read(ctx) }
-    val electronic by Picks.electronic.collectAsState()
-    val friday by Picks.friday.collectAsState()
+    // what INK suggests, the blocked left out (Blocked), at once as it changes
+    val electronic = Picks.electronic.collectAsState().value.unblocked { it.title to it.artist }
+    val fridayAll by Picks.friday.collectAsState()
+    val fridayReleases = fridayAll?.releases.orEmpty().unblocked { it.title to it.artist }
+    val friday = remember(fridayAll, fridayReleases) { fridayAll?.copy(releases = fridayReleases) }
     LaunchedEffect(Unit) { while (true) { Picks.air(); kotlinx.coroutines.delay(60_000) } }
     val recordsAll by Picks.records.collectAsState()
     val records = recordsAll.unblocked { it.pick.title to it.pick.artist }
@@ -91,11 +94,13 @@ fun ExplorePage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     LaunchedEffect(records.size) { if (records.isNotEmpty() && !Quality.metered(ctx)) GenrePicks.tag(ctx) }
     val songsAll by Picks.songs.collectAsState()
     val songs = songsAll.unblocked { it.pick.title to it.pick.artist }
-    val today by Picks.today.collectAsState()
-    val air by Picks.onAir.collectAsState()
-    val chart by Listen.indie.collectAsState()
-    val liveSets by LiveSets.clips.collectAsState()
-    val sessions by LiveSessions.all.collectAsState()
+    val blockedNow by Blocked.kept.collectAsState()
+    val todayAll by Picks.today.collectAsState()
+    val today = remember(todayAll, blockedNow) { todayAll?.takeUnless { Blocked.hides(it.pick.title, it.pick.artist) } }
+    val air = Picks.onAir.collectAsState().value.unblocked { it.title to it.artist }
+    val chart = Listen.indie.collectAsState().value.unblocked { it.title to it.artist }
+    val liveSets = LiveSets.clips.collectAsState().value.unblocked { it.title to it.artist }
+    val sessions = LiveSessions.all.collectAsState().value.unblocked { "" to it.artist }
     LaunchedEffect(Unit) { LiveSessions.start(ctx) }
     val before = remember(chart) { IndieChart.before(ctx) }
     val moods by produceState<List<TubeMood>?>(Moods.kept(ctx)) { value = Moods.read(ctx) ?: value }
@@ -288,7 +293,7 @@ private fun OfTheDay(songs: List<Picks.Shown>, pages: Pages) {
         value = withContext(Dispatchers.IO) {
             val id = Fresh.ofTheDay(ctx, "deep") { _ ->
                 val heard = History.read(ctx).map { it.id }.toHashSet()
-                library.filter { !it.tube && it.id !in heard && taste.of(it.albumArtist.ifBlank { it.artist }) >= .3 }
+                library.filter { !it.tube && it.id !in heard && !Blocked.hides(it) && taste.of(it.albumArtist.ifBlank { it.artist }) >= .3 }
                     .shuffled(java.util.Random(Moment.issue().toLong())).firstOrNull()?.id
             }
             id?.let { Library.song(it) }
@@ -484,7 +489,10 @@ private fun InkWeeklyCover(pages: Pages) {
     val ctx = LocalContext.current
     LaunchedEffect(Unit) { Weekly.load(ctx) }
     val weeks by Weekly.weeks.collectAsState()
-    val w = weeks.firstOrNull() ?: return
+    val issue = weeks.firstOrNull() ?: return
+    // the issue as it's played and shown here, the blocked left out
+    val shown = issue.songs.unblocked { it.title to it.artist }
+    val w = remember(issue, shown) { issue.copy(songs = shown) }
     val less by Moves.less.collectAsState()
     Column(Modifier.padding(top = 6.dp, bottom = 24.dp)) {
         Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -660,7 +668,7 @@ private fun ArtistOfTheWeek(chart: List<IndieChart.Entry>, pages: Pages) {
     val picked by Picks.records.collectAsState()
     val names = remember(chart, picked) {
         (chart.map { it.artist } + picked.map { it.pick.artist }).map { it.substringBefore(",").substringBefore(" & ").trim() }
-            .filter { it.isNotBlank() && !it.equals("various artists", true) }.distinctBy { it.lowercase() }
+            .filter { it.isNotBlank() && !it.equals("various artists", true) && !Blocked.artist(it) }.distinctBy { it.lowercase() }
     }
     val week = java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toEpochDay() / 7
     val info by produceState<ArtistInfo?>(null, names) {
@@ -874,7 +882,8 @@ fun MoodPage(m: TubeMood, pages: Pages) {
     // place of Last.fm's tags, which put a folk song on dance & electronic); the critics' records by the lists' artists.
     // The play build, and a genre with no lists: INK's picks by their artists' tags, as before
     val listed = m.genre && GenreSongs.known(m.title)
-    val listSongs by produceState(if (listed) GenreSongs.now(ctx, m.title) else emptyList(), m.title) { if (listed) value = GenreSongs.of(ctx, m.title) }
+    val listSongsAll by produceState(if (listed) GenreSongs.now(ctx, m.title) else emptyList(), m.title) { if (listed) value = GenreSongs.of(ctx, m.title) }
+    val listSongs = listSongsAll.unblocked { it.pick.title to it.pick.artist }
     val ours = !listed && m.genre && Genres.known(m.title)
     val tagged by GenrePicks.tagged.collectAsState()
     val recordsAll by Picks.records.collectAsState()
@@ -882,7 +891,7 @@ fun MoodPage(m: TubeMood, pages: Pages) {
     val songsAll by Picks.songs.collectAsState()
     val songs = songsAll.unblocked { it.pick.title to it.pick.artist }
     LaunchedEffect(ours, records.size + songs.size) { if (ours) GenrePicks.tag(ctx) }
-    val picks = remember(ours, tagged, records, songs) { if (!ours) emptyList() else GenrePicks.all().filter { Genres.fits(it.pick.artist, m.title) } }
+    val picks = remember(ours, tagged, records, songs) { if (!ours) emptyList() else GenrePicks.all().filter { Genres.fits(it.pick.artist, m.title) && !Blocked.hides(it.pick.title, it.pick.artist) } }
     val listArtists = remember(listSongs) { listSongs.flatMap { it.pick.artist.split(", ") }.map { Curation.folded(it.trim()) }.filter { it.length >= 2 }.toSet() }
     val pickedSongs = remember(picks, listSongs) { if (listed) listSongs.take(40) else Curation.fair(picks.filter { !it.pick.record }) { it.pick.from }.take(24) }
     val pickedRecords = remember(picks, listArtists, records) {

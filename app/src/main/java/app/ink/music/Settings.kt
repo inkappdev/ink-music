@@ -438,7 +438,7 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                 if (nb > 0 || YouTubeMusic.available) SettingRow("BLOCKED", if (nb == 0) "none" else listOfNotNull(
                     blocked.artists.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "artist" else "artists"}" },
                     blocked.songs.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "song" else "songs"}" }).joinToString(" · "), opened,
-                    "never in similar songs or listen's shelves. hold a youtube song to block it or its artist") {
+                    "never in similar songs, listen or INK. hold a youtube song to block it or its artist") {
                     // an artist by name (2026-11-17, Bronson: "I dont want BTS": blocked, an artist's listens count for nothing (tests had made them a top artist); unblocked, they count again)
                     var who by remember { mutableStateOf("") }
                     fun block() { if (who.isNotBlank()) { Blocked.blockArtist(ctx, who.trim()); who = "" } }
@@ -455,13 +455,29 @@ fun SettingsPage(pages: Pages, part: String? = null) {
                     }
                     BasicText("a blocked artist's listens count for nothing: not in your year, your most played or your taste", style = pixel(12.sp, Ink.dim), modifier = Modifier.padding(bottom = 8.dp))
                     if (nb == 0) BasicText("nothing blocked", style = pixel(13.sp, Ink.dim))
-                    blocked.artists.forEach { a ->
+                    // a long list looked through by name (2026-11-27, a listener): the artists and songs with these words
+                    var look by remember { mutableStateOf("") }
+                    if (nb > 6) Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BasicText("find > ", style = pixel(13.sp, Ink.mid))
+                        androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                            if (look.isEmpty()) BasicText("an artist or song", style = pixel(13.sp, Ink.dim))
+                            androidx.compose.foundation.text.BasicTextField(look, { look = it }, singleLine = true, textStyle = pixel(13.sp),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink.ink), modifier = Modifier.fillMaxWidth())
+                        }
+                        if (look.isNotEmpty()) Word("clear", pixel(12.sp, Ink.mid), touch = 8.dp) { look = "" }
+                    }
+                    val words = look.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    fun fits(t: String) = words.all { it in t.lowercase() }
+                    val artistsShown = blocked.artists.filter { fits(it) }
+                    val songsShown = blocked.songs.filter { fits(it.title + " " + it.artist) }
+                    if (words.isNotEmpty() && artistsShown.isEmpty() && songsShown.isEmpty()) BasicText("none blocked by that name", style = pixel(13.sp, Ink.dim))
+                    artistsShown.forEach { a ->
                         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             BasicText(a.lowercase(), style = pixel(13.sp), modifier = Modifier.weight(1f, fill = false).padding(end = 20.dp))
                             Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockArtist(ctx, a) }
                         }
                     }
-                    blocked.songs.forEach { b ->
+                    songsShown.forEach { b ->
                         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             BasicText("${b.title.lowercase()} · ${b.artist.lowercase()}", style = pixel(13.sp), modifier = Modifier.weight(1f, fill = false).padding(end = 20.dp))
                             Word("unblock", pixel(12.sp, Ink.mid), touch = 8.dp) { Blocked.unblockSong(ctx, b) }

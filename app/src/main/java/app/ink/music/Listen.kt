@@ -169,8 +169,9 @@ object Listen {
 fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val ctx = LocalContext.current
     val seeds by Seeds.artists.collectAsState()
-    val indie by Listen.indie.collectAsState()
-    val records by Listen.records.collectAsState()
+    // suggestions from outside your library: what's blocked left out (Blocked), at once as it changes
+    val indie = Listen.indie.collectAsState().value.unblocked { it.title to it.artist }
+    val records = Listen.records.collectAsState().value.unblocked { it.title to it.artist }
     val newestIds by Listen.newest.collectAsState()
     val radio by Listen.radio.collectAsState()
     val stations by Listen.stations.collectAsState()
@@ -191,7 +192,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val pickedSongsAll by Picks.songs.collectAsState()
     val pickedSongs = pickedSongsAll.unblocked { it.pick.title to it.pick.artist }
     val friday by Picks.friday.collectAsState()
-    val electronic by Picks.electronic.collectAsState()
+    val electronic = Picks.electronic.collectAsState().value.unblocked { it.title to it.artist }
     val freshReleases by Picks.fresh.collectAsState()
     val listened by Listened.now.collectAsState()
     val allSongs by Library.songs.collectAsState()
@@ -221,7 +222,7 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     val tubeRecords by YouTubeAccount.records.collectAsState()
     val tubeArtists by YouTubeAccount.artists.collectAsState()
     val tubeMixes by YouTubeAccount.mixes.collectAsState()
-    val fresh by YouTubeAccount.fresh.collectAsState()
+    val fresh = YouTubeAccount.fresh.collectAsState().value.unblocked { it.title to it.artist }
     val tubeLists by YouTubeAccount.playlists.collectAsState()
     val uploads by YouTubeAccount.uploads.collectAsState()
     val liked by YouTubeAccount.liked.collectAsState()
@@ -252,14 +253,14 @@ fun ListenPage(pages: Pages, pad: PaddingValues, state: LazyListState) {
     }
     val newest = remember(newestIds, albums) { newestIds.mapNotNull { id -> albums.firstOrNull { it.id == id } } }
     val yours = remember(albums, seed) { Order.of(albums, seed) { it.id }.take(12) }
-    val mixes = seeds.filter { it.hit != null }
+    val mixes = seeds.filter { it.hit != null && !Blocked.artist(it.name) }
 
     // ---- keeping it fresh (Fresh): your taste, what's new since you were here, three of ten from INK ----
     val taste by Fresh.taste.collectAsState()
     val since by Fresh.since.collectAsState()
     // new from your artists, the ones you've passed over stepping back (said not for you, gone)
-    val fromYoursNow = remember(fromYours, taste) {
-        fromYours.filter { !taste.refused(it.pick.artist) && (!Fresh.ready || Fresh.seen.fresh(Fresh.key(it.pick)) > .1) }
+    val fromYoursNow = remember(fromYours, taste, blockedNow) {
+        fromYours.filter { !taste.refused(it.pick.artist) && !Blocked.hides(it.pick.title, it.pick.artist) && (!Fresh.ready || Fresh.seen.fresh(Fresh.key(it.pick)) > .1) }
             .sortedByDescending { if (Fresh.ready) Fresh.seen.fresh(Fresh.key(it.pick)) else 1.0 }
     }
     // from INK, for you: the critics' and djs' picks not already above, in your order, each saying why
@@ -732,7 +733,7 @@ fun TvListenPage(pages: Pages, state: LazyListState) {
     val pickedRecords = pickedRecordsAll.unblocked { it.pick.title to it.pick.artist }
     val broughtIn by Fresh.brought.collectAsState()
     val freshReleases by Picks.fresh.collectAsState()
-    val fromYours = remember(pickedRecords, freshReleases, listened, allSongs, broughtIn) { Picks.yours(listened, allSongs, broughtIn) }
+    val fromYours = remember(pickedRecords, freshReleases, listened, allSongs, broughtIn) { Picks.yours(listened, allSongs, broughtIn) }.unblocked { it.pick.title to it.pick.artist }
     LaunchedEffect(Unit) { LiveSets.start(ctx) }
     val sets by LiveSets.clips.collectAsState()
     val ink = remember { Stations.curated(ctx).sortedByDescending { it.star } }
@@ -850,7 +851,8 @@ private fun KnowMeCard(shut: () -> Unit) {
 @Composable
 private fun FindsShelf(k: Finds.Kind, w: Finds.Week) {
     Heading(k.title, "${k.line}. this one ${Finds.dated(k, w)}") {
-        Word("play all", pixel(13.sp), touch = 8.dp) { Playback.play(w.songs, 0) }
+        Word("play all", pixel(13.sp), touch = 8.dp) { Playback.play(w.songs.filterNot(Blocked::hides), 0) }
     }
-    ShelfIndexed(w.songs) { i, s -> Tile(s, s.title, s.artist) { Playback.play(w.songs, i) } }
+    val songs = w.songs.unblocked { it.title to it.artist }
+    ShelfIndexed(songs) { i, s -> Tile(s, s.title, s.artist) { Playback.play(songs, i) } }
 }
